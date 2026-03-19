@@ -1,0 +1,607 @@
+// ═══════════════════════════════════════════════════════════
+// SERVIX — Tenant (Salon) Database Schema
+// One isolated instance per tenant. Complete data separation.
+// ═══════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/tenant"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("TENANT_DATABASE_URL")
+}
+
+// ─────────────────── Enums ───────────────────
+
+enum EmployeeRole {
+  stylist
+  manager
+  receptionist
+  cashier
+}
+
+enum CommissionType {
+  percentage
+  fixed
+  none
+}
+
+enum Gender {
+  female
+  male
+}
+
+enum ClientSource {
+  walk_in
+  online
+  phone
+  referral
+}
+
+enum AppointmentStatus {
+  pending
+  confirmed
+  in_progress
+  completed
+  cancelled
+  no_show
+}
+
+enum AppointmentSource {
+  online
+  phone
+  walk_in
+  dashboard
+}
+
+enum AppointmentServiceStatus {
+  pending
+  in_progress
+  completed
+}
+
+enum InvoiceStatus {
+  draft
+  paid
+  partially_paid
+  void
+  refunded
+}
+
+enum PaymentMethod {
+  cash
+  card
+  bank_transfer
+  wallet
+}
+
+enum PaymentStatus {
+  completed
+  pending
+  failed
+  refunded
+}
+
+enum DiscountType {
+  percentage
+  fixed
+}
+
+enum CouponType {
+  percentage
+  fixed
+}
+
+enum LoyaltyTransactionType {
+  earned
+  redeemed
+  expired
+  adjusted
+}
+
+enum ExpenseCategory {
+  rent
+  salary
+  supplies
+  utilities
+  marketing
+  other
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  on_break
+  off_duty
+  late
+  half_day
+  vacation
+}
+
+enum NotificationRecipientType {
+  employee
+  client
+}
+
+enum NotificationType {
+  booking_new
+  booking_confirmed
+  booking_cancelled
+  payment
+  reminder
+  general
+}
+
+enum NotificationChannel {
+  in_app
+  push
+  sms
+  whatsapp
+  email
+}
+
+// ─────────────────── Salon Info ───────────────────
+
+model SalonInfo {
+  id            String   @id @default(uuid()) @db.Uuid
+  nameAr        String   @map("name_ar") @db.VarChar(100)
+  nameEn        String?  @map("name_en") @db.VarChar(100)
+  taglineAr     String?  @map("tagline_ar") @db.VarChar(200)
+  descriptionAr String?  @map("description_ar") @db.Text
+  phone         String?  @db.VarChar(15)
+  email         String?  @db.VarChar(100)
+  address       String?  @db.Text
+  city          String?  @db.VarChar(50)
+  workingDays   Json     @default("{}") @map("working_days") @db.JsonB
+  openingTime   String   @default("09:00") @map("opening_time") @db.VarChar(5)
+  closingTime   String   @default("22:00") @map("closing_time") @db.VarChar(5)
+  slotDuration  Int      @default(30) @map("slot_duration")
+  bufferTime    Int      @default(10) @map("buffer_time")
+  currency      String   @default("SAR") @db.VarChar(3)
+  taxPercentage Decimal  @default(15.0) @map("tax_percentage") @db.Decimal(5, 2)
+  taxNumber     String?  @map("tax_number") @db.VarChar(20)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("salon_info")
+}
+
+// ─────────────────── Service Categories ───────────────────
+
+model ServiceCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  nameAr    String   @map("name_ar") @db.VarChar(100)
+  nameEn    String?  @map("name_en") @db.VarChar(100)
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  services Service[]
+
+  @@map("service_categories")
+}
+
+// ─────────────────── Services ───────────────────
+
+model Service {
+  id            String   @id @default(uuid()) @db.Uuid
+  categoryId    String   @map("category_id") @db.Uuid
+  nameAr        String   @map("name_ar") @db.VarChar(100)
+  nameEn        String?  @map("name_en") @db.VarChar(100)
+  descriptionAr String?  @map("description_ar") @db.Text
+  price         Decimal  @db.Decimal(10, 2)
+  duration      Int
+  isActive      Boolean  @default(true) @map("is_active")
+  sortOrder     Int      @default(0) @map("sort_order")
+  imageUrl      String?  @map("image_url") @db.VarChar(500)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  category            ServiceCategory      @relation(fields: [categoryId], references: [id])
+  employeeServices    EmployeeService[]
+  appointmentServices AppointmentService[]
+  invoiceItems        InvoiceItem[]
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@map("services")
+}
+
+// ─────────────────── Employees ───────────────────
+
+model Employee {
+  id              String         @id @default(uuid()) @db.Uuid
+  userId          String?        @map("user_id") @db.Uuid
+  fullName        String         @map("full_name") @db.VarChar(100)
+  phone           String?        @db.VarChar(15)
+  email           String?        @db.VarChar(100)
+  role            EmployeeRole   @default(stylist)
+  commissionType  CommissionType @default(none) @map("commission_type")
+  commissionValue Decimal        @default(0) @map("commission_value") @db.Decimal(10, 2)
+  isActive        Boolean        @default(true) @map("is_active")
+  avatarUrl       String?        @map("avatar_url") @db.VarChar(500)
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+
+  employeeServices    EmployeeService[]
+  employeeSchedules   EmployeeSchedule[]
+  employeeBreaks      EmployeeBreak[]
+  appointments        Appointment[]
+  appointmentServices AppointmentService[]
+  invoiceItems        InvoiceItem[]
+  attendance          Attendance[]
+
+  @@index([isActive])
+  @@map("employees")
+}
+
+// ─────────────────── Employee ↔ Service ───────────────────
+
+model EmployeeService {
+  employeeId String @map("employee_id") @db.Uuid
+  serviceId  String @map("service_id") @db.Uuid
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, serviceId])
+  @@map("employee_services")
+}
+
+// ─────────────────── Employee Schedules ───────────────────
+
+model EmployeeSchedule {
+  id         String   @id @default(uuid()) @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  dayOfWeek  Int      @map("day_of_week")
+  startTime  String   @map("start_time") @db.VarChar(5)
+  endTime    String   @map("end_time") @db.VarChar(5)
+  isDayOff   Boolean  @default(false) @map("is_day_off")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, dayOfWeek])
+  @@map("employee_schedules")
+}
+
+// ─────────────────── Employee Breaks ───────────────────
+
+model EmployeeBreak {
+  id         String   @id @default(uuid()) @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  dayOfWeek  Int      @map("day_of_week")
+  startTime  String   @map("start_time") @db.VarChar(5)
+  endTime    String   @map("end_time") @db.VarChar(5)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, dayOfWeek])
+  @@map("employee_breaks")
+}
+
+// ─────────────────── Clients ───────────────────
+
+model Client {
+  id          String       @id @default(uuid()) @db.Uuid
+  fullName    String       @map("full_name") @db.VarChar(100)
+  phone       String       @db.VarChar(15)
+  email       String?      @db.VarChar(100)
+  gender      Gender       @default(female)
+  dateOfBirth DateTime?    @map("date_of_birth") @db.Date
+  notes       String?      @db.Text
+  source      ClientSource @default(walk_in)
+  totalVisits Int          @default(0) @map("total_visits")
+  totalSpent  Decimal      @default(0) @map("total_spent") @db.Decimal(10, 2)
+  lastVisitAt DateTime?    @map("last_visit_at") @db.Timestamptz()
+  isActive    Boolean      @default(true) @map("is_active")
+  deletedAt   DateTime?    @map("deleted_at") @db.Timestamptz()
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+
+  appointments        Appointment[]
+  invoices            Invoice[]
+  loyaltyPoints       LoyaltyPoints?
+  loyaltyTransactions LoyaltyTransaction[]
+
+  @@index([phone])
+  @@index([fullName])
+  @@index([isActive])
+  @@map("clients")
+}
+
+// ─────────────────── Appointments ───────────────────
+
+model Appointment {
+  id                 String            @id @default(uuid()) @db.Uuid
+  clientId           String            @map("client_id") @db.Uuid
+  employeeId         String?           @map("employee_id") @db.Uuid
+  date               DateTime          @db.Date
+  startTime          String            @map("start_time") @db.VarChar(5)
+  endTime            String            @map("end_time") @db.VarChar(5)
+  status             AppointmentStatus @default(pending)
+  source             AppointmentSource @default(dashboard)
+  notes              String?           @db.Text
+  totalPrice         Decimal           @default(0) @map("total_price") @db.Decimal(10, 2)
+  totalDuration      Int               @default(0) @map("total_duration")
+  cancelledAt        DateTime?         @map("cancelled_at") @db.Timestamptz()
+  cancellationReason String?           @map("cancellation_reason") @db.Text
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
+
+  client              Client               @relation(fields: [clientId], references: [id])
+  employee            Employee?             @relation(fields: [employeeId], references: [id])
+  appointmentServices AppointmentService[]
+  invoices            Invoice[]
+
+  @@index([clientId])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+  @@index([date, status])
+  @@map("appointments")
+}
+
+// ─────────────────── Appointment Services ───────────────────
+
+model AppointmentService {
+  id            String                   @id @default(uuid()) @db.Uuid
+  appointmentId String                   @map("appointment_id") @db.Uuid
+  serviceId     String                   @map("service_id") @db.Uuid
+  employeeId    String                   @map("employee_id") @db.Uuid
+  price         Decimal                  @db.Decimal(10, 2)
+  duration      Int
+  status        AppointmentServiceStatus @default(pending)
+  createdAt     DateTime                 @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime                 @updatedAt @map("updated_at") @db.Timestamptz()
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service     Service     @relation(fields: [serviceId], references: [id])
+  employee    Employee    @relation(fields: [employeeId], references: [id])
+
+  @@index([appointmentId])
+  @@map("appointment_services")
+}
+
+// ─────────────────── Invoices ───────────────────
+
+model Invoice {
+  id             String        @id @default(uuid()) @db.Uuid
+  appointmentId  String?       @map("appointment_id") @db.Uuid
+  clientId       String        @map("client_id") @db.Uuid
+  invoiceNumber  String        @unique @map("invoice_number") @db.VarChar(20)
+  subtotal       Decimal       @default(0) @db.Decimal(10, 2)
+  discountAmount Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  taxAmount      Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
+  total          Decimal       @default(0) @db.Decimal(10, 2)
+  status         InvoiceStatus @default(draft)
+  notes          String?       @db.Text
+  createdBy      String        @map("created_by") @db.Uuid
+  paidAt         DateTime?     @map("paid_at") @db.Timestamptz()
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+
+  appointment         Appointment?         @relation(fields: [appointmentId], references: [id])
+  client              Client               @relation(fields: [clientId], references: [id])
+  invoiceItems        InvoiceItem[]
+  payments            Payment[]
+  discounts           Discount[]
+  loyaltyTransactions LoyaltyTransaction[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("invoices")
+}
+
+// ─────────────────── Invoice Items ───────────────────
+
+model InvoiceItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  invoiceId   String   @map("invoice_id") @db.Uuid
+  serviceId   String?  @map("service_id") @db.Uuid
+  description String   @db.VarChar(200)
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(10, 2)
+  totalPrice  Decimal  @map("total_price") @db.Decimal(10, 2)
+  employeeId  String   @map("employee_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  invoice  Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service  Service?  @relation(fields: [serviceId], references: [id])
+  employee Employee  @relation(fields: [employeeId], references: [id])
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+// ─────────────────── Payments ───────────────────
+
+model Payment {
+  id        String        @id @default(uuid()) @db.Uuid
+  invoiceId String        @map("invoice_id") @db.Uuid
+  amount    Decimal       @db.Decimal(10, 2)
+  method    PaymentMethod
+  reference String?       @db.VarChar(100)
+  status    PaymentStatus @default(completed)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+// ─────────────────── Discounts ───────────────────
+
+model Discount {
+  id        String       @id @default(uuid()) @db.Uuid
+  invoiceId String       @map("invoice_id") @db.Uuid
+  type      DiscountType
+  value     Decimal      @db.Decimal(10, 2)
+  amount    Decimal      @db.Decimal(10, 2)
+  reason    String?      @db.VarChar(200)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("discounts")
+}
+
+// ─────────────────── Coupons ───────────────────
+
+model Coupon {
+  id          String     @id @default(uuid()) @db.Uuid
+  code        String     @unique @db.VarChar(20)
+  type        CouponType
+  value       Decimal    @db.Decimal(10, 2)
+  minOrder    Decimal?   @map("min_order") @db.Decimal(10, 2)
+  maxDiscount Decimal?   @map("max_discount") @db.Decimal(10, 2)
+  usageLimit  Int?       @map("usage_limit")
+  usedCount   Int        @default(0) @map("used_count")
+  validFrom   DateTime   @map("valid_from") @db.Timestamptz()
+  validUntil  DateTime   @map("valid_until") @db.Timestamptz()
+  isActive    Boolean    @default(true) @map("is_active")
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([code])
+  @@index([isActive])
+  @@map("coupons")
+}
+
+// ─────────────────── Loyalty Points ───────────────────
+
+model LoyaltyPoints {
+  id             String   @id @default(uuid()) @db.Uuid
+  clientId       String   @unique @map("client_id") @db.Uuid
+  points         Int      @default(0)
+  lifetimePoints Int      @default(0) @map("lifetime_points")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("loyalty_points")
+}
+
+// ─────────────────── Loyalty Transactions (immutable) ───────────────────
+
+model LoyaltyTransaction {
+  id          String                 @id @default(uuid()) @db.Uuid
+  clientId    String                 @map("client_id") @db.Uuid
+  type        LoyaltyTransactionType
+  points      Int
+  invoiceId   String?                @map("invoice_id") @db.Uuid
+  description String?                @db.VarChar(200)
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz()
+
+  client  Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([clientId])
+  @@index([createdAt])
+  @@map("loyalty_transactions")
+}
+
+// ─────────────────── Expenses ───────────────────
+
+model Expense {
+  id          String          @id @default(uuid()) @db.Uuid
+  category    ExpenseCategory
+  description String          @db.VarChar(200)
+  amount      Decimal         @db.Decimal(10, 2)
+  date        DateTime        @db.Date
+  receiptUrl  String?         @map("receipt_url") @db.VarChar(500)
+  createdBy   String          @map("created_by") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([date])
+  @@index([category])
+  @@map("expenses")
+}
+
+// ─────────────────── Attendance ───────────────────
+
+model Attendance {
+  id         String           @id @default(uuid()) @db.Uuid
+  employeeId String           @map("employee_id") @db.Uuid
+  date       DateTime         @db.Date
+  checkIn    String?          @map("check_in") @db.VarChar(5)
+  checkOut   String?          @map("check_out") @db.VarChar(5)
+  isOnBreak  Boolean          @default(false) @map("is_on_break")
+  status     AttendanceStatus @default(present)
+  notes      String?          @db.Text
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@map("attendance")
+}
+
+// ─────────────────── Notifications ───────────────────
+
+model Notification {
+  id            String                    @id @default(uuid()) @db.Uuid
+  recipientType NotificationRecipientType @map("recipient_type")
+  recipientId   String                    @map("recipient_id") @db.Uuid
+  titleAr       String                    @map("title_ar") @db.VarChar(200)
+  bodyAr        String                    @map("body_ar") @db.Text
+  type          NotificationType
+  channel       NotificationChannel
+  isRead        Boolean                   @default(false) @map("is_read")
+  data          Json?                     @db.JsonB
+  sentAt        DateTime?                 @map("sent_at") @db.Timestamptz()
+  readAt        DateTime?                 @map("read_at") @db.Timestamptz()
+  createdAt     DateTime                  @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([recipientType, recipientId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ─────────────────── Activity Logs (immutable) ───────────────────
+
+model ActivityLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  action      String   @db.VarChar(50)
+  entityType  String   @map("entity_type") @db.VarChar(50)
+  entityId    String   @map("entity_id") @db.Uuid
+  description String?  @db.VarChar(300)
+  oldValues   Json?    @map("old_values") @db.JsonB
+  newValues   Json?    @map("new_values") @db.JsonB
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+// ─────────────────── Settings (key-value store) ───────────────────
+
+model Setting {
+  key       String   @id @db.VarChar(100)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@map("settings")
+}

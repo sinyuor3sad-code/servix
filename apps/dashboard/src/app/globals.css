@@ -1,0 +1,245 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════
+   SERVIX — Design Tokens (Light Mode Default)
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --brand-primary: #8b5cf6;
+  --brand-primary-light: #a78bfa;
+  --brand-primary-dark: #7c3aed;
+  --brand-secondary: #06b6d4;
+  --brand-accent: #f59e0b;
+
+  /* Primary shade palette (generated from --brand-primary) */
+  --primary-50: #f5f3ff;
+  --primary-100: #ede9fe;
+  --primary-200: #ddd6fe;
+  --primary-300: #c4b5fd;
+  --primary-400: #a78bfa;
+  --primary-500: #8b5cf6;
+  --primary-600: #7c3aed;
+  --primary-700: #6d28d9;
+  --primary-800: #5b21b6;
+  --primary-900: #4c1d95;
+  --primary-950: #2e1065;
+
+  /* Surfaces */
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+
+  /* Borders & Focus */
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #8b5cf6;
+
+  /* Semantic Colors */
+  --success: #16a34a;
+  --success-light: #dcfce7;
+  --warning: #f59e0b;
+  --warning-light: #fef3c7;
+  --danger: #dc2626;
+  --danger-light: #fee2e2;
+  --info: #0ea5e9;
+  --info-light: #e0f2fe;
+
+  /* Layout */
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 72px;
+  --header-height: 64px;
+
+  /* Theme Style Defaults (overridden by [data-style]) */
+  --radius: 0.5rem;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.05);
+  --font-heading: var(--font-cairo), serif;
+  --font-body: var(--font-cairo), sans-serif;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Dark Mode
+   ═══════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #18181b;
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --border: #3f3f46;
+  --input: #3f3f46;
+
+  --success: #22c55e;
+  --success-light: #052e16;
+  --warning: #eab308;
+  --warning-light: #422006;
+  --danger: #ef4444;
+  --danger-light: #450a0a;
+  --info: #38bdf8;
+  --info-light: #0c4a6e;
+
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.5), 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Theme Styles — [data-style="..."]
+   Each theme overrides radius, shadows, and font stacks.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── Elegance (Default) ─── */
+[data-style="elegance"] {
+  --radius: 0.5rem;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.05);
+  --font-heading: var(--font-cairo), serif;
+  --font-body: var(--font-cairo), sans-serif;
+}
+
+/* ─── Modern ─── */
+[data-style="modern"] {
+  --radius: 0;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  --shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.16);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.2);
+  --font-heading: var(--font-cairo), sans-serif;
+  --font-body: var(--font-cairo), sans-serif;
+}
+
+/* ─── Vivid ─── */
+[data-style="vivid"] {
+  --radius: 1rem;
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 16px 56px rgba(0, 0, 0, 0.14);
+  --font-heading: var(--font-cairo), sans-serif;
+  --font-body: var(--font-cairo), sans-serif;
+}
+
+[data-style="vivid"] .glass {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(12px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="dark"][data-style="vivid"] .glass {
+  background: rgba(24, 24, 27, 0.6);
+  backdrop-filter: blur(12px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Minimal ─── */
+[data-style="minimal"] {
+  --radius: 0.375rem;
+  --shadow: none;
+  --shadow-hover: none;
+  --shadow-lg: none;
+  --border: transparent;
+  --font-heading: var(--font-cairo), sans-serif;
+  --font-body: var(--font-cairo), sans-serif;
+}
+
+[data-style="minimal"] [data-theme="dark"] {
+  --border: transparent;
+}
+
+/* ─── Corporate ─── */
+[data-style="corporate"] {
+  --radius: 0.25rem;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --font-heading: var(--font-cairo), sans-serif;
+  --font-body: var(--font-cairo), sans-serif;
+}
+
+/* ─── Royal ─── */
+[data-style="royal"] {
+  --radius: 0.75rem;
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  --shadow-hover: 0 8px 28px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.25);
+  --font-heading: var(--font-cairo), serif;
+  --font-body: var(--font-cairo), sans-serif;
+
+  --brand-accent: #d4a017;
+}
+
+[data-theme="dark"][data-style="royal"] {
+  --background: #0c0a14;
+  --card: #161228;
+  --muted: #1e1a30;
+  --border: #2e2846;
+  --brand-accent: #fbbf24;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RTL Base
+   ═══════════════════════════════════════════════════════════ */
+
+html[dir="rtl"] {
+  direction: rtl;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Global Utilities
+   ═══════════════════════════════════════════════════════════ */
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground);
+}
+
+/* Focus outline */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}

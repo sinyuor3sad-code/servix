@@ -1,0 +1,63 @@
+services:
+  # ═══════════════ PostgreSQL 17 ═══════════════
+  postgres:
+    image: postgres:17-alpine
+    container_name: servix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-servix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-servix_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-servix_platform}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-servix}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═══════════════ Redis 8 ═══════════════
+  redis:
+    image: redis:8-alpine
+    container_name: servix-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-servix_redis}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-servix_redis}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ═══════════════ MinIO (S3-compatible local storage) ═══════════════
+  minio:
+    image: minio/minio:latest
+    container_name: servix-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-servix_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-servix_minio_secret}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local

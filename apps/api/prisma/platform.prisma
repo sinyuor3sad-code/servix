@@ -1,0 +1,329 @@
+// ═══════════════════════════════════════════════════════════
+// SERVIX — Platform Database Schema
+// Shared across all tenants. One instance for the entire platform.
+// ═══════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/platform"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PLATFORM_DATABASE_URL")
+}
+
+// ─────────────────── Enums ───────────────────
+
+enum TenantStatus {
+  active
+  suspended
+  trial
+  cancelled
+  pending_deletion
+}
+
+enum TenantTheme {
+  elegance
+  modern
+  vivid
+  minimal
+  corporate
+  royal
+}
+
+enum TenantUserStatus {
+  active
+  inactive
+}
+
+enum SubscriptionStatus {
+  active
+  expired
+  cancelled
+  past_due
+  trial
+}
+
+enum BillingCycle {
+  monthly
+  yearly
+}
+
+enum PlatformInvoiceStatus {
+  paid
+  pending
+  overdue
+  cancelled
+}
+
+// ─────────────────── Tenants ───────────────────
+
+model Tenant {
+  id             String       @id @default(uuid()) @db.Uuid
+  nameAr         String       @map("name_ar") @db.VarChar(100)
+  nameEn         String       @map("name_en") @db.VarChar(100)
+  slug           String       @unique @db.VarChar(50)
+  logoUrl        String?      @map("logo_url") @db.VarChar(500)
+  primaryColor   String       @default("#8B5CF6") @map("primary_color") @db.VarChar(7)
+  theme          TenantTheme  @default(elegance)
+  databaseName   String       @unique @map("database_name") @db.VarChar(50)
+  status         TenantStatus @default(trial)
+  trialEndsAt    DateTime?    @map("trial_ends_at") @db.Timestamptz()
+  phone          String?      @db.VarChar(15)
+  email          String?      @db.VarChar(100)
+  city           String?      @db.VarChar(50)
+  address        String?      @db.Text
+  latitude       Decimal?     @db.Decimal(10, 7)
+  longitude      Decimal?     @db.Decimal(10, 7)
+  pendingDeletionAt DateTime?  @map("pending_deletion_at") @db.Timestamptz()
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+
+  tenantUsers     TenantUser[]
+  subscriptions   Subscription[]
+  tenantFeatures  TenantFeature[]
+  platformInvoices PlatformInvoice[]
+  auditLogs       PlatformAuditLog[]
+
+  @@map("tenants")
+}
+
+// ─────────────────── Users ───────────────────
+
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  fullName        String    @map("full_name") @db.VarChar(100)
+  email           String    @unique @db.VarChar(100)
+  phone           String    @unique @db.VarChar(15)
+  passwordHash    String    @map("password_hash") @db.VarChar(255)
+  avatarUrl       String?   @map("avatar_url") @db.VarChar(500)
+  isEmailVerified Boolean   @default(false) @map("is_email_verified")
+  isPhoneVerified Boolean   @default(false) @map("is_phone_verified")
+  lastLoginAt     DateTime? @map("last_login_at") @db.Timestamptz()
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  tenantUsers   TenantUser[]
+  auditLogs     PlatformAuditLog[]
+  passwordResets PasswordReset[]
+
+  @@map("users")
+}
+
+// ─────────────────── Password Reset Tokens ───────────────────
+
+model PasswordReset {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique @db.VarChar(64)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz()
+  usedAt    DateTime? @map("used_at") @db.Timestamptz()
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_resets")
+}
+
+// ─────────────────── Tenant ↔ User (many-to-many) ───────────────────
+
+model TenantUser {
+  id        String           @id @default(uuid()) @db.Uuid
+  tenantId  String           @map("tenant_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  roleId    String           @map("role_id") @db.Uuid
+  isOwner   Boolean          @default(false) @map("is_owner")
+  status    TenantUserStatus @default(active)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("tenant_users")
+}
+
+// ─────────────────── Roles & Permissions (RBAC) ───────────────────
+
+model Role {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(50)
+  nameAr    String   @map("name_ar") @db.VarChar(50)
+  isSystem  Boolean  @default(false) @map("is_system")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  tenantUsers     TenantUser[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique @db.VarChar(100)
+  nameAr    String   @map("name_ar") @db.VarChar(100)
+  group     String   @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  rolePermissions RolePermission[]
+
+  @@index([group])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ─────────────────── Plans & Features ───────────────────
+
+model Plan {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @unique @db.VarChar(50)
+  nameAr        String   @map("name_ar") @db.VarChar(50)
+  priceMonthly  Decimal  @map("price_monthly") @db.Decimal(10, 2)
+  priceYearly   Decimal  @map("price_yearly") @db.Decimal(10, 2)
+  maxEmployees  Int      @map("max_employees")
+  maxClients    Int      @map("max_clients")
+  descriptionAr String?  @map("description_ar") @db.Text
+  isActive      Boolean  @default(true) @map("is_active")
+  sortOrder     Int      @default(0) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  subscriptions Subscription[]
+  planFeatures  PlanFeature[]
+
+  @@map("plans")
+}
+
+model Feature {
+  id            String   @id @default(uuid()) @db.Uuid
+  code          String   @unique @db.VarChar(50)
+  nameAr        String   @map("name_ar") @db.VarChar(100)
+  descriptionAr String?  @map("description_ar") @db.Text
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  planFeatures   PlanFeature[]
+  tenantFeatures TenantFeature[]
+
+  @@map("features")
+}
+
+model PlanFeature {
+  planId    String @map("plan_id") @db.Uuid
+  featureId String @map("feature_id") @db.Uuid
+
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  feature Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@id([planId, featureId])
+  @@map("plan_features")
+}
+
+// ─────────────────── Subscriptions ───────────────────
+
+model Subscription {
+  id                 String             @id @default(uuid()) @db.Uuid
+  tenantId           String             @map("tenant_id") @db.Uuid
+  planId             String             @map("plan_id") @db.Uuid
+  status             SubscriptionStatus @default(trial)
+  billingCycle       BillingCycle       @default(monthly) @map("billing_cycle")
+  currentPeriodStart DateTime           @map("current_period_start") @db.Timestamptz()
+  currentPeriodEnd   DateTime           @map("current_period_end") @db.Timestamptz()
+  cancelledAt        DateTime?          @map("cancelled_at") @db.Timestamptz()
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz()
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan             Plan              @relation(fields: [planId], references: [id])
+  platformInvoices PlatformInvoice[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+// ─────────────────── Tenant Feature Overrides ───────────────────
+
+model TenantFeature {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  featureId  String    @map("feature_id") @db.Uuid
+  isEnabled  Boolean   @default(true) @map("is_enabled")
+  enabledAt  DateTime  @default(now()) @map("enabled_at") @db.Timestamptz()
+  disabledAt DateTime? @map("disabled_at") @db.Timestamptz()
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  feature Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, featureId])
+  @@map("tenant_features")
+}
+
+// ─────────────────── Platform Invoices ───────────────────
+
+model PlatformInvoice {
+  id             String                @id @default(uuid()) @db.Uuid
+  tenantId       String                @map("tenant_id") @db.Uuid
+  subscriptionId String                @map("subscription_id") @db.Uuid
+  amount         Decimal               @db.Decimal(10, 2)
+  taxAmount      Decimal               @map("tax_amount") @db.Decimal(10, 2)
+  total          Decimal               @db.Decimal(10, 2)
+  status         PlatformInvoiceStatus @default(pending)
+  dueDate        DateTime              @map("due_date") @db.Date
+  paidAt         DateTime?             @map("paid_at") @db.Timestamptz()
+  invoiceNumber  String                @unique @map("invoice_number") @db.VarChar(20)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz()
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("platform_invoices")
+}
+
+// ─────────────────── Platform Audit Logs (immutable) ───────────────────
+
+model PlatformAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String?  @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  action     String   @db.VarChar(50)
+  entityType String   @map("entity_type") @db.VarChar(50)
+  entityId   String   @map("entity_id") @db.Uuid
+  oldValues  Json?    @map("old_values") @db.JsonB
+  newValues  Json?    @map("new_values") @db.JsonB
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user   User    @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("platform_audit_logs")
+}

@@ -1,0 +1,147 @@
+services:
+  # ═══════ Infrastructure ═══════
+  postgres:
+    image: postgres:17-alpine
+    container_name: servix-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-servix_platform}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - servix-network
+
+  redis:
+    image: redis:8-alpine
+    container_name: servix-redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - servix-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: servix-minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - servix-network
+
+  # ═══════ Application Services ═══════
+  api:
+    build:
+      context: ../../
+      dockerfile: apps/api/Dockerfile
+    container_name: servix-api
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-servix_platform}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    networks:
+      - servix-network
+
+  dashboard:
+    build:
+      context: ../../
+      dockerfile: apps/dashboard/Dockerfile
+    container_name: servix-dashboard
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_URL:-http://api:4000/api/v1}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - servix-network
+
+  booking:
+    build:
+      context: ../../
+      dockerfile: apps/booking/Dockerfile
+    container_name: servix-booking
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_URL:-http://api:4000/api/v1}
+    ports:
+      - "3001:3001"
+    depends_on:
+      - api
+    networks:
+      - servix-network
+
+  admin:
+    build:
+      context: ../../
+      dockerfile: apps/admin/Dockerfile
+    container_name: servix-admin
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_URL:-http://api:4000/api/v1}
+    ports:
+      - "3002:3002"
+    depends_on:
+      - api
+    networks:
+      - servix-network
+
+  # ═══════ Reverse Proxy ═══════
+  nginx:
+    image: nginx:alpine
+    container_name: servix-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+      - dashboard
+      - booking
+      - admin
+    networks:
+      - servix-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  servix-network:
+    driver: bridge

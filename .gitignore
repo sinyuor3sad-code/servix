@@ -1,0 +1,110 @@
+# ══════════════════════════════════════════
+# SERVIX - Ultimate .gitignore
+# ══════════════════════════════════════════
+
+# ──────────────── Dependencies ────────────────
+node_modules/
+.pnpm-store/
+.pnpm-debug.log
+.yarn/
+.npm/
+bower_components/
+
+# ──────────────── Build & Output ────────────────
+.next/
+out/
+dist/
+build/
+.turbo/
+.vercel/
+.netlify/
+tsconfig.tsbuildinfo
+next-env.d.ts
+*.tsbuildinfo
+
+# ──────────────── Environment Variables ────────────────
+.env
+.env.*
+!.env.example
+
+# ──────────────── Database ────────────────
+postgres_data/
+redis_data/
+mongo_data/
+*.sql.bak
+*.sqlite
+*.sqlite3
+
+# ──────────────── Docker ────────────────
+docker-compose.override.yml
+*.pid
+
+# ──────────────── IDE & Editors ────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# ──────────────── OS Files ────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ──────────────── Testing & Coverage ────────────────
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+junit.xml
+*.lcov
+
+# ──────────────── Logs ────────────────
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ──────────────── Secrets & Keys ────────────────
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+*.jks
+service-account*.json
+
+# ──────────────── Uploads & Media (local) ────────────────
+uploads/
+tmp/
+temp/
+*.tmp
+
+# ──────────────── Cache ────────────────
+.cache/
+.eslintcache
+.stylelintcache
+*.cache
+
+# ──────────────── Sentry ────────────────
+.sentryclirc
+
+# ──────────────── Misc ────────────────
+*.bak
+*.backup
+*.orig
+*.patch
+.history/

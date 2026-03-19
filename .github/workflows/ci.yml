@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate Prisma Clients
+        run: pnpm --filter @servix/api db:generate
+      - name: Type Check API
+        run: pnpm --filter @servix/api type-check
+      - name: Type Check Dashboard
+        run: pnpm --filter @servix/dashboard type-check
+      - name: Type Check Booking
+        run: pnpm --filter @servix/booking type-check
+      - name: Type Check Admin
+        run: pnpm --filter @servix/admin type-check
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate Prisma Clients
+        run: pnpm --filter @servix/api db:generate
+      - name: Run Unit Tests
+        run: pnpm --filter @servix/api test -- --coverage --passWithNoTests
+      - name: Upload Coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: apps/api/coverage
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        app: [api, dashboard, booking, admin]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate Prisma (API only)
+        if: matrix.app == 'api'
+        run: pnpm --filter @servix/api db:generate
+      - name: Build ${{ matrix.app }}
+        run: pnpm --filter @servix/${{ matrix.app }} build

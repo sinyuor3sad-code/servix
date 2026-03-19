@@ -1,0 +1,40 @@
+{
+  "common": {
+    "appName": "SERVIX",
+    "loading": "جاري التحميل...",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "add": "إضافة",
+    "search": "بحث",
+    "filter": "تصفية",
+    "export": "تصدير",
+    "back": "رجوع",
+    "next": "التالي",
+    "previous": "السابق",
+    "confirm": "تأكيد",
+    "yes": "نعم",
+    "no": "لا",
+    "noData": "لا توجد بيانات",
+    "error": "حدث خطأ",
+    "success": "تمت العملية بنجاح"
+  },
+  "auth": {
+    "login": "تسجيل الدخول",
+    "register": "إنشاء حساب",
+    "logout": "تسجيل الخروج",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "phone": "رقم الجوال",
+    "forgotPassword": "نسيت كلمة المرور؟",
+    "otp": "رمز التحقق"
+  },
+  "dashboard": {
+    "title": "لوحة التحكم",
+    "todayAppointments": "مواعيد اليوم",
+    "totalRevenue": "إجمالي الإيرادات",
+    "totalClients": "عدد العملاء",
+    "totalEmployees": "عدد الموظفات"
+  }
+}

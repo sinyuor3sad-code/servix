@@ -1,0 +1,21 @@
+packages:
+  # ══════════════ Applications ══════════════
+  - "apps/api"
+  - "apps/dashboard"
+  - "apps/booking"
+  - "apps/landing"
+  - "apps/admin"
+
+  # ══════════════ Shared Packages ══════════════
+  - "packages/database"
+  - "packages/types"
+  - "packages/utils"
+  - "packages/validations"
+  - "packages/constants"
+  - "packages/email-templates"
+  - "packages/ui"
+  - "packages/eslint-config"
+  - "packages/tsconfig"
+
+  # ══════════════ Tooling ══════════════
+  - "tooling/*"
