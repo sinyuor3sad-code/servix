@@ -24,14 +24,14 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'الرئيسية', href: '/admin/dashboard', icon: LayoutDashboard },
-  { label: 'الصالونات', href: '/admin/tenants', icon: Building2 },
-  { label: 'الاشتراكات', href: '/admin/subscriptions', icon: CreditCard },
-  { label: 'الفواتير', href: '/admin/invoices', icon: FileText },
-  { label: 'الباقات', href: '/admin/plans', icon: Package },
-  { label: 'الميزات', href: '/admin/features', icon: Sparkles },
-  { label: 'سجل العمليات', href: '/admin/audit-logs', icon: ScrollText },
-  { label: 'الإعدادات', href: '/admin/settings', icon: Settings },
+  { label: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'الصالونات', href: '/tenants', icon: Building2 },
+  { label: 'الاشتراكات', href: '/subscriptions', icon: CreditCard },
+  { label: 'الفواتير', href: '/invoices', icon: FileText },
+  { label: 'الباقات', href: '/plans', icon: Package },
+  { label: 'الميزات', href: '/features', icon: Sparkles },
+  { label: 'سجل العمليات', href: '/audit-logs', icon: ScrollText },
+  { label: 'الإعدادات', href: '/settings', icon: Settings },
 ];
 
 interface SidebarProps {
@@ -40,7 +40,7 @@ interface SidebarProps {
 }
 
 function isActiveRoute(pathname: string, href: string): boolean {
-  if (href === '/admin/dashboard') return pathname === '/admin/dashboard';
+  if (href === '/dashboard') return pathname === '/dashboard';
   return pathname.startsWith(href);
 }
 
@@ -61,7 +61,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
   const sidebarContent = (
     <div className="flex h-full flex-col">
       <div className="flex h-[var(--header-height)] items-center justify-between border-b border-[var(--border)] px-4">
-        <Link href="/admin/dashboard" className="flex items-center gap-2.5">
+        <Link href="/dashboard" className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-primary)] text-white font-bold text-lg">
             S
           </div>

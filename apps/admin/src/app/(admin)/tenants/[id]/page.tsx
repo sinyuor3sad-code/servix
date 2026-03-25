@@ -83,7 +83,7 @@ export default function TenantDetailPage(): ReactElement {
         title={tenant.nameAr}
         description={tenant.email}
         actions={
-          <Button variant="outline" onClick={() => router.push('/admin/tenants')}>
+          <Button variant="outline" onClick={() => router.push('/tenants')}>
             <ArrowRight className="h-4 w-4" />
             العودة للقائمة
           </Button>

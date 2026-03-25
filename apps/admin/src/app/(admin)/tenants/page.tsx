@@ -75,7 +75,7 @@ export default function TenantsPage(): ReactElement {
       key: 'actions',
       header: 'الإجراءات',
       render: (row) => (
-        <Link href={`/admin/tenants/${row.id}`}>
+        <Link href={`/tenants/${row.id}`}>
           <Button variant="ghost" size="sm">
             <Eye className="h-4 w-4" />
             عرض

@@ -28,7 +28,7 @@ export default function AdminLoginPage(): ReactElement {
       const result = await adminService.login(email, password);
       login(result.user, result.accessToken, result.refreshToken);
       toast.success('تم تسجيل الدخول بنجاح');
-      router.push('/admin/dashboard');
+      router.push('/dashboard');
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(error.message);

@@ -15,7 +15,7 @@ export function Header({ onMenuToggle }: HeaderProps): React.ReactElement {
 
   const handleLogout = useCallback((): void => {
     logout();
-    router.push('/admin/login');
+    router.push('/login');
   }, [logout, router]);
 
   return (
