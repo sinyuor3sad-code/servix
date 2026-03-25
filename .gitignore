@@ -89,7 +89,7 @@ lerna-debug.log*
 service-account*.json
 
 # ──────────────── Uploads & Media (local) ────────────────
-uploads/
+/uploads/
 tmp/
 temp/
 *.tmp
