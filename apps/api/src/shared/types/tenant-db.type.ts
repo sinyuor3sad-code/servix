@@ -1,3 +1,3 @@
-import { PrismaClient } from '../../../node_modules/.prisma/tenant';
+import { PrismaClient } from '../../../generated/tenant';
 
 export type TenantPrismaClient = PrismaClient;

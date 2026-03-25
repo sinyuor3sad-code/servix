@@ -1,8 +1,13 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import { Phone, Mail, CalendarDays, CreditCard, Star, Users } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { motion } from 'motion/react';
+import {
+  Phone, Mail, CalendarDays, CreditCard, Star, Users,
+  Brain, ShieldAlert, TrendingUp, Target, RefreshCw, Crown,
+} from 'lucide-react';
 import {
   PageHeader,
   Button,
@@ -16,7 +21,18 @@ import {
 } from '@/components/ui';
 import { dashboardService } from '@/services/dashboard.service';
 import { useAuth } from '@/hooks/useAuth';
-import type { AppointmentStatus } from '@/types';
+import type { AppointmentStatus, ChurnRisk } from '@/types';
+
+const churnConfig: Record<ChurnRisk, { label: string; color: string; bg: string }> = {
+  low: { label: 'منخفض', color: 'text-emerald-600', bg: 'bg-emerald-100' },
+  medium: { label: 'متوسط', color: 'text-amber-600', bg: 'bg-amber-100' },
+  high: { label: 'مرتفع', color: 'text-orange-600', bg: 'bg-orange-100' },
+  critical: { label: 'حرج', color: 'text-red-600', bg: 'bg-red-100' },
+};
+
+function formatCurrency(value: number): string {
+  return `${value.toLocaleString('ar-SA')} ر.س`;
+}
 
 const STATUS_LABELS: Record<AppointmentStatus, string> = {
   pending: 'بانتظار التأكيد',
@@ -31,6 +47,7 @@ export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { accessToken } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: client, isLoading } = useQuery({
     queryKey: ['client', id],
@@ -43,6 +60,21 @@ export default function ClientDetailPage() {
     queryFn: () =>
       dashboardService.getAppointments({ limit: 10, search: '' }, accessToken!),
     enabled: !!accessToken && !!id,
+  });
+
+  const { data: dna } = useQuery({
+    queryKey: ['client-dna', id],
+    queryFn: () => dashboardService.getClientDna(id, accessToken!),
+    enabled: !!accessToken && !!id,
+  });
+
+  const computeDnaMutation = useMutation({
+    mutationFn: () => dashboardService.computeClientDna(id, accessToken!),
+    onSuccess: () => {
+      toast.success('تم تحديث ملف العميل');
+      queryClient.invalidateQueries({ queryKey: ['client-dna', id] });
+    },
+    onError: () => toast.error('فشل تحديث الملف'),
   });
 
   if (isLoading) {
@@ -152,46 +184,125 @@ export default function ClientDetailPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>سجل الزيارات</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {appointmentsData && appointmentsData.items.length > 0 ? (
-              <div className="divide-y divide-[var(--border)]">
-                {appointmentsData.items.map((appt) => (
-                  <div
-                    key={appt.id}
-                    className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+        <div className="lg:col-span-2 space-y-6">
+          {/* Client DNA Section */}
+          {dna && (
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+              <Card className="border-violet-200 bg-gradient-to-r from-violet-50/50 to-fuchsia-50/50">
+                <CardHeader className="flex-row items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Brain className="h-5 w-5 text-[var(--brand-primary)]" />
+                    <CardTitle>الملف الذكي (DNA)</CardTitle>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => computeDnaMutation.mutate()}
+                    disabled={computeDnaMutation.isPending}
                   >
-                    <div>
-                      <p className="text-sm font-medium text-[var(--foreground)]">
-                        {new Intl.DateTimeFormat('ar-SA', { dateStyle: 'medium' }).format(
-                          new Date(appt.date),
-                        )}
+                    <RefreshCw className={`h-3.5 w-3.5 me-1 ${computeDnaMutation.isPending ? 'animate-spin' : ''}`} />
+                    تحديث
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-4">
+                    {/* Churn Risk */}
+                    <div className="rounded-xl bg-white p-3 text-center">
+                      <div className={`mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full ${churnConfig[dna.churnRisk].bg}`}>
+                        <ShieldAlert className={`h-5 w-5 ${churnConfig[dna.churnRisk].color}`} />
+                      </div>
+                      <p className={`text-sm font-bold ${churnConfig[dna.churnRisk].color}`}>
+                        {churnConfig[dna.churnRisk].label}
                       </p>
-                      <p className="text-xs text-[var(--muted-foreground)]">
-                        {appt.startTime} · {appt.appointmentServices?.map((s) => s.service?.nameAr).filter(Boolean).join('، ') || '—'}
+                      <p className="text-[10px] text-[var(--muted-foreground)]">خطر الفقدان</p>
+                    </div>
+
+                    {/* VIP Score */}
+                    <div className="rounded-xl bg-white p-3 text-center">
+                      <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
+                        <Crown className={`h-5 w-5 ${dna.isVip ? 'text-amber-600' : 'text-gray-400'}`} />
+                      </div>
+                      <p className="text-sm font-bold text-[var(--foreground)]">{dna.vipScore.toFixed(0)}</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)]">
+                        {dna.isVip ? 'عميل VIP ⭐' : 'درجة VIP'}
                       </p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-[var(--foreground)]">
-                        {appt.totalPrice} ر.س
-                      </span>
-                      <Badge variant="outline">
-                        {STATUS_LABELS[appt.status]}
-                      </Badge>
+
+                    {/* Predicted CLV */}
+                    <div className="rounded-xl bg-white p-3 text-center">
+                      <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+                        <TrendingUp className="h-5 w-5 text-emerald-600" />
+                      </div>
+                      <p className="text-sm font-bold text-emerald-600">{formatCurrency(dna.predictedClv)}</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)]">CLV المتوقع</p>
+                    </div>
+
+                    {/* Avg Ticket */}
+                    <div className="rounded-xl bg-white p-3 text-center">
+                      <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
+                        <Target className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <p className="text-sm font-bold text-blue-600">{formatCurrency(dna.avgTicketValue)}</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)]">متوسط الفاتورة</p>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-[var(--muted-foreground)] text-center py-8">
-                لا توجد زيارات سابقة
-              </p>
-            )}
-          </CardContent>
-        </Card>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-lg bg-white p-2.5">
+                      <span className="text-[var(--muted-foreground)]">متوسط أيام بين الزيارات: </span>
+                      <span className="font-semibold">{dna.avgDaysBetweenVisits.toFixed(0)} يوم</span>
+                    </div>
+                    <div className="rounded-lg bg-white p-2.5">
+                      <span className="text-[var(--muted-foreground)]">آخر زيارة منذ: </span>
+                      <span className="font-semibold">{dna.daysSinceLastVisit} يوم</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>سجل الزيارات</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {appointmentsData && appointmentsData.items.length > 0 ? (
+                <div className="divide-y divide-[var(--border)]">
+                  {appointmentsData.items.map((appt) => (
+                    <div
+                      key={appt.id}
+                      className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-[var(--foreground)]">
+                          {new Intl.DateTimeFormat('ar-SA', { dateStyle: 'medium' }).format(
+                            new Date(appt.date),
+                          )}
+                        </p>
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          {appt.startTime} · {appt.appointmentServices?.map((s) => s.service?.nameAr).filter(Boolean).join('، ') || '—'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-[var(--foreground)]">
+                          {appt.totalPrice} ر.س
+                        </span>
+                        <Badge variant="outline">
+                          {STATUS_LABELS[appt.status]}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-[var(--muted-foreground)] text-center py-8">
+                  لا توجد زيارات سابقة
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

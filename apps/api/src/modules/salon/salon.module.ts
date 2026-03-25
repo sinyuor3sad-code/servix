@@ -13,6 +13,14 @@ import { SettingsModule } from './settings/settings.module';
 import { ReportsModule } from './reports/reports.module';
 import { BookingModule } from './booking/booking.module';
 import { AccountModule } from './account/account.module';
+import { CommitmentsModule } from './commitments/commitments.module';
+import { ShiftsModule } from './shifts/shifts.module';
+import { HealingModule } from './healing/healing.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { ClientDnaModule } from './client-dna/client-dna.module';
+import { ZatcaModule } from './zatca/zatca.module';
+import { MarketingModule } from './marketing/marketing.module';
+import { DynamicPricingModule } from './dynamic-pricing/dynamic-pricing.module';
 
 @Module({
   imports: [
@@ -30,6 +38,14 @@ import { AccountModule } from './account/account.module';
     ReportsModule,
     BookingModule,
     AccountModule,
+    CommitmentsModule,
+    ShiftsModule,
+    HealingModule,
+    InventoryModule,
+    ClientDnaModule,
+    ZatcaModule,
+    MarketingModule,
+    DynamicPricingModule,
   ],
 })
 export class SalonModule {}

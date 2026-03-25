@@ -270,3 +270,181 @@ export interface ChangePasswordData {
   currentPassword: string;
   newPassword: string;
 }
+
+// ─────────────────── Inventory ───────────────────
+
+export interface ProductCategory {
+  id: string;
+  nameAr: string;
+  nameEn: string | null;
+  sortOrder: number;
+}
+
+export interface Product {
+  id: string;
+  categoryId: string;
+  nameAr: string;
+  nameEn: string | null;
+  sku: string | null;
+  unit: string;
+  costPrice: number;
+  sellPrice: number;
+  currentStock: number;
+  minStock: number;
+  isActive: boolean;
+  createdAt: string;
+  category?: ProductCategory;
+}
+
+export interface InventoryMovement {
+  id: string;
+  productId: string;
+  type: 'purchase' | 'consumption' | 'adjustment' | 'waste' | 'return_to_supplier';
+  quantity: number;
+  referenceType: string | null;
+  referenceId: string | null;
+  note: string | null;
+  createdBy: string;
+  createdAt: string;
+  product?: Product;
+}
+
+export interface ServiceProduct {
+  id: string;
+  serviceId: string;
+  productId: string;
+  quantityPerUse: number;
+  service?: Service;
+  product?: Product;
+}
+
+// ─────────────────── Shifts ───────────────────
+
+export type ShiftStatus = 'scheduled' | 'active' | 'late' | 'completed' | 'absent';
+
+export interface Shift {
+  id: string;
+  employeeId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  status: ShiftStatus;
+  maxLoad: number;
+  currentLoad: number;
+  checkedInAt: string | null;
+  checkedOutAt: string | null;
+  lateMinutes: number;
+  createdAt: string;
+  employee?: Employee;
+}
+
+// ─────────────────── Client DNA ───────────────────
+
+export type ChurnRisk = 'low' | 'medium' | 'high' | 'critical';
+
+export interface ClientDna {
+  id: string;
+  clientId: string;
+  predictedClv: number;
+  churnRisk: ChurnRisk;
+  churnProbability: number;
+  priceSensitivity: 'low' | 'moderate' | 'high';
+  avgDaysBetweenVisits: number;
+  daysSinceLastVisit: number;
+  expectedNextVisitAt: string | null;
+  avgTicketValue: number;
+  maxTicketValue: number;
+  preferredPayMethod: string | null;
+  topServiceIds: string[];
+  topEmployeeIds: string[];
+  vipScore: number;
+  isVip: boolean;
+  lastComputedAt: string;
+}
+
+// ─────────────────── Dynamic Pricing ───────────────────
+
+export interface PricingRule {
+  id: string;
+  serviceId: string | null;
+  ruleType: string;
+  nameAr: string;
+  multiplier: number;
+  fixedAdjustment: number;
+  conditions: Record<string, unknown>;
+  priority: number;
+  isActive: boolean;
+  validFrom: string | null;
+  validUntil: string | null;
+  createdAt: string;
+  service?: { id: string; nameAr: string };
+}
+
+export interface CalculatedPrice {
+  basePrice: number;
+  effectivePrice: number;
+  appliedRuleIds: string[];
+}
+
+// ─────────────────── Marketing ───────────────────
+
+export type CampaignStatus = 'draft' | 'active' | 'completed' | 'paused';
+
+export interface Campaign {
+  id: string;
+  nameAr: string;
+  trigger: string;
+  messageAr: string;
+  channel: string;
+  status: CampaignStatus;
+  targetFilter: Record<string, unknown> | null;
+  couponId: string | null;
+  requiresSlotAvailability: boolean;
+  scheduledAt: string | null;
+  executedAt: string | null;
+  sentCount: number;
+  createdAt: string;
+}
+
+export interface CalendarGap {
+  date: string;
+  startTime: string;
+  endTime: string;
+  employeeId?: string;
+}
+
+// ─────────────────── ZATCA ───────────────────
+
+export interface ZatcaCertificate {
+  id: string;
+  csrContent: string;
+  isProduction: boolean;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ZatcaInvoice {
+  id: string;
+  invoiceId: string;
+  certificateId: string;
+  invoiceType: 'simplified' | 'standard';
+  submissionStatus: 'pending' | 'reported' | 'cleared' | 'rejected';
+  qrCode: string;
+  xmlHash: string;
+  invoiceCounterValue: number;
+  createdAt: string;
+}
+
+// ─────────────────── Domain Events ───────────────────
+
+export interface DomainEvent {
+  id: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  payload: Record<string, unknown>;
+  emittedBy: string;
+  processedAt: string | null;
+  failedAt: string | null;
+  createdAt: string;
+}

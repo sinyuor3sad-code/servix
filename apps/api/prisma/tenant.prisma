@@ -5,7 +5,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/tenant"
+  output   = "../generated/tenant"
 }
 
 datasource db {
@@ -13,7 +13,7 @@ datasource db {
   url      = env("TENANT_DATABASE_URL")
 }
 
-// ─────────────────── Enums ───────────────────
+// ─────────────────── Enums (Original) ───────────────────
 
 enum EmployeeRole {
   stylist
@@ -38,6 +38,8 @@ enum ClientSource {
   online
   phone
   referral
+  whatsapp
+  campaign
 }
 
 enum AppointmentStatus {
@@ -54,6 +56,7 @@ enum AppointmentSource {
   phone
   walk_in
   dashboard
+  whatsapp
 }
 
 enum AppointmentServiceStatus {
@@ -75,6 +78,8 @@ enum PaymentMethod {
   card
   bank_transfer
   wallet
+  stc_pay
+  apple_pay
 }
 
 enum PaymentStatus {
@@ -129,8 +134,13 @@ enum NotificationType {
   booking_new
   booking_confirmed
   booking_cancelled
+  booking_rescheduled
   payment
   reminder
+  healing
+  marketing
+  stock_alert
+  zatca
   general
 }
 
@@ -140,6 +150,115 @@ enum NotificationChannel {
   sms
   whatsapp
   email
+}
+
+// ─────────────────── Enums (Commitment Engine) ───────────────────
+
+enum CommitmentType {
+  appointment
+  shift
+  inventory_hold
+}
+
+enum CommitmentState {
+  pledged
+  confirmed
+  in_progress
+  fulfilled
+  broken
+  healed
+  cancelled
+}
+
+enum HealingAction {
+  reassigned
+  time_shifted
+  client_compensated
+  escalated
+}
+
+enum ShiftStatus {
+  scheduled
+  active
+  completed
+  absent
+  late
+}
+
+// ─────────────────── Enums (Inventory) ───────────────────
+
+enum InventoryMovementType {
+  purchase
+  consumption
+  adjustment
+  waste
+  return_to_supplier
+}
+
+// ─────────────────── Enums (Client DNA) ───────────────────
+
+enum ChurnRisk {
+  low
+  medium
+  high
+  critical
+}
+
+enum PriceSensitivity {
+  low
+  moderate
+  high
+}
+
+// ─────────────────── Enums (ZATCA) ───────────────────
+
+enum ZatcaInvoiceType {
+  standard
+  simplified
+  debit_note
+  credit_note
+}
+
+enum ZatcaSubmissionStatus {
+  pending
+  submitted
+  cleared
+  reported
+  rejected
+  failed
+}
+
+// ─────────────────── Enums (Dynamic Pricing) ───────────────────
+
+enum PricingRuleType {
+  peak_hour
+  off_peak
+  weekend
+  prayer_time
+  demand_based
+  loyalty_tier
+  new_client
+}
+
+// ─────────────────── Enums (Marketing) ───────────────────
+
+enum CampaignStatus {
+  draft
+  scheduled
+  active
+  paused
+  completed
+  cancelled
+}
+
+enum CampaignTrigger {
+  manual
+  gap_detected
+  churn_risk
+  birthday
+  inactive_client
+  post_visit
+  review_request
 }
 
 // ─────────────────── Salon Info ───────────────────
@@ -204,6 +323,8 @@ model Service {
   employeeServices    EmployeeService[]
   appointmentServices AppointmentService[]
   invoiceItems        InvoiceItem[]
+  serviceProducts     ServiceProduct[]
+  pricingRules        PricingRule[]
 
   @@index([categoryId])
   @@index([isActive])
@@ -213,18 +334,19 @@ model Service {
 // ─────────────────── Employees ───────────────────
 
 model Employee {
-  id              String         @id @default(uuid()) @db.Uuid
-  userId          String?        @map("user_id") @db.Uuid
-  fullName        String         @map("full_name") @db.VarChar(100)
-  phone           String?        @db.VarChar(15)
-  email           String?        @db.VarChar(100)
-  role            EmployeeRole   @default(stylist)
-  commissionType  CommissionType @default(none) @map("commission_type")
-  commissionValue Decimal        @default(0) @map("commission_value") @db.Decimal(10, 2)
-  isActive        Boolean        @default(true) @map("is_active")
-  avatarUrl       String?        @map("avatar_url") @db.VarChar(500)
-  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+  id                    String         @id @default(uuid()) @db.Uuid
+  userId                String?        @map("user_id") @db.Uuid
+  fullName              String         @map("full_name") @db.VarChar(100)
+  phone                 String?        @db.VarChar(15)
+  email                 String?        @db.VarChar(100)
+  role                  EmployeeRole   @default(stylist)
+  commissionType        CommissionType @default(none) @map("commission_type")
+  commissionValue       Decimal        @default(0) @map("commission_value") @db.Decimal(10, 2)
+  maxDailyAppointments  Int            @default(12) @map("max_daily_appointments")
+  isActive              Boolean        @default(true) @map("is_active")
+  avatarUrl             String?        @map("avatar_url") @db.VarChar(500)
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt             DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
 
   employeeServices    EmployeeService[]
   employeeSchedules   EmployeeSchedule[]
@@ -233,6 +355,8 @@ model Employee {
   appointmentServices AppointmentService[]
   invoiceItems        InvoiceItem[]
   attendance          Attendance[]
+  shifts              Shift[]
+  commitments         Commitment[]
 
   @@index([isActive])
   @@map("employees")
@@ -243,6 +367,7 @@ model Employee {
 model EmployeeService {
   employeeId String @map("employee_id") @db.Uuid
   serviceId  String @map("service_id") @db.Uuid
+  skillLevel Int    @default(5) @map("skill_level") @db.SmallInt
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
@@ -309,6 +434,8 @@ model Client {
   invoices            Invoice[]
   loyaltyPoints       LoyaltyPoints?
   loyaltyTransactions LoyaltyTransaction[]
+  dna                 ClientDna?
+  commitments         Commitment[]
 
   @@index([phone])
   @@index([fullName])
@@ -319,21 +446,30 @@ model Client {
 // ─────────────────── Appointments ───────────────────
 
 model Appointment {
-  id                 String            @id @default(uuid()) @db.Uuid
-  clientId           String            @map("client_id") @db.Uuid
-  employeeId         String?           @map("employee_id") @db.Uuid
-  date               DateTime          @db.Date
-  startTime          String            @map("start_time") @db.VarChar(5)
-  endTime            String            @map("end_time") @db.VarChar(5)
-  status             AppointmentStatus @default(pending)
-  source             AppointmentSource @default(dashboard)
-  notes              String?           @db.Text
-  totalPrice         Decimal           @default(0) @map("total_price") @db.Decimal(10, 2)
-  totalDuration      Int               @default(0) @map("total_duration")
-  cancelledAt        DateTime?         @map("cancelled_at") @db.Timestamptz()
-  cancellationReason String?           @map("cancellation_reason") @db.Text
-  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
+  id                   String            @id @default(uuid()) @db.Uuid
+  clientId             String            @map("client_id") @db.Uuid
+  employeeId           String?           @map("employee_id") @db.Uuid
+  date                 DateTime          @db.Date
+  startTime            String            @map("start_time") @db.VarChar(5)
+  endTime              String            @map("end_time") @db.VarChar(5)
+  status               AppointmentStatus @default(pending)
+  source               AppointmentSource @default(dashboard)
+  notes                String?           @db.Text
+  totalPrice           Decimal           @default(0) @map("total_price") @db.Decimal(10, 2)
+  totalDuration        Int               @default(0) @map("total_duration")
+  // Healing / Auto-Rescheduling
+  originalEmployeeId   String?           @map("original_employee_id") @db.Uuid
+  reassignedAt         DateTime?         @map("reassigned_at") @db.Timestamptz()
+  reassignmentReason   String?           @map("reassignment_reason") @db.VarChar(300)
+  inventoryDeducted    Boolean           @default(false) @map("inventory_deducted")
+  // Dynamic Pricing
+  originalPrice        Decimal?          @map("original_price") @db.Decimal(10, 2)
+  pricingRuleApplied   String?           @map("pricing_rule_applied") @db.VarChar(100)
+  // Cancellation
+  cancelledAt          DateTime?         @map("cancelled_at") @db.Timestamptz()
+  cancellationReason   String?           @map("cancellation_reason") @db.Text
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
 
   client              Client               @relation(fields: [clientId], references: [id])
   employee            Employee?             @relation(fields: [employeeId], references: [id])
@@ -393,6 +529,7 @@ model Invoice {
   payments            Payment[]
   discounts           Discount[]
   loyaltyTransactions LoyaltyTransaction[]
+  zatcaInvoice        ZatcaInvoice?
 
   @@index([clientId])
   @@index([status])
@@ -604,4 +741,330 @@ model Setting {
   updatedBy String?  @map("updated_by") @db.Uuid
 
   @@map("settings")
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMMITMENT ENGINE — The Autonomous Graph
+// ═══════════════════════════════════════════════════════════
+
+// ─────────────────── Concrete Shifts ───────────────────
+
+model Shift {
+  id           String      @id @default(uuid()) @db.Uuid
+  employeeId   String      @map("employee_id") @db.Uuid
+  date         DateTime    @db.Date
+  startTime    String      @map("start_time") @db.VarChar(5)
+  endTime      String      @map("end_time") @db.VarChar(5)
+  status       ShiftStatus @default(scheduled)
+  maxLoad      Int         @default(8) @map("max_load")
+  currentLoad  Int         @default(0) @map("current_load")
+  checkedInAt  DateTime?   @map("checked_in_at") @db.Timestamptz()
+  checkedOutAt DateTime?   @map("checked_out_at") @db.Timestamptz()
+  lateMinutes  Int         @default(0) @map("late_minutes")
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date, status])
+  @@map("shifts")
+}
+
+// ─────────────────── Commitment Ledger ───────────────────
+
+model Commitment {
+  id              String          @id @default(uuid()) @db.Uuid
+  type            CommitmentType
+  state           CommitmentState @default(pledged)
+  referenceId     String          @map("reference_id") @db.Uuid
+  ownerEmployeeId String?         @map("owner_employee_id") @db.Uuid
+  clientId        String?         @map("client_id") @db.Uuid
+  startsAt        DateTime        @map("starts_at") @db.Timestamptz()
+  endsAt          DateTime        @map("ends_at") @db.Timestamptz()
+  brokenAt        DateTime?       @map("broken_at") @db.Timestamptz()
+  healedAt        DateTime?       @map("healed_at") @db.Timestamptz()
+  healingAction   HealingAction?  @map("healing_action")
+  healingNote     String?         @map("healing_note") @db.Text
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  dependsOn  CommitmentDependency[] @relation("dependent")
+  dependedBy CommitmentDependency[] @relation("dependency")
+  owner      Employee?              @relation(fields: [ownerEmployeeId], references: [id])
+  client     Client?                @relation(fields: [clientId], references: [id])
+
+  @@index([type, state])
+  @@index([ownerEmployeeId, startsAt])
+  @@index([clientId])
+  @@index([referenceId])
+  @@index([state, startsAt])
+  @@map("commitments")
+}
+
+// ─────────────────── Commitment Dependencies ───────────────────
+
+model CommitmentDependency {
+  id           String   @id @default(uuid()) @db.Uuid
+  commitmentId String   @map("commitment_id") @db.Uuid
+  dependsOnId  String   @map("depends_on_id") @db.Uuid
+  isCritical   Boolean  @default(true) @map("is_critical")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  commitment Commitment @relation("dependent", fields: [commitmentId], references: [id], onDelete: Cascade)
+  dependency Commitment @relation("dependency", fields: [dependsOnId], references: [id], onDelete: Cascade)
+
+  @@unique([commitmentId, dependsOnId])
+  @@map("commitment_dependencies")
+}
+
+// ═══════════════════════════════════════════════════════════
+// INVENTORY SYSTEM
+// ═══════════════════════════════════════════════════════════
+
+model ProductCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  nameAr    String   @map("name_ar") @db.VarChar(100)
+  nameEn    String?  @map("name_en") @db.VarChar(100)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  products Product[]
+
+  @@map("product_categories")
+}
+
+model Product {
+  id           String   @id @default(uuid()) @db.Uuid
+  categoryId   String   @map("category_id") @db.Uuid
+  nameAr       String   @map("name_ar") @db.VarChar(100)
+  nameEn       String?  @map("name_en") @db.VarChar(100)
+  sku          String?  @unique @db.VarChar(50)
+  unit         String   @default("قطعة") @db.VarChar(20)
+  costPrice    Decimal  @map("cost_price") @db.Decimal(10, 2)
+  sellPrice    Decimal  @default(0) @map("sell_price") @db.Decimal(10, 2)
+  currentStock Decimal  @default(0) @map("current_stock") @db.Decimal(10, 2)
+  minStock     Decimal  @default(0) @map("min_stock") @db.Decimal(10, 2)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  category           ProductCategory    @relation(fields: [categoryId], references: [id])
+  serviceProducts    ServiceProduct[]
+  inventoryMovements InventoryMovement[]
+
+  @@index([categoryId])
+  @@index([currentStock])
+  @@map("products")
+}
+
+model ServiceProduct {
+  id             String  @id @default(uuid()) @db.Uuid
+  serviceId      String  @map("service_id") @db.Uuid
+  productId      String  @map("product_id") @db.Uuid
+  quantityPerUse Decimal @map("quantity_per_use") @db.Decimal(10, 2)
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, productId])
+  @@map("service_products")
+}
+
+model InventoryMovement {
+  id            String                @id @default(uuid()) @db.Uuid
+  productId     String                @map("product_id") @db.Uuid
+  type          InventoryMovementType
+  quantity      Decimal               @db.Decimal(10, 2)
+  referenceType String?               @map("reference_type") @db.VarChar(50)
+  referenceId   String?               @map("reference_id") @db.Uuid
+  note          String?               @db.VarChar(300)
+  createdBy     String                @map("created_by") @db.Uuid
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz()
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("inventory_movements")
+}
+
+// ═══════════════════════════════════════════════════════════
+// CLIENT DNA — Behavioral Intelligence
+// ═══════════════════════════════════════════════════════════
+
+model ClientDna {
+  id                   String            @id @default(uuid()) @db.Uuid
+  clientId             String            @unique @map("client_id") @db.Uuid
+  // Behavioral metrics (recomputed by background job)
+  predictedClv         Decimal?          @map("predicted_clv") @db.Decimal(10, 2)
+  churnRisk            ChurnRisk         @default(low) @map("churn_risk")
+  churnProbability     Decimal?          @map("churn_probability") @db.Decimal(5, 4)
+  priceSensitivity     PriceSensitivity  @default(moderate) @map("price_sensitivity")
+  avgDaysBetweenVisits Decimal?          @map("avg_days_between_visits") @db.Decimal(6, 1)
+  daysSinceLastVisit   Int?              @map("days_since_last_visit")
+  expectedNextVisitAt  DateTime?         @map("expected_next_visit_at") @db.Timestamptz()
+  // Contact preferences (learned)
+  optimalContactHour   Int?              @map("optimal_contact_hour") @db.SmallInt
+  optimalContactDay    Int?              @map("optimal_contact_day") @db.SmallInt
+  prefersWhatsApp      Boolean           @default(true) @map("prefers_whatsapp")
+  // Spend pattern
+  avgTicketValue       Decimal?          @map("avg_ticket_value") @db.Decimal(10, 2)
+  maxTicketValue       Decimal?          @map("max_ticket_value") @db.Decimal(10, 2)
+  preferredPayMethod   PaymentMethod?    @map("preferred_pay_method")
+  // Service affinity
+  topServiceIds        Json?             @map("top_service_ids") @db.JsonB
+  topEmployeeIds       Json?             @map("top_employee_ids") @db.JsonB
+  neverBookedCategories Json?            @map("never_booked_categories") @db.JsonB
+  // VIP scoring
+  vipScore             Int               @default(0) @map("vip_score") @db.SmallInt
+  isVip                Boolean           @default(false) @map("is_vip")
+  // Lifecycle
+  lastComputedAt       DateTime?         @map("last_computed_at") @db.Timestamptz()
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("client_dna")
+}
+
+// ═══════════════════════════════════════════════════════════
+// ZATCA FATOORA — Phase 2 E-Invoicing
+// ═══════════════════════════════════════════════════════════
+
+model ZatcaCertificate {
+  id               String   @id @default(uuid()) @db.Uuid
+  csrContent       String   @map("csr_content") @db.Text
+  privateKey        String   @map("private_key") @db.Text
+  certificateContent String? @map("certificate_content") @db.Text
+  csid             String?  @db.VarChar(500)
+  csidExpiresAt    DateTime? @map("csid_expires_at") @db.Timestamptz()
+  isProduction     Boolean  @default(false) @map("is_production")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  zatcaInvoices ZatcaInvoice[]
+
+  @@map("zatca_certificates")
+}
+
+model ZatcaInvoice {
+  id                  String               @id @default(uuid()) @db.Uuid
+  invoiceId           String               @unique @map("invoice_id") @db.Uuid
+  certificateId       String               @map("certificate_id") @db.Uuid
+  invoiceType         ZatcaInvoiceType     @map("invoice_type")
+  invoiceSubType      String               @map("invoice_sub_type") @db.VarChar(10)
+  // UBL XML
+  xmlContent          String?              @map("xml_content") @db.Text
+  xmlHash             String?              @map("xml_hash") @db.VarChar(128)
+  digitalSignature    String?              @map("digital_signature") @db.Text
+  // QR Code
+  qrCode              String?              @map("qr_code") @db.Text
+  // ZATCA API
+  submissionStatus    ZatcaSubmissionStatus @default(pending) @map("submission_status")
+  zatcaRequestId      String?              @map("zatca_request_id") @db.VarChar(200)
+  zatcaInvoiceHash    String?              @map("zatca_invoice_hash") @db.VarChar(200)
+  zatcaWarnings       Json?                @map("zatca_warnings") @db.JsonB
+  zatcaErrors         Json?                @map("zatca_errors") @db.JsonB
+  submittedAt         DateTime?            @map("submitted_at") @db.Timestamptz()
+  // Storage
+  signedXmlUrl        String?              @map("signed_xml_url") @db.VarChar(500)
+  signedPdfUrl        String?              @map("signed_pdf_url") @db.VarChar(500)
+  // Counters (ZATCA sequential)
+  invoiceCounterValue Int                  @map("invoice_counter_value")
+  previousInvoiceHash String?              @map("previous_invoice_hash") @db.VarChar(128)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz()
+
+  invoice     Invoice          @relation(fields: [invoiceId], references: [id])
+  certificate ZatcaCertificate @relation(fields: [certificateId], references: [id])
+
+  @@index([submissionStatus])
+  @@index([createdAt])
+  @@map("zatca_invoices")
+}
+
+// ═══════════════════════════════════════════════════════════
+// DYNAMIC PRICING
+// ═══════════════════════════════════════════════════════════
+
+model PricingRule {
+  id              String          @id @default(uuid()) @db.Uuid
+  serviceId       String?         @map("service_id") @db.Uuid
+  ruleType        PricingRuleType @map("rule_type")
+  nameAr          String          @map("name_ar") @db.VarChar(100)
+  multiplier      Decimal         @default(1.0) @db.Decimal(5, 3)
+  fixedAdjustment Decimal         @default(0) @map("fixed_adjustment") @db.Decimal(10, 2)
+  // Conditions (JSONB for flexibility)
+  conditions      Json            @db.JsonB
+  priority        Int             @default(0)
+  isActive        Boolean         @default(true) @map("is_active")
+  validFrom       DateTime?       @map("valid_from") @db.Timestamptz()
+  validUntil      DateTime?       @map("valid_until") @db.Timestamptz()
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([ruleType, isActive])
+  @@map("pricing_rules")
+}
+
+// ═══════════════════════════════════════════════════════════
+// MARKETING AUTOMATION
+// ═══════════════════════════════════════════════════════════
+
+model Campaign {
+  id           String          @id @default(uuid()) @db.Uuid
+  nameAr       String          @map("name_ar") @db.VarChar(200)
+  trigger      CampaignTrigger
+  status       CampaignStatus  @default(draft)
+  // Targeting
+  targetFilter Json?           @map("target_filter") @db.JsonB
+  // Content
+  messageAr    String          @map("message_ar") @db.Text
+  channel      NotificationChannel @default(whatsapp)
+  // Offer (optional)
+  couponId     String?         @map("coupon_id") @db.Uuid
+  // Capacity check
+  requiresSlotAvailability Boolean @default(true) @map("requires_slot_availability")
+  // Schedule
+  scheduledAt  DateTime?       @map("scheduled_at") @db.Timestamptz()
+  executedAt   DateTime?       @map("executed_at") @db.Timestamptz()
+  // Stats
+  sentCount    Int             @default(0) @map("sent_count")
+  openedCount  Int             @default(0) @map("opened_count")
+  bookedCount  Int             @default(0) @map("booked_count")
+  revenue      Decimal         @default(0) @db.Decimal(10, 2)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([status])
+  @@index([trigger])
+  @@map("campaigns")
+}
+
+// ═══════════════════════════════════════════════════════════
+// DOMAIN EVENTS — Event Sourcing Log
+// ═══════════════════════════════════════════════════════════
+
+model DomainEvent {
+  id            String    @id @default(uuid()) @db.Uuid
+  eventType     String    @map("event_type") @db.VarChar(100)
+  aggregateType String    @map("aggregate_type") @db.VarChar(50)
+  aggregateId   String    @map("aggregate_id") @db.Uuid
+  payload       Json      @db.JsonB
+  emittedBy     String?   @map("emitted_by") @db.VarChar(50)
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz()
+  failedAt      DateTime? @map("failed_at") @db.Timestamptz()
+  retryCount    Int       @default(0) @map("retry_count")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([eventType, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@index([processedAt])
+  @@map("domain_events")
 }

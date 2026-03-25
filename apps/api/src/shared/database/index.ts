@@ -22,4 +22,4 @@ export type {
   SubscriptionStatus,
   BillingCycle,
   PlatformInvoiceStatus,
-} from '../../../node_modules/.prisma/platform';
+} from '../../../generated/platform';

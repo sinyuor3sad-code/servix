@@ -21,6 +21,7 @@ build/
 tsconfig.tsbuildinfo
 next-env.d.ts
 *.tsbuildinfo
+generated/
 
 # ──────────────── Environment Variables ────────────────
 .env

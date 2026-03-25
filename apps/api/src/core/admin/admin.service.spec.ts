@@ -183,10 +183,11 @@ describe('AdminService', () => {
       const updated = { ...tenant, status: 'suspended' };
 
       mockPrisma.tenant.findUnique.mockResolvedValue(tenant);
-      mockPrisma.$transaction.mockResolvedValue([
-        updated,
-        { id: 'log-id' },
-      ]);
+      mockPrisma.tenant.update.mockResolvedValue(updated);
+      mockPrisma.platformAuditLog.create.mockResolvedValue({ id: 'log-id' });
+      mockPrisma.$transaction.mockImplementation((args: unknown[]) =>
+        Promise.all(args),
+      );
 
       const result = await service.updateTenantStatus(
         'tid',

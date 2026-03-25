@@ -5,7 +5,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/platform"
+  output   = "../generated/platform"
 }
 
 datasource db {
@@ -80,11 +80,14 @@ model Tenant {
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
 
-  tenantUsers     TenantUser[]
-  subscriptions   Subscription[]
-  tenantFeatures  TenantFeature[]
+  tenantUsers      TenantUser[]
+  subscriptions    Subscription[]
+  tenantFeatures   TenantFeature[]
   platformInvoices PlatformInvoice[]
-  auditLogs       PlatformAuditLog[]
+  auditLogs        PlatformAuditLog[]
+  usageLogs        TenantUsageLog[]
+  referralsMade    Referral[]       @relation("referrer")
+  referralsReceived Referral[]      @relation("referred")
 
   @@map("tenants")
 }
@@ -195,18 +198,23 @@ model RolePermission {
 // ─────────────────── Plans & Features ───────────────────
 
 model Plan {
-  id            String   @id @default(uuid()) @db.Uuid
-  name          String   @unique @db.VarChar(50)
-  nameAr        String   @map("name_ar") @db.VarChar(50)
-  priceMonthly  Decimal  @map("price_monthly") @db.Decimal(10, 2)
-  priceYearly   Decimal  @map("price_yearly") @db.Decimal(10, 2)
-  maxEmployees  Int      @map("max_employees")
-  maxClients    Int      @map("max_clients")
-  descriptionAr String?  @map("description_ar") @db.Text
-  isActive      Boolean  @default(true) @map("is_active")
-  sortOrder     Int      @default(0) @map("sort_order")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  id                    String   @id @default(uuid()) @db.Uuid
+  name                  String   @unique @db.VarChar(50)
+  nameAr                String   @map("name_ar") @db.VarChar(50)
+  priceMonthly          Decimal  @map("price_monthly") @db.Decimal(10, 2)
+  priceYearly           Decimal  @map("price_yearly") @db.Decimal(10, 2)
+  maxEmployees          Int      @map("max_employees")
+  maxClients            Int      @map("max_clients")
+  maxAppointmentsMonth  Int?     @map("max_appointments_month")
+  // Usage-based pricing (hybrid model)
+  revenueSharePercent   Decimal  @default(0) @map("revenue_share_percent") @db.Decimal(5, 2)
+  perAppointmentFee     Decimal  @default(0) @map("per_appointment_fee") @db.Decimal(10, 2)
+  includedAppointments  Int      @default(0) @map("included_appointments")
+  descriptionAr         String?  @map("description_ar") @db.Text
+  isActive              Boolean  @default(true) @map("is_active")
+  sortOrder             Int      @default(0) @map("sort_order")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   subscriptions Subscription[]
   planFeatures  PlanFeature[]
@@ -301,6 +309,48 @@ model PlatformInvoice {
   @@index([tenantId])
   @@index([status])
   @@map("platform_invoices")
+}
+
+// ─────────────────── Referrals ───────────────────
+
+model Referral {
+  id             String    @id @default(uuid()) @db.Uuid
+  referrerTenantId String  @map("referrer_tenant_id") @db.Uuid
+  referredTenantId String? @map("referred_tenant_id") @db.Uuid
+  referralCode   String    @unique @map("referral_code") @db.VarChar(20)
+  referredEmail  String?   @map("referred_email") @db.VarChar(100)
+  referredPhone  String?   @map("referred_phone") @db.VarChar(15)
+  rewardMonths   Int       @default(1) @map("reward_months")
+  isRedeemed     Boolean   @default(false) @map("is_redeemed")
+  redeemedAt     DateTime? @map("redeemed_at") @db.Timestamptz()
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  referrerTenant Tenant  @relation("referrer", fields: [referrerTenantId], references: [id])
+  referredTenant Tenant? @relation("referred", fields: [referredTenantId], references: [id])
+
+  @@index([referralCode])
+  @@index([referrerTenantId])
+  @@map("referrals")
+}
+
+// ─────────────────── Tenant Usage Tracking (for hybrid pricing) ───────────────────
+
+model TenantUsageLog {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  month            DateTime @db.Date
+  appointmentCount Int      @default(0) @map("appointment_count")
+  totalRevenue     Decimal  @default(0) @map("total_revenue") @db.Decimal(12, 2)
+  usageFeeCharged  Decimal  @default(0) @map("usage_fee_charged") @db.Decimal(10, 2)
+  revenueShareCharged Decimal @default(0) @map("revenue_share_charged") @db.Decimal(10, 2)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, month])
+  @@index([month])
+  @@map("tenant_usage_logs")
 }
 
 // ─────────────────── Platform Audit Logs (immutable) ───────────────────

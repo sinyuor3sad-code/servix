@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { TenantPrismaClient } from '../../../shared/types';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
@@ -11,6 +12,8 @@ import { ChangeStatusDto, AppointmentStatusEnum } from './dto/change-status.dto'
 import { QueryAppointmentsDto } from './dto/query-appointments.dto';
 import { AvailableSlotsDto } from './dto/available-slots.dto';
 import { CalendarQueryDto } from './dto/calendar-query.dto';
+import { CommitmentsService } from '../commitments/commitments.service';
+import { InventoryService } from '../inventory/inventory.service';
 
 interface PaginatedResult<T> {
   data: T[];
@@ -46,6 +49,12 @@ function timeToMinutes(time: string): number {
 
 @Injectable()
 export class AppointmentsService {
+  private readonly logger = new Logger(AppointmentsService.name);
+
+  constructor(
+    private readonly commitmentsService: CommitmentsService,
+    private readonly inventoryService: InventoryService,
+  ) {}
   async findAll(
     db: TenantPrismaClient,
     query: QueryAppointmentsDto,
@@ -191,6 +200,40 @@ export class AppointmentsService {
       });
     });
 
+    // --- Commitment Engine Integration ---
+    try {
+      const apptDate = new Date(dto.date);
+      const [sh, sm] = dto.startTime.split(':').map(Number);
+      const startsAt = new Date(apptDate);
+      startsAt.setHours(sh, sm, 0, 0);
+      const endsAt = new Date(startsAt.getTime() + totalDuration * 60 * 1000);
+      const empId = dto.employeeId || dto.services[0].employeeId;
+
+      const apptCommitment = await this.commitmentsService.create(
+        db, 'appointment', (appointment as Record<string, unknown>).id as string,
+        empId, dto.clientId, startsAt, endsAt,
+      );
+
+      // Link to shift commitment if one exists
+      const shiftCommitment = await db.commitment.findFirst({
+        where: {
+          type: 'shift',
+          ownerEmployeeId: empId,
+          startsAt: { lte: startsAt },
+          endsAt: { gte: endsAt },
+          state: { in: ['pledged', 'confirmed', 'in_progress'] },
+        },
+      });
+
+      if (shiftCommitment) {
+        await this.commitmentsService.linkDependency(
+          db, apptCommitment.id, shiftCommitment.id, true,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to create commitment for appointment: ${err}`);
+    }
+
     return appointment as unknown as Record<string, unknown>;
   }
 
@@ -307,6 +350,13 @@ export class AppointmentsService {
             lastVisitAt: new Date(),
           },
         });
+
+        // Auto-deduct inventory for completed appointment
+        try {
+          await this.inventoryService.autoDeductForAppointment(tx as unknown as TenantPrismaClient, id);
+        } catch (err) {
+          this.logger.warn(`Inventory auto-deduct failed for appointment ${id}: ${err}`);
+        }
       }
 
       return updated;

@@ -8,6 +8,18 @@ import type {
   ServiceCategory,
   Invoice,
   PaginatedResponse,
+  Product,
+  ProductCategory,
+  InventoryMovement,
+  ServiceProduct,
+  Shift,
+  ClientDna,
+  PricingRule,
+  CalculatedPrice,
+  Campaign,
+  CalendarGap,
+  ZatcaCertificate,
+  ZatcaInvoice,
 } from '@/types';
 
 interface ListParams {
@@ -135,4 +147,97 @@ export const dashboardService = {
 
   sendInvoice: (invoiceId: string, channel: 'whatsapp' | 'email' | 'sms', token: string) =>
     api.post(`/invoices/${invoiceId}/send`, { channel }, token),
+
+  // ─── Inventory ───
+  getProducts: (token: string) =>
+    api.get<Product[]>('/inventory/products', token),
+
+  createProduct: (data: Partial<Product>, token: string) =>
+    api.post<Product>('/inventory/products', data, token),
+
+  updateProduct: (id: string, data: Partial<Product>, token: string) =>
+    api.put<Product>(`/inventory/products/${id}`, data, token),
+
+  getProductCategories: (token: string) =>
+    api.get<ProductCategory[]>('/inventory/categories', token),
+
+  createProductCategory: (data: Partial<ProductCategory>, token: string) =>
+    api.post<ProductCategory>('/inventory/categories', data, token),
+
+  recordMovement: (productId: string, data: Partial<InventoryMovement>, token: string) =>
+    api.post<void>(`/inventory/products/${productId}/movements`, data, token),
+
+  getLowStock: (token: string) =>
+    api.get<Product[]>('/inventory/low-stock', token),
+
+  linkProductToService: (serviceId: string, data: { productId: string; quantityPerUse: number }, token: string) =>
+    api.post<ServiceProduct>(`/inventory/services/${serviceId}/products`, data, token),
+
+  // ─── Shifts ───
+  getShifts: (date: string, token: string) =>
+    api.get<Shift[]>(`/shifts?date=${date}`, token),
+
+  generateShifts: (data: { startDate?: string }, token: string) =>
+    api.post<{ created: number }>('/shifts/generate', data, token),
+
+  checkInShift: (shiftId: string, token: string) =>
+    api.post<Shift>(`/shifts/${shiftId}/check-in`, {}, token),
+
+  checkOutShift: (shiftId: string, token: string) =>
+    api.post<Shift>(`/shifts/${shiftId}/check-out`, {}, token),
+
+  // ─── Client DNA ───
+  getClientDna: (clientId: string, token: string) =>
+    api.get<ClientDna>(`/client-dna/${clientId}`, token),
+
+  computeClientDna: (clientId: string, token: string) =>
+    api.post<void>(`/client-dna/${clientId}/compute`, {}, token),
+
+  computeAllDna: (token: string) =>
+    api.post<{ processed: number }>('/client-dna/compute-all', {}, token),
+
+  // ─── Dynamic Pricing ───
+  getPricingRules: (token: string) =>
+    api.get<PricingRule[]>('/pricing/rules', token),
+
+  createPricingRule: (data: Partial<PricingRule>, token: string) =>
+    api.post<PricingRule>('/pricing/rules', data, token),
+
+  updatePricingRule: (id: string, data: Partial<PricingRule>, token: string) =>
+    api.put<PricingRule>(`/pricing/rules/${id}`, data, token),
+
+  calculatePrice: (serviceId: string, date: string, time: string, token: string) =>
+    api.get<CalculatedPrice>(`/pricing/calculate?serviceId=${serviceId}&date=${date}&time=${time}`, token),
+
+  // ─── Marketing ───
+  getCampaigns: (token: string) =>
+    api.get<Campaign[]>('/marketing/campaigns', token),
+
+  createCampaign: (data: Partial<Campaign>, token: string) =>
+    api.post<Campaign>('/marketing/campaigns', data, token),
+
+  updateCampaign: (id: string, data: Partial<Campaign>, token: string) =>
+    api.put<Campaign>(`/marketing/campaigns/${id}`, data, token),
+
+  executeCampaign: (id: string, token: string) =>
+    api.post<{ sent: number }>(`/marketing/campaigns/${id}/execute`, {}, token),
+
+  getCalendarGaps: (token: string) =>
+    api.get<CalendarGap[]>('/marketing/gaps', token),
+
+  // ─── ZATCA ───
+  getZatcaCertificates: (token: string) =>
+    api.get<ZatcaCertificate[]>('/zatca/certificates', token),
+
+  onboardZatca: (data: { organizationUnitName?: string; isProduction?: boolean }, token: string) =>
+    api.post<ZatcaCertificate>('/zatca/onboard', data, token),
+
+  submitZatcaInvoice: (invoiceId: string, token: string) =>
+    api.post<ZatcaInvoice>(`/zatca/invoices/${invoiceId}/submit`, {}, token),
+
+  getZatcaStatus: (invoiceId: string, token: string) =>
+    api.get<ZatcaInvoice | null>(`/zatca/invoices/${invoiceId}/status`, token),
+
+  getZatcaQr: (invoiceId: string, token: string) =>
+    api.get<string>(`/zatca/invoices/${invoiceId}/qr`, token),
 };

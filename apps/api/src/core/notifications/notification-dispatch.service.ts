@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { PrismaClient } from '../../../node_modules/.prisma/tenant';
+import { PrismaClient } from '../../../generated/tenant';
 import { EventsGateway } from '../../shared/events/events.gateway';
 
 type NotificationType =

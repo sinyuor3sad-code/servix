@@ -21,6 +21,11 @@ import {
   X,
   ClipboardCheck,
   TabletSmartphone,
+  Package,
+  Clock,
+  Megaphone,
+  TrendingUp,
+  Receipt,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -29,6 +34,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  group?: string;
 }
 
 const navItems: NavItem[] = [
@@ -37,10 +43,15 @@ const navItems: NavItem[] = [
   { label: 'العملاء', href: '/dashboard/clients', icon: Users },
   { label: 'الموظفات', href: '/dashboard/employees', icon: UserCog },
   { label: 'الحضور', href: '/dashboard/attendance', icon: ClipboardCheck },
+  { label: 'الورديات', href: '/dashboard/shifts', icon: Clock },
   { label: 'الخدمات', href: '/dashboard/services', icon: Scissors },
   { label: 'الكاشير', href: '/dashboard/pos', icon: CreditCard },
   { label: 'كاشير سريع', href: '/dashboard/pos/quick', icon: TabletSmartphone },
   { label: 'الفواتير', href: '/dashboard/invoices', icon: FileText },
+  { label: 'المخزون', href: '/dashboard/inventory', icon: Package },
+  { label: 'التسويق', href: '/dashboard/marketing', icon: Megaphone },
+  { label: 'التسعير', href: '/dashboard/pricing', icon: TrendingUp },
+  { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt },
   { label: 'التقارير', href: '/dashboard/reports', icon: BarChart3 },
   { label: 'الكوبونات', href: '/dashboard/coupons', icon: Ticket },
   { label: 'الولاء', href: '/dashboard/loyalty', icon: Heart },

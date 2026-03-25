@@ -5,6 +5,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
+import { CommitmentsService } from '../commitments/commitments.service';
+import { InventoryService } from '../inventory/inventory.service';
 import type { TenantPrismaClient } from '../../../shared/types';
 import { AppointmentStatusEnum } from './dto/change-status.dto';
 
@@ -18,7 +20,17 @@ const mockDb = {
     update: jest.fn(),
   },
   appointmentService: { createMany: jest.fn() },
+  commitment: { findFirst: jest.fn() },
   $transaction: jest.fn(),
+};
+
+const mockCommitmentsService = {
+  create: jest.fn().mockResolvedValue({ id: 'commitment-1' }),
+  linkDependency: jest.fn().mockResolvedValue({}),
+};
+
+const mockInventoryService = {
+  autoDeductForAppointment: jest.fn().mockResolvedValue(undefined),
 };
 
 describe('AppointmentsService', () => {
@@ -26,7 +38,11 @@ describe('AppointmentsService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AppointmentsService],
+      providers: [
+        AppointmentsService,
+        { provide: CommitmentsService, useValue: mockCommitmentsService },
+        { provide: InventoryService, useValue: mockInventoryService },
+      ],
     }).compile();
 
     service = module.get<AppointmentsService>(AppointmentsService);
