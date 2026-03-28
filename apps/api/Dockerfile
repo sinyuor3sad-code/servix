@@ -26,6 +26,7 @@ RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
 COPY --from=builder /app/deployed/node_modules ./node_modules
 COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /app/apps/api/prisma ./prisma
+COPY --from=builder /app/apps/api/generated ./generated
 COPY --from=builder /app/deployed/package.json ./
 USER nestjs
 EXPOSE 4000

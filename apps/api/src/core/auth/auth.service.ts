@@ -12,6 +12,7 @@ import { compare, hash } from 'bcryptjs';
 import { v4 } from 'uuid';
 import { createHash } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
+import { TenantDatabaseService } from '../../shared/database/tenant-database.service';
 import { CacheService } from '../../shared/cache/cache.service';
 import { MailService } from '../../shared/mail/mail.service';
 import { SmsService } from '../../shared/sms/sms.service';
@@ -86,6 +87,7 @@ export class AuthService {
     private readonly cacheService: CacheService,
     private readonly mailService: MailService,
     private readonly smsService: SmsService,
+    private readonly tenantDatabaseService: TenantDatabaseService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResult> {
@@ -151,6 +153,15 @@ export class AuthService {
 
       return { user, tenant };
     });
+
+    // Create the tenant's isolated PostgreSQL database and push schema
+    try {
+      await this.tenantDatabaseService.createTenantDatabase(databaseName);
+    } catch (error: unknown) {
+      // Log but don't fail registration — database can be retried
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to create tenant database ${databaseName}: ${errMsg}`);
+    }
 
     const tokens = await this.generateTokens({
       sub: result.user.id,
