@@ -13,7 +13,7 @@ COPY --from=deps /app/apps/dashboard/node_modules ./apps/dashboard/node_modules
 COPY . .
 WORKDIR /app/apps/dashboard
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm build
+RUN mkdir -p public && pnpm build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
