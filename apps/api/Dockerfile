@@ -16,7 +16,7 @@ WORKDIR /app/apps/api
 RUN npx prisma generate --schema=./prisma/platform.prisma
 RUN npx prisma generate --schema=./prisma/tenant.prisma
 RUN pnpm build
-RUN pnpm --filter @servix/api deploy /app/deployed --prod
+RUN pnpm --filter @servix/api deploy /app/deployed --prod --legacy
 
 FROM node:22-alpine AS runner
 WORKDIR /app
