@@ -16,15 +16,16 @@ WORKDIR /app/apps/api
 RUN npx prisma generate --schema=./prisma/platform.prisma
 RUN npx prisma generate --schema=./prisma/tenant.prisma
 RUN pnpm build
+RUN pnpm --filter @servix/api deploy /app/deployed --prod
 
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
+COPY --from=builder /app/deployed/node_modules ./node_modules
 COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api/prisma ./prisma
-COPY --from=builder /app/apps/api/package.json ./
+COPY --from=builder /app/deployed/package.json ./
 USER nestjs
 EXPOSE 4000
 CMD ["node", "dist/src/main.js"]
