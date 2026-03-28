@@ -24,12 +24,10 @@ enum TenantStatus {
 }
 
 enum TenantTheme {
-  elegance
-  modern
-  vivid
-  minimal
-  corporate
-  royal
+  velvet
+  crystal
+  orchid
+  noir
 }
 
 enum TenantUserStatus {
@@ -66,7 +64,8 @@ model Tenant {
   slug           String       @unique @db.VarChar(50)
   logoUrl        String?      @map("logo_url") @db.VarChar(500)
   primaryColor   String       @default("#8B5CF6") @map("primary_color") @db.VarChar(7)
-  theme          TenantTheme  @default(elegance)
+  secondaryColor String?      @map("secondary_color") @db.VarChar(7)
+  theme          TenantTheme  @default(velvet)
   databaseName   String       @unique @map("database_name") @db.VarChar(50)
   status         TenantStatus @default(trial)
   trialEndsAt    DateTime?    @map("trial_ends_at") @db.Timestamptz()

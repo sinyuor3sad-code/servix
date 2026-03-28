@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Sun, Moon, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import {
   PageHeader,
   Card,
@@ -14,9 +14,10 @@ import {
   Input,
   Skeleton,
 } from '@/components/ui';
+import { ThemeSelector } from '@/components/theme-selector';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
-import { themeConfigs } from '@/themes/theme-config';
+import { applyColorVariables } from '@/themes/colors';
 import type { TenantTheme } from '@/types';
 
 interface BrandingData {
@@ -25,8 +26,6 @@ interface BrandingData {
   mode: 'light' | 'dark' | 'auto';
   logoUrl: string | null;
 }
-
-const themeKeys = Object.keys(themeConfigs) as TenantTheme[];
 
 export default function BrandingPage(): React.ReactElement {
   const { accessToken } = useAuth();
@@ -38,11 +37,27 @@ export default function BrandingPage(): React.ReactElement {
     enabled: !!accessToken,
   });
 
-  const [selectedTheme, setSelectedTheme] = useState<TenantTheme>(data?.theme ?? 'elegance');
-  const [primaryColor, setPrimaryColor] = useState(data?.primaryColor ?? '#8b5cf6');
+  const [selectedTheme, setSelectedTheme] = useState<TenantTheme>(data?.theme ?? 'velvet');
+  const [primaryColor, setPrimaryColor] = useState(data?.primaryColor ?? '#a855f7');
   const [mode, setMode] = useState<'light' | 'dark'>(
     (data?.mode === 'dark' ? 'dark' : 'light'),
   );
+
+  // Sync state when data loads
+  useEffect(() => {
+    if (data) {
+      setSelectedTheme(data.theme ?? 'velvet');
+      setPrimaryColor(data.primaryColor ?? '#a855f7');
+      setMode(data.mode === 'dark' ? 'dark' : 'light');
+    }
+  }, [data]);
+
+  // Live-apply primary color shades when user changes the color picker
+  useEffect(() => {
+    if (primaryColor && /^#[0-9a-fA-F]{6}$/.test(primaryColor)) {
+      applyColorVariables(document.documentElement, primaryColor);
+    }
+  }, [primaryColor]);
 
   const hasChanges =
     data?.theme !== selectedTheme ||
@@ -69,9 +84,9 @@ export default function BrandingPage(): React.ReactElement {
     return (
       <div className="space-y-6 p-4 sm:p-6 lg:p-8">
         <Skeleton className="h-10 w-64" />
-        <div className="grid gap-4 sm:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 rounded-xl" />
+        <div className="grid gap-4 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-xl" />
           ))}
         </div>
       </div>
@@ -80,45 +95,21 @@ export default function BrandingPage(): React.ReactElement {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <PageHeader title="الشعار والثيم" description="تخصيص مظهر لوحة التحكم" />
+      <PageHeader title="الشعار والثيم" description="تخصيص مظهر لوحة التحكم وصفحة الحجز" />
 
       <div className="mx-auto max-w-4xl space-y-8">
-        {/* Theme Selector */}
+        {/* Theme + Mode Selector */}
         <Card>
           <CardHeader>
-            <CardTitle>اختيار الثيم</CardTitle>
+            <CardTitle>ثيم لوحة التحكم</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {themeKeys.map((key) => {
-                const config = themeConfigs[key];
-                const isSelected = selectedTheme === key;
-
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setSelectedTheme(key)}
-                    className={`relative flex flex-col items-start gap-1 rounded-xl border-2 p-4 text-start transition-all ${
-                      isSelected
-                        ? 'border-[var(--brand-primary)] bg-[var(--primary-50)]'
-                        : 'border-[var(--border)] hover:border-[var(--muted-foreground)]'
-                    }`}
-                  >
-                    {isSelected && (
-                      <div className="absolute end-2 top-2 rounded-full bg-[var(--brand-primary)] p-1">
-                        <Check className="h-3 w-3 text-white" />
-                      </div>
-                    )}
-                    <span className="text-sm font-semibold text-[var(--foreground)]">
-                      {config.nameAr}
-                    </span>
-                    <span className="text-xs text-[var(--muted-foreground)]">
-                      {config.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <ThemeSelector
+              selected={selectedTheme}
+              mode={mode}
+              onThemeChange={setSelectedTheme}
+              onModeChange={setMode}
+            />
           </CardContent>
         </Card>
 
@@ -128,6 +119,9 @@ export default function BrandingPage(): React.ReactElement {
             <CardTitle>اللون الرئيسي</CardTitle>
           </CardHeader>
           <CardContent>
+            <p className="mb-3 text-sm text-[var(--muted-foreground)]">
+              يُطبّق على الأزرار والروابط والعناصر المميزة في لوحة التحكم وصفحة الحجز
+            </p>
             <div className="flex items-center gap-4">
               <input
                 type="color"
@@ -138,42 +132,19 @@ export default function BrandingPage(): React.ReactElement {
               <Input
                 value={primaryColor}
                 onChange={(e) => setPrimaryColor(e.target.value)}
-                placeholder="#8b5cf6"
+                placeholder="#a855f7"
                 className="max-w-xs font-mono"
               />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Dark/Light Mode */}
-        <Card>
-          <CardHeader>
-            <CardTitle>الوضع</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setMode('light')}
-                className={`flex items-center gap-2 rounded-xl border-2 px-6 py-3 transition-all ${
-                  mode === 'light'
-                    ? 'border-[var(--brand-primary)] bg-[var(--primary-50)]'
-                    : 'border-[var(--border)]'
-                }`}
-              >
-                <Sun className="h-5 w-5" />
-                <span className="font-medium">فاتح</span>
-              </button>
-              <button
-                onClick={() => setMode('dark')}
-                className={`flex items-center gap-2 rounded-xl border-2 px-6 py-3 transition-all ${
-                  mode === 'dark'
-                    ? 'border-[var(--brand-primary)] bg-[var(--primary-50)]'
-                    : 'border-[var(--border)]'
-                }`}
-              >
-                <Moon className="h-5 w-5" />
-                <span className="font-medium">داكن</span>
-              </button>
+              {/* Live preview swatch */}
+              <div className="flex gap-1">
+                {['--primary-300', '--primary-500', '--primary-700'].map((v) => (
+                  <div
+                    key={v}
+                    className="h-8 w-8 rounded"
+                    style={{ background: `var(${v})` }}
+                  />
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -204,6 +175,11 @@ export default function BrandingPage(): React.ReactElement {
           >
             {mutation.isPending ? 'جارٍ الحفظ...' : 'حفظ التغييرات'}
           </Button>
+          {hasChanges && (
+            <span className="text-sm text-[var(--muted-foreground)]">
+              لديك تغييرات غير محفوظة
+            </span>
+          )}
         </div>
       </div>
     </div>

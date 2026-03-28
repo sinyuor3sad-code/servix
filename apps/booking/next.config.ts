@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost' },
-      { protocol: 'https', hostname: '*.servix.sa' },
+      { protocol: 'https', hostname: '*.servi-x.com' },
     ],
   },
 };

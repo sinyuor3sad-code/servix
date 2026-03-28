@@ -8,12 +8,15 @@ import { Spinner } from '@/components/ui';
 import { useQuery } from '@tanstack/react-query';
 import { settingsService } from '@/services/settings.service';
 
+/** Routes the cashier role is allowed to access */
+const CASHIER_ALLOWED = ['/pos', '/pos/quick'];
+
 export default function DashboardLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>): React.ReactElement {
-  const { isAuthenticated, isLoading, accessToken } = useAuth();
+  const { isAuthenticated, isLoading, accessToken, userRole, isOwner } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -35,19 +38,36 @@ export default function DashboardLayout({
     setMobileMenuOpen(false);
   }, []);
 
+  const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+  const skipAuth = isLocalhost && !accessToken;
+
+  // Redirect unauthenticated users to login
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    if (!skipAuth && !isLoading && !isAuthenticated) {
       router.replace('/login');
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, isLoading, router, skipAuth]);
 
+  // Redirect to onboarding if not completed
   useEffect(() => {
-    if (!isLoading && !settingsLoading && isAuthenticated && !isOnboardingPage && accessToken && settings !== undefined && !onboardingCompleted) {
+    if (!skipAuth && !isLoading && !settingsLoading && isAuthenticated && !isOnboardingPage && accessToken && settings !== undefined && !onboardingCompleted) {
       router.replace('/onboarding');
     }
-  }, [isLoading, settingsLoading, isAuthenticated, isOnboardingPage, onboardingCompleted, router, accessToken, settings]);
+  }, [skipAuth, isLoading, settingsLoading, isAuthenticated, isOnboardingPage, onboardingCompleted, router, accessToken, settings]);
 
-  if (isLoading) {
+  // RBAC: Cashier can ONLY access /pos and /pos/quick
+  useEffect(() => {
+    if (skipAuth || isLoading || !isAuthenticated || !userRole) return;
+
+    const isCashierOnly = userRole === 'cashier' && !isOwner;
+    const isPosRoute = CASHIER_ALLOWED.some((r) => pathname === r || pathname?.startsWith(r + '/'));
+
+    if (isCashierOnly && !isPosRoute) {
+      router.replace('/pos');
+    }
+  }, [skipAuth, isLoading, isAuthenticated, userRole, isOwner, pathname, router]);
+
+  if (!skipAuth && isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner size="lg" />
@@ -55,7 +75,7 @@ export default function DashboardLayout({
     );
   }
 
-  if (!isAuthenticated) {
+  if (!skipAuth && !isAuthenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner size="lg" />
@@ -64,6 +84,12 @@ export default function DashboardLayout({
   }
 
   if (isOnboardingPage) {
+    return <>{children}</>;
+  }
+
+  // POS pages render fullscreen — no sidebar, header, or bottom nav
+  const isPOSPage = pathname?.startsWith('/pos');
+  if (isPOSPage) {
     return <>{children}</>;
   }
 

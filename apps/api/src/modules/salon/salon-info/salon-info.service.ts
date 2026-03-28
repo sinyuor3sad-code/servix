@@ -43,6 +43,7 @@ export class SalonInfoService {
     const brandingKeys = [
       'salon_logo_url',
       'salon_primary_color',
+      'salon_secondary_color',
       'salon_theme',
     ];
     const settings = await db.setting.findMany({
@@ -56,7 +57,7 @@ export class SalonInfoService {
         settings.find((s) => s.key === 'salon_primary_color')?.value ??
         '#8B5CF6',
       theme:
-        settings.find((s) => s.key === 'salon_theme')?.value ?? 'elegance',
+        settings.find((s) => s.key === 'salon_theme')?.value ?? 'velvet',
     };
 
     return {
@@ -90,6 +91,7 @@ export class SalonInfoService {
     const settingsMap: Record<string, string | undefined> = {
       salon_logo_url: dto.logoUrl,
       salon_primary_color: dto.primaryColor,
+      salon_secondary_color: dto.secondaryColor,
       salon_theme: dto.theme,
     };
 
@@ -106,6 +108,7 @@ export class SalonInfoService {
     const brandingKeys = [
       'salon_logo_url',
       'salon_primary_color',
+      'salon_secondary_color',
       'salon_theme',
     ];
     const settings = await db.setting.findMany({
@@ -119,7 +122,7 @@ export class SalonInfoService {
         settings.find((s) => s.key === 'salon_primary_color')?.value ??
         '#8B5CF6',
       theme:
-        settings.find((s) => s.key === 'salon_theme')?.value ?? 'elegance',
+        settings.find((s) => s.key === 'salon_theme')?.value ?? 'velvet',
     };
   }
 

@@ -2,9 +2,29 @@
 
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAuthStore } from '@/stores/auth.store';
+import { useAuthStore, type UserRole } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
-import type { LoginCredentials, RegisterData } from '@/types';
+import type { LoginCredentials, RegisterData, TenantUser } from '@/types';
+
+/**
+ * Determine the landing page for a given role after login.
+ *
+ * - cashier → /pos (point of sale, fullscreen)
+ * - owner / manager → / (dashboard home)
+ * - receptionist / staff → / (dashboard home)
+ */
+export function getLandingRoute(role: UserRole | null, isOwner: boolean): string {
+  if (role === 'cashier' && !isOwner) return '/pos';
+  return '/';
+}
+
+/** Extract role info from the first tenant-user entry */
+function extractRole(tenants: TenantUser[]): { role: UserRole; isOwner: boolean } {
+  if (tenants.length === 0) return { role: 'staff', isOwner: false };
+  const tu = tenants[0];
+  const roleName = (tu.role?.name ?? 'staff') as UserRole;
+  return { role: roleName, isOwner: tu.isOwner };
+}
 
 export function useAuth() {
   const queryClient = useQueryClient();
@@ -13,10 +33,13 @@ export function useAuth() {
     user,
     accessToken,
     currentTenant,
+    userRole,
+    isOwner,
     login: storeLogin,
     logout: storeLogout,
     setUser,
     setCurrentTenant,
+    setUserRole,
   } = useAuthStore();
 
   const { data, isLoading } = useQuery({
@@ -28,8 +51,17 @@ export function useAuth() {
     meta: { skipAuthError: true },
   });
 
+  // Sync user data from query into store
   if (data && data.user.id !== user?.id) {
     setUser(data.user);
+  }
+
+  // Sync role data from query into store
+  if (data?.tenants && data.tenants.length > 0) {
+    const { role, isOwner: owner } = extractRole(data.tenants);
+    if (role !== userRole || owner !== isOwner) {
+      setUserRole(role, owner);
+    }
   }
 
   const login = useCallback(
@@ -37,6 +69,10 @@ export function useAuth() {
       const result = await authService.login(credentials);
       storeLogin(result.user, result.tokens.accessToken, result.tokens.refreshToken);
 
+      // Store role info
+      const { role, isOwner: owner } = extractRole(result.tenants);
+      setUserRole(role, owner);
+
       if (result.tenants.length > 0) {
         setCurrentTenant(result.tenants[0].tenant);
       }
@@ -44,7 +80,7 @@ export function useAuth() {
       await queryClient.invalidateQueries({ queryKey: ['auth'] });
       return result;
     },
-    [storeLogin, setCurrentTenant, queryClient],
+    [storeLogin, setCurrentTenant, setUserRole, queryClient],
   );
 
   const register = useCallback(
@@ -52,6 +88,9 @@ export function useAuth() {
       const result = await authService.register(data);
       storeLogin(result.user, result.tokens.accessToken, result.tokens.refreshToken);
 
+      const { role, isOwner: owner } = extractRole(result.tenants);
+      setUserRole(role, owner);
+
       if (result.tenants.length > 0) {
         setCurrentTenant(result.tenants[0].tenant);
       }
@@ -59,7 +98,7 @@ export function useAuth() {
       await queryClient.invalidateQueries({ queryKey: ['auth'] });
       return result;
     },
-    [storeLogin, setCurrentTenant, queryClient],
+    [storeLogin, setCurrentTenant, setUserRole, queryClient],
   );
 
   const logout = useCallback(async () => {
@@ -77,6 +116,8 @@ export function useAuth() {
     user: data?.user ?? user,
     tenants: data?.tenants ?? [],
     currentTenant,
+    userRole,
+    isOwner,
     isAuthenticated: !!accessToken && !!user,
     isLoading,
     accessToken,
@@ -84,5 +125,7 @@ export function useAuth() {
     register,
     logout,
     setCurrentTenant,
+    /** Get the correct landing page for the current user's role */
+    landingRoute: getLandingRoute(userRole, isOwner),
   };
 }

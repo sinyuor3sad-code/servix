@@ -1,103 +1,198 @@
 @import "tailwindcss";
 
-/* ═══════════════════════════════════════════════════════════
-   SERVIX Admin — Design Tokens (Professional Blue/Indigo)
-   ═══════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════
+   OBSIDIAN NEXUS v2 — Super Admin Design System
+   Stronger glass · Brighter gold · Perfect contrast · Sidebar
+   ═══════════════════════════════════════════════════════════════ */
 
-:root {
-  --brand-primary: #4f46e5;
-  --brand-primary-light: #6366f1;
-  --brand-primary-dark: #4338ca;
-  --brand-secondary: #0ea5e9;
-  --brand-accent: #f59e0b;
-
-  --primary-50: #eef2ff;
-  --primary-100: #e0e7ff;
-  --primary-200: #c7d2fe;
-  --primary-300: #a5b4fc;
-  --primary-400: #818cf8;
-  --primary-500: #6366f1;
-  --primary-600: #4f46e5;
-  --primary-700: #4338ca;
-  --primary-800: #3730a3;
-  --primary-900: #312e81;
-  --primary-950: #1e1b4b;
-
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #4f46e5;
-
-  --success: #16a34a;
-  --success-light: #dcfce7;
-  --warning: #f59e0b;
-  --warning-light: #fef3c7;
-  --danger: #dc2626;
-  --danger-light: #fee2e2;
-  --info: #0ea5e9;
-  --info-light: #e0f2fe;
-
-  --sidebar-width: 264px;
-  --header-height: 64px;
-  --radius: 0.5rem;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
-  --font-heading: var(--font-cairo), sans-serif;
-  --font-body: var(--font-cairo), sans-serif;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   RTL Base
-   ═══════════════════════════════════════════════════════════ */
-
-html[dir="rtl"] {
-  direction: rtl;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   Global Base
-   ═══════════════════════════════════════════════════════════ */
-
-* {
-  border-color: var(--border);
-}
-
+/* ── Base ─────────────────────────────────────────────────── */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-body);
+  background: #06060a;
+  color: #eee8d5;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-html {
-  scroll-behavior: smooth;
+/* ── Dot grid on main area ────────────────────────────────── */
+.nx-dots {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.035) 1px, transparent 0);
+  background-size: 32px 32px;
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* ── Ambient orbs ─────────────────────────────────────────── */
+.nx-orb {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(100px);
+  will-change: transform;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+/* ═══════════════════════════════════════════════════════════════
+   SIDEBAR
+   ═══════════════════════════════════════════════════════════════ */
+.nx-sidebar {
+  width: 260px;
+  min-height: 100dvh;
+  background:
+    linear-gradient(180deg, rgba(12,12,16,0.97) 0%, rgba(8,8,12,0.99) 100%);
+  border-inline-end: 1px solid rgba(255,255,255,0.06);
+  backdrop-filter: blur(30px) saturate(120%);
+  -webkit-backdrop-filter: blur(30px) saturate(120%);
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--muted-foreground);
-  border-radius: 9999px;
+.nx-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.45);
+  transition: all 0.25s ease;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--foreground);
+.nx-nav-item:hover {
+  color: rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.04);
 }
 
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+.nx-nav-item.active {
+  color: #fbbf24;
+  background: rgba(234,179,8,0.08);
+  border: 1px solid rgba(234,179,8,0.12);
+  font-weight: 600;
 }
+
+.nx-nav-item.active svg {
+  color: #fbbf24;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GLASS CARDS — Enhanced depth + visible layers
+   ═══════════════════════════════════════════════════════════════ */
+.nx-glass {
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%);
+  backdrop-filter: blur(40px) saturate(140%);
+  -webkit-backdrop-filter: blur(40px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 4px 24px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+  transition:
+    all 0.45s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.nx-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(165deg, rgba(255,255,255,0.06) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.nx-glass:hover {
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%);
+  border-color: rgba(234,179,8,0.30);
+  transform: translateY(-3px);
+  box-shadow:
+    0 12px 48px rgba(0,0,0,0.5),
+    0 0 0 1px rgba(234,179,8,0.10),
+    0 0 80px -20px rgba(234,179,8,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* ── Stat card shimmer ────────────────────────────────────── */
+@keyframes nx-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+.nx-stat::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  inset-inline-start: 0;
+  width: 40%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(234,179,8,0.35), transparent);
+  animation: nx-shimmer 5s ease-in-out infinite;
+}
+
+.nx-stat:hover::after {
+  background: linear-gradient(90deg, transparent, rgba(234,179,8,0.6), transparent);
+}
+
+/* Gold bottom accent on hover */
+.nx-stat .nx-glow-bar {
+  position: absolute;
+  bottom: 0;
+  inset-inline: 20%;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #eab308, transparent);
+  opacity: 0;
+  transition: opacity 0.45s;
+}
+
+.nx-stat:hover .nx-glow-bar {
+  opacity: 0.6;
+}
+
+/* ── Neon glow text ───────────────────────────────────────── */
+.nx-neon {
+  text-shadow:
+    0 0 15px rgba(251,191,36,0.5),
+    0 0 50px rgba(234,179,8,0.15);
+}
+
+/* ── Tabular numbers ──────────────────────────────────────── */
+.nx-tab {
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Active pill ──────────────────────────────────────────── */
+.nx-pill-on {
+  background: linear-gradient(135deg, #eab308, #f59e0b);
+  color: #000;
+  font-weight: 700;
+  box-shadow:
+    0 4px 20px rgba(234,179,8,0.40),
+    inset 0 1px 0 rgba(255,255,255,0.25);
+}
+
+/* ── Live pulse ───────────────────────────────────────────── */
+@keyframes nx-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.8); }
+}
+.nx-live {
+  animation: nx-live 2s ease-in-out infinite;
+}
+
+/* ── Badge ────────────────────────────────────────────────── */
+.nx-badge-up {
+  background: rgba(16,185,129,0.12);
+  color: #34d399;
+  border: 1px solid rgba(16,185,129,0.15);
+}
+.nx-badge-down {
+  background: rgba(239,68,68,0.10);
+  color: #f87171;
+  border: 1px solid rgba(239,68,68,0.12);
+}
+
+/* ── Scrollbar ────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.06); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.12); }

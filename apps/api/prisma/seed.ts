@@ -307,18 +307,18 @@ async function main(): Promise<void> {
   console.log('  → Creating super admin user...');
   const adminPassword = await bcrypt.hash('Admin@123456', 12);
   await prisma.user.upsert({
-    where: { email: 'admin@servix.com' },
+    where: { email: 'admin@servi-x.com' },
     update: {},
     create: {
       fullName: 'مدير المنصة',
-      email: 'admin@servix.com',
+      email: 'admin@servi-x.com',
       phone: '+966500000000',
       passwordHash: adminPassword,
       isEmailVerified: true,
       isPhoneVerified: true,
     },
   });
-  console.log('    ✓ Super admin created (admin@servix.com)');
+  console.log('    ✓ Super admin created (admin@servi-x.com)');
 
   console.log('\n✅ Platform database seeded successfully!');
 }

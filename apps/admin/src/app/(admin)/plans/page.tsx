@@ -1,211 +1,86 @@
 'use client';
 
-import { useState, type ReactElement } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { Package, Check, X, Edit2, Save } from 'lucide-react';
-import { PageHeader } from '@/components/ui/page-header';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { adminService, type Plan } from '@/services/admin.service';
-import { ApiError } from '@/lib/api';
+import { type ReactElement } from 'react';
+import { Shield, Sparkles, Crown, Check, X, Users, Edit } from 'lucide-react';
+import { Glass, PageTitle } from '@/components/ui/glass';
 
-function PlansSkeleton(): ReactElement {
-  return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-[400px]" />
-      ))}
-    </div>
-  );
-}
+const PLANS = [
+  {
+    name: 'Basic', nameAr: 'أساسي', icon: Shield, price: 199, cycle: '/شهر',
+    color: 'border-white/[0.08] from-white/[0.04] to-white/[0.01]', accent: 'text-white/60', badge: 'bg-white/[0.04] text-white/40 border-white/[0.06]',
+    tenants: 12,
+    features: [true, true, true, false, false, false, false, false],
+  },
+  {
+    name: 'Pro', nameAr: 'احترافي', icon: Sparkles, price: 399, cycle: '/شهر',
+    color: 'border-violet-500/20 from-violet-500/[0.06] to-violet-500/[0.01]', accent: 'text-violet-400', badge: 'bg-violet-500/10 text-violet-400 border-violet-500/18',
+    tenants: 28, popular: true,
+    features: [true, true, true, true, true, true, false, false],
+  },
+  {
+    name: 'Enterprise', nameAr: 'مؤسسات', icon: Crown, price: 699, cycle: '/شهر',
+    color: 'border-amber-500/20 from-amber-500/[0.06] to-amber-500/[0.01]', accent: 'text-amber-400', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/18',
+    tenants: 7,
+    features: [true, true, true, true, true, true, true, true],
+  },
+];
 
-function PlanCard({ plan }: { plan: Plan }): ReactElement {
-  const [editing, setEditing] = useState(false);
-  const [monthlyPrice, setMonthlyPrice] = useState(String(plan.monthlyPrice));
-  const [yearlyPrice, setYearlyPrice] = useState(String(plan.yearlyPrice));
-  const [maxEmployees, setMaxEmployees] = useState(String(plan.maxEmployees));
-  const [maxClients, setMaxClients] = useState(String(plan.maxClients));
-  const queryClient = useQueryClient();
-
-  const updateMutation = useMutation({
-    mutationFn: (data: Partial<Plan>) => adminService.updatePlan(plan.id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-plans'] });
-      toast.success('تم تحديث الباقة بنجاح');
-      setEditing(false);
-    },
-    onError: (error) => {
-      if (error instanceof ApiError) {
-        toast.error(error.message);
-      } else {
-        toast.error('حدث خطأ أثناء تحديث الباقة');
-      }
-    },
-  });
-
-  function handleSave(): void {
-    updateMutation.mutate({
-      monthlyPrice: Number(monthlyPrice),
-      yearlyPrice: Number(yearlyPrice),
-      maxEmployees: Number(maxEmployees),
-      maxClients: Number(maxClients),
-    });
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-[var(--primary-50)] p-2 text-[var(--brand-primary)]">
-              <Package className="h-5 w-5" />
-            </div>
-            <div>
-              <CardTitle>{plan.nameAr}</CardTitle>
-              <p className="mt-0.5 text-sm text-[var(--muted-foreground)]" dir="ltr">
-                {plan.code}
-              </p>
-            </div>
-          </div>
-          <Badge variant={plan.isActive ? 'success' : 'secondary'}>
-            {plan.isActive ? 'مفعّلة' : 'غير مفعّلة'}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {editing ? (
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-[var(--muted-foreground)]">السعر الشهري (ر.س)</label>
-                <input
-                  type="number"
-                  value={monthlyPrice}
-                  onChange={(e) => setMonthlyPrice(e.target.value)}
-                  className="mt-1 flex h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-                  dir="ltr"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--muted-foreground)]">السعر السنوي (ر.س)</label>
-                <input
-                  type="number"
-                  value={yearlyPrice}
-                  onChange={(e) => setYearlyPrice(e.target.value)}
-                  className="mt-1 flex h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-                  dir="ltr"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--muted-foreground)]">الحد الأقصى للموظفين</label>
-                <input
-                  type="number"
-                  value={maxEmployees}
-                  onChange={(e) => setMaxEmployees(e.target.value)}
-                  className="mt-1 flex h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-                  dir="ltr"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-[var(--muted-foreground)]">الحد الأقصى للعملاء</label>
-                <input
-                  type="number"
-                  value={maxClients}
-                  onChange={(e) => setMaxClients(e.target.value)}
-                  className="mt-1 flex h-9 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-                  dir="ltr"
-                />
-              </div>
-              <div className="flex items-center gap-2 pt-2">
-                <Button size="sm" onClick={handleSave} disabled={updateMutation.isPending}>
-                  <Save className="h-4 w-4" />
-                  حفظ
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setEditing(false)}>
-                  إلغاء
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-xs text-[var(--muted-foreground)]">شهري</p>
-                  <p className="text-lg font-bold">{plan.monthlyPrice} ر.س</p>
-                </div>
-                <div>
-                  <p className="text-xs text-[var(--muted-foreground)]">سنوي</p>
-                  <p className="text-lg font-bold">{plan.yearlyPrice} ر.س</p>
-                </div>
-                <div>
-                  <p className="text-xs text-[var(--muted-foreground)]">الموظفين</p>
-                  <p className="font-medium">
-                    {plan.maxEmployees === -1 ? 'غير محدود' : plan.maxEmployees}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-[var(--muted-foreground)]">العملاء</p>
-                  <p className="font-medium">
-                    {plan.maxClients === -1 ? 'غير محدود' : plan.maxClients}
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-2 text-xs font-medium text-[var(--muted-foreground)]">الميزات</p>
-                <div className="space-y-1.5">
-                  {plan.features.map((pf) => (
-                    <div key={pf.id} className="flex items-center gap-2 text-sm">
-                      {pf.enabled ? (
-                        <Check className="h-4 w-4 text-emerald-500" />
-                      ) : (
-                        <X className="h-4 w-4 text-red-400" />
-                      )}
-                      <span className={pf.enabled ? '' : 'text-[var(--muted-foreground)]'}>
-                        {pf.featureNameAr}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="w-full">
-                <Edit2 className="h-4 w-4" />
-                تعديل
-              </Button>
-            </>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+const FEATURE_NAMES = ['إدارة الخدمات', 'إدارة العملاء', 'المواعيد والحجوزات', 'صفحة الحجز الإلكتروني', 'التقارير المتقدمة', 'فوترة ZATCA', 'واتساب', 'متعدد الفروع'];
 
 export default function PlansPage(): ReactElement {
-  const { data: plans, isLoading } = useQuery({
-    queryKey: ['admin-plans'],
-    queryFn: () => adminService.getPlans(),
-  });
-
   return (
-    <>
-      <PageHeader
-        title="الباقات"
-        description="إدارة باقات الاشتراك"
-      />
+    <div className="space-y-5">
+      <PageTitle title="الباقات والأسعار" desc="إدارة باقات الاشتراك وتعديل الأسعار والميزات">
+        <button className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 px-5 py-2.5 text-[13px] font-bold text-black shadow-lg shadow-amber-500/20 hover:shadow-xl active:scale-[0.97]">
+          <Edit size={15} /> تعديل الباقات
+        </button>
+      </PageTitle>
 
-      {isLoading ? (
-        <PlansSkeleton />
-      ) : (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {(plans ?? []).map((plan) => (
-            <PlanCard key={plan.id} plan={plan} />
-          ))}
-        </div>
-      )}
-    </>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {PLANS.map((p) => {
+          const Icon = p.icon;
+          return (
+            <Glass key={p.name} hover className={`relative ${p.color.includes('amber') ? 'border-amber-500/20' : p.color.includes('violet') ? 'border-violet-500/20' : ''}`}>
+              <div className="p-7">
+                {p.popular && (
+                  <span className="absolute top-4 left-4 rounded-full bg-violet-500/15 px-3 py-1 text-[10px] font-bold text-violet-400 border border-violet-500/20">الأكثر شيوعاً</span>
+                )}
+                <div className="mb-6 flex items-center gap-3">
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl bg-white/[0.03] ${p.accent}`}>
+                    <Icon size={22} strokeWidth={1.6} />
+                  </div>
+                  <div>
+                    <p className={`text-lg font-extrabold ${p.accent}`}>{p.nameAr}</p>
+                    <p className="text-[11px] text-white/25">{p.name}</p>
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <span className="text-4xl font-extrabold text-white" style={{ fontFeatureSettings: '"tnum"' }}>{p.price}</span>
+                  <span className="mr-1 text-sm text-white/25">ر.س {p.cycle}</span>
+                </div>
+
+                <div className="mb-6 flex items-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                  <Users size={14} className="text-white/25" />
+                  <span className="text-[12px] text-white/40"><strong className="font-bold text-white/65">{p.tenants}</strong> شركة مشتركة</span>
+                </div>
+
+                <ul className="space-y-2.5">
+                  {FEATURE_NAMES.map((f, i) => (
+                    <li key={f} className="flex items-center gap-2.5 text-[13px]">
+                      {p.features[i]
+                        ? <Check size={15} className="text-emerald-400" strokeWidth={2.5} />
+                        : <X size={15} className="text-white/12" strokeWidth={2} />
+                      }
+                      <span className={p.features[i] ? 'text-white/60' : 'text-white/18 line-through'}>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </Glass>
+          );
+        })}
+      </div>
+    </div>
   );
 }

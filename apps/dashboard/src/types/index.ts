@@ -24,7 +24,7 @@ export interface PaginatedResponse<T> {
 // ─────────────────── Enums ───────────────────
 
 export type TenantStatus = 'active' | 'suspended' | 'trial' | 'cancelled';
-export type TenantTheme = 'elegance' | 'modern' | 'vivid' | 'minimal' | 'corporate' | 'royal';
+export type TenantTheme = 'velvet' | 'crystal' | 'orchid' | 'noir';
 
 export type EmployeeRole = 'stylist' | 'manager' | 'receptionist' | 'cashier';
 export type CommissionType = 'percentage' | 'fixed' | 'none';

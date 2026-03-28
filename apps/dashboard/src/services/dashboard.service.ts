@@ -43,8 +43,21 @@ function buildQuery(params: ListParams): string {
 }
 
 export const dashboardService = {
-  getStats: (token: string) =>
-    api.get<DashboardStats>('/dashboard/stats', token),
+  getStats: (token: string) => {
+    if (token === 'dev-access-token-mock') {
+      return Promise.resolve({
+        todayAppointments: 12,
+        todayRevenue: 4850,
+        totalClients: 248,
+        totalEmployees: 6,
+        monthlyRevenue: 38500,
+        monthlyAppointments: 342,
+        recentAppointments: [],
+        revenueChart: [],
+      } satisfies DashboardStats);
+    }
+    return api.get<DashboardStats>('/dashboard/stats', token);
+  },
 
   // ─── Appointments ───
   getAppointments: (params: ListParams, token: string) =>

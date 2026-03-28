@@ -28,7 +28,7 @@
 | Multi-tenancy | Tenant middleware extracts tenant from JWT → connects to correct DB | Never query wrong DB |
 | Feature control | Feature flags per plan + per tenant override | Enable/disable features granularly |
 | Real-time | WebSocket via Socket.io + Redis Pub/Sub | Instant updates across all clients |
-| Theming | 6 themes + custom colors + salon branding | Each salon looks unique |
+| Theming | 4 dashboard themes (velvet/crystal/orchid/noir) + 5 seasonal overlays + salon branding | Each salon looks unique |
 | Auth | JWT (access 15min + refresh 7days) + OTP via SMS | Secure stateless auth |
 | Roles | RBAC — owner, manager, receptionist, cashier, staff | Granular permissions |
 
@@ -165,9 +165,9 @@ origin: 'http://localhost:3000'
 
 // Production:
 origin: [
-  'https://app.servix.com',
-  'https://*.servix.com',
-  'https://admin.servix.com',
+  'https://app.servi-x.com',
+  'https://*.servi-x.com',
+  'https://admin.servi-x.com',
 ]
 // NEVER use origin: '*' in production
 ```
@@ -494,7 +494,7 @@ Step 5: "صالونك جاهز! 🎉" (Done!)
 
 ---
 
-## 🌐 LANDING PAGE (servix.com)
+## 🌐 LANDING PAGE (servi-x.com)
 
 ### Must include:
 - Hero section: headline + subheadline + "جرّب مجاناً 14 يوم" button
@@ -537,15 +537,27 @@ HTTP Request
 
 ## 🎨 Theming system
 
-### 6 themes:
-1. **Elegance** — luxury, serif headings, warm tones
-2. **Modern** — clean, sharp, bold sans-serif
-3. **Vivid** — colorful, large radius, glassmorphism
-4. **Minimal** — whitespace, no shadows, ultra-clean
-5. **Corporate** — formal, data-dense, striped tables
-6. **Royal** — gold accents, ornate, dark mode shines
+### Dashboard + Cashier (apps/dashboard) — 4 permanent themes × 2 modes = 8 variations:
+1. **Velvet** — فخامة نسائية. بنفسجي غامق + ذهبي. خط Amiri للعناوين. borders ذهبية. صالون فاخر.
+2. **Crystal** — حداثة ونظافة. أبيض ثلجي + وردي + أزرق سماوي. خط Tajawal. زوايا حادة. عيادة تجميل.
+3. **Orchid** — دفء وطبيعة. وردي دافئ + أخضر زيتوني + بيج. خط Cairo. صالون بوتيك.
+4. **Noir** — أناقة داكنة. أسود/رمادي + ذهبي. Dark mode أساسي. صالون VIP.
 
-### Per tenant: primary_color, secondary_color, accent_color, logo_url, theme, mode (light/dark/auto)
+### Booking page (apps/booking) — salon colors + 5 seasonal overlays:
+Booking page uses salon's own primaryColor + secondaryColor (no predefined themes).
+5 seasonal overlays add decorative SVG elements (banners, particles) ON TOP of salon colors:
+1. **Ramadan** — هلال ذهبي + فوانيس + particles. 1-29 رمضان (Hijri via Intl islamic-umalqura).
+2. **Eid Fitr** — نجوم متلألئة + أبيض/ذهبي/أخضر. 1-3 شوال.
+3. **Eid Adha** — مسجد SVG + ألوان دافئة. 10-13 ذو الحجة.
+4. **National Day** — سيف ونخلة SVG + أخضر سعودي. 22-24 سبتمبر.
+5. **Foundation Day** — بنفسجي وذهبي + شعار. 21-23 فبراير.
+
+### Settings keys:
+- `dashboard_theme` → velvet | crystal | orchid | noir
+- `dashboard_mode` → light | dark
+- `seasonal_themes_enabled` → true | false (manager can disable overlays)
+
+### Per tenant: primary_color, secondary_color, logo_url, theme (velvet/crystal/orchid/noir), mode (light/dark)
 
 ---
 
@@ -593,7 +605,7 @@ HTTP Request
 6. Full booking page (mobile-first)
 7. Smart dashboard with charts
 8. Onboarding wizard
-9. Landing page (servix.com)
+9. Landing page (servi-x.com)
 10. Terms of service + privacy policy pages
 11. Subscription expiry lifecycle
 12. Data export + account deletion

@@ -62,7 +62,7 @@ export default function AdminLoginPage(): ReactElement {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="admin@servix.sa"
+            placeholder="admin@servi-x.com"
             className="flex h-11 w-full rounded-lg border border-[var(--primary-700)] bg-[var(--primary-800)]/50 px-3 py-2 text-sm text-white placeholder:text-[var(--primary-400)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)] focus:border-transparent"
             dir="ltr"
           />

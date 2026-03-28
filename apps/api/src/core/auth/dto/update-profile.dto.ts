@@ -11,7 +11,7 @@ export class UpdateProfileDto {
 
   @ApiPropertyOptional({
     description: 'رابط الصورة الشخصية',
-    example: 'https://cdn.servix.sa/avatars/photo.jpg',
+    example: 'https://cdn.servi-x.com/avatars/photo.jpg',
   })
   @IsOptional()
   @IsString({ message: 'رابط الصورة يجب أن يكون نصاً' })

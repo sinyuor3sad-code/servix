@@ -1,130 +1,61 @@
 'use client';
 
 import { type ReactElement } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { PageHeader } from '@/components/ui/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-import { adminService, type Feature } from '@/services/admin.service';
-import { ApiError } from '@/lib/api';
+import { ToggleRight, Shield, Sparkles, Crown, Check, X } from 'lucide-react';
+import { Glass, PageTitle } from '@/components/ui/glass';
 
-function ToggleSwitch({
-  checked,
-  onChange,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}): ReactElement {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? 'bg-[var(--brand-primary)]' : 'bg-[var(--muted)]'
-      }`}
-    >
-      <span
-        className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ${
-          checked ? '-translate-x-5 rtl:translate-x-5' : 'translate-x-0'
-        }`}
-      />
-    </button>
-  );
+const FEATURES = [
+  { name: 'إدارة الخدمات',        basic: true,  pro: true,  enterprise: true },
+  { name: 'إدارة العملاء',        basic: true,  pro: true,  enterprise: true },
+  { name: 'المواعيد والحجوزات',   basic: true,  pro: true,  enterprise: true },
+  { name: 'نقاط البيع (POS)',     basic: true,  pro: true,  enterprise: true },
+  { name: 'صفحة الحجز الإلكتروني', basic: false, pro: true,  enterprise: true },
+  { name: 'التقارير المتقدمة',    basic: false, pro: true,  enterprise: true },
+  { name: 'الصلاحيات التفصيلية',  basic: false, pro: true,  enterprise: true },
+  { name: 'الكوبونات',           basic: false, pro: false, enterprise: true },
+  { name: 'نظام الولاء',         basic: false, pro: false, enterprise: true },
+  { name: 'واتساب بزنس',         basic: false, pro: false, enterprise: true },
+  { name: 'فوترة ZATCA',         basic: false, pro: true,  enterprise: true },
+  { name: 'متعدد الفروع',        basic: false, pro: false, enterprise: true },
+];
+
+function Chk({ on }: { on: boolean }) {
+  return on
+    ? <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-500/10"><Check size={14} className="text-emerald-400" strokeWidth={2.5} /></span>
+    : <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/[0.02]"><X size={14} className="text-white/10" /></span>;
 }
 
 export default function FeaturesPage(): ReactElement {
-  const queryClient = useQueryClient();
-
-  const { data: features, isLoading } = useQuery({
-    queryKey: ['admin-features'],
-    queryFn: () => adminService.getFeatures(),
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      adminService.updateFeature(id, { isActive }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-features'] });
-      toast.success('تم تحديث الميزة بنجاح');
-    },
-    onError: (error) => {
-      if (error instanceof ApiError) {
-        toast.error(error.message);
-      } else {
-        toast.error('حدث خطأ أثناء تحديث الميزة');
-      }
-    },
-  });
-
   return (
-    <>
-      <PageHeader
-        title="الميزات"
-        description="إدارة ميزات المنصة"
-      />
+    <div className="space-y-5">
+      <PageTitle title="إدارة الميزات" desc="مصفوفة الميزات حسب كل باقة" />
 
-      {isLoading ? (
-        <div className="space-y-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16" />
-          ))}
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="rounded-xl overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>الميزة</TableHead>
-                    <TableHead>الرمز</TableHead>
-                    <TableHead>الوصف</TableHead>
-                    <TableHead>الحالة</TableHead>
-                    <TableHead>تفعيل/تعطيل</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(features ?? []).map((feature) => (
-                    <TableRow key={feature.id}>
-                      <TableCell className="font-medium">{feature.nameAr}</TableCell>
-                      <TableCell>
-                        <code className="rounded bg-[var(--muted)] px-1.5 py-0.5 text-xs" dir="ltr">
-                          {feature.code}
-                        </code>
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate text-[var(--muted-foreground)]">
-                        {feature.description}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={feature.isActive ? 'success' : 'secondary'}>
-                          {feature.isActive ? 'مفعّلة' : 'معطّلة'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <ToggleSwitch
-                          checked={feature.isActive}
-                          onChange={(checked) =>
-                            toggleMutation.mutate({ id: feature.id, isActive: checked })
-                          }
-                          disabled={toggleMutation.isPending}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </>
+      <Glass className="overflow-hidden">
+        <table className="w-full text-[13px]">
+          <thead><tr className="border-b border-white/[0.05]">
+            <th className="px-6 py-4 text-start text-[11px] font-bold tracking-widest text-white/20 w-[40%]">الميزة</th>
+            <th className="px-4 py-4 text-center text-[11px] font-bold tracking-widest text-white/20">
+              <span className="inline-flex items-center gap-1"><Shield size={12} className="text-white/30" />Basic</span>
+            </th>
+            <th className="px-4 py-4 text-center text-[11px] font-bold tracking-widest text-white/20">
+              <span className="inline-flex items-center gap-1"><Sparkles size={12} className="text-violet-400" />Pro</span>
+            </th>
+            <th className="px-4 py-4 text-center text-[11px] font-bold tracking-widest text-white/20">
+              <span className="inline-flex items-center gap-1"><Crown size={12} className="text-amber-400" />Enterprise</span>
+            </th>
+          </tr></thead>
+          <tbody>
+            {FEATURES.map((f, i) => (
+              <tr key={f.name} className={`transition-colors hover:bg-white/[0.015] ${i < FEATURES.length - 1 ? 'border-b border-white/[0.03]' : ''}`}>
+                <td className="px-6 py-3.5 font-medium text-white/60">{f.name}</td>
+                <td className="px-4 py-3.5 text-center"><div className="flex justify-center"><Chk on={f.basic} /></div></td>
+                <td className="px-4 py-3.5 text-center"><div className="flex justify-center"><Chk on={f.pro} /></div></td>
+                <td className="px-4 py-3.5 text-center"><div className="flex justify-center"><Chk on={f.enterprise} /></div></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Glass>
+    </div>
   );
 }

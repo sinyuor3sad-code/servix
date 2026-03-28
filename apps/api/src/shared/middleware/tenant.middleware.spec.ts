@@ -40,7 +40,7 @@ const baseTenant = {
   databaseName: 'servix_tenant_1',
   status: 'active',
   primaryColor: '#8B5CF6',
-  theme: 'elegance',
+  theme: 'velvet',
   logoUrl: null,
 };
 

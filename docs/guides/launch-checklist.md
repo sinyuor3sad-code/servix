@@ -8,11 +8,11 @@
 
 ## 1. البنية التحتية (Infrastructure)
 - [ ] حجز سيرفر Hetzner Cloud (CX31 minimum: 4 vCPU, 8GB RAM, 80GB SSD)
-- [ ] إعداد نطاق servix.sa والنطاقات الفرعية
-  - [ ] api.servix.sa → API
-  - [ ] app.servix.sa → Dashboard
-  - [ ] admin.servix.sa → Admin Panel
-  - [ ] *.servix.sa → Booking pages (wildcard)
+- [ ] إعداد نطاق servi-x.com والنطاقات الفرعية
+  - [ ] api.servi-x.com → API
+  - [ ] app.servi-x.com → Dashboard
+  - [ ] admin.servi-x.com → Admin Panel
+  - [ ] *.servi-x.com → Booking pages (wildcard)
 - [ ] إعداد CloudFlare (DNS + CDN + SSL)
 - [ ] تثبيت Docker + Docker Compose على السيرفر
 - [ ] إعداد GitHub Container Registry
@@ -78,9 +78,9 @@
 ## 9. المراقبة (Monitoring)
 - [ ] إعداد alerts في Sentry (errors > threshold)
 - [ ] إعداد Uptime Kuma checks:
-  - [ ] api.servix.sa/api/v1/health
-  - [ ] app.servix.sa
-  - [ ] admin.servix.sa
+  - [ ] api.servi-x.com/api/v1/health
+  - [ ] app.servi-x.com
+  - [ ] admin.servi-x.com
 - [ ] إعداد تنبيهات البريد/تيليجرام
 - [ ] مراقبة استهلاك الموارد (CPU, RAM, Disk)
 

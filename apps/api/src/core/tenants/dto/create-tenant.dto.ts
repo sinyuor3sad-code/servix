@@ -10,12 +10,10 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 const VALID_THEMES = [
-  'elegance',
-  'modern',
-  'vivid',
-  'minimal',
-  'corporate',
-  'royal',
+  'velvet',
+  'crystal',
+  'orchid',
+  'noir',
 ] as const;
 
 type TenantThemeValue = (typeof VALID_THEMES)[number];
@@ -75,12 +73,12 @@ export class CreateTenantDto {
 
   @ApiPropertyOptional({
     description: 'قالب التصميم',
-    example: 'elegance',
+    example: 'velvet',
     enum: VALID_THEMES,
   })
   @IsOptional()
   @IsIn([...VALID_THEMES], {
-    message: 'القالب يجب أن يكون أحد: elegance, modern, vivid, minimal, corporate, royal',
+    message: 'القالب يجب أن يكون أحد: velvet, crystal, orchid, noir',
   })
   theme?: TenantThemeValue;
 }

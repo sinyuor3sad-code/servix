@@ -62,7 +62,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.servi-x.com,https://booking.servi-x.com,https://admin.servi-x.com,https://servi-x.com}
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,7 +80,9 @@ services:
     container_name: servix-dashboard
     restart: always
     environment:
-      NEXT_PUBLIC_API_URL: ${API_URL:-http://api:4000/api/v1}
+      NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
+      NEXT_PUBLIC_WS_URL: ${WS_URL:-https://api.servi-x.com}
+      NEXT_PUBLIC_DASHBOARD_URL: https://app.servi-x.com
     ports:
       - "3000:3000"
     depends_on:
@@ -95,7 +97,7 @@ services:
     container_name: servix-booking
     restart: always
     environment:
-      NEXT_PUBLIC_API_URL: ${API_URL:-http://api:4000/api/v1}
+      NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
     ports:
       - "3001:3001"
     depends_on:
@@ -110,7 +112,7 @@ services:
     container_name: servix-admin
     restart: always
     environment:
-      NEXT_PUBLIC_API_URL: ${API_URL:-http://api:4000/api/v1}
+      NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
     ports:
       - "3002:3002"
     depends_on:
@@ -118,7 +120,20 @@ services:
     networks:
       - servix-network
 
-  # ═══════ Reverse Proxy ═══════
+  landing:
+    build:
+      context: ../../
+      dockerfile: apps/landing/Dockerfile
+    container_name: servix-landing
+    restart: always
+    environment:
+      NEXT_PUBLIC_DASHBOARD_URL: https://app.servi-x.com
+    ports:
+      - "3003:3003"
+    networks:
+      - servix-network
+
+  # ═══════ Nginx Reverse Proxy ═══════
   nginx:
     image: nginx:alpine
     container_name: servix-nginx

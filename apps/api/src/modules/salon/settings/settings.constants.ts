@@ -25,6 +25,11 @@ export const SETTINGS_KEYS = {
   loyalty_enabled: 'loyalty_enabled',
   coupons_enabled: 'coupons_enabled',
   onboarding_completed: 'onboarding_completed',
+
+  // ═══════ Branding / Theme ═══════
+  dashboard_theme: 'dashboard_theme',
+  dashboard_mode: 'dashboard_mode',
+  seasonal_themes_enabled: 'seasonal_themes_enabled',
 } as const;
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {
@@ -52,4 +57,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.whatsapp_review_request]: 'true',
   [SETTINGS_KEYS.loyalty_enabled]: 'true',
   [SETTINGS_KEYS.coupons_enabled]: 'true',
+  [SETTINGS_KEYS.dashboard_theme]: 'velvet',
+  [SETTINGS_KEYS.dashboard_mode]: 'light',
+  [SETTINGS_KEYS.seasonal_themes_enabled]: 'true',
 };

@@ -2,9 +2,9 @@
   "name": "@servix/landing",
   "version": "0.1.0",
   "private": true,
-  "description": "SERVIX Landing Page — servix.com",
+  "description": "SERVIX Landing Page — servi-x.com",
   "scripts": {
-    "dev": "next dev --port 3002",
+    "dev": "next dev --port 3003",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

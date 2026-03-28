@@ -344,7 +344,7 @@ Pipeline stages:
 | `MINIO_ROOT_USER` | MinIO root username | `servix_minio` |
 | `MINIO_ROOT_PASSWORD` | MinIO root password | `servix_minio_secret` |
 | `MAIL_API_KEY` | Email provider API key (SendGrid / Resend) | — |
-| `MAIL_FROM` | Sender email address | `noreply@servix.sa` |
+| `MAIL_FROM` | Sender email address | `noreply@servi-x.com` |
 | `SMS_API_KEY` | SMS provider API key (Unifonic / Twilio) | — |
 | `SMS_SENDER_ID` | SMS sender ID | `SERVIX` |
 | `WHATSAPP_TOKEN` | WhatsApp Business API token | — |

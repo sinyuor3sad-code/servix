@@ -28,7 +28,7 @@ tenants
 ├── id                  UUID PK
 ├── name_ar             VARCHAR(100)     "صالون الأناقة"
 ├── name_en             VARCHAR(100)     "Elegance Salon"
-├── slug                VARCHAR(50)      "elegance" → elegance.servix.com
+├── slug                VARCHAR(50)      "elegance" → elegance.servi-x.com
 ├── logo_url            VARCHAR(500)
 ├── primary_color       VARCHAR(7)       "#8B5CF6"
 ├── theme               ENUM             elegance|modern|vivid|minimal|corporate|royal
@@ -976,7 +976,7 @@ servix/
 
 ### المرحلة 11: الإطلاق (الأسبوع 13-14)
 ```
-□ Landing page (servix.com)
+□ Landing page (servi-x.com)
 □ Beta test (3-5 salons)
 □ Feedback + fixes
 □ Official launch

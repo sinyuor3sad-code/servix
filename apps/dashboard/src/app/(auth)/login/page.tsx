@@ -5,9 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { LogIn } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth, getLandingRoute } from '@/hooks/useAuth';
 import { Button, Input, Card, CardContent } from '@/components/ui';
 import { ApiError } from '@/lib/api';
+import type { UserRole } from '@/stores/auth.store';
 
 export default function LoginPage(): React.ReactElement {
   const router = useRouter();
@@ -34,9 +35,16 @@ export default function LoginPage(): React.ReactElement {
 
       setLoading(true);
       try {
-        await login({ email: email.trim(), password });
+        const result = await login({ email: email.trim(), password });
+
+        // Determine role-based landing page
+        const tenantUser = result.tenants[0];
+        const role = (tenantUser?.role?.name ?? 'staff') as UserRole;
+        const isOwner = tenantUser?.isOwner ?? false;
+        const landingRoute = getLandingRoute(role, isOwner);
+
         toast.success('تم تسجيل الدخول بنجاح');
-        router.push('/dashboard');
+        router.push(landingRoute);
       } catch (error) {
         if (error instanceof ApiError) {
           toast.error(error.message);
@@ -56,6 +64,26 @@ export default function LoginPage(): React.ReactElement {
         <h2 className="mb-6 text-center text-lg font-semibold text-[var(--foreground)]">
           تسجيل الدخول
         </h2>
+
+        {/* Dev-mode quick login hints */}
+        {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
+          <div className="mb-4 space-y-1.5">
+            <button
+              type="button"
+              onClick={() => { setEmail('servix@dev.local'); setPassword('adsf1324'); }}
+              className="w-full rounded-lg border border-dashed border-[var(--brand-primary)]/30 bg-[var(--primary-50)] px-3 py-2 text-[12px] text-[var(--brand-primary)] transition-colors hover:bg-[var(--primary-100)]"
+            >
+              🧪 مالك صالون — تعبئة تلقائية
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEmail('cashier@dev.local'); setPassword('adsf1324'); }}
+              className="w-full rounded-lg border border-dashed border-emerald-500/30 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-600 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50"
+            >
+              🧪 كاشير — تعبئة تلقائية (يوجّه إلى /pos)
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input

@@ -101,7 +101,7 @@ describe('Admin (e2e)', () => {
 
     adminToken = createToken(jwtService, {
       sub: 'admin-user-id',
-      email: 'admin@servix.sa',
+      email: 'admin@servi-x.com',
       tenantId: 'platform-tenant-id',
       roleId: 'super-admin-role-id',
     });

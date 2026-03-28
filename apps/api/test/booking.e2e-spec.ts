@@ -64,7 +64,7 @@ const ACTIVE_TENANT = {
   databaseName: 'servix_tenant_abc',
   logoUrl: null,
   primaryColor: '#e91e63',
-  theme: 'elegance',
+  theme: 'velvet',
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

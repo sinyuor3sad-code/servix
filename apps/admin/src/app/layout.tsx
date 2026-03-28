@@ -20,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>): React.ReactElement {
   return (
-    <html lang="ar" dir="rtl" suppressHydrationWarning>
+    <html lang="ar" dir="rtl" className="dark" suppressHydrationWarning>
       <body className={`${cairo.variable} font-sans antialiased`}>
         <Providers>{children}</Providers>
       </body>
