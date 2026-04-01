@@ -42,7 +42,7 @@ export function useAuth() {
     setUserRole,
   } = useAuthStore();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading: queryLoading, isError } = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: () => authService.getMe(accessToken!),
     enabled: !!accessToken,
@@ -50,6 +50,9 @@ export function useAuth() {
     retry: false,
     meta: { skipAuthError: true },
   });
+
+  // isLoading should be false when query is disabled (no token)
+  const isLoading = !!accessToken && queryLoading;
 
   // Sync user data from query into store
   if (data && data.user.id !== user?.id) {

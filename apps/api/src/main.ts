@@ -10,7 +10,20 @@ import { ResponseTransformInterceptor } from './shared/interceptors/response-tra
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
-  app.use(helmet());
+  app.use(helmet({
+    contentSecurityPolicy: false, // Managed by CloudFlare
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  }));
+
+  // API root redirect
+  app.getHttpAdapter().get('/', (_req: unknown, res: { json: (body: unknown) => void }) => {
+    res.json({
+      name: 'SERVIX API',
+      version: '1.0.0',
+      docs: '/docs',
+      health: '/api/v1/health',
+    });
+  });
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 4000);
@@ -41,41 +54,40 @@ async function bootstrap(): Promise<void> {
     credentials: true,
   });
 
-  if (configService.get('NODE_ENV') !== 'production') {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle('SERVIX API')
-      .setDescription('منصة SaaS لإدارة الأعمال الخدمية — Hybrid SaaS platform for service businesses')
-      .setVersion('1.0')
-      .addBearerAuth()
-      .addTag('Auth', 'المصادقة والتسجيل')
-      .addTag('Tenants', 'إدارة الصالونات')
-      .addTag('Subscriptions', 'الاشتراكات والباقات')
-      .addTag('Features', 'إدارة الميزات')
-      .addTag('Roles', 'الأدوار والصلاحيات')
-      .addTag('Users', 'إدارة المستخدمين')
-      .addTag('Uploads', 'رفع الملفات')
-      .addTag('Audit Logs', 'سجل العمليات')
-      .addTag('Notifications', 'الإشعارات')
-      .addTag('Salon Info', 'بيانات الصالون العامة')
-      .addTag('Services', 'إدارة الخدمات')
-      .addTag('Employees', 'إدارة الموظفات')
-      .addTag('Clients', 'إدارة العملاء')
-      .addTag('Appointments', 'إدارة المواعيد والحجوزات')
-      .addTag('Invoices', 'الفواتير والمدفوعات')
-      .addTag('Coupons', 'إدارة الكوبونات')
-      .addTag('Loyalty', 'نظام الولاء')
-      .addTag('Expenses', 'إدارة المصروفات')
-      .addTag('Attendance', 'حضور وانصراف الموظفات')
-      .addTag('Settings', 'إعدادات الصالون')
-      .addTag('Reports', 'التقارير')
-      .addTag('Booking (Public)', 'واجهة الحجز العامة')
-      .addTag('Admin', 'إدارة المنصة')
-      .addTag('Health', 'فحص صحة النظام')
-      .build();
+  // Swagger docs — always available (protected by basic auth in production via nginx)
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('SERVIX API')
+    .setDescription('منصة SaaS لإدارة الأعمال الخدمية — Hybrid SaaS platform for service businesses')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .addTag('Auth', 'المصادقة والتسجيل')
+    .addTag('Tenants', 'إدارة الصالونات')
+    .addTag('Subscriptions', 'الاشتراكات والباقات')
+    .addTag('Features', 'إدارة الميزات')
+    .addTag('Roles', 'الأدوار والصلاحيات')
+    .addTag('Users', 'إدارة المستخدمين')
+    .addTag('Uploads', 'رفع الملفات')
+    .addTag('Audit Logs', 'سجل العمليات')
+    .addTag('Notifications', 'الإشعارات')
+    .addTag('Salon Info', 'بيانات الصالون العامة')
+    .addTag('Services', 'إدارة الخدمات')
+    .addTag('Employees', 'إدارة الموظفات')
+    .addTag('Clients', 'إدارة العملاء')
+    .addTag('Appointments', 'إدارة المواعيد والحجوزات')
+    .addTag('Invoices', 'الفواتير والمدفوعات')
+    .addTag('Coupons', 'إدارة الكوبونات')
+    .addTag('Loyalty', 'نظام الولاء')
+    .addTag('Expenses', 'إدارة المصروفات')
+    .addTag('Attendance', 'حضور وانصراف الموظفات')
+    .addTag('Settings', 'إعدادات الصالون')
+    .addTag('Reports', 'التقارير')
+    .addTag('Booking (Public)', 'واجهة الحجز العامة')
+    .addTag('Admin', 'إدارة المنصة')
+    .addTag('Health', 'فحص صحة النظام')
+    .build();
 
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('docs', app, document);
-  }
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('docs', app, swaggerDocument);
 
   await app.listen(port);
 }

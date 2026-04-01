@@ -4,21 +4,6 @@ import { type ReactElement } from 'react';
 import { BarChart3, TrendingUp, Users, DollarSign, MapPin, CalendarCheck } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
 
-const CITY_DATA = [
-  { city: 'الرياض',  tenants: 18, revenue: 182400, pct: 42 },
-  { city: 'جدة',     tenants: 12, revenue: 98500,  pct: 28 },
-  { city: 'الدمام',  tenants: 6,  revenue: 45200,  pct: 14 },
-  { city: 'مكة',     tenants: 4,  revenue: 22100,  pct: 8 },
-  { city: 'المدينة', tenants: 3,  revenue: 18200,  pct: 5 },
-  { city: 'أخرى',    tenants: 4,  revenue: 12600,  pct: 3 },
-];
-
-const MONTHLY = [
-  { month: 'يناير', revenue: 89400, tenants: 38 },
-  { month: 'فبراير', revenue: 102300, tenants: 42 },
-  { month: 'مارس', revenue: 124850, tenants: 47 },
-];
-
 export default function AnalyticsPage(): ReactElement {
   return (
     <div className="space-y-5">
@@ -27,10 +12,10 @@ export default function AnalyticsPage(): ReactElement {
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
-          { label: 'نمو الإيرادات', value: '+22%', icon: TrendingUp, color: 'text-emerald-400' },
-          { label: 'متوسط الإيراد/شركة', value: '2,657 ر.س', icon: DollarSign, color: 'text-amber-400' },
-          { label: 'معدل التحويل', value: '68%', icon: Users, color: 'text-violet-400' },
-          { label: 'الحجوزات اليومية', value: '948', icon: CalendarCheck, color: 'text-sky-400' },
+          { label: 'إجمالي الصالونات', value: '—', icon: Users, color: 'text-violet-400' },
+          { label: 'إيرادات الشهر', value: '—', icon: DollarSign, color: 'text-amber-400' },
+          { label: 'نمو الإيرادات', value: '—', icon: TrendingUp, color: 'text-emerald-400' },
+          { label: 'الحجوزات اليومية', value: '—', icon: CalendarCheck, color: 'text-sky-400' },
         ].map((k) => {
           const Icon = k.icon;
           return (
@@ -49,44 +34,17 @@ export default function AnalyticsPage(): ReactElement {
         })}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        {/* Chart placeholder */}
-        <Glass className="lg:col-span-7">
-          <div className="p-7">
-            <h2 className="mb-5 text-[15px] font-bold text-white/70">الإيرادات الشهرية</h2>
-            <div className="space-y-3">
-              {MONTHLY.map((m) => (
-                <div key={m.month} className="flex items-center gap-4">
-                  <span className="w-16 text-[12px] font-semibold text-white/35">{m.month}</span>
-                  <div className="flex-1 h-8 rounded-lg bg-white/[0.02] overflow-hidden">
-                    <div className="h-full rounded-lg bg-gradient-to-l from-amber-500/30 to-amber-500/10" style={{ width: `${(m.revenue / 130000) * 100}%` }} />
-                  </div>
-                  <span className="w-24 text-end text-[13px] font-bold text-amber-400/60" style={TN}>{m.revenue.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
+      <Glass>
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10">
+            <BarChart3 size={28} className="text-violet-400" />
           </div>
-        </Glass>
-
-        {/* City distribution */}
-        <Glass className="lg:col-span-5">
-          <div className="p-7">
-            <h2 className="mb-5 flex items-center gap-2 text-[15px] font-bold text-white/70"><MapPin size={16} className="text-white/30" />التوزيع الجغرافي</h2>
-            <div className="space-y-3">
-              {CITY_DATA.map((c) => (
-                <div key={c.city} className="flex items-center gap-3">
-                  <span className="w-14 text-[12px] font-semibold text-white/45">{c.city}</span>
-                  <div className="flex-1 h-2 rounded-full bg-white/[0.03] overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-to-l from-violet-400/50 to-violet-500/20" style={{ width: `${c.pct}%` }} />
-                  </div>
-                  <span className="text-[11px] font-bold text-violet-400/60" style={TN}>{c.tenants}</span>
-                  <span className="text-[11px] text-white/15" style={TN}>{c.pct}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Glass>
-      </div>
+          <h3 className="text-lg font-bold text-white/70 mb-2">التحليلات قيد التطوير</h3>
+          <p className="text-[13px] text-white/35 max-w-md">
+            ستتوفر التحليلات التفصيلية والرسوم البيانية بعد تسجيل عدد كافٍ من الصالونات في المنصة.
+          </p>
+        </div>
+      </Glass>
     </div>
   );
 }

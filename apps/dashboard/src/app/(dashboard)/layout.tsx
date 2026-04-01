@@ -75,12 +75,9 @@ export default function DashboardLayout({
     );
   }
 
+  // Not authenticated — useEffect will redirect to /login, show spinner briefly
   if (!skipAuth && !isAuthenticated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Spinner size="lg" />
-      </div>
-    );
+    return null;
   }
 
   if (isOnboardingPage) {

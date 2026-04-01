@@ -13,6 +13,7 @@ COPY --from=deps /app/apps/admin/node_modules ./apps/admin/node_modules
 COPY . .
 WORKDIR /app/apps/admin
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_API_URL=https://api.servi-x.com/api/v1
 RUN mkdir -p public && pnpm build
 
 FROM node:22-alpine AS runner
