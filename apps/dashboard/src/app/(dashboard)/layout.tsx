@@ -75,9 +75,9 @@ export default function DashboardLayout({
     );
   }
 
-  // Not authenticated — useEffect will redirect to /login, show spinner briefly
+  // Not authenticated — useEffect will redirect to /login
   if (!skipAuth && !isAuthenticated) {
-    return null;
+    return <></>;
   }
 
   if (isOnboardingPage) {
