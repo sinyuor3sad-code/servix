@@ -97,8 +97,8 @@ function MiniCalendar() {
 
   const monthName = currentDate.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' });
 
-  // Mock busy days (would come from API)
-  const busyDays = useMemo(() => new Set([3, 7, 12, 15, 18, 22, 25, 27]), []);
+  // No busy days data yet — would come from API
+  const busyDays = useMemo(() => new Set<number>(), []);
 
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
@@ -270,10 +270,10 @@ export default function DashboardPage(): React.ReactElement {
     staleTime: 2 * 60 * 1000,
   });
 
-  const todayApts = stats?.todayAppointments ?? 12;
-  const todayRev  = stats?.todayRevenue ?? 4850;
-  const totalEmp  = stats?.totalEmployees ?? 6;
-  const totalCli  = stats?.totalClients ?? 3;
+  const todayApts = stats?.todayAppointments ?? 0;
+  const todayRev  = stats?.todayRevenue ?? 0;
+  const totalEmp  = stats?.totalEmployees ?? 0;
+  const totalCli  = stats?.totalClients ?? 0;
   const recentApts = stats?.recentAppointments ?? [];
 
   const fade = (d: number): React.CSSProperties => ({
@@ -311,22 +311,20 @@ export default function DashboardPage(): React.ReactElement {
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4" style={fade(80)}>
         <KpiCard label="مواعيد اليوم"   value={todayApts.toString()} icon={Calendar}   change="3" up={true} />
         <KpiCard label="إيرادات اليوم"  value={formatCurrency(todayRev)} icon={DollarSign} change="18%" up={true} />
-        <KpiCard label="الموظفات اليوم" value="5" suffix={`/ ${totalEmp}`} icon={UserCheck} />
+        <KpiCard label="الموظفات" value={totalEmp.toString()} icon={UserCheck} />
         <KpiCard label="العملاء الجدد"  value={totalCli.toString()} icon={Heart} change="1" up={true} />
       </section>
 
       {/* ── ALERTS ── */}
-      <section className="space-y-2" style={fade(180)}>
-        {ALERTS.map((a, i) => {
-          const Icon = a.icon;
-          return (
-            <div key={i} className={`flex items-center gap-3 rounded-xl border px-4 py-3 ${a.color}`}>
-              <Icon size={16} className="shrink-0" />
-              <span className="text-[13px] font-medium">{a.text}</span>
-            </div>
-          );
-        })}
-      </section>
+      {/* Alerts section — only show when there's real data */}
+      {recentApts.length > 0 && (
+        <section className="space-y-2" style={fade(180)}>
+          <div className="flex items-center gap-3 rounded-xl border px-4 py-3 bg-[var(--info-light)] text-[var(--info)] border-[var(--info)]/15">
+            <Bell size={16} className="shrink-0" />
+            <span className="text-[13px] font-medium">مرحباً بك في SERVIX! ابدأ بإضافة خدماتك وموظفاتك لتفعيل صالونك.</span>
+          </div>
+        </section>
+      )}
 
       {/* ── QUICK NAV ── */}
       <section style={fade(280)}>
@@ -360,7 +358,7 @@ export default function DashboardPage(): React.ReactElement {
               <Link href="/appointments" className="text-[12px] font-semibold text-[var(--brand-primary)] hover:underline">عرض الكل</Link>
             </div>
             <div className="space-y-1">
-              {(recentApts.length > 0 ? recentApts.slice(0, 5) : MOCK_APPOINTMENTS).map((apt: any) => {
+              {recentApts.length > 0 ? recentApts.slice(0, 5).map((apt: any) => {
                 const client = apt.client?.fullName ?? apt.client;
                 const time = apt.startTime ?? apt.time;
                 const employee = apt.employee?.fullName ?? apt.employee;
@@ -380,7 +378,13 @@ export default function DashboardPage(): React.ReactElement {
                     </span>
                   </div>
                 );
-              })}
+              }) : (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <Calendar size={32} className="mb-3 text-[var(--muted-foreground)] opacity-40" />
+                  <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">لا توجد مواعيد اليوم</p>
+                  <Link href="/appointments/new" className="mt-2 text-[12px] font-medium text-[var(--brand-primary)] hover:underline">أضف أول موعد</Link>
+                </div>
+              )}
             </div>
           </div>
         </Glass>
@@ -393,114 +397,84 @@ export default function DashboardPage(): React.ReactElement {
 
       {/* ── TOP EMPLOYEES + ATTENDANCE ── */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-12" style={fade(460)}>
-        {/* Top 3 Performers */}
+        {/* Getting Started — shows for new accounts */}
         <Glass className="lg:col-span-5">
           <div className="p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-[var(--foreground)]">الأفضل أداءً اليوم</h2>
+              <h2 className="text-[15px] font-bold text-[var(--foreground)]">البدء السريع</h2>
               <Zap size={16} className="text-[var(--brand-accent,var(--brand-primary))] opacity-70" />
             </div>
             <div className="space-y-3">
-              {TOP_EMPLOYEES.map((emp, i) => {
-                const medal = MEDALS[i];
-                const MedalIcon = medal.icon;
+              {[
+                { label: 'أضف موظفاتك', href: '/employees/new', icon: Users, done: totalEmp > 0 },
+                { label: 'أضف خدماتك', href: '/services/new', icon: Scissors, done: false },
+                { label: 'أنشئ أول موعد', href: '/appointments/new', icon: Calendar, done: todayApts > 0 },
+              ].map((step) => {
+                const Icon = step.icon;
                 return (
-                  <div key={emp.name} className="flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-[var(--muted)]">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${medal.bg}`}>
-                      <MedalIcon size={18} className={medal.color} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-bold text-[var(--foreground)]">{emp.name}</p>
-                      <p className="text-[11px] text-[var(--muted-foreground)]">{emp.role}</p>
-                    </div>
-                    <div className="text-end">
-                      <p className="text-[13px] font-bold text-[var(--brand-primary)]" style={TN}>{emp.revenue.toLocaleString('ar-SA')} <span className="text-[10px] font-medium text-[var(--muted-foreground)]">ر.س</span></p>
-                      <div className="mt-0.5 flex items-center justify-end gap-1.5">
-                        <span className="text-[10px] text-[var(--muted-foreground)]" style={TN}>{emp.bookings} حجوزات</span>
-                        <span className="text-[10px] text-[#d4af37]">★ {emp.rating}</span>
+                  <Link key={step.label} href={step.href}>
+                    <div className="flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-[var(--muted)] cursor-pointer">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${step.done ? 'bg-[var(--success-light)]' : 'bg-[var(--primary-50)]'}`}>
+                        <Icon size={18} className={step.done ? 'text-[var(--success)]' : 'text-[var(--brand-primary)]'} />
                       </div>
+                      <p className="text-[13px] font-bold text-[var(--foreground)]">{step.label}</p>
+                      {step.done && <span className="mr-auto text-[10px] font-bold text-[var(--success)]">✓</span>}
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
           </div>
         </Glass>
 
-        {/* Attendance */}
+        {/* Employees — empty state or real data */}
         <Glass className="lg:col-span-7">
           <div className="p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-[var(--foreground)]">الموظفات المتواجدات</h2>
-              <span className="text-[12px] text-[var(--muted-foreground)]">{EMPLOYEES.filter(e => e.status === 'present').length} / {EMPLOYEES.length}</span>
+              <h2 className="text-[15px] font-bold text-[var(--foreground)]">فريق العمل</h2>
+              <Link href="/employees" className="text-[12px] font-semibold text-[var(--brand-primary)] hover:underline">عرض الكل</Link>
             </div>
-            <div className="space-y-1">
-              {EMPLOYEES.map((emp) => {
-                const st = EMP_ST[emp.status] ?? EMP_ST.present;
-                return (
-                  <div key={emp.name} className="group flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-[var(--muted)]">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--primary-50)] text-[12px] font-bold text-[var(--brand-primary)]">
-                      {emp.name.charAt(0)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-bold text-[var(--foreground)]">{emp.name}</p>
-                      <p className="text-[11px] text-[var(--muted-foreground)]">{emp.role}</p>
-                    </div>
-                    <div className="text-end">
-                      <span className={`inline-flex rounded-lg px-2 py-0.5 text-[10px] font-bold ${st.cls}`}>{st.label}</span>
-                      <p className="mt-1 text-[11px] text-[var(--muted-foreground)]" style={TN}>{emp.bookings} حجوزات</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {totalEmp === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <Users size={32} className="mb-3 text-[var(--muted-foreground)] opacity-40" />
+                <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">لم تضف موظفات بعد</p>
+                <Link href="/employees/new" className="mt-2 text-[12px] font-medium text-[var(--brand-primary)] hover:underline">أضف أول موظفة</Link>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <UserCheck size={32} className="mb-3 text-[var(--brand-primary)] opacity-60" />
+                <p className="text-[24px] font-extrabold text-[var(--foreground)]" style={TN}>{totalEmp}</p>
+                <p className="text-[12px] text-[var(--muted-foreground)]">موظفات في الفريق</p>
+              </div>
+            )}
           </div>
         </Glass>
       </section>
 
-      {/* ── REVENUE CHART + TOP SERVICES ── */}
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-12" style={fade(560)}>
-        <Glass className="lg:col-span-8">
-          <div className="p-6">
-            <h2 className="mb-5 text-[15px] font-bold text-[var(--foreground)]">إيرادات الأسبوع</h2>
-            <div className="space-y-3">
-              {WEEKLY_REV.map((d) => (
-                <div key={d.day} className="flex items-center gap-4">
-                  <span className="w-16 text-[12px] font-semibold text-[var(--muted-foreground)]">{d.day}</span>
-                  <div className="flex-1 h-7 rounded-lg bg-[var(--muted)] overflow-hidden">
-                    <div
-                      className="h-full rounded-lg transition-all duration-700"
-                      style={{ width: `${(d.val / 5500) * 100}%`, background: `var(--brand-primary)`, opacity: 0.25 }}
-                    />
-                  </div>
-                  <span className="w-20 text-end text-[13px] font-bold text-[var(--brand-primary)]" style={TN}>
-                    {d.val.toLocaleString()}
-                  </span>
-                </div>
-              ))}
+      {/* ── REVENUE + SERVICES — only show when there's actual data ── */}
+      {todayRev > 0 && (
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-12" style={fade(560)}>
+          <Glass className="lg:col-span-8">
+            <div className="p-6">
+              <h2 className="mb-5 text-[15px] font-bold text-[var(--foreground)]">إيرادات الأسبوع</h2>
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <BarChart3 size={32} className="mb-3 text-[var(--muted-foreground)] opacity-40" />
+                <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">سيتم عرض الإيرادات عند بدء تسجيل المعاملات</p>
+              </div>
             </div>
-          </div>
-        </Glass>
+          </Glass>
 
-        <Glass className="lg:col-span-4">
-          <div className="p-5">
-            <h2 className="mb-5 text-[15px] font-bold text-[var(--foreground)]">أكثر الخدمات طلباً</h2>
-            <div className="space-y-3">
-              {TOP_SERVICES.map((s) => (
-                <div key={s.name}>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-[12px] font-semibold text-[var(--foreground)]">{s.name}</span>
-                    <span className="text-[12px] font-bold text-[var(--muted-foreground)]" style={TN}>{s.count}</span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-[var(--muted)]">
-                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.pct}%`, background: 'var(--brand-secondary, var(--brand-primary))', opacity: 0.5 }} />
-                  </div>
-                </div>
-              ))}
+          <Glass className="lg:col-span-4">
+            <div className="p-5">
+              <h2 className="mb-5 text-[15px] font-bold text-[var(--foreground)]">أكثر الخدمات طلباً</h2>
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <Scissors size={32} className="mb-3 text-[var(--muted-foreground)] opacity-40" />
+                <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">أضف خدماتك لتظهر الإحصائيات</p>
+              </div>
             </div>
-          </div>
-        </Glass>
-      </section>
+          </Glass>
+        </section>
+      )}
     </div>
   );
 }
