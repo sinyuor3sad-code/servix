@@ -26,9 +26,10 @@ export class ClientsService {
   async findAll(
     db: TenantPrismaClient,
     query: QueryClientsDto,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
-    const { page, perPage, sort, order, search, gender, source, isActive } = query;
-    const skip = (page - 1) * perPage;
+  ) {
+    const { page, sort, order, search, gender, source, isActive } = query;
+    const limit = (query as any).limit ?? query.perPage;
+    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {
       deletedAt: null,
@@ -57,20 +58,18 @@ export class ClientsService {
       db.client.findMany({
         where,
         skip,
-        take: perPage,
+        take: limit,
         orderBy: { [sort || 'createdAt']: order || 'desc' },
       }),
       db.client.count({ where }),
     ]);
 
     return {
-      data: data as unknown as Record<string, unknown>[],
-      meta: {
-        page,
-        perPage,
-        total,
-        totalPages: Math.ceil(total / perPage),
-      },
+      items: data as unknown as Record<string, unknown>[],
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 

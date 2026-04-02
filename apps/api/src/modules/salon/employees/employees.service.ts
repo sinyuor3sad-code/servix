@@ -48,32 +48,32 @@ export class EmployeesService {
   async findAll(
     db: TenantPrismaClient,
     query: QueryEmployeesDto,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
-    const { page, perPage, role, isActive } = query;
-    const skip = (page - 1) * perPage;
+  ) {
+    const { page, role, isActive, search } = query;
+    const limit = query.limit ?? query.perPage;
+    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (role) where.role = role;
     if (isActive !== undefined) where.isActive = isActive;
+    if (search) where.fullName = { contains: search, mode: 'insensitive' };
 
     const [employees, total] = await Promise.all([
       db.employee.findMany({
         where,
         skip,
-        take: perPage,
+        take: limit,
         orderBy: { createdAt: 'desc' },
       }),
       db.employee.count({ where }),
     ]);
 
     return {
-      data: employees.map((e) => this.mapDecimalFields(e)),
-      meta: {
-        page,
-        perPage,
-        total,
-        totalPages: Math.ceil(total / perPage),
-      },
+      items: employees.map((e) => this.mapDecimalFields(e)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 

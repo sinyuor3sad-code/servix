@@ -58,10 +58,11 @@ export class AppointmentsService {
   async findAll(
     db: TenantPrismaClient,
     query: QueryAppointmentsDto,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
-    const { page, perPage, sort, order, date, dateFrom, dateTo, status, employeeId, clientId } =
+  ) {
+    const { page, sort, order, date, dateFrom, dateTo, status, employeeId, clientId } =
       query;
-    const skip = (page - 1) * perPage;
+    const limit = (query as any).limit ?? query.perPage;
+    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
 
@@ -84,7 +85,7 @@ export class AppointmentsService {
       db.appointment.findMany({
         where,
         skip,
-        take: perPage,
+        take: limit,
         orderBy: { [sort || 'date']: order || 'desc' },
         include: {
           client: { select: { id: true, fullName: true, phone: true } },
@@ -101,13 +102,11 @@ export class AppointmentsService {
     ]);
 
     return {
-      data: data as unknown as Record<string, unknown>[],
-      meta: {
-        page,
-        perPage,
-        total,
-        totalPages: Math.ceil(total / perPage),
-      },
+      items: data as unknown as Record<string, unknown>[],
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 

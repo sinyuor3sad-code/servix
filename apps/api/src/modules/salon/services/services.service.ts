@@ -36,9 +36,10 @@ export class ServicesService {
   async findAll(
     db: TenantPrismaClient,
     query: QueryServicesDto,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
-    const { page, perPage, categoryId, isActive } = query;
-    const skip = (page - 1) * perPage;
+  ) {
+    const { page, categoryId, isActive } = query;
+    const limit = (query as any).limit ?? query.perPage;
+    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (categoryId) where.categoryId = categoryId;
@@ -49,20 +50,18 @@ export class ServicesService {
         where,
         include: { category: true },
         skip,
-        take: perPage,
+        take: limit,
         orderBy: { sortOrder: 'asc' },
       }),
       db.service.count({ where }),
     ]);
 
     return {
-      data: services.map((s) => this.mapServicePrice(s)),
-      meta: {
-        page,
-        perPage,
-        total,
-        totalPages: Math.ceil(total / perPage),
-      },
+      items: services.map((s) => this.mapServicePrice(s)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 
