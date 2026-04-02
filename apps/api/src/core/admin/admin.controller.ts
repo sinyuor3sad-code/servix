@@ -1,11 +1,14 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Body,
   Param,
   Query,
   UseGuards,
+  HttpCode,
+  HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
 import {
@@ -17,13 +20,14 @@ import {
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { RolesGuard } from '../../shared/guards';
-import { Roles, CurrentUser } from '../../shared/decorators';
+import { Roles, CurrentUser, Public } from '../../shared/decorators';
 import {
   GetTenantsDto,
   UpdateTenantStatusDto,
   GetSubscriptionsDto,
   GetInvoicesDto,
   GetAuditLogsDto,
+  AdminLoginDto,
 } from './admin.dto';
 
 @ApiTags('Admin')
@@ -33,6 +37,23 @@ import {
 @Controller({ path: 'admin', version: '1' })
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
+
+  @Post('auth/login')
+  @Public()
+  @Roles()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'تسجيل دخول مدير المنصة' })
+  @ApiResponse({ status: 200, description: 'تم تسجيل الدخول بنجاح' })
+  @ApiResponse({ status: 401, description: 'بيانات الدخول غير صحيحة' })
+  async login(
+    @Body() dto: AdminLoginDto,
+  ): Promise<{
+    user: { id: string; email: string; fullName: string; role: string };
+    accessToken: string;
+    refreshToken: string;
+  }> {
+    return this.adminService.login(dto.email, dto.password);
+  }
 
   @Get('stats')
   @ApiOperation({ summary: 'إحصائيات شاملة للمنصة' })

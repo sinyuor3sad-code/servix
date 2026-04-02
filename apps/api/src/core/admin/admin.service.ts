@@ -2,7 +2,11 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { compare } from 'bcryptjs';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import type {
   Tenant,
@@ -80,9 +84,92 @@ type AuditLogWithUser = PlatformAuditLog & {
   user: User;
 };
 
+interface AdminLoginResult {
+  user: { id: string; email: string; fullName: string; role: string };
+  accessToken: string;
+  refreshToken: string;
+}
+
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PlatformPrismaClient) {}
+  constructor(
+    private readonly prisma: PlatformPrismaClient,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  async login(email: string, password: string): Promise<AdminLoginResult> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
+
+    const isValid = await compare(password, user.passwordHash);
+    if (!isValid) {
+      throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
+
+    // Check that this user has super_admin role
+    const superAdminRole = await this.prisma.role.findUnique({
+      where: { name: 'super_admin' },
+    });
+
+    if (!superAdminRole) {
+      throw new UnauthorizedException('ليس لديك صلاحية الدخول لوحة الإدارة');
+    }
+
+    const tenantUser = await this.prisma.tenantUser.findFirst({
+      where: {
+        userId: user.id,
+        roleId: superAdminRole.id,
+        status: 'active',
+      },
+    });
+
+    if (!tenantUser) {
+      throw new UnauthorizedException('ليس لديك صلاحية الدخول لوحة الإدارة');
+    }
+
+    const tokenPayload = {
+      sub: user.id,
+      email: user.email,
+      tenantId: tenantUser.tenantId,
+      roleId: superAdminRole.id,
+    };
+
+    const accessSecret = this.configService.get<string>('jwt.accessSecret', '');
+    const refreshSecret = this.configService.get<string>('jwt.refreshSecret', '');
+
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(tokenPayload, {
+        secret: accessSecret,
+        expiresIn: '1d',
+      }),
+      this.jwtService.signAsync(tokenPayload, {
+        secret: refreshSecret,
+        expiresIn: '7d',
+      }),
+    ]);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: 'super_admin',
+      },
+      accessToken,
+      refreshToken,
+    };
+  }
 
   async getStats(): Promise<AdminStats> {
     const now = new Date();

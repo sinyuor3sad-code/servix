@@ -10,6 +10,11 @@ async function main(): Promise<void> {
   console.log('  → Creating roles...');
   const roles = await Promise.all([
     prisma.role.upsert({
+      where: { name: 'super_admin' },
+      update: {},
+      create: { name: 'super_admin', nameAr: 'مدير المنصة', isSystem: true },
+    }),
+    prisma.role.upsert({
       where: { name: 'owner' },
       update: {},
       create: { name: 'owner', nameAr: 'مالك', isSystem: true },
@@ -155,6 +160,7 @@ async function main(): Promise<void> {
   ];
 
   const rolePermissionMap: Record<string, string[]> = {
+    super_admin: allPermissionCodes,
     owner: allPermissionCodes,
     manager: managerPermissions,
     receptionist: receptionistPermissions,
@@ -307,7 +313,9 @@ async function main(): Promise<void> {
   console.log('  → Creating super admin user...');
   const adminDefaultPwd = process.env.ADMIN_DEFAULT_PASSWORD || 'Admin@123456';
   const adminPassword = await bcrypt.hash(adminDefaultPwd, 12);
-  await prisma.user.upsert({
+  const superAdminRole = roles.find((r) => r.name === 'super_admin');
+
+  const adminUser = await prisma.user.upsert({
     where: { email: 'admin@servi-x.com' },
     update: {},
     create: {
@@ -319,6 +327,37 @@ async function main(): Promise<void> {
       isPhoneVerified: true,
     },
   });
+
+  // Create a platform-level "admin tenant" to hold super_admin role association
+  if (superAdminRole) {
+    const platformTenant = await prisma.tenant.upsert({
+      where: { slug: 'servix-platform' },
+      update: {},
+      create: {
+        nameAr: 'منصة SERVIX',
+        nameEn: 'SERVIX Platform',
+        slug: 'servix-platform',
+        databaseName: 'servix_platform',
+        status: 'active',
+      },
+    });
+
+    await prisma.tenantUser.upsert({
+      where: {
+        tenantId_userId: {
+          tenantId: platformTenant.id,
+          userId: adminUser.id,
+        },
+      },
+      update: { roleId: superAdminRole.id },
+      create: {
+        tenantId: platformTenant.id,
+        userId: adminUser.id,
+        roleId: superAdminRole.id,
+        isOwner: true,
+      },
+    });
+  }
   console.log('    ✓ Super admin created (admin@servi-x.com)');
 
   console.log('\n✅ Platform database seeded successfully!');

@@ -43,6 +43,14 @@ export class AuthController {
   ): Promise<{
     user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
     tenant: { id: string; nameAr: string; nameEn: string; slug: string };
+    tenants: Array<{
+      id: string;
+      tenantId: string;
+      roleId: string;
+      isOwner: boolean;
+      tenant: { id: string; nameAr: string; nameEn: string; slug: string };
+      role: { id: string; name: string; nameAr: string };
+    }>;
     tokens: JwtTokens;
   }> {
     return this.authService.register(dto);

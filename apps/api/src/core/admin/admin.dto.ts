@@ -2,14 +2,27 @@ import {
   IsOptional,
   IsString,
   IsInt,
+  IsEmail,
+  IsNotEmpty,
   Min,
   Max,
   IsIn,
   IsUUID,
 } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+
+export class AdminLoginDto {
+  @ApiProperty({ description: 'البريد الإلكتروني', example: 'admin@servi-x.com' })
+  @IsEmail({}, { message: 'البريد الإلكتروني غير صالح' })
+  @IsNotEmpty({ message: 'البريد الإلكتروني مطلوب' })
+  email: string;
+
+  @ApiProperty({ description: 'كلمة المرور' })
+  @IsString({ message: 'كلمة المرور يجب أن تكون نصاً' })
+  @IsNotEmpty({ message: 'كلمة المرور مطلوبة' })
+  password: string;
+}
 
 const TENANT_STATUSES = ['active', 'suspended'] as const;
 type TenantStatusFilter = (typeof TENANT_STATUSES)[number];

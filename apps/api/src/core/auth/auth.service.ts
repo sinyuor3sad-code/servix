@@ -56,6 +56,7 @@ interface TenantWithRole {
 interface RegisterResult {
   user: UserResponse;
   tenant: TenantResponse;
+  tenants: TenantWithRole[];
   tokens: JwtTokens;
 }
 
@@ -170,14 +171,30 @@ export class AuthService {
       roleId: ownerRole.id,
     });
 
+    const tenantResponse: TenantResponse = {
+      id: result.tenant.id,
+      nameAr: result.tenant.nameAr,
+      nameEn: result.tenant.nameEn,
+      slug: result.tenant.slug,
+    };
+
     return {
       user: this.mapUserResponse(result.user),
-      tenant: {
-        id: result.tenant.id,
-        nameAr: result.tenant.nameAr,
-        nameEn: result.tenant.nameEn,
-        slug: result.tenant.slug,
-      },
+      tenant: tenantResponse,
+      tenants: [
+        {
+          id: result.user.id,
+          tenantId: result.tenant.id,
+          roleId: ownerRole.id,
+          isOwner: true,
+          tenant: tenantResponse,
+          role: {
+            id: ownerRole.id,
+            name: ownerRole.name,
+            nameAr: ownerRole.nameAr,
+          },
+        },
+      ],
       tokens,
     };
   }
