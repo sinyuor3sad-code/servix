@@ -62,7 +62,17 @@ async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise
     );
   }
 
-  const json = (await response.json()) as ApiSuccessResponse<T>;
+  // Handle 204 No Content (empty body)
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+
+  const json = JSON.parse(text) as ApiSuccessResponse<T>;
   return json.data;
 }
 
