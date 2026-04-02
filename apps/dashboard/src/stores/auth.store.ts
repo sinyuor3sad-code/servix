@@ -65,6 +65,17 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         userRole: state.userRole,
         isOwner: state.isOwner,
       }),
+      // If localStorage data is corrupted/incompatible, reset instead of crashing
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          console.error('[AuthStore] Failed to hydrate from localStorage, resetting:', error);
+          try {
+            localStorage.removeItem('servix-auth');
+          } catch {
+            // ignore
+          }
+        }
+      },
     },
   ),
 );

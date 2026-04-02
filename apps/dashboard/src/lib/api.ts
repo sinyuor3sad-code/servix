@@ -7,6 +7,20 @@ interface ApiOptions {
   token?: string;
 }
 
+/**
+ * Clear stale auth state from localStorage when token is expired/invalid.
+ * This prevents infinite crash loops on pages that use useAuth().
+ */
+function clearStaleAuth() {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem('servix-auth');
+    } catch {
+      // ignore
+    }
+  }
+}
+
 interface ApiSuccessResponse<T> {
   success: true;
   data: T;
@@ -49,6 +63,11 @@ async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise
   });
 
   if (!response.ok) {
+    // Auto-clear stale auth on 401 — prevents crash loops
+    if (response.status === 401 && options.token) {
+      clearStaleAuth();
+    }
+
     let errorBody: ApiErrorBody | undefined;
     try {
       errorBody = (await response.json()) as ApiErrorBody;
@@ -72,8 +91,13 @@ async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise
     return undefined as T;
   }
 
-  const json = JSON.parse(text) as ApiSuccessResponse<T>;
-  return json.data;
+  try {
+    const json = JSON.parse(text) as ApiSuccessResponse<T>;
+    return json.data;
+  } catch {
+    // Response wasn't valid JSON
+    return undefined as T;
+  }
 }
 
 export const api = {

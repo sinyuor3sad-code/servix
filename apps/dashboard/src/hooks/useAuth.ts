@@ -54,8 +54,14 @@ export function useAuth() {
   // isLoading should be false when query is disabled (no token)
   const isLoading = !!accessToken && queryLoading;
 
-  // Sync user data from query into store
-  if (data && data.user.id !== user?.id) {
+  // If query failed (401 expired token), clear auth state so user can proceed
+  if (isError && accessToken) {
+    storeLogout();
+    queryClient.clear();
+  }
+
+  // Sync user data from query into store (with safe null checks)
+  if (data?.user && data.user.id !== user?.id) {
     setUser(data.user);
   }
 
