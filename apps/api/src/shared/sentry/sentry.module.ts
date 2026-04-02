@@ -1,26 +1,20 @@
-import { Module, Global, type OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Module, Global } from '@nestjs/common';
 import { SentryService } from './sentry.service';
 
+/**
+ * Optional Sentry integration module.
+ * When SENTRY_DSN is set, it provides error reporting.
+ * When not set, it provides a no-op implementation.
+ */
 @Global()
 @Module({
-  providers: [SentryService],
-  exports: [SentryService],
+  providers: [
+    SentryService,
+    {
+      provide: 'SENTRY_SERVICE',
+      useExisting: SentryService,
+    },
+  ],
+  exports: [SentryService, 'SENTRY_SERVICE'],
 })
-export class SentryModule implements OnModuleInit {
-  constructor(private readonly configService: ConfigService) {}
-
-  async onModuleInit(): Promise<void> {
-    const dsn = this.configService.get<string>('SENTRY_DSN');
-    if (!dsn) return;
-
-    const Sentry = await import('@sentry/node');
-    Sentry.init({
-      dsn,
-      environment: this.configService.get<string>('NODE_ENV', 'development'),
-      tracesSampleRate: this.configService.get<string>('NODE_ENV') === 'production' ? 0.2 : 1.0,
-      // Don't send PII (names, emails) to Sentry
-      sendDefaultPii: false,
-    });
-  }
-}
+export class SentryModule {}

@@ -5,10 +5,9 @@ import {
   HttpException,
   HttpStatus,
   Inject,
-  type Optional,
+  Optional,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
-import { SentryService } from '../sentry/sentry.service';
 
 interface ErrorResponse {
   success: false;
@@ -22,7 +21,7 @@ interface ErrorResponse {
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   constructor(
-    @Optional() @Inject(SentryService) private readonly sentry?: SentryService,
+    @Optional() @Inject('SENTRY_SERVICE') private readonly sentry?: { captureException: (err: unknown, ctx?: Record<string, unknown>) => void },
   ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
@@ -56,7 +55,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     // Report 5xx errors to Sentry (skip 4xx — those are client errors)
     if (status >= 500 && this.sentry) {
-      const user = (request as Record<string, unknown>).user as Record<string, string> | undefined;
+      const user = (request as unknown as Record<string, unknown>).user as Record<string, string> | undefined;
       this.sentry.captureException(exception, {
         url: request.url,
         method: request.method,

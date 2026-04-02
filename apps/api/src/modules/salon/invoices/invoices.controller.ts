@@ -50,9 +50,8 @@ export class InvoicesController {
     );
     return {
       success: true,
-      data: result.data,
+      data: result,
       message: 'تم جلب قائمة الفواتير بنجاح',
-      meta: result.meta,
     };
   }
 

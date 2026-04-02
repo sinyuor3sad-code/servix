@@ -46,9 +46,8 @@ export class ClientsController {
     );
     return {
       success: true,
-      data: result.data,
+      data: result,
       message: 'تم جلب قائمة العملاء بنجاح',
-      meta: result.meta,
     };
   }
 

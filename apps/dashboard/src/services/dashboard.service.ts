@@ -43,7 +43,8 @@ function buildQuery(params: ListParams): string {
 }
 
 export const dashboardService = {
-  getStats: (token: string) =>\r\n    api.get<DashboardStats>('/reports/dashboard', token),
+  getStats: (token: string) =>
+    api.get<DashboardStats>('/reports/dashboard', token),
 
   // ─── Appointments ───
   getAppointments: (params: ListParams, token: string) =>

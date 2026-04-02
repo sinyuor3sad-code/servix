@@ -1,48 +1,63 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, Logger } from '@nestjs/common';
 
+/**
+ * Sentry service for error reporting.
+ * Gracefully degrades when @sentry/node is not installed.
+ */
 @Injectable()
 export class SentryService {
-  private enabled = false;
+  private readonly logger = new Logger(SentryService.name);
+  private sentryLib: any = null;
+  private initialized = false;
 
-  constructor(private readonly configService: ConfigService) {
-    this.enabled = !!this.configService.get<string>('SENTRY_DSN');
-  }
-
-  async captureException(
-    error: unknown,
-    context?: Record<string, unknown>,
-  ): Promise<void> {
-    if (!this.enabled) return;
+  async onModuleInit(): Promise<void> {
+    const dsn = process.env.SENTRY_DSN;
+    if (!dsn) {
+      this.logger.log('SENTRY_DSN not set — Sentry disabled');
+      return;
+    }
 
     try {
-      const Sentry = await import('@sentry/node');
-      if (context) {
-        Sentry.withScope((scope) => {
-          Object.entries(context).forEach(([key, value]) => {
-            scope.setExtra(key, value);
-          });
-          Sentry.captureException(error);
-        });
-      } else {
-        Sentry.captureException(error);
-      }
+      // Dynamic import to avoid compile-time dependency
+      const moduleName = '@sentry/node';
+      const Sentry = await (Function('m', 'return import(m)')(moduleName));
+      Sentry.init({
+        dsn,
+        environment: process.env.NODE_ENV || 'development',
+        tracesSampleRate: 0.1,
+      });
+      this.sentryLib = Sentry;
+      this.initialized = true;
+      this.logger.log('Sentry initialized successfully');
     } catch {
-      // Sentry itself failed — don't crash the app
+      this.logger.warn('Sentry package not installed — error reporting disabled');
     }
   }
 
-  async captureMessage(
-    message: string,
-    level: 'info' | 'warning' | 'error' = 'info',
-  ): Promise<void> {
-    if (!this.enabled) return;
+  captureException(error: unknown, context?: Record<string, unknown>): void {
+    if (!this.initialized || !this.sentryLib) return;
 
     try {
-      const Sentry = await import('@sentry/node');
-      Sentry.captureMessage(message, level);
+      this.sentryLib.withScope((scope: any) => {
+        if (context) {
+          Object.entries(context).forEach(([key, value]: [string, unknown]) => {
+            scope.setExtra(key, value);
+          });
+        }
+        this.sentryLib.captureException(error);
+      });
     } catch {
-      // Sentry itself failed — don't crash the app
+      this.logger.error('Failed to send error to Sentry');
+    }
+  }
+
+  captureMessage(message: string, level: 'info' | 'warning' | 'error' = 'info'): void {
+    if (!this.initialized || !this.sentryLib) return;
+
+    try {
+      this.sentryLib.captureMessage(message, level);
+    } catch {
+      this.logger.error('Failed to send message to Sentry');
     }
   }
 }

@@ -121,9 +121,8 @@ export class LoyaltyController {
     );
     return {
       success: true,
-      data: result.data,
+      data: result,
       message: 'تم جلب سجل المعاملات بنجاح',
-      meta: result.meta,
     };
   }
 }

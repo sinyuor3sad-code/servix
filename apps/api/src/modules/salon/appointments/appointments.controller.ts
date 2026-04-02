@@ -48,9 +48,8 @@ export class AppointmentsController {
     );
     return {
       success: true,
-      data: result.data,
+      data: result,
       message: 'تم جلب قائمة المواعيد بنجاح',
-      meta: result.meta,
     };
   }
 
