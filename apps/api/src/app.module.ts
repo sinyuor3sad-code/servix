@@ -11,7 +11,7 @@ import { MailModule } from './shared/mail';
 import { SmsModule } from './shared/sms';
 import { WhatsAppModule } from './shared/whatsapp';
 import { JobsModule } from './shared/jobs';
-import { SentryModule } from './shared/sentry';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { JwtAuthGuard, SubscriptionWriteGuard, RateLimitGuard } from './shared/guards';
 import { TenantMiddleware } from './shared/middleware/tenant.middleware';
 import { AuthModule } from './core/auth/auth.module';
@@ -43,7 +43,7 @@ import { SalonModule } from './modules/salon/salon.module';
     SmsModule,
     WhatsAppModule,
     JobsModule,
-    SentryModule,
+    SentryModule.forRoot(),
     AuthModule,
     TenantsModule,
     SubscriptionsModule,

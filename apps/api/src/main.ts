@@ -1,3 +1,5 @@
+// IMPORTANT: Sentry must be imported before everything else
+import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -6,7 +8,6 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './shared/filters/http-exception.filter';
 import { ResponseTransformInterceptor } from './shared/interceptors/response-transform.interceptor';
-import { SentryService } from './shared/sentry/sentry.service';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -45,8 +46,7 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  const sentryService = app.get(SentryService, { strict: false });
-  app.useGlobalFilters(new GlobalExceptionFilter(sentryService));
+  app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new ResponseTransformInterceptor());
 
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
