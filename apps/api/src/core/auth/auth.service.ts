@@ -92,6 +92,8 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResult> {
+    console.log(`[AuthService.register] Starting registration for email=${dto.email}`);
+
     const existingEmail = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -124,6 +126,19 @@ export class AuthService {
       );
     }
 
+    // Find the Basic plan for trial subscription
+    const basicPlan = await this.prisma.plan.findFirst({
+      where: { name: 'Basic', isActive: true },
+    });
+    if (!basicPlan) {
+      console.error('[AuthService.register] Basic plan not found — cannot create trial subscription');
+      throw new InternalServerErrorException(
+        'خطأ في النظام: لم يتم العثور على خطة الاشتراك الأساسية',
+      );
+    }
+
+    const TRIAL_DAYS = 14;
+
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -133,6 +148,10 @@ export class AuthService {
           passwordHash,
         },
       });
+      console.log(`[AuthService.register] Created user id=${user.id}`);
+
+      const trialEnd = new Date();
+      trialEnd.setDate(trialEnd.getDate() + TRIAL_DAYS);
 
       const tenant = await tx.tenant.create({
         data: {
@@ -140,10 +159,13 @@ export class AuthService {
           nameEn: dto.salonNameEn ?? dto.salonNameAr,
           slug,
           databaseName,
+          status: 'trial',
+          trialEndsAt: trialEnd,
         },
       });
+      console.log(`[AuthService.register] Created tenant id=${tenant.id}, slug=${slug}`);
 
-      await tx.tenantUser.create({
+      const tenantUser = await tx.tenantUser.create({
         data: {
           tenantId: tenant.id,
           userId: user.id,
@@ -151,6 +173,20 @@ export class AuthService {
           isOwner: true,
         },
       });
+      console.log(`[AuthService.register] Created tenantUser id=${tenantUser.id}, roleId=${ownerRole.id}`);
+
+      // Create trial subscription so TenantMiddleware allows access
+      const subscription = await tx.subscription.create({
+        data: {
+          tenantId: tenant.id,
+          planId: basicPlan.id,
+          status: 'trial',
+          billingCycle: 'monthly',
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: trialEnd,
+        },
+      });
+      console.log(`[AuthService.register] Created trial subscription id=${subscription.id}, ends=${trialEnd.toISOString()}`);
 
       return { user, tenant };
     });

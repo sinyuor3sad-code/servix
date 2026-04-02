@@ -73,7 +73,7 @@ export default function RegisterPage(): React.ReactElement {
           salonNameEn: form.salonNameEn.trim(),
         });
         toast.success('تم إنشاء الحساب بنجاح');
-        router.push('/dashboard');
+        router.push('/onboarding');
       } catch (error) {
         if (error instanceof ApiError) {
           toast.error(error.message);
