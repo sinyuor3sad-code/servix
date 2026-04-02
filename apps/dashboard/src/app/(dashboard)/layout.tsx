@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Sidebar, Header, BottomNav } from '@/components/layout';
+import { SubscriptionBanner } from '@/components/layout/SubscriptionBanner';
 import { useAuth } from '@/hooks/useAuth';
 import { Spinner } from '@/components/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -96,6 +97,7 @@ export default function DashboardLayout({
 
       <div className="flex flex-1 flex-col min-w-0">
         <Header onMenuToggle={handleMobileOpen} />
+        <SubscriptionBanner />
 
         <main className="flex-1 p-4 pb-20 md:p-6 md:pb-6">
           {children}

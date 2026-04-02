@@ -3,16 +3,7 @@ import { TenantPrismaClient } from '../../../shared/types';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { QueryClientsDto } from './dto/query-clients.dto';
-
-interface PaginatedResult<T> {
-  data: T[];
-  meta: {
-    page: number;
-    perPage: number;
-    total: number;
-    totalPages: number;
-  };
-}
+import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
 interface ClientStats {
   totalClients: number;
@@ -28,7 +19,7 @@ export class ClientsService {
     query: QueryClientsDto,
   ) {
     const { page, sort, order, search, gender, source, isActive } = query;
-    const limit = (query as any).limit ?? query.perPage;
+    const limit = effectiveLimit(query);
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {
@@ -64,13 +55,7 @@ export class ClientsService {
       db.client.count({ where }),
     ]);
 
-    return {
-      items: data as unknown as Record<string, unknown>[],
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    return paginate(data as unknown as Record<string, unknown>[], total, page, limit);
   }
 
   async create(

@@ -14,16 +14,7 @@ import { AvailableSlotsDto } from './dto/available-slots.dto';
 import { CalendarQueryDto } from './dto/calendar-query.dto';
 import { CommitmentsService } from '../commitments/commitments.service';
 import { InventoryService } from '../inventory/inventory.service';
-
-interface PaginatedResult<T> {
-  data: T[];
-  meta: {
-    page: number;
-    perPage: number;
-    total: number;
-    totalPages: number;
-  };
-}
+import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
 const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled', 'no_show'],
@@ -61,7 +52,7 @@ export class AppointmentsService {
   ) {
     const { page, sort, order, date, dateFrom, dateTo, status, employeeId, clientId } =
       query;
-    const limit = (query as any).limit ?? query.perPage;
+    const limit = effectiveLimit(query);
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
@@ -101,13 +92,7 @@ export class AppointmentsService {
       db.appointment.count({ where }),
     ]);
 
-    return {
-      items: data as unknown as Record<string, unknown>[],
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    return paginate(data as unknown as Record<string, unknown>[], total, page, limit);
   }
 
   async create(

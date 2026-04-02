@@ -7,6 +7,10 @@ interface DashboardResult {
   todayRevenue: number;
   monthRevenue: number;
   totalClients: number;
+  totalEmployees: number;
+  monthlyRevenue: number;
+  monthlyAppointments: number;
+  recentAppointments: Record<string, unknown>[];
   upcomingAppointments: Record<string, unknown>[];
 }
 
@@ -72,6 +76,8 @@ export class ReportsService {
       todayInvoices,
       monthInvoices,
       totalClients,
+      totalEmployees,
+      monthlyAppointments,
       upcomingAppointments,
     ] = await Promise.all([
       db.appointment.count({
@@ -86,6 +92,10 @@ export class ReportsService {
         select: { total: true },
       }),
       db.client.count({ where: { isActive: true, deletedAt: null } }),
+      db.employee.count({ where: { isActive: true } }),
+      db.appointment.count({
+        where: { date: { gte: monthStart, lt: todayEnd } },
+      }),
       db.appointment.findMany({
         where: {
           date: { gte: todayStart },
@@ -94,9 +104,14 @@ export class ReportsService {
         include: {
           client: { select: { id: true, fullName: true } },
           employee: { select: { id: true, fullName: true } },
+          appointmentServices: {
+            include: {
+              service: { select: { id: true, nameAr: true, nameEn: true } },
+            },
+          },
         },
         orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
-        take: 5,
+        take: 10,
       }),
     ]);
 
@@ -114,7 +129,11 @@ export class ReportsService {
       todayRevenue,
       monthRevenue,
       totalClients,
-      upcomingAppointments,
+      totalEmployees,
+      monthlyRevenue: monthRevenue,
+      monthlyAppointments,
+      recentAppointments: upcomingAppointments as unknown as Record<string, unknown>[],
+      upcomingAppointments: upcomingAppointments as unknown as Record<string, unknown>[],
     };
   }
 

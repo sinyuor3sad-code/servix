@@ -3,21 +3,23 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, Sparkles, Zap } from 'lucide-react';
+import { Menu, X, Sparkles, Zap, Globe } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
 
 const DASHBOARD_URL = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000';
 const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number];
 
-const navLinks = [
-  { label: 'المميزات',  href: '#features' },
-  { label: 'كيف تبدأين', href: '#how-it-works' },
-  { label: 'الأجهزة',   href: '#devices' },
-  { label: 'الأسعار',   href: '#pricing' },
-];
-
 export default function Navbar(): React.ReactElement {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { locale, toggle, t } = useI18n();
+
+  const navLinks = [
+    { label: t('nav.features'), href: '#features' },
+    { label: t('nav.howItWorks'), href: '#how-it-works' },
+    { label: t('nav.devices'), href: '#devices' },
+    { label: t('nav.pricing'), href: '#pricing' },
+  ];
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -87,18 +89,28 @@ export default function Navbar(): React.ReactElement {
 
           {/* Desktop CTAs */}
           <div className="hidden items-center gap-3 md:flex">
+            {/* Language toggle */}
+            <button
+              onClick={toggle}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white/55 hover:text-white transition-colors"
+              aria-label={locale === 'ar' ? 'Switch to English' : 'التبديل للعربية'}
+            >
+              <Globe className="h-4 w-4" />
+              <span>{locale === 'ar' ? 'EN' : 'عربي'}</span>
+            </button>
+
             <Link
               href={`${DASHBOARD_URL}/login`}
               className="rounded-lg px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
             >
-              تسجيل الدخول
+              {t('nav.login')}
             </Link>
             <Link
               href={`${DASHBOARD_URL}/register`}
               className="btn-primary inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white"
             >
               <Sparkles className="h-4 w-4" />
-              جرّب مجاناً
+              {t('nav.cta')}
             </Link>
           </div>
 
@@ -143,6 +155,16 @@ export default function Navbar(): React.ReactElement {
                   {link.label}
                 </a>
               ))}
+
+              {/* Language toggle (mobile) */}
+              <button
+                onClick={() => { toggle(); setMenuOpen(false); }}
+                className="flex items-center gap-2 rounded-xl px-4 py-3 text-base font-medium text-white/65 hover:text-white transition-all"
+              >
+                <Globe className="h-4 w-4" />
+                {locale === 'ar' ? 'English' : 'العربية'}
+              </button>
+
               <div className="mt-4 flex flex-col gap-2 border-t pt-4" style={{ borderColor: 'rgba(168,85,247,0.12)' }}>
                 <Link
                   href={`${DASHBOARD_URL}/login`}
@@ -150,7 +172,7 @@ export default function Navbar(): React.ReactElement {
                   className="rounded-xl py-3 text-center text-sm font-medium text-white/65 hover:text-white transition-colors"
                   style={{ border: '1px solid rgba(255,255,255,0.08)' }}
                 >
-                  تسجيل الدخول
+                  {t('nav.login')}
                 </Link>
                 <Link
                   href={`${DASHBOARD_URL}/register`}
@@ -158,7 +180,7 @@ export default function Navbar(): React.ReactElement {
                   className="btn-primary inline-flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white"
                 >
                   <Sparkles className="h-4 w-4" />
-                  جرّب مجاناً ١٤ يوم
+                  {t('nav.ctaMobile')}
                 </Link>
               </div>
             </nav>

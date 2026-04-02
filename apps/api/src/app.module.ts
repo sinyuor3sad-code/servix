@@ -11,6 +11,7 @@ import { MailModule } from './shared/mail';
 import { SmsModule } from './shared/sms';
 import { WhatsAppModule } from './shared/whatsapp';
 import { JobsModule } from './shared/jobs';
+import { SentryModule } from './shared/sentry';
 import { JwtAuthGuard, SubscriptionWriteGuard } from './shared/guards';
 import { TenantMiddleware } from './shared/middleware/tenant.middleware';
 import { AuthModule } from './core/auth/auth.module';
@@ -42,6 +43,7 @@ import { SalonModule } from './modules/salon/salon.module';
     SmsModule,
     WhatsAppModule,
     JobsModule,
+    SentryModule,
     AuthModule,
     TenantsModule,
     SubscriptionsModule,

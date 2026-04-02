@@ -6,18 +6,8 @@ import {
 import { TenantPrismaClient } from '../../../shared/types';
 import { EventsGateway } from '../../../shared/events';
 import { QueryAttendanceDto } from './dto/query-attendance.dto';
+import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
-interface PaginationMeta {
-  page: number;
-  perPage: number;
-  total: number;
-  totalPages: number;
-}
-
-interface PaginatedResult<T> {
-  data: T[];
-  meta: PaginationMeta;
-}
 
 @Injectable()
 export class AttendanceService {
@@ -59,9 +49,10 @@ export class AttendanceService {
   async findAll(
     db: TenantPrismaClient,
     query: QueryAttendanceDto,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
-    const { page, perPage, employeeId, date, dateFrom, dateTo, status } = query;
-    const skip = (page - 1) * perPage;
+  ): Promise<ReturnType<typeof paginate>> {
+    const { page, employeeId, date, dateFrom, dateTo, status } = query;
+    const limit = effectiveLimit(query);
+    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (employeeId) where.employeeId = employeeId;
@@ -81,21 +72,13 @@ export class AttendanceService {
         where,
         include: { employee: { select: { id: true, fullName: true, role: true } } },
         skip,
-        take: perPage,
+        take: limit,
         orderBy: { date: 'desc' },
       }),
       db.attendance.count({ where }),
     ]);
 
-    return {
-      data: records,
-      meta: {
-        page,
-        perPage,
-        total,
-        totalPages: Math.ceil(total / perPage),
-      },
-    };
+    return paginate(records as unknown as Record<string, unknown>[], total, page, limit);
   }
 
   async checkIn(
@@ -258,7 +241,7 @@ export class AttendanceService {
     db: TenantPrismaClient,
     employeeId: string,
     query: QueryAttendanceDto,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
+  ): Promise<ReturnType<typeof paginate>> {
     const employee = await db.employee.findUnique({
       where: { id: employeeId },
     });
@@ -266,8 +249,9 @@ export class AttendanceService {
       throw new NotFoundException('الموظف غير موجود');
     }
 
-    const { page, perPage, dateFrom, dateTo } = query;
-    const skip = (page - 1) * perPage;
+    const { page, dateFrom, dateTo } = query;
+    const limit = effectiveLimit(query);
+    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = { employeeId };
     if (dateFrom || dateTo) {
@@ -281,20 +265,12 @@ export class AttendanceService {
       db.attendance.findMany({
         where,
         skip,
-        take: perPage,
+        take: limit,
         orderBy: { date: 'desc' },
       }),
       db.attendance.count({ where }),
     ]);
 
-    return {
-      data: records,
-      meta: {
-        page,
-        perPage,
-        total,
-        totalPages: Math.ceil(total / perPage),
-      },
-    };
+    return paginate(records as unknown as Record<string, unknown>[], total, page, limit);
   }
 }

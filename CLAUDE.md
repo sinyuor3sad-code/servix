@@ -694,12 +694,16 @@ Booking page uses salon's own primaryColor + secondaryColor (no predefined theme
 - [x] Phase 15: Onboarding wizard + landing page ✓
 - [x] Phase 16: Subscription lifecycle + trust pages ✓
 - [x] Phase 17: Data export + account deletion ✓
-- [ ] Phase 18: Polish UI + booking page + Quick POS
-- [ ] Phase 19: Testing + security audit
-- [ ] Phase 20: Deploy
-- [ ] Phase 21: Launch
+- [x] Phase 18a: SEC-3 Swagger hidden in production + SEC-6 CORS hardened ✓
+- [x] Phase 18b: Sentry error tracking integration ✓
+- [x] Phase 18c: Subscription expiry banner in Dashboard ✓
+- [x] Phase 18d: Arabic/English language toggle on Landing Page ✓
+- [ ] Phase 19: Polish UI + booking page + Quick POS
+- [ ] Phase 20: Testing + security audit
+- [ ] Phase 21: Deploy
+- [ ] Phase 22: Launch
 
-**Next: Phase 13 (security) → Phase 14 (WhatsApp per-tenant)**
+**Next: Phase 19 (Polish UI) → Phase 20 (Testing)**
 
 ---
 

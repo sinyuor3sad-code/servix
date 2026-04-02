@@ -8,7 +8,7 @@ export class QueryClientsDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'بحث بالاسم أو رقم الجوال' })
   @IsOptional()
   @IsString({ message: 'نص البحث يجب أن يكون نصاً' })
-  search?: string;
+  declare search?: string;
 
   @ApiPropertyOptional({ description: 'تصفية بالجنس', enum: GenderEnum })
   @IsOptional()

@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import {
   Calendar, DollarSign, Users, UserCheck, Clock, TrendingUp, TrendingDown,
-  AlertTriangle, Bell, Heart, Plus, CreditCard, Scissors, Package,
-  BarChart3, Star, FileText, ChevronLeft, ChevronRight, Zap, Crown, Award,
+  Bell, Heart, Plus, CreditCard, Scissors, Package,
+  BarChart3, FileText, ChevronLeft, ChevronRight, Zap,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboard.service';
@@ -169,33 +169,10 @@ function MiniCalendar() {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   TOP EMPLOYEES
-   ═══════════════════════════════════════════════════════════════ */
-
-const TOP_EMPLOYEES = [
-  { name: 'سارة القحطاني', role: 'مصففة شعر',   bookings: 8, revenue: 2400, rating: 4.9 },
-  { name: 'هند الشمري',    role: 'خبيرة تجميل', bookings: 6, revenue: 1850, rating: 4.8 },
-  { name: 'أمل الزهراني',  role: 'مكياج',       bookings: 5, revenue: 1600, rating: 4.7 },
-];
-
-const MEDALS = [
-  { icon: Crown, color: 'text-[#d4af37]', bg: 'bg-[#d4af37]/10' },
-  { icon: Award, color: 'text-[#94a3b8]', bg: 'bg-[#94a3b8]/10' },
-  { icon: Award, color: 'text-[#b87333]', bg: 'bg-[#b87333]/10' },
-];
 
 /* ═══════════════════════════════════════════════════════════════
-   MOCK DATA
+   PAGE
    ═══════════════════════════════════════════════════════════════ */
-
-const MOCK_APPOINTMENTS = [
-  { id: '1', client: 'نورة المطيري',  service: 'قص وصبغة',    employee: 'سارة',  time: '10:00', status: 'confirmed' },
-  { id: '2', client: 'ريم العتيبي',   service: 'بروتين شعر',  employee: 'هند',   time: '10:30', status: 'in_progress' },
-  { id: '3', client: 'لمى الحربي',    service: 'مكياج سهرة',  employee: 'أمل',   time: '11:00', status: 'confirmed' },
-  { id: '4', client: 'غادة الغامدي',  service: 'تنظيف بشرة',  employee: 'ديما',  time: '11:30', status: 'pending' },
-  { id: '5', client: 'عبير السبيعي',  service: 'أظافر جل',    employee: 'منيرة', time: '12:00', status: 'confirmed' },
-];
 
 const APT_ST: Record<string, { label: string; variant: string }> = {
   confirmed:   { label: 'مؤكد',    variant: 'bg-[var(--success-light)] text-[var(--success)] border-[var(--success)]/15' },
@@ -203,26 +180,6 @@ const APT_ST: Record<string, { label: string; variant: string }> = {
   pending:     { label: 'بانتظار', variant: 'bg-[var(--info-light)] text-[var(--info)] border-[var(--info)]/15' },
   completed:   { label: 'مكتمل',   variant: 'bg-[var(--success-light)] text-[var(--success)] border-[var(--success)]/15' },
   cancelled:   { label: 'ملغي',    variant: 'bg-[var(--danger-light)] text-[var(--danger)] border-[var(--danger)]/15' },
-};
-
-const ALERTS = [
-  { icon: AlertTriangle, text: 'خدمة البروتين تقترب من نفاد المخزون (3 وحدات)', color: 'bg-[var(--warning-light)] text-[var(--warning)] border-[var(--warning)]/15' },
-  { icon: Clock,         text: 'موعد نورة المطيري 10:00 ص — لم يتم التأكيد',      color: 'bg-[var(--info-light)] text-[var(--info)] border-[var(--info)]/15' },
-  { icon: Star,          text: 'تقييم جديد ★★★★★ من ريم العتيبي',                   color: 'bg-[var(--success-light)] text-[var(--success)] border-[var(--success)]/15' },
-];
-
-const EMPLOYEES = [
-  { name: 'سارة القحطاني', role: 'مصففة شعر',   status: 'present',  bookings: 4 },
-  { name: 'هند الشمري',    role: 'خبيرة تجميل', status: 'present',  bookings: 3 },
-  { name: 'أمل الزهراني',  role: 'مكياج',       status: 'present',  bookings: 2 },
-  { name: 'ديما البقمي',   role: 'عناية بشرة',  status: 'on_break', bookings: 1 },
-  { name: 'منيرة الدوسري', role: 'أظافر',       status: 'present',  bookings: 3 },
-];
-
-const EMP_ST: Record<string, { label: string; cls: string }> = {
-  present:  { label: 'متواجدة', cls: 'bg-[var(--success-light)] text-[var(--success)]' },
-  on_break: { label: 'استراحة', cls: 'bg-[var(--warning-light)] text-[var(--warning)]' },
-  absent:   { label: 'غائبة',   cls: 'bg-[var(--danger-light)] text-[var(--danger)]' },
 };
 
 const QUICK_LINKS = [
@@ -234,24 +191,6 @@ const QUICK_LINKS = [
   { label: 'المخزون',   icon: Package,    href: '/inventory' },
   { label: 'العملاء',   icon: Heart,      href: '/clients' },
   { label: 'التقارير',  icon: BarChart3,  href: '/reports' },
-];
-
-const WEEKLY_REV = [
-  { day: 'السبت',    val: 3200 },
-  { day: 'الأحد',    val: 4100 },
-  { day: 'الإثنين',  val: 2800 },
-  { day: 'الثلاثاء', val: 5200 },
-  { day: 'الأربعاء', val: 3900 },
-  { day: 'الخميس',   val: 4850 },
-  { day: 'الجمعة',   val: 1200 },
-];
-
-const TOP_SERVICES = [
-  { name: 'قص شعر',     count: 145, pct: 92 },
-  { name: 'صبغة شعر',   count: 98,  pct: 68 },
-  { name: 'بروتين',     count: 76,  pct: 52 },
-  { name: 'مكياج',      count: 64,  pct: 44 },
-  { name: 'تنظيف بشرة', count: 51,  pct: 35 },
 ];
 
 /* ═══════════════════════════════════════════════════════════════

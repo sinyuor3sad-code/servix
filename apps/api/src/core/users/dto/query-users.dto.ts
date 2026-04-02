@@ -6,7 +6,7 @@ export class QueryUsersDto extends PaginationDto {
   @ApiPropertyOptional({ description: 'بحث بالاسم أو البريد أو الجوال' })
   @IsOptional()
   @IsString({ message: 'نص البحث يجب أن يكون نصاً' })
-  search?: string;
+  declare search?: string;
 
   @ApiPropertyOptional({
     description: 'حالة المستخدم',

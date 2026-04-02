@@ -7,6 +7,7 @@ import { TenantPrismaClient } from '../../../shared/types';
 import { AdjustPointsDto } from './dto/adjust-points.dto';
 import { UpdateLoyaltySettingsDto } from './dto/update-settings.dto';
 import { QueryTransactionsDto } from './dto/query-transactions.dto';
+import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
 interface LoyaltySettings {
   loyaltyEnabled: boolean;
@@ -14,15 +15,6 @@ interface LoyaltySettings {
   loyaltyRedemptionValue: number;
 }
 
-interface PaginatedResult<T> {
-  data: T[];
-  meta: {
-    page: number;
-    perPage: number;
-    total: number;
-    totalPages: number;
-  };
-}
 
 const SETTING_KEYS = {
   enabled: 'loyalty_enabled',
@@ -168,9 +160,10 @@ export class LoyaltyService {
   async getTransactions(
     db: TenantPrismaClient,
     query: QueryTransactionsDto,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
-    const { page, perPage, sort, order, clientId, type } = query;
-    const skip = (page - 1) * perPage;
+  ): Promise<ReturnType<typeof paginate>> {
+    const { page, sort, order, clientId, type } = query;
+    const limit = effectiveLimit(query);
+    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (clientId) where.clientId = clientId;
@@ -180,7 +173,7 @@ export class LoyaltyService {
       db.loyaltyTransaction.findMany({
         where,
         skip,
-        take: perPage,
+        take: limit,
         orderBy: { [sort || 'createdAt']: order || 'desc' },
         include: {
           client: { select: { id: true, fullName: true, phone: true } },
@@ -189,15 +182,7 @@ export class LoyaltyService {
       db.loyaltyTransaction.count({ where }),
     ]);
 
-    return {
-      data: data as unknown as Record<string, unknown>[],
-      meta: {
-        page,
-        perPage,
-        total,
-        totalPages: Math.ceil(total / perPage),
-      },
-    };
+    return paginate(data as unknown as Record<string, unknown>[], total, page, limit);
   }
 
   async earnPoints(

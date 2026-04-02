@@ -5,18 +5,8 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { SetScheduleDto } from './dto/set-schedule.dto';
 import { SetServicesDto } from './dto/set-services.dto';
 import { QueryEmployeesDto } from './dto/query-employees.dto';
+import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
-interface PaginationMeta {
-  page: number;
-  perPage: number;
-  total: number;
-  totalPages: number;
-}
-
-interface PaginatedResult<T> {
-  data: T[];
-  meta: PaginationMeta;
-}
 
 @Injectable()
 export class EmployeesService {
@@ -50,7 +40,7 @@ export class EmployeesService {
     query: QueryEmployeesDto,
   ) {
     const { page, role, isActive, search } = query;
-    const limit = query.limit ?? query.perPage;
+    const limit = effectiveLimit(query);
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
@@ -68,13 +58,10 @@ export class EmployeesService {
       db.employee.count({ where }),
     ]);
 
-    return {
-      items: employees.map((e) => this.mapDecimalFields(e)),
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    return paginate(
+      employees.map((e) => this.mapDecimalFields(e)) as unknown as Record<string, unknown>[],
+      total, page, limit,
+    );
   }
 
   async findOne(

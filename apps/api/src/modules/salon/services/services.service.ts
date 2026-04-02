@@ -6,18 +6,8 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { ReorderServicesDto } from './dto/reorder.dto';
 import { QueryServicesDto } from './dto/query-services.dto';
+import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
-interface PaginationMeta {
-  page: number;
-  perPage: number;
-  total: number;
-  totalPages: number;
-}
-
-interface PaginatedResult<T> {
-  data: T[];
-  meta: PaginationMeta;
-}
 
 @Injectable()
 export class ServicesService {
@@ -56,13 +46,10 @@ export class ServicesService {
       db.service.count({ where }),
     ]);
 
-    return {
-      items: services.map((s) => this.mapServicePrice(s)),
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    return paginate(
+      services.map((s) => this.mapServicePrice(s)) as unknown as Record<string, unknown>[],
+      total, page, limit,
+    );
   }
 
   async findOne(

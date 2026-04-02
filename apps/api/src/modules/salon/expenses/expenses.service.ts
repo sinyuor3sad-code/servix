@@ -3,18 +3,8 @@ import { TenantPrismaClient } from '../../../shared/types';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { QueryExpensesDto } from './dto/query-expenses.dto';
+import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
-interface PaginationMeta {
-  page: number;
-  perPage: number;
-  total: number;
-  totalPages: number;
-}
-
-interface PaginatedResult<T> {
-  data: T[];
-  meta: PaginationMeta;
-}
 
 @Injectable()
 export class ExpensesService {
@@ -33,9 +23,10 @@ export class ExpensesService {
   async findAll(
     db: TenantPrismaClient,
     query: QueryExpensesDto,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
-    const { page, perPage, category, dateFrom, dateTo } = query;
-    const skip = (page - 1) * perPage;
+  ) {
+    const { page, category, dateFrom, dateTo } = query;
+    const limit = effectiveLimit(query);
+    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (category) where.category = category;
@@ -50,21 +41,16 @@ export class ExpensesService {
       db.expense.findMany({
         where,
         skip,
-        take: perPage,
+        take: limit,
         orderBy: { date: 'desc' },
       }),
       db.expense.count({ where }),
     ]);
 
-    return {
-      data: expenses.map((e) => this.mapDecimalFields(e)),
-      meta: {
-        page,
-        perPage,
-        total,
-        totalPages: Math.ceil(total / perPage),
-      },
-    };
+    return paginate(
+      expenses.map((e) => this.mapDecimalFields(e)) as unknown as Record<string, unknown>[],
+      total, page, limit,
+    );
   }
 
   async findOne(

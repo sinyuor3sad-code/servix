@@ -17,16 +17,8 @@ import { AddDiscountDto } from './dto/add-discount.dto';
 import { ApplyCouponDto } from './dto/apply-coupon.dto';
 import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { InvoiceSendChannel } from './dto/send-invoice.dto';
+import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
-interface PaginatedResult<T> {
-  data: T[];
-  meta: {
-    page: number;
-    perPage: number;
-    total: number;
-    totalPages: number;
-  };
-}
 
 @Injectable()
 export class InvoicesService {
@@ -41,9 +33,10 @@ export class InvoicesService {
   async findAll(
     db: TenantPrismaClient,
     query: QueryInvoicesDto,
-  ): Promise<PaginatedResult<Record<string, unknown>>> {
-    const { page, perPage, sort, order, status, clientId, dateFrom, dateTo } = query;
-    const skip = (page - 1) * perPage;
+  ) {
+    const { page, sort, order, status, clientId, dateFrom, dateTo } = query;
+    const limit = effectiveLimit(query);
+    const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
 
@@ -66,7 +59,7 @@ export class InvoicesService {
       db.invoice.findMany({
         where,
         skip,
-        take: perPage,
+        take: limit,
         orderBy: { [sort || 'createdAt']: order || 'desc' },
         include: {
           invoiceItems: true,
@@ -79,15 +72,7 @@ export class InvoicesService {
       db.invoice.count({ where }),
     ]);
 
-    return {
-      data: data as unknown as Record<string, unknown>[],
-      meta: {
-        page,
-        perPage,
-        total,
-        totalPages: Math.ceil(total / perPage),
-      },
-    };
+    return paginate(data as unknown as Record<string, unknown>[], total, page, limit);
   }
 
   async create(

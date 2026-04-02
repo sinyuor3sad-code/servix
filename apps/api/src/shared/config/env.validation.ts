@@ -17,4 +17,7 @@ export const AppConfigValidationSchema = Joi.object({
 
   CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
   APP_URL: Joi.string().uri().default('http://localhost:3000'),
+
+  // Sentry — optional; error tracking disabled when empty
+  SENTRY_DSN: Joi.string().uri().allow('').default(''),
 });

@@ -1,0 +1,1337 @@
+#!/usr/bin/env bash
+# apply-changes.sh — Apply all SERVIX changes to the server
+# Run from: root@server:~/servix$ bash ~/apply-changes.sh
+set -e
+cd ~/servix
+
+echo "==> Creating new directories..."
+mkdir -p apps/api/src/shared/sentry
+mkdir -p apps/landing/src/lib
+
+# ─────────────────────────────────────────────
+# 1. apps/api/src/main.ts  (SEC-3 + SEC-6 + Sentry)
+# ─────────────────────────────────────────────
+cat > apps/api/src/main.ts << 'EOF_MAIN_TS'
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
+import { AppModule } from './app.module';
+import { GlobalExceptionFilter } from './shared/filters/http-exception.filter';
+import { ResponseTransformInterceptor } from './shared/interceptors/response-transform.interceptor';
+import { SentryService } from './shared/sentry/sentry.service';
+
+async function bootstrap(): Promise<void> {
+  const app = await NestFactory.create(AppModule);
+
+  app.use(helmet({
+    contentSecurityPolicy: false, // Managed by CloudFlare
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  }));
+
+  const configService = app.get(ConfigService);
+  const port = configService.get<number>('PORT', 4000);
+
+  // API root redirect
+  app.getHttpAdapter().get('/', (_req: unknown, res: { json: (body: unknown) => void }) => {
+    const info: Record<string, string> = {
+      name: 'SERVIX API',
+      version: '1.0.0',
+      health: '/api/v1/health',
+    };
+    // Only expose docs link outside production (SEC-3)
+    if (configService.get<string>('NODE_ENV', 'development') !== 'production') {
+      info.docs = '/docs';
+    }
+    res.json(info);
+  });
+
+  app.setGlobalPrefix('api');
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+
+  const sentryService = app.get(SentryService, { strict: false });
+  app.useGlobalFilters(new GlobalExceptionFilter(sentryService));
+  app.useGlobalInterceptors(new ResponseTransformInterceptor());
+
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  const rawOrigins = configService.get<string>('CORS_ORIGINS', '');
+  const corsOrigins = rawOrigins
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  // SEC-6: In production, only allow explicitly configured origins. Never use '*'.
+  app.enableCors({
+    origin: nodeEnv === 'production'
+      ? corsOrigins.length > 0
+        ? corsOrigins
+        : false // Block all cross-origin if no origins configured in production
+      : corsOrigins.length > 0
+        ? corsOrigins
+        : 'http://localhost:3000',
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Accept-Language'],
+    maxAge: 86400, // Cache preflight for 24h
+  });
+
+  // Swagger docs — hidden in production for security (SEC-3)
+  if (nodeEnv !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('SERVIX API')
+      .setDescription('منصة SaaS لإدارة الأعمال الخدمية — Hybrid SaaS platform for service businesses')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addTag('Auth', 'المصادقة والتسجيل')
+      .addTag('Tenants', 'إدارة الصالونات')
+      .addTag('Subscriptions', 'الاشتراكات والباقات')
+      .addTag('Features', 'إدارة الميزات')
+      .addTag('Roles', 'الأدوار والصلاحيات')
+      .addTag('Users', 'إدارة المستخدمين')
+      .addTag('Uploads', 'رفع الملفات')
+      .addTag('Audit Logs', 'سجل العمليات')
+      .addTag('Notifications', 'الإشعارات')
+      .addTag('Salon Info', 'بيانات الصالون العامة')
+      .addTag('Services', 'إدارة الخدمات')
+      .addTag('Employees', 'إدارة الموظفات')
+      .addTag('Clients', 'إدارة العملاء')
+      .addTag('Appointments', 'إدارة المواعيد والحجوزات')
+      .addTag('Invoices', 'الفواتير والمدفوعات')
+      .addTag('Coupons', 'إدارة الكوبونات')
+      .addTag('Loyalty', 'نظام الولاء')
+      .addTag('Expenses', 'إدارة المصروفات')
+      .addTag('Attendance', 'حضور وانصراف الموظفات')
+      .addTag('Settings', 'إعدادات الصالون')
+      .addTag('Reports', 'التقارير')
+      .addTag('Booking (Public)', 'واجهة الحجز العامة')
+      .addTag('Admin', 'إدارة المنصة')
+      .addTag('Health', 'فحص صحة النظام')
+      .build();
+
+    const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, swaggerDocument);
+  }
+
+  await app.listen(port);
+}
+
+bootstrap();
+EOF_MAIN_TS
+echo "  ✓ main.ts"
+
+# ─────────────────────────────────────────────
+# 2. apps/api/src/app.module.ts  (add SentryModule)
+# ─────────────────────────────────────────────
+cat > apps/api/src/app.module.ts << 'EOF_APP_MODULE'
+import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ConfigModule } from '@nestjs/config';
+import { AppConfigValidationSchema } from './shared/config/env.validation';
+import { DatabaseModule } from './shared/database';
+import { CacheModule } from './shared/cache';
+import { PdfModule } from './shared/pdf/pdf.module';
+import { SecurityModule } from './shared/security';
+import { EventsModule } from './shared/events';
+import { MailModule } from './shared/mail';
+import { SmsModule } from './shared/sms';
+import { WhatsAppModule } from './shared/whatsapp';
+import { JobsModule } from './shared/jobs';
+import { SentryModule } from './shared/sentry';
+import { JwtAuthGuard, SubscriptionWriteGuard } from './shared/guards';
+import { TenantMiddleware } from './shared/middleware/tenant.middleware';
+import { AuthModule } from './core/auth/auth.module';
+import { TenantsModule } from './core/tenants/tenants.module';
+import { SubscriptionsModule } from './core/subscriptions/subscriptions.module';
+import { FeaturesModule } from './core/features/features.module';
+import { RolesModule } from './core/roles/roles.module';
+import { AuditModule } from './core/audit/audit.module';
+import { UsersModule } from './core/users/users.module';
+import { UploadsModule } from './core/uploads/uploads.module';
+import { NotificationsModule } from './core/notifications/notifications.module';
+import { AdminModule } from './core/admin/admin.module';
+import { HealthModule } from './core/health/health.module';
+import { SalonModule } from './modules/salon/salon.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validationSchema: AppConfigValidationSchema,
+      validationOptions: { abortEarly: false },
+    }),
+    DatabaseModule,
+    CacheModule,
+    PdfModule,
+    SecurityModule,
+    EventsModule,
+    MailModule,
+    SmsModule,
+    WhatsAppModule,
+    JobsModule,
+    SentryModule,
+    AuthModule,
+    TenantsModule,
+    SubscriptionsModule,
+    FeaturesModule,
+    RolesModule,
+    AuditModule,
+    UsersModule,
+    UploadsModule,
+    NotificationsModule,
+    AdminModule,
+    HealthModule,
+    SalonModule,
+  ],
+  controllers: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantMiddleware,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: SubscriptionWriteGuard,
+    },
+  ],
+})
+export class AppModule {}
+EOF_APP_MODULE
+echo "  ✓ app.module.ts"
+
+# ─────────────────────────────────────────────
+# 3. apps/api/src/shared/config/env.validation.ts  (add SENTRY_DSN)
+# ─────────────────────────────────────────────
+cat > apps/api/src/shared/config/env.validation.ts << 'EOF_ENV_VALIDATION'
+import * as Joi from 'joi';
+
+export const AppConfigValidationSchema = Joi.object({
+  NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+  PORT: Joi.number().default(4000),
+
+  PLATFORM_DATABASE_URL: Joi.string().required(),
+
+  REDIS_HOST: Joi.string().default('localhost'),
+  REDIS_PORT: Joi.number().default(6379),
+  REDIS_PASSWORD: Joi.string().allow('').default(''),
+
+  JWT_ACCESS_SECRET: Joi.string().required(),
+  JWT_REFRESH_SECRET: Joi.string().required(),
+  JWT_ACCESS_EXPIRATION: Joi.string().default('15m'),
+  JWT_REFRESH_EXPIRATION: Joi.string().default('7d'),
+
+  CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
+  APP_URL: Joi.string().uri().default('http://localhost:3000'),
+
+  // Sentry — optional; error tracking disabled when empty
+  SENTRY_DSN: Joi.string().uri().allow('').default(''),
+});
+EOF_ENV_VALIDATION
+echo "  ✓ env.validation.ts"
+
+# ─────────────────────────────────────────────
+# 4. apps/api/src/shared/filters/http-exception.filter.ts  (Sentry capture)
+# ─────────────────────────────────────────────
+cat > apps/api/src/shared/filters/http-exception.filter.ts << 'EOF_FILTER'
+import {
+  ExceptionFilter,
+  Catch,
+  ArgumentsHost,
+  HttpException,
+  HttpStatus,
+  Inject,
+  type Optional,
+} from '@nestjs/common';
+import { Response, Request } from 'express';
+import { SentryService } from '../sentry/sentry.service';
+
+interface ErrorResponse {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+    details?: unknown[];
+  };
+}
+
+@Catch()
+export class GlobalExceptionFilter implements ExceptionFilter {
+  constructor(
+    @Optional() @Inject(SentryService) private readonly sentry?: SentryService,
+  ) {}
+
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
+
+    let status = HttpStatus.INTERNAL_SERVER_ERROR;
+    let code = 'INTERNAL_ERROR';
+    let message = 'حدث خطأ داخلي';
+    let details: unknown[] | undefined;
+
+    if (exception instanceof HttpException) {
+      status = exception.getStatus();
+      const exceptionResponse = exception.getResponse();
+
+      if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+        const resp = exceptionResponse as Record<string, unknown>;
+        message = (resp.message as string) || exception.message;
+        code = (resp.error as string) || 'HTTP_ERROR';
+
+        if (Array.isArray(resp.message)) {
+          details = resp.message;
+          message = 'بيانات غير صالحة';
+          code = 'VALIDATION_ERROR';
+        }
+      } else {
+        message = exception.message;
+      }
+    }
+
+    // Report 5xx errors to Sentry (skip 4xx — those are client errors)
+    if (status >= 500 && this.sentry) {
+      const user = (request as Record<string, unknown>).user as Record<string, string> | undefined;
+      this.sentry.captureException(exception, {
+        url: request.url,
+        method: request.method,
+        statusCode: status,
+        userId: user?.id,
+        tenantId: user?.tenantId,
+      });
+    }
+
+    const errorResponse: ErrorResponse = {
+      success: false,
+      error: {
+        code,
+        message,
+        ...(details ? { details } : {}),
+      },
+    };
+
+    response.status(status).json(errorResponse);
+  }
+}
+EOF_FILTER
+echo "  ✓ http-exception.filter.ts"
+
+# ─────────────────────────────────────────────
+# 5. apps/api/src/shared/sentry/sentry.module.ts  (NEW FILE)
+# ─────────────────────────────────────────────
+cat > apps/api/src/shared/sentry/sentry.module.ts << 'EOF_SENTRY_MODULE'
+import { Module, Global, type OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { SentryService } from './sentry.service';
+
+@Global()
+@Module({
+  providers: [SentryService],
+  exports: [SentryService],
+})
+export class SentryModule implements OnModuleInit {
+  constructor(private readonly configService: ConfigService) {}
+
+  async onModuleInit(): Promise<void> {
+    const dsn = this.configService.get<string>('SENTRY_DSN');
+    if (!dsn) return;
+
+    const Sentry = await import('@sentry/node');
+    Sentry.init({
+      dsn,
+      environment: this.configService.get<string>('NODE_ENV', 'development'),
+      tracesSampleRate: this.configService.get<string>('NODE_ENV') === 'production' ? 0.2 : 1.0,
+      // Don't send PII (names, emails) to Sentry
+      sendDefaultPii: false,
+    });
+  }
+}
+EOF_SENTRY_MODULE
+echo "  ✓ sentry.module.ts"
+
+# ─────────────────────────────────────────────
+# 6. apps/api/src/shared/sentry/sentry.service.ts  (NEW FILE)
+# ─────────────────────────────────────────────
+cat > apps/api/src/shared/sentry/sentry.service.ts << 'EOF_SENTRY_SERVICE'
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+
+@Injectable()
+export class SentryService {
+  private enabled = false;
+
+  constructor(private readonly configService: ConfigService) {
+    this.enabled = !!this.configService.get<string>('SENTRY_DSN');
+  }
+
+  async captureException(
+    error: unknown,
+    context?: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.enabled) return;
+
+    try {
+      const Sentry = await import('@sentry/node');
+      if (context) {
+        Sentry.withScope((scope) => {
+          Object.entries(context).forEach(([key, value]) => {
+            scope.setExtra(key, value);
+          });
+          Sentry.captureException(error);
+        });
+      } else {
+        Sentry.captureException(error);
+      }
+    } catch {
+      // Sentry itself failed — don't crash the app
+    }
+  }
+
+  async captureMessage(
+    message: string,
+    level: 'info' | 'warning' | 'error' = 'info',
+  ): Promise<void> {
+    if (!this.enabled) return;
+
+    try {
+      const Sentry = await import('@sentry/node');
+      Sentry.captureMessage(message, level);
+    } catch {
+      // Sentry itself failed — don't crash the app
+    }
+  }
+}
+EOF_SENTRY_SERVICE
+echo "  ✓ sentry.service.ts"
+
+# ─────────────────────────────────────────────
+# 7. apps/api/src/shared/sentry/index.ts  (NEW FILE)
+# ─────────────────────────────────────────────
+cat > apps/api/src/shared/sentry/index.ts << 'EOF_SENTRY_INDEX'
+export { SentryModule } from './sentry.module';
+export { SentryService } from './sentry.service';
+EOF_SENTRY_INDEX
+echo "  ✓ sentry/index.ts"
+
+# ─────────────────────────────────────────────
+# 8. apps/api/src/core/users/dto/query-users.dto.ts  (TS2612 fix)
+# ─────────────────────────────────────────────
+cat > apps/api/src/core/users/dto/query-users.dto.ts << 'EOF_QUERY_USERS'
+import { IsOptional, IsString, IsIn } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { PaginationDto } from '../../../shared/dto/pagination.dto';
+
+export class QueryUsersDto extends PaginationDto {
+  @ApiPropertyOptional({ description: 'بحث بالاسم أو البريد أو الجوال' })
+  @IsOptional()
+  @IsString({ message: 'نص البحث يجب أن يكون نصاً' })
+  declare search?: string;
+
+  @ApiPropertyOptional({
+    description: 'حالة المستخدم',
+    enum: ['active', 'inactive'],
+  })
+  @IsOptional()
+  @IsIn(['active', 'inactive'], {
+    message: 'حالة المستخدم يجب أن تكون نشط أو غير نشط',
+  })
+  status?: 'active' | 'inactive';
+}
+EOF_QUERY_USERS
+echo "  ✓ query-users.dto.ts"
+
+# ─────────────────────────────────────────────
+# 9. apps/api/src/modules/salon/clients/dto/query-clients.dto.ts  (TS2612 fix)
+# ─────────────────────────────────────────────
+cat > apps/api/src/modules/salon/clients/dto/query-clients.dto.ts << 'EOF_QUERY_CLIENTS'
+import { IsOptional, IsString, IsEnum, IsBoolean } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { PaginationDto } from '../../../../shared/dto/pagination.dto';
+import { GenderEnum, ClientSourceEnum } from './create-client.dto';
+
+export class QueryClientsDto extends PaginationDto {
+  @ApiPropertyOptional({ description: 'بحث بالاسم أو رقم الجوال' })
+  @IsOptional()
+  @IsString({ message: 'نص البحث يجب أن يكون نصاً' })
+  declare search?: string;
+
+  @ApiPropertyOptional({ description: 'تصفية بالجنس', enum: GenderEnum })
+  @IsOptional()
+  @IsEnum(GenderEnum, { message: 'الجنس يجب أن يكون أنثى أو ذكر' })
+  gender?: GenderEnum;
+
+  @ApiPropertyOptional({ description: 'تصفية بمصدر العميل', enum: ClientSourceEnum })
+  @IsOptional()
+  @IsEnum(ClientSourceEnum, { message: 'مصدر العميل غير صالح' })
+  source?: ClientSourceEnum;
+
+  @ApiPropertyOptional({ description: 'تصفية بحالة النشاط', example: true })
+  @IsOptional()
+  @IsBoolean({ message: 'حالة النشاط يجب أن تكون صحيحة أو خاطئة' })
+  @Transform(({ value }) => value === 'true' || value === true)
+  isActive?: boolean;
+}
+EOF_QUERY_CLIENTS
+echo "  ✓ query-clients.dto.ts"
+
+# ─────────────────────────────────────────────
+# 10. appointments.service.ts — fix return shape (items→data/meta)
+#     Use Python for safe multi-line replacement
+# ─────────────────────────────────────────────
+python3 - << 'EOF_PY_APPT'
+import re
+
+path = 'apps/api/src/modules/salon/appointments/appointments.service.ts'
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+old = """    return {
+      items: data as unknown as Record<string, unknown>[],
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };"""
+
+new = """    return {
+      data: data as unknown as Record<string, unknown>[],
+      meta: {
+        page,
+        perPage: limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };"""
+
+if old in content:
+    content = content.replace(old, new, 1)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print('  ✓ appointments.service.ts patched')
+else:
+    print('  ⚠ appointments.service.ts — pattern not found (may already be fixed)')
+EOF_PY_APPT
+
+# ─────────────────────────────────────────────
+# 11. clients.service.ts — fix return shape (items→data/meta)
+# ─────────────────────────────────────────────
+python3 - << 'EOF_PY_CLIENTS'
+import re
+
+path = 'apps/api/src/modules/salon/clients/clients.service.ts'
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+old = """    return {
+      items: data as unknown as Record<string, unknown>[],
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };"""
+
+new = """    return {
+      data: data as unknown as Record<string, unknown>[],
+      meta: {
+        page,
+        perPage: limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };"""
+
+if old in content:
+    content = content.replace(old, new, 1)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print('  ✓ clients.service.ts patched')
+else:
+    print('  ⚠ clients.service.ts — pattern not found (may already be fixed)')
+EOF_PY_CLIENTS
+
+# ─────────────────────────────────────────────
+# 12. apps/api/.env.example  (add SENTRY_DSN)
+# ─────────────────────────────────────────────
+cat > apps/api/.env.example << 'EOF_ENV_EXAMPLE'
+NODE_ENV=development
+PORT=4000
+
+# Database
+PLATFORM_DATABASE_URL=postgresql://servix:servix_password@localhost:5432/servix_platform
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# JWT
+JWT_ACCESS_SECRET=your-access-secret-change-in-production
+JWT_REFRESH_SECRET=your-refresh-secret-change-in-production
+JWT_ACCESS_EXPIRATION=15m
+JWT_REFRESH_EXPIRATION=7d
+
+# CORS
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:3002,https://app.servi-x.com,https://booking.servi-x.com,https://admin.servi-x.com,https://servi-x.com
+
+# Rate Limiting
+THROTTLE_TTL=60
+THROTTLE_LIMIT=100
+
+# Storage (MinIO for local dev)
+S3_ENDPOINT=http://localhost:9000
+S3_ACCESS_KEY=servix_minio
+S3_SECRET_KEY=servix_minio_secret
+S3_BUCKET=servix-uploads
+
+# Email (placeholder)
+MAIL_API_KEY=
+MAIL_FROM=noreply@servi-x.com
+
+# SMS (placeholder)
+SMS_API_KEY=
+SMS_SENDER_ID=SERVIX
+
+# WhatsApp (placeholder)
+WHATSAPP_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+
+# Sentry (error tracking — leave empty to disable)
+SENTRY_DSN=
+EOF_ENV_EXAMPLE
+echo "  ✓ .env.example"
+
+# ─────────────────────────────────────────────
+# 13. apps/dashboard/src/app/(dashboard)/layout.tsx  (add SubscriptionBanner)
+# ─────────────────────────────────────────────
+cat > 'apps/dashboard/src/app/(dashboard)/layout.tsx' << 'EOF_DASH_LAYOUT'
+'use client';
+
+import { useState, useCallback, useEffect } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { Sidebar, Header, BottomNav } from '@/components/layout';
+import { SubscriptionBanner } from '@/components/layout/SubscriptionBanner';
+import { useAuth } from '@/hooks/useAuth';
+import { Spinner } from '@/components/ui';
+import { useQuery } from '@tanstack/react-query';
+import { settingsService } from '@/services/settings.service';
+
+/** Routes the cashier role is allowed to access */
+const CASHIER_ALLOWED = ['/pos', '/pos/quick'];
+
+export default function DashboardLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>): React.ReactElement {
+  const { isAuthenticated, isLoading, accessToken, userRole, isOwner } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const { data: settings, isLoading: settingsLoading } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => settingsService.getAll(accessToken!),
+    enabled: !!accessToken && isAuthenticated,
+  });
+
+  const onboardingCompleted = settings?.onboarding_completed === 'true';
+  const isOnboardingPage = pathname?.includes('/onboarding');
+
+  const handleMobileOpen = useCallback(() => {
+    setMobileMenuOpen(true);
+  }, []);
+
+  const handleMobileClose = useCallback(() => {
+    setMobileMenuOpen(false);
+  }, []);
+
+  const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+  const skipAuth = isLocalhost && !accessToken;
+
+  // Redirect unauthenticated users to login
+  useEffect(() => {
+    if (!skipAuth && !isLoading && !isAuthenticated) {
+      router.replace('/login');
+    }
+  }, [isAuthenticated, isLoading, router, skipAuth]);
+
+  // Redirect to onboarding if not completed
+  useEffect(() => {
+    if (!skipAuth && !isLoading && !settingsLoading && isAuthenticated && !isOnboardingPage && accessToken && settings !== undefined && !onboardingCompleted) {
+      router.replace('/onboarding');
+    }
+  }, [skipAuth, isLoading, settingsLoading, isAuthenticated, isOnboardingPage, onboardingCompleted, router, accessToken, settings]);
+
+  // RBAC: Cashier can ONLY access /pos and /pos/quick
+  useEffect(() => {
+    if (skipAuth || isLoading || !isAuthenticated || !userRole) return;
+
+    const isCashierOnly = userRole === 'cashier' && !isOwner;
+    const isPosRoute = CASHIER_ALLOWED.some((r) => pathname === r || pathname?.startsWith(r + '/'));
+
+    if (isCashierOnly && !isPosRoute) {
+      router.replace('/pos');
+    }
+  }, [skipAuth, isLoading, isAuthenticated, userRole, isOwner, pathname, router]);
+
+  if (!skipAuth && isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  // Not authenticated — useEffect will redirect to /login
+  if (!skipAuth && !isAuthenticated) {
+    return <></>;
+  }
+
+  if (isOnboardingPage) {
+    return <>{children}</>;
+  }
+
+  // POS pages render fullscreen — no sidebar, header, or bottom nav
+  const isPOSPage = pathname?.startsWith('/pos');
+  if (isPOSPage) {
+    return <>{children}</>;
+  }
+
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar mobileOpen={mobileMenuOpen} onMobileClose={handleMobileClose} />
+
+      <div className="flex flex-1 flex-col min-w-0">
+        <Header onMenuToggle={handleMobileOpen} />
+        <SubscriptionBanner />
+
+        <main className="flex-1 p-4 pb-20 md:p-6 md:pb-6">
+          {children}
+        </main>
+      </div>
+
+      <BottomNav />
+    </div>
+  );
+}
+EOF_DASH_LAYOUT
+echo "  ✓ dashboard layout.tsx"
+
+# ─────────────────────────────────────────────
+# 14. apps/dashboard/src/components/layout/SubscriptionBanner.tsx  (NEW FILE)
+# ─────────────────────────────────────────────
+cat > apps/dashboard/src/components/layout/SubscriptionBanner.tsx << 'EOF_SUB_BANNER'
+'use client';
+
+import { useQuery } from '@tanstack/react-query';
+import { AlertTriangle, Clock, XCircle } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { subscriptionService } from '@/services/subscription.service';
+
+type BannerLevel = 'warning' | 'danger' | 'locked';
+
+interface BannerConfig {
+  level: BannerLevel;
+  icon: React.ReactNode;
+  message: string;
+  detail: string;
+  bg: string;
+  border: string;
+  text: string;
+}
+
+function getDaysRemaining(endDate: string): number {
+  const end = new Date(endDate).getTime();
+  const now = Date.now();
+  return Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+}
+
+function getBannerConfig(
+  status: string,
+  daysRemaining: number,
+): BannerConfig | null {
+  // Trial ending soon (3 days or less)
+  if (status === 'trial' && daysRemaining <= 3 && daysRemaining > 0) {
+    return {
+      level: 'warning',
+      icon: <Clock className="h-4 w-4 shrink-0" />,
+      message: `الفترة التجريبية تنتهي خلال ${daysRemaining} ${daysRemaining === 1 ? 'يوم' : 'أيام'}`,
+      detail: 'اشتركي الآن للاستمرار بدون انقطاع',
+      bg: 'bg-amber-50 dark:bg-amber-950/30',
+      border: 'border-amber-200 dark:border-amber-800',
+      text: 'text-amber-800 dark:text-amber-200',
+    };
+  }
+
+  // Expired — grace period (read-only, days 0-7)
+  if (
+    (status === 'expired' || status === 'cancelled') &&
+    daysRemaining <= 0 &&
+    daysRemaining > -7
+  ) {
+    return {
+      level: 'danger',
+      icon: <AlertTriangle className="h-4 w-4 shrink-0" />,
+      message: 'اشتراكك منتهي — الوضع: قراءة فقط',
+      detail: 'جدّدي اشتراكك للاستمرار في إضافة المواعيد والفواتير',
+      bg: 'bg-red-50 dark:bg-red-950/30',
+      border: 'border-red-200 dark:border-red-800',
+      text: 'text-red-800 dark:text-red-200',
+    };
+  }
+
+  // Expired — locked (day 8-14)
+  if (
+    (status === 'expired' || status === 'cancelled') &&
+    daysRemaining <= -7
+  ) {
+    return {
+      level: 'locked',
+      icon: <XCircle className="h-4 w-4 shrink-0" />,
+      message: 'حسابك مقفل — جدّدي الاشتراك للعودة',
+      detail: 'بياناتك محفوظة ولكن لا يمكنك الوصول لها بدون تجديد',
+      bg: 'bg-red-100 dark:bg-red-950/50',
+      border: 'border-red-300 dark:border-red-700',
+      text: 'text-red-900 dark:text-red-100',
+    };
+  }
+
+  // Active but ending soon (7 days or less)
+  if (status === 'active' && daysRemaining <= 7 && daysRemaining > 0) {
+    return {
+      level: 'warning',
+      icon: <Clock className="h-4 w-4 shrink-0" />,
+      message: `اشتراكك ينتهي خلال ${daysRemaining} ${daysRemaining === 1 ? 'يوم' : 'أيام'}`,
+      detail: 'جدّدي الآن لتجنب انقطاع الخدمة',
+      bg: 'bg-amber-50 dark:bg-amber-950/30',
+      border: 'border-amber-200 dark:border-amber-800',
+      text: 'text-amber-800 dark:text-amber-200',
+    };
+  }
+
+  return null;
+}
+
+export function SubscriptionBanner(): React.ReactElement | null {
+  const { accessToken, isAuthenticated, isOwner } = useAuth();
+
+  const { data: subscription } = useQuery({
+    queryKey: ['subscription', 'current'],
+    queryFn: () => subscriptionService.getCurrent(accessToken!),
+    enabled: !!accessToken && isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+
+  // Only show to owners/managers, and only when there's subscription data
+  if (!subscription || !isOwner) return null;
+
+  const daysRemaining = getDaysRemaining(subscription.currentPeriodEnd);
+  const config = getBannerConfig(subscription.status, daysRemaining);
+
+  if (!config) return null;
+
+  return (
+    <div
+      className={`flex items-center gap-3 border-b px-4 py-2.5 text-sm ${config.bg} ${config.border} ${config.text}`}
+      role="alert"
+    >
+      {config.icon}
+      <div className="flex flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span className="font-semibold">{config.message}</span>
+        <span className="text-xs opacity-75">{config.detail}</span>
+      </div>
+      <a
+        href="/settings?tab=subscription"
+        className="shrink-0 rounded-lg bg-white/80 dark:bg-white/10 px-3 py-1 text-xs font-bold hover:bg-white dark:hover:bg-white/20 transition-colors"
+      >
+        {config.level === 'locked' ? 'جدّدي الآن' : 'إدارة الاشتراك'}
+      </a>
+    </div>
+  );
+}
+EOF_SUB_BANNER
+echo "  ✓ SubscriptionBanner.tsx"
+
+# ─────────────────────────────────────────────
+# 15. apps/dashboard/src/services/subscription.service.ts  (NEW FILE)
+# ─────────────────────────────────────────────
+cat > apps/dashboard/src/services/subscription.service.ts << 'EOF_SUB_SERVICE'
+import { api } from '@/lib/api';
+
+export interface SubscriptionInfo {
+  id: string;
+  status: 'trial' | 'active' | 'cancelled' | 'expired';
+  planId: string;
+  plan?: {
+    id: string;
+    name: string;
+    nameAr: string;
+    price: number;
+    billingCycle: string;
+  };
+  billingCycle: 'monthly' | 'annual';
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  cancelledAt: string | null;
+  createdAt: string;
+}
+
+export const subscriptionService = {
+  getCurrent: (token: string) =>
+    api.get<SubscriptionInfo>('/subscriptions/current', token),
+};
+EOF_SUB_SERVICE
+echo "  ✓ subscription.service.ts"
+
+# ─────────────────────────────────────────────
+# 16. apps/landing/src/app/layout.tsx  (add I18nProvider)
+# ─────────────────────────────────────────────
+cat > apps/landing/src/app/layout.tsx << 'EOF_LANDING_LAYOUT'
+import type { Metadata } from 'next';
+import { Cairo } from 'next/font/google';
+import './globals.css';
+import { I18nProvider } from '@/lib/i18n';
+
+const cairo = Cairo({
+  subsets: ['arabic', 'latin'],
+  variable: '--font-cairo',
+  display: 'swap',
+  weight: ['300', '400', '500', '600', '700', '800', '900'],
+});
+
+export const metadata: Metadata = {
+  title: 'SERVIX — أدِر صالونك بذكاء',
+  description:
+    'منصة إدارة صالونات التجميل — مواعيد ذكية، فواتير احترافية، واتساب، وتقارير. جرّب مجاناً 14 يوم.',
+  keywords: ['صالون', 'إدارة صالون', 'حجز مواعيد', 'فواتير', 'واتساب', 'SERVIX'],
+  metadataBase: new URL('https://servi-x.com'),
+  alternates: { canonical: '/' },
+  manifest: '/manifest.json',
+  openGraph: {
+    title: 'SERVIX — أدِر صالونك بذكاء',
+    description: 'منصة إدارة صالونات التجميل — جرّب مجاناً 14 يوم بلا بطاقة.',
+    type: 'website',
+    locale: 'ar_SA',
+    url: 'https://servi-x.com',
+    siteName: 'SERVIX',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'SERVIX — أدِر صالونك بذكاء',
+    description: 'منصة إدارة صالونات التجميل — جرّب مجاناً 14 يوم.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>): React.ReactElement {
+  return (
+    <html lang="ar" dir="rtl" className={cairo.variable}>
+      <body className="min-h-screen antialiased">
+        <I18nProvider>{children}</I18nProvider>
+      </body>
+    </html>
+  );
+}
+EOF_LANDING_LAYOUT
+echo "  ✓ landing layout.tsx"
+
+# ─────────────────────────────────────────────
+# 17. apps/landing/src/lib/i18n.tsx  (NEW FILE)
+# ─────────────────────────────────────────────
+cat > apps/landing/src/lib/i18n.tsx << 'EOF_I18N'
+'use client';
+
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+
+export type Locale = 'ar' | 'en';
+
+interface I18nContextValue {
+  locale: Locale;
+  dir: 'rtl' | 'ltr';
+  toggle: () => void;
+  t: (key: string) => string;
+}
+
+const translations: Record<Locale, Record<string, string>> = {
+  ar: {
+    'nav.features': 'المميزات',
+    'nav.howItWorks': 'كيف تبدأين',
+    'nav.devices': 'الأجهزة',
+    'nav.pricing': 'الأسعار',
+    'nav.login': 'تسجيل الدخول',
+    'nav.cta': 'جرّب مجاناً',
+    'nav.ctaMobile': 'جرّب مجاناً ١٤ يوم',
+    'hero.badge': 'منصة إدارة الصالونات #1 في السعودية',
+    'hero.title': 'أدِري صالونك بذكاء',
+    'hero.subtitle': 'مواعيد — فواتير — واتساب — تقارير — كل شيء في مكان واحد',
+    'hero.cta': 'جرّبي مجاناً ١٤ يوم',
+    'hero.ctaSub': 'بدون بطاقة ائتمانية',
+    'features.title': 'كل ما تحتاجينه لإدارة صالونك',
+    'features.subtitle': 'أدوات ذكية تسهّل عملك اليومي',
+    'howItWorks.title': 'ابدئي في ٣ خطوات',
+    'howItWorks.step1.title': 'سجّلي حسابك',
+    'howItWorks.step1.desc': 'أنشئي حسابك مجاناً خلال دقيقة',
+    'howItWorks.step2.title': 'أعدّي صالونك',
+    'howItWorks.step2.desc': 'أضيفي خدماتك وموظفاتك وساعات العمل',
+    'howItWorks.step3.title': 'ابدئي العمل',
+    'howItWorks.step3.desc': 'استقبلي الحجوزات وأديري كل شيء من لوحة التحكم',
+    'pricing.title': 'باقات تناسب كل صالون',
+    'pricing.monthly': 'شهري',
+    'pricing.annual': 'سنوي',
+    'pricing.currency': 'ر.س',
+    'pricing.perMonth': '/شهر',
+    'pricing.subscribe': 'اشتركي الآن',
+    'pricing.trial': 'جرّبي مجاناً',
+    'faq.title': 'أسئلة شائعة',
+    'cta.title': 'جاهزة تبدئين؟',
+    'cta.subtitle': 'انضمّي لأكثر من ١٠٠ صالون يدير أعماله بذكاء مع SERVIX',
+    'cta.button': 'ابدئي تجربتك المجانية',
+    'footer.rights': 'جميع الحقوق محفوظة',
+    'footer.terms': 'الشروط والأحكام',
+    'footer.privacy': 'سياسة الخصوصية',
+    'footer.contact': 'تواصل معنا',
+  },
+  en: {
+    'nav.features': 'Features',
+    'nav.howItWorks': 'How it Works',
+    'nav.devices': 'Devices',
+    'nav.pricing': 'Pricing',
+    'nav.login': 'Login',
+    'nav.cta': 'Try Free',
+    'nav.ctaMobile': 'Try Free for 14 Days',
+    'hero.badge': '#1 Salon Management Platform in Saudi Arabia',
+    'hero.title': 'Manage Your Salon Smartly',
+    'hero.subtitle': 'Appointments — Invoices — WhatsApp — Reports — All in one place',
+    'hero.cta': 'Try Free for 14 Days',
+    'hero.ctaSub': 'No credit card required',
+    'features.title': 'Everything You Need to Run Your Salon',
+    'features.subtitle': 'Smart tools to simplify your daily work',
+    'howItWorks.title': 'Get Started in 3 Steps',
+    'howItWorks.step1.title': 'Create Your Account',
+    'howItWorks.step1.desc': 'Sign up free in under a minute',
+    'howItWorks.step2.title': 'Set Up Your Salon',
+    'howItWorks.step2.desc': 'Add your services, staff, and working hours',
+    'howItWorks.step3.title': 'Start Working',
+    'howItWorks.step3.desc': 'Accept bookings and manage everything from your dashboard',
+    'pricing.title': 'Plans for Every Salon',
+    'pricing.monthly': 'Monthly',
+    'pricing.annual': 'Annual',
+    'pricing.currency': 'SAR',
+    'pricing.perMonth': '/mo',
+    'pricing.subscribe': 'Subscribe Now',
+    'pricing.trial': 'Try Free',
+    'faq.title': 'Frequently Asked Questions',
+    'cta.title': 'Ready to Start?',
+    'cta.subtitle': 'Join 100+ salons managing their business smartly with SERVIX',
+    'cta.button': 'Start Your Free Trial',
+    'footer.rights': 'All rights reserved',
+    'footer.terms': 'Terms of Service',
+    'footer.privacy': 'Privacy Policy',
+    'footer.contact': 'Contact Us',
+  },
+};
+
+const I18nContext = createContext<I18nContextValue>({
+  locale: 'ar',
+  dir: 'rtl',
+  toggle: () => {},
+  t: (key) => key,
+});
+
+export function I18nProvider({ children }: { children: ReactNode }): React.ReactElement {
+  const [locale, setLocale] = useState<Locale>('ar');
+
+  const toggle = useCallback(() => {
+    setLocale((prev) => (prev === 'ar' ? 'en' : 'ar'));
+  }, []);
+
+  const t = useCallback(
+    (key: string) => translations[locale][key] || key,
+    [locale],
+  );
+
+  const dir = locale === 'ar' ? 'rtl' : 'ltr';
+
+  useEffect(() => {
+    document.documentElement.setAttribute('dir', dir);
+    document.documentElement.setAttribute('lang', locale);
+  }, [locale, dir]);
+
+  return (
+    <I18nContext.Provider value={{ locale, dir, toggle, t }}>
+      {children}
+    </I18nContext.Provider>
+  );
+}
+
+export function useI18n(): I18nContextValue {
+  return useContext(I18nContext);
+}
+EOF_I18N
+echo "  ✓ i18n.tsx"
+
+# ─────────────────────────────────────────────
+# 18. apps/landing/src/components/navbar.tsx  (add language toggle)
+# ─────────────────────────────────────────────
+cat > apps/landing/src/components/navbar.tsx << 'EOF_NAVBAR'
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { motion, AnimatePresence } from 'motion/react';
+import { Menu, X, Sparkles, Zap, Globe } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
+
+const DASHBOARD_URL = process.env.NEXT_PUBLIC_DASHBOARD_URL || 'http://localhost:3000';
+const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number];
+
+export default function Navbar(): React.ReactElement {
+  const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { locale, toggle, t } = useI18n();
+
+  const navLinks = [
+    { label: t('nav.features'), href: '#features' },
+    { label: t('nav.howItWorks'), href: '#how-it-works' },
+    { label: t('nav.devices'), href: '#devices' },
+    { label: t('nav.pricing'), href: '#pricing' },
+  ];
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  return (
+    <>
+      <motion.header
+        initial={{ y: -80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.7, ease: EASE }}
+        className="fixed inset-x-0 top-0 z-50 transition-all duration-500"
+        style={scrolled ? {
+          background: 'rgba(7,5,26,0.75)',
+          backdropFilter: 'blur(24px) saturate(160%)',
+          borderBottom: '1px solid rgba(168,85,247,0.12)',
+          padding: '10px 0',
+        } : {
+          background: 'transparent',
+          padding: '20px 0',
+        }}
+      >
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6">
+
+          {/* Logo */}
+          <Link href="/" className="group flex items-center gap-2.5">
+            <div
+              className="relative flex h-9 w-9 items-center justify-center rounded-xl glow-sm transition-all duration-300 group-hover:scale-105"
+              style={{
+                background: 'linear-gradient(135deg, #9333ea, #6366f1)',
+                boxShadow: '0 0 20px rgba(147,51,234,0.5)',
+              }}
+            >
+              <Zap className="h-4 w-4 text-white" />
+              <div
+                className="absolute -top-0.5 -end-0.5 h-2 w-2 rounded-full"
+                style={{ background: '#22d3ee', boxShadow: '0 0 6px #22d3ee' }}
+              />
+            </div>
+            <span
+              className="text-xl font-black tracking-tight text-white"
+              style={{ textShadow: '0 0 20px rgba(168,85,247,0.4)' }}
+            >
+              SERVIX
+            </span>
+          </Link>
+
+          {/* Desktop nav */}
+          <nav className="hidden items-center gap-0.5 md:flex">
+            {navLinks.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="relative rounded-lg px-3.5 py-2 text-sm font-medium text-white/55 transition-all duration-200 hover:text-white group"
+              >
+                <span className="relative z-10">{link.label}</span>
+                <span
+                  className="absolute inset-0 rounded-lg opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+                  style={{ background: 'rgba(168,85,247,0.08)' }}
+                />
+              </a>
+            ))}
+          </nav>
+
+          {/* Desktop CTAs */}
+          <div className="hidden items-center gap-3 md:flex">
+            {/* Language toggle */}
+            <button
+              onClick={toggle}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white/55 hover:text-white transition-colors"
+              aria-label={locale === 'ar' ? 'Switch to English' : 'التبديل للعربية'}
+            >
+              <Globe className="h-4 w-4" />
+              <span>{locale === 'ar' ? 'EN' : 'عربي'}</span>
+            </button>
+
+            <Link
+              href={`${DASHBOARD_URL}/login`}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white/60 hover:text-white transition-colors"
+            >
+              {t('nav.login')}
+            </Link>
+            <Link
+              href={`${DASHBOARD_URL}/register`}
+              className="btn-primary inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white"
+            >
+              <Sparkles className="h-4 w-4" />
+              {t('nav.cta')}
+            </Link>
+          </div>
+
+          {/* Mobile hamburger */}
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-white/70 hover:text-white transition-all md:hidden"
+            style={{ border: '1px solid rgba(168,85,247,0.15)', background: 'rgba(168,85,247,0.06)' }}
+            aria-label="القائمة"
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
+      </motion.header>
+
+      {/* Mobile menu */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.22 }}
+            className="fixed inset-x-0 top-[60px] z-40 px-4 pb-6 pt-4 md:hidden"
+            style={{
+              background: 'rgba(7,5,26,0.92)',
+              backdropFilter: 'blur(30px)',
+              borderBottom: '1px solid rgba(168,85,247,0.12)',
+            }}
+          >
+            <nav className="flex flex-col gap-1">
+              {navLinks.map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMenuOpen(false)}
+                  className="rounded-xl px-4 py-3 text-base font-medium text-white/65 hover:text-white transition-all"
+                  style={{ border: '1px solid transparent' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(168,85,247,0.15)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'transparent')}
+                >
+                  {link.label}
+                </a>
+              ))}
+
+              {/* Language toggle (mobile) */}
+              <button
+                onClick={() => { toggle(); setMenuOpen(false); }}
+                className="flex items-center gap-2 rounded-xl px-4 py-3 text-base font-medium text-white/65 hover:text-white transition-all"
+              >
+                <Globe className="h-4 w-4" />
+                {locale === 'ar' ? 'English' : 'العربية'}
+              </button>
+
+              <div className="mt-4 flex flex-col gap-2 border-t pt-4" style={{ borderColor: 'rgba(168,85,247,0.12)' }}>
+                <Link
+                  href={`${DASHBOARD_URL}/login`}
+                  onClick={() => setMenuOpen(false)}
+                  className="rounded-xl py-3 text-center text-sm font-medium text-white/65 hover:text-white transition-colors"
+                  style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  {t('nav.login')}
+                </Link>
+                <Link
+                  href={`${DASHBOARD_URL}/register`}
+                  onClick={() => setMenuOpen(false)}
+                  className="btn-primary inline-flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {t('nav.ctaMobile')}
+                </Link>
+              </div>
+            </nav>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+EOF_NAVBAR
+echo "  ✓ navbar.tsx"
+
+# ─────────────────────────────────────────────
+# 19. CLAUDE.md — update build status
+# ─────────────────────────────────────────────
+python3 - << 'EOF_PY_CLAUDE'
+path = 'CLAUDE.md'
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+old = """- [ ] Phase 18: Polish UI + booking page + Quick POS
+- [ ] Phase 19: Testing + security audit
+- [ ] Phase 20: Deploy
+- [ ] Phase 21: Launch
+
+**Next: Phase 13 (security) → Phase 14 (WhatsApp per-tenant)**"""
+
+new = """- [x] Phase 18a: SEC-3 Swagger hidden in production + SEC-6 CORS hardened ✓
+- [x] Phase 18b: Sentry error tracking integration ✓
+- [x] Phase 18c: Subscription expiry banner in Dashboard ✓
+- [x] Phase 18d: Arabic/English language toggle on Landing Page ✓
+- [ ] Phase 19: Polish UI + booking page + Quick POS
+- [ ] Phase 20: Testing + security audit
+- [ ] Phase 21: Deploy
+- [ ] Phase 22: Launch
+
+**Next: Phase 19 (Polish UI) → Phase 20 (Testing)**"""
+
+if old in content:
+    content = content.replace(old, new, 1)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print('  ✓ CLAUDE.md updated')
+else:
+    print('  ⚠ CLAUDE.md — section not found (may already be updated)')
+EOF_PY_CLAUDE
+
+# ─────────────────────────────────────────────
+# Commit and push
+# ─────────────────────────────────────────────
+echo ""
+echo "==> Committing and pushing..."
+git add -A
+git commit -m "fix: resolve 6 TS build errors + SEC-3/SEC-6/Sentry/subscription banner/i18n"
+git push
+
+echo ""
+echo "==> Done! Now run the build:"
+echo "    cd tooling/docker && docker compose -f docker-compose.yml -f docker-compose.prod.yml build api dashboard && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d api dashboard && docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx"
