@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   Req,
+  Query,
   ParseUUIDPipe,
   UseGuards,
 } from '@nestjs/common';
@@ -36,13 +37,16 @@ export class CouponsController {
   @ApiResponse({ status: 200, description: 'تم جلب قائمة الكوبونات بنجاح' })
   async findAll(
     @Req() req: AuthenticatedRequest,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
   ): Promise<Record<string, unknown>> {
-    const data = await this.couponsService.findAll(
+    const result = await this.couponsService.findAll(
       req.tenantDb!,
+      { page, limit },
     );
     return {
       success: true,
-      data,
+      data: result,
       message: 'تم جلب قائمة الكوبونات بنجاح',
     };
   }

@@ -46,6 +46,29 @@ services:
     networks:
       - servix-network
 
+  # ═══════ PgBouncer Connection Pooler ═══════
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: servix-pgbouncer
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-servix_platform}
+      POOL_MODE: transaction
+      DEFAULT_POOL_SIZE: 30
+      MAX_CLIENT_CONN: 200
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+      SERVER_IDLE_TIMEOUT: 600
+      AUTH_TYPE: scram-sha-256
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "6432:5432"
+    networks:
+      - servix-network
+
   # ═══════ Application Services ═══════
   api:
     build:
@@ -63,6 +86,7 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://app.servi-x.com,https://booking.servi-x.com,https://admin.servi-x.com,https://servi-x.com}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     depends_on:
       postgres:
         condition: service_healthy

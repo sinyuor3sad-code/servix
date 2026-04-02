@@ -5,6 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { TenantPrismaClient } from '../../../shared/types';
+import { paginate, effectiveLimit, PaginatedResponse } from '../../../shared/helpers/paginate.helper';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
 import { ValidateCouponDto } from './dto/validate-coupon.dto';
@@ -19,12 +20,21 @@ interface CouponValidationResult {
 export class CouponsService {
   async findAll(
     db: TenantPrismaClient,
-  ): Promise<Record<string, unknown>[]> {
-    const coupons = await db.coupon.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
+    query?: { page?: number; limit?: number; perPage?: number },
+  ): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const page = Math.max(1, query?.page ?? 1);
+    const limit = effectiveLimit(query ?? {});
 
-    return coupons as unknown as Record<string, unknown>[];
+    const [coupons, total] = await Promise.all([
+      db.coupon.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      db.coupon.count(),
+    ]);
+
+    return paginate(coupons as unknown as Record<string, unknown>[], total, page, limit);
   }
 
   async create(
