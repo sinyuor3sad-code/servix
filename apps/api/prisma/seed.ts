@@ -305,7 +305,8 @@ async function main(): Promise<void> {
 
   // ─────────────────── 7. Super Admin User ───────────────────
   console.log('  → Creating super admin user...');
-  const adminPassword = await bcrypt.hash('Admin@123456', 12);
+  const adminDefaultPwd = process.env.ADMIN_DEFAULT_PASSWORD || 'Admin@123456';
+  const adminPassword = await bcrypt.hash(adminDefaultPwd, 12);
   await prisma.user.upsert({
     where: { email: 'admin@servi-x.com' },
     update: {},

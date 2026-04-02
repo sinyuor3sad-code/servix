@@ -13,6 +13,7 @@ const footerLinks = {
   legal: [
     { label: 'الشروط والأحكام', href: '/terms' },
     { label: 'سياسة الخصوصية', href: '/privacy' },
+    { label: 'تواصل معنا',     href: '/contact' },
   ],
   account: [
     { label: 'تسجيل الدخول', href: `${DASHBOARD_URL}/login` },
