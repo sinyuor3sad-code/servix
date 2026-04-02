@@ -390,6 +390,22 @@ export class CacheService implements OnModuleDestroy {
     } catch { /* noop */ }
   }
 
+  // ─── Global Rate Limiting ───
+
+  /** Increment rate limit counter for a key, returns current count */
+  async incrementRateLimit(key: string, windowSeconds: number): Promise<number> {
+    if (!this.enabled || !this.redis) return 0;
+    try {
+      const count = await this.redis.incr(key);
+      if (count === 1) {
+        await this.redis.expire(key, windowSeconds);
+      }
+      return count;
+    } catch {
+      return 0;
+    }
+  }
+
   async onModuleDestroy(): Promise<void> {
     if (this.redis) {
       await this.redis.quit();

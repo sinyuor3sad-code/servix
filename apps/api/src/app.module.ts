@@ -12,7 +12,7 @@ import { SmsModule } from './shared/sms';
 import { WhatsAppModule } from './shared/whatsapp';
 import { JobsModule } from './shared/jobs';
 import { SentryModule } from './shared/sentry';
-import { JwtAuthGuard, SubscriptionWriteGuard } from './shared/guards';
+import { JwtAuthGuard, SubscriptionWriteGuard, RateLimitGuard } from './shared/guards';
 import { TenantMiddleware } from './shared/middleware/tenant.middleware';
 import { AuthModule } from './core/auth/auth.module';
 import { TenantsModule } from './core/tenants/tenants.module';
@@ -59,6 +59,10 @@ import { SalonModule } from './modules/salon/salon.module';
   ],
   controllers: [],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: RateLimitGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
