@@ -91,8 +91,8 @@ function buildDevResponse(email: string): AuthResponse {
 function getDevAccount(credentials: LoginCredentials): AuthResponse | null {
   if (typeof window === 'undefined' || window.location.hostname !== 'localhost') return null;
   if (credentials.password !== DEV_PASS) return null;
-  if (!DEV_ACCOUNTS[credentials.email]) return null;
-  return buildDevResponse(credentials.email);
+  if (!DEV_ACCOUNTS[credentials.emailOrPhone]) return null;
+  return buildDevResponse(credentials.emailOrPhone);
 }
 
 export const authService = {

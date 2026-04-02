@@ -253,7 +253,7 @@ export interface AuthTokens {
 }
 
 export interface LoginCredentials {
-  email: string;
+  emailOrPhone: string;
   password: string;
 }
 

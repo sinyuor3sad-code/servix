@@ -35,7 +35,7 @@ export default function LoginPage(): React.ReactElement {
 
       setLoading(true);
       try {
-        const result = await login({ email: email.trim(), password });
+        const result = await login({ emailOrPhone: email.trim(), password });
 
         // Determine role-based landing page
         const tenantUser = result.tenants[0];
