@@ -2,20 +2,20 @@ FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
-FROM base AS deps
+FROM base AS builder
+# Copy workspace config + lockfile
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/dashboard/package.json apps/dashboard/
+# Install deps (keeps symlinks intact in same layer)
 RUN pnpm install --frozen-lockfile --filter @servix/dashboard...
-
-FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/dashboard/node_modules ./apps/dashboard/node_modules
+# Copy source code
 COPY . .
+# Build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_URL=https://api.servi-x.com/api/v1
 ENV NEXT_PUBLIC_WS_URL=https://api.servi-x.com
 ENV NEXT_PUBLIC_DASHBOARD_URL=https://app.servi-x.com
-RUN mkdir -p apps/dashboard/public && pnpm --filter @servix/dashboard exec next build
+RUN mkdir -p apps/dashboard/public && pnpm --filter @servix/dashboard build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
