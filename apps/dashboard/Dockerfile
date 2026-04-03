@@ -6,8 +6,9 @@ FROM base AS builder
 # Copy workspace config + lockfile
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/dashboard/package.json apps/dashboard/
-# Install deps (keeps symlinks intact in same layer)
-RUN pnpm install --frozen-lockfile --filter @servix/dashboard...
+# Force flat node_modules so next binary is available locally
+RUN echo "shamefully-hoist=true" > .npmrc && \
+    pnpm install --frozen-lockfile --filter @servix/dashboard...
 # Copy source code
 COPY . .
 # Build
