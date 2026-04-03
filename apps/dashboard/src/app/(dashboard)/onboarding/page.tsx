@@ -127,16 +127,24 @@ export default function OnboardingPage(): React.ReactElement {
     enabled: !!accessToken && step >= 1,
   });
 
+  // Auto-skip step 1 if salon name already exists from registration
   useEffect(() => {
     if (salonData && step === 1) {
       const d = salonData as Record<string, unknown>;
-      step1Form.reset({
-        salonNameAr: (d.nameAr as string) ?? '',
-        salonNameEn: (d.nameEn as string) ?? '',
-        city: (d.city as string) ?? '',
-        phone: (d.phone as string) ?? '',
-        logoUrl: (d.branding as { logoUrl?: string })?.logoUrl ?? '',
-      });
+      const existingName = (d.nameAr as string) ?? '';
+      if (existingName.length >= 2) {
+        // Data already filled from registration — skip to step 2
+        setStep(2);
+        toast.success('تم تحميل بيانات صالونك تلقائياً');
+      } else {
+        step1Form.reset({
+          salonNameAr: existingName,
+          salonNameEn: (d.nameEn as string) ?? '',
+          city: (d.city as string) ?? '',
+          phone: (d.phone as string) ?? '',
+          logoUrl: (d.branding as { logoUrl?: string })?.logoUrl ?? '',
+        });
+      }
     }
   }, [salonData, step]);
 

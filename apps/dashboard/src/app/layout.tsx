@@ -44,7 +44,7 @@ export default function RootLayout({
   ].join(' ');
 
   return (
-    <html lang="ar" dir="rtl" suppressHydrationWarning>
+    <html lang="ar" dir="rtl" data-style="velvet" suppressHydrationWarning>
       <body className={`${fontClasses} font-sans antialiased`}>
         <Providers>{children}</Providers>
       </body>

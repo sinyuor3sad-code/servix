@@ -35,6 +35,7 @@ interface NavItem {
   href: string;
   icon: LucideIcon;
   group?: string;
+  comingSoon?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -43,20 +44,20 @@ const navItems: NavItem[] = [
   { label: 'العملاء', href: '/dashboard/clients', icon: Users },
   { label: 'الموظفات', href: '/dashboard/employees', icon: UserCog },
   { label: 'الحضور', href: '/dashboard/attendance', icon: ClipboardCheck },
-  { label: 'الورديات', href: '/dashboard/shifts', icon: Clock },
   { label: 'الخدمات', href: '/dashboard/services', icon: Scissors },
   { label: 'الكاشير', href: '/dashboard/pos', icon: CreditCard },
   { label: 'كاشير سريع', href: '/dashboard/pos/quick', icon: TabletSmartphone },
   { label: 'الفواتير', href: '/dashboard/invoices', icon: FileText },
-  { label: 'المخزون', href: '/dashboard/inventory', icon: Package },
-  { label: 'التسويق', href: '/dashboard/marketing', icon: Megaphone },
-  { label: 'التسعير', href: '/dashboard/pricing', icon: TrendingUp },
-  { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt },
   { label: 'التقارير', href: '/dashboard/reports', icon: BarChart3 },
   { label: 'الكوبونات', href: '/dashboard/coupons', icon: Ticket },
   { label: 'الولاء', href: '/dashboard/loyalty', icon: Heart },
   { label: 'المصروفات', href: '/dashboard/expenses', icon: Wallet },
   { label: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
+  { label: 'الورديات', href: '/dashboard/shifts', icon: Clock, comingSoon: true },
+  { label: 'المخزون', href: '/dashboard/inventory', icon: Package, comingSoon: true },
+  { label: 'التسويق', href: '/dashboard/marketing', icon: Megaphone, comingSoon: true },
+  { label: 'التسعير', href: '/dashboard/pricing', icon: TrendingUp, comingSoon: true },
+  { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt, comingSoon: true },
 ];
 
 interface SidebarProps {
@@ -118,6 +119,32 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
           {navItems.map((item) => {
             const active = isActiveRoute(pathname, item.href);
             const Icon = item.icon;
+
+            if (item.comingSoon) {
+              return (
+                <li key={item.href}>
+                  <span
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium cursor-default opacity-50',
+                      'text-[var(--muted-foreground)]',
+                      collapsed && 'justify-center px-0'
+                    )}
+                    title={collapsed ? `${item.label} — قريباً` : undefined}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span>{item.label}</span>
+                        <span className="ms-auto rounded-full bg-[var(--muted)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted-foreground)]">
+                          قريباً
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </li>
+              );
+            }
+
             return (
               <li key={item.href}>
                 <Link

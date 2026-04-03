@@ -97,15 +97,7 @@ export default function NewClientPage() {
           />
         </div>
 
-        <Select
-          label="الجنس"
-          options={[
-            { value: 'female', label: 'أنثى' },
-            { value: 'male', label: 'ذكر' },
-          ]}
-          error={errors.gender?.message}
-          {...register('gender')}
-        />
+        <input type="hidden" value="female" {...register('gender')} />
 
         <Textarea
           label="ملاحظات"
