@@ -2,22 +2,25 @@ FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
-FROM base AS builder
-# Copy workspace config + lockfile
+FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/dashboard/package.json apps/dashboard/
-# Install with hoisted node_modules so 'next' is in apps/dashboard/node_modules
 RUN echo "node-linker=hoisted" > .npmrc && \
     pnpm install --filter @servix/dashboard...
-# Copy source code
+
+FROM base AS builder
+# Copy installed deps from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/dashboard/node_modules ./apps/dashboard/node_modules
+COPY --from=deps /app/.npmrc ./.npmrc
+# Copy source code (node_modules excluded by .dockerignore)
 COPY . .
-# Build
 WORKDIR /app/apps/dashboard
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_URL=https://api.servi-x.com/api/v1
 ENV NEXT_PUBLIC_WS_URL=https://api.servi-x.com
 ENV NEXT_PUBLIC_DASHBOARD_URL=https://app.servi-x.com
-RUN mkdir -p public && pnpm build
+RUN mkdir -p public && npx next build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
