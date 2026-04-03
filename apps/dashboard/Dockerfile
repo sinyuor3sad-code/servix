@@ -9,10 +9,8 @@ RUN echo "node-linker=hoisted" > .npmrc && \
     pnpm install --filter @servix/dashboard...
 
 FROM base AS builder
-# Copy installed deps from deps stage
+# With hoisted, everything is in root node_modules (no apps/dashboard/node_modules)
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/dashboard/node_modules ./apps/dashboard/node_modules
-COPY --from=deps /app/.npmrc ./.npmrc
 # Copy source code (node_modules excluded by .dockerignore)
 COPY . .
 WORKDIR /app/apps/dashboard
