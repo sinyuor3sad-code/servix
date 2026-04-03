@@ -65,11 +65,16 @@ export function useAuth() {
     setUser(data.user);
   }
 
-  // Sync role data from query into store
+  // Sync role and tenant data from query into store
   if (data?.tenants && data.tenants.length > 0) {
     const { role, isOwner: owner } = extractRole(data.tenants);
     if (role !== userRole || owner !== isOwner) {
       setUserRole(role, owner);
+    }
+    // Keep tenant data in sync (White-Label)
+    const tenantFromApi = data.tenants[0].tenant;
+    if (tenantFromApi && tenantFromApi.id !== currentTenant?.id) {
+      setCurrentTenant(tenantFromApi);
     }
   }
 

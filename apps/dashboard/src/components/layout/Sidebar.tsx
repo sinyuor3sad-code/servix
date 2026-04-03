@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 
 interface NavItem {
   label: string;
@@ -73,6 +74,7 @@ function isActiveRoute(pathname: string, href: string): boolean {
 export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.ReactElement {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const { currentTenant } = useAuth();
 
   const toggleCollapse = useCallback(() => {
     setCollapsed((prev) => !prev);
@@ -95,11 +97,11 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
       <div className="flex h-[var(--header-height)] items-center justify-between border-b border-[var(--border)] px-4">
         <Link href="/dashboard" className="flex items-center gap-2">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-primary)] text-white font-bold text-lg">
-            S
+            {currentTenant?.nameAr?.charAt(0) || 'S'}
           </div>
           {!collapsed && (
-            <span className="text-xl font-bold text-[var(--foreground)]">
-              SERVIX
+            <span className="text-xl font-bold text-[var(--foreground)] truncate max-w-[180px]">
+              {currentTenant?.nameAr || 'SERVIX'}
             </span>
           )}
         </Link>
