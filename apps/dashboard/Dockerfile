@@ -11,12 +11,11 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/dashboard/node_modules ./apps/dashboard/node_modules
 COPY . .
-WORKDIR /app/apps/dashboard
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_URL=https://api.servi-x.com/api/v1
 ENV NEXT_PUBLIC_WS_URL=https://api.servi-x.com
 ENV NEXT_PUBLIC_DASHBOARD_URL=https://app.servi-x.com
-RUN mkdir -p public && /app/node_modules/.bin/next build
+RUN mkdir -p apps/dashboard/public && pnpm --filter @servix/dashboard exec next build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
