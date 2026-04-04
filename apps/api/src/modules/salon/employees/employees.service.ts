@@ -98,7 +98,7 @@ export class EmployeesService {
         fullName: dto.fullName,
         phone: dto.phone,
         email: dto.email,
-        role: dto.role as 'stylist' | 'manager' | 'receptionist' | 'cashier',
+        role: dto.role as 'stylist' | 'cashier' | 'makeup' | 'nails' | 'skincare',
         commissionType: dto.commissionType as
           | 'percentage'
           | 'fixed'
@@ -121,9 +121,10 @@ export class EmployeesService {
     if (dto.role) {
       data.role = dto.role as
         | 'stylist'
-        | 'manager'
-        | 'receptionist'
-        | 'cashier';
+        | 'cashier'
+        | 'makeup'
+        | 'nails'
+        | 'skincare';
     }
     if (dto.commissionType) {
       data.commissionType = dto.commissionType as
@@ -287,9 +288,10 @@ export class EmployeesService {
     // 3. Map employee role to platform role name
     const roleMap: Record<string, string> = {
       stylist: 'staff',
-      manager: 'manager',
-      receptionist: 'receptionist',
       cashier: 'cashier',
+      makeup: 'staff',
+      nails: 'staff',
+      skincare: 'staff',
     };
     const platformRoleName = roleMap[employee.role] || 'staff';
 

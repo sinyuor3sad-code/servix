@@ -28,11 +28,11 @@ export class CreateEmployeeDto {
 
   @ApiProperty({
     description: 'الدور الوظيفي',
-    enum: ['stylist', 'manager', 'receptionist', 'cashier'],
+    enum: ['stylist', 'cashier', 'makeup', 'nails', 'skincare'],
   })
-  @IsIn(['stylist', 'manager', 'receptionist', 'cashier'], {
+  @IsIn(['stylist', 'cashier', 'makeup', 'nails', 'skincare'], {
     message:
-      'الدور الوظيفي يجب أن يكون أحد الخيارات: stylist, manager, receptionist, cashier',
+      'الدور الوظيفي يجب أن يكون أحد الخيارات: stylist, cashier, makeup, nails, skincare',
   })
   role: string;
 

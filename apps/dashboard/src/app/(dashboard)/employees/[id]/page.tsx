@@ -22,9 +22,10 @@ import type { EmployeeRole } from '@/types';
 
 const ROLE_LABELS: Record<EmployeeRole, string> = {
   stylist: 'مصففة',
-  manager: 'مديرة',
-  receptionist: 'موظفة استقبال',
   cashier: 'كاشيرة',
+  makeup: 'مكياج',
+  nails: 'أظافر',
+  skincare: 'عناية بالبشرة',
 };
 
 const DAYS = [

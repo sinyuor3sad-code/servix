@@ -17,9 +17,10 @@ datasource db {
 
 enum EmployeeRole {
   stylist
-  manager
-  receptionist
   cashier
+  makeup
+  nails
+  skincare
 }
 
 enum CommissionType {

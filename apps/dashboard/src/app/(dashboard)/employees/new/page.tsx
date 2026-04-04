@@ -23,7 +23,7 @@ const employeeSchema = z.object({
     .email('البريد الإلكتروني غير صالح')
     .or(z.literal(''))
     .optional(),
-  role: z.enum(['stylist', 'manager', 'receptionist', 'cashier'], {
+  role: z.enum(['stylist', 'cashier', 'makeup', 'nails', 'skincare'], {
     required_error: 'يرجى اختيار الدور',
   }),
   commissionType: z.enum(['percentage', 'fixed', 'none'], {
@@ -109,10 +109,11 @@ export default function NewEmployeePage() {
         <Select
           label="الدور"
           options={[
-            { value: 'stylist', label: 'مصففة' },
-            { value: 'manager', label: 'مديرة' },
-            { value: 'receptionist', label: 'موظفة استقبال' },
-            { value: 'cashier', label: 'كاشيرة' },
+            { value: 'stylist', label: '✂️ مصففة' },
+            { value: 'makeup', label: '💄 مكياج' },
+            { value: 'nails', label: '💅 أظافر' },
+            { value: 'skincare', label: '🧴 عناية بالبشرة' },
+            { value: 'cashier', label: '💵 كاشيرة' },
           ]}
           error={errors.role?.message}
           {...register('role')}

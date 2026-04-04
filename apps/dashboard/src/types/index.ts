@@ -26,7 +26,7 @@ export interface PaginatedResponse<T> {
 export type TenantStatus = 'active' | 'suspended' | 'trial' | 'cancelled';
 export type TenantTheme = 'velvet' | 'crystal' | 'orchid' | 'noir';
 
-export type EmployeeRole = 'stylist' | 'manager' | 'receptionist' | 'cashier';
+export type EmployeeRole = 'stylist' | 'cashier' | 'makeup' | 'nails' | 'skincare';
 export type CommissionType = 'percentage' | 'fixed' | 'none';
 export type Gender = 'female' | 'male';
 export type ClientSource = 'walk_in' | 'online' | 'phone' | 'referral';

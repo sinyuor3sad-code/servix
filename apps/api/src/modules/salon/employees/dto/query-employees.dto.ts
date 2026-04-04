@@ -6,12 +6,12 @@ import { PaginationDto } from '../../../../shared/dto/pagination.dto';
 export class QueryEmployeesDto extends PaginationDto {
   @ApiPropertyOptional({
     description: 'تصفية حسب الدور',
-    enum: ['stylist', 'manager', 'receptionist', 'cashier'],
+    enum: ['stylist', 'cashier', 'makeup', 'nails', 'skincare'],
   })
   @IsOptional()
-  @IsIn(['stylist', 'manager', 'receptionist', 'cashier'], {
+  @IsIn(['stylist', 'cashier', 'makeup', 'nails', 'skincare'], {
     message:
-      'الدور يجب أن يكون أحد الخيارات: stylist, manager, receptionist, cashier',
+      'الدور يجب أن يكون أحد الخيارات: stylist, cashier, makeup, nails, skincare',
   })
   role?: string;
 
