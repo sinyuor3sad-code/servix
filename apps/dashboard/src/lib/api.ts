@@ -28,16 +28,34 @@ interface ApiSuccessResponse<T> {
 
 interface ApiErrorBody {
   success: false;
-  message: string;
-  statusCode: number;
+  message?: string;
+  statusCode?: number;
+  error?: {
+    code?: string;
+    message?: string;
+    details?: string[];
+  };
   errors?: Record<string, string[]>;
 }
+
+/** Arabic-friendly fallback messages for common HTTP errors */
+const STATUS_MESSAGES: Record<number, string> = {
+  400: 'البيانات المرسلة غير صحيحة',
+  401: 'يجب تسجيل الدخول أولاً',
+  403: 'ليس لديك صلاحية لهذا الإجراء',
+  404: 'العنصر المطلوب غير موجود',
+  409: 'يوجد تعارض — ربما البيانات مسجلة مسبقاً',
+  422: 'البيانات المرسلة غير مكتملة',
+  429: 'عدد الطلبات كثير، انتظر قليلاً',
+  500: 'حدث خطأ في الخادم، حاول مرة أخرى',
+};
 
 export class ApiError extends Error {
   constructor(
     message: string,
     public statusCode: number,
     public errors?: Record<string, string[]>,
+    public details?: string[],
   ) {
     super(message);
     this.name = 'ApiError';
@@ -74,10 +92,29 @@ async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise
     } catch {
       // response wasn't JSON
     }
+
+    // Extract message from either format:
+    // Format 1: { error: { message: "..." } }  (GlobalExceptionFilter)
+    // Format 2: { message: "..." }              (NestJS default)
+    const apiMessage =
+      errorBody?.error?.message ||
+      errorBody?.message ||
+      undefined;
+
+    // Build details from validation errors
+    const details = errorBody?.error?.details;
+
+    // Use API message, or friendly status fallback, or generic
+    const userMessage =
+      apiMessage ||
+      STATUS_MESSAGES[response.status] ||
+      `حدث خطأ غير متوقع (${response.status})`;
+
     throw new ApiError(
-      errorBody?.message || `خطأ في الطلب (${response.status})`,
+      userMessage,
       response.status,
       errorBody?.errors,
+      details,
     );
   }
 

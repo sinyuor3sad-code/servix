@@ -47,7 +47,11 @@ export default function LoginPage(): React.ReactElement {
         router.push(landingRoute);
       } catch (error) {
         if (error instanceof ApiError) {
-          toast.error(error.message);
+          if (error.details && error.details.length > 0) {
+            error.details.forEach((detail) => toast.error(detail));
+          } else {
+            toast.error(error.message);
+          }
         } else {
           toast.error('حدث خطأ غير متوقع');
         }
