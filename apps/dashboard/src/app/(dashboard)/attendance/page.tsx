@@ -1,24 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
-import { PageHeader, Badge, Button, Spinner } from '@/components/ui';
+import { Button, Spinner } from '@/components/ui';
 import { toast } from 'sonner';
 import {
-  LogIn,
   LogOut,
   Coffee,
   Clock,
-  Users,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Download,
   Power,
+  Download,
+  CheckCircle2,
 } from 'lucide-react';
-import type { EmployeeRole } from '@/types';
 import { cn } from '@/lib/utils';
 
 interface AttendanceRecord {
@@ -36,11 +31,8 @@ const ROLE_ICONS: Record<string, string> = {
   stylist: '✂️', cashier: '💵', makeup: '💄', nails: '💅', skincare: '🧴',
 };
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
-  present: { label: 'حاضرة', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', icon: CheckCircle2 },
-  absent: { label: 'لم تحضر', color: 'text-red-500 bg-red-50 border-red-200', icon: XCircle },
-  on_break: { label: 'استراحة', color: 'text-amber-600 bg-amber-50 border-amber-200', icon: Coffee },
-  off_duty: { label: 'انصرفت', color: 'text-slate-500 bg-slate-50 border-slate-200', icon: LogOut },
+const ROLE_LABELS: Record<string, string> = {
+  stylist: 'مصففة', cashier: 'كاشيرة', makeup: 'مكياج', nails: 'أظافر', skincare: 'عناية',
 };
 
 function formatTime(time: string | null): string {
@@ -52,9 +44,19 @@ function formatTime(time: string | null): string {
   return `${displayHour}:${m ?? '00'} ${period}`;
 }
 
-function getNow(): string {
+function formatCurrentTime(): string {
   const now = new Date();
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const h = now.getHours();
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const period = h >= 12 ? 'م' : 'ص';
+  return `${h % 12 || 12}:${m} ${period}`;
+}
+
+function formatTodayDate(): string {
+  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+  const now = new Date();
+  return `${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]}`;
 }
 
 export default function AttendancePage(): React.ReactElement {
@@ -62,12 +64,19 @@ export default function AttendancePage(): React.ReactElement {
   const queryClient = useQueryClient();
   const [showEndShift, setShowEndShift] = useState(false);
   const [confirmCheckOutId, setConfirmCheckOutId] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(formatCurrentTime());
+
+  // Live clock
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(formatCurrentTime()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const { data: records, isLoading } = useQuery<AttendanceRecord[]>({
     queryKey: ['attendance', 'today'],
     queryFn: () => api.get<AttendanceRecord[]>('/attendance/today', accessToken!),
     enabled: !!accessToken,
-    refetchInterval: 30000, // Auto-refresh every 30s
+    refetchInterval: 30000,
   });
 
   const checkInMutation = useMutation({
@@ -76,7 +85,7 @@ export default function AttendancePage(): React.ReactElement {
     onSuccess: (_, employeeId) => {
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
       const emp = records?.find(r => r.employeeId === employeeId);
-      toast.success(`✅ تم تسجيل حضور ${emp?.employee.fullName || 'الموظفة'}`);
+      toast.success(`✅ ${emp?.employee.fullName || 'الموظفة'} — تم التحضير`);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -87,7 +96,7 @@ export default function AttendancePage(): React.ReactElement {
     onSuccess: (_, employeeId) => {
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
       const emp = records?.find(r => r.employeeId === employeeId);
-      toast.success(`👋 تم تسجيل انصراف ${emp?.employee.fullName || 'الموظفة'}`);
+      toast.success(`👋 ${emp?.employee.fullName || 'الموظفة'} — تم الخروج`);
       setConfirmCheckOutId(null);
     },
     onError: (err: Error) => {
@@ -101,7 +110,6 @@ export default function AttendancePage(): React.ReactElement {
       api.put<AttendanceRecord>('/attendance/toggle-break', { employeeId }, accessToken!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attendance'] });
-      toast.success('تم تحديث حالة الاستراحة');
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -111,20 +119,17 @@ export default function AttendancePage(): React.ReactElement {
   const absentRecords = allRecords.filter(r => r.computedStatus === 'absent');
   const checkedInRecords = allRecords.filter(r => r.computedStatus === 'present' || r.computedStatus === 'on_break');
   const checkedOutRecords = allRecords.filter(r => r.computedStatus === 'off_duty');
-  const activeRecords = [...checkedInRecords, ...absentRecords];
 
-  /* End shift: check-out everyone still present */
   const handleEndShift = async () => {
     const stillPresent = allRecords.filter(r => r.computedStatus === 'present' || r.computedStatus === 'on_break');
     for (const r of stillPresent) {
       try {
         await api.put('/attendance/check-out', { employeeId: r.employeeId }, accessToken!);
-      } catch { /* skip individual errors */ }
+      } catch { /* skip */ }
     }
     queryClient.invalidateQueries({ queryKey: ['attendance'] });
-    toast.success('✅ تم إنهاء الدوام وتسجيل خروج الجميع');
+    toast.success('✅ تم إنهاء الدوام — خروج الجميع');
     setShowEndShift(false);
-    // TODO: trigger invoice backup notification to owner
   };
 
   if (isLoading) {
@@ -136,62 +141,68 @@ export default function AttendancePage(): React.ReactElement {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
-      <PageHeader
-        title="الحضور والانصراف"
-        description="تسجيل حضور وانصراف الموظفات — يتم بواسطة الكاشيرة"
-        actions={
-          presentCount > 0 ? (
-            <Button
-              variant="outline"
-              onClick={() => setShowEndShift(true)}
-              className="border-red-200 text-red-600 hover:bg-red-50"
-            >
-              <Power className="h-4 w-4" />
-              إنهاء الدوام
-            </Button>
-          ) : null
-        }
-      />
+    <div className="p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto space-y-5">
 
-      {/* ── Stats Bar ── */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
-          <div className="text-2xl font-bold text-emerald-700">{presentCount}</div>
-          <div className="text-xs text-emerald-600 mt-1">حاضرة الآن</div>
+      {/* ── Header with Date & Time ── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-[var(--foreground)]">الحضور والانصراف</h1>
+          <p className="text-sm text-[var(--muted-foreground)] mt-0.5">{formatTodayDate()}</p>
         </div>
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-center">
-          <div className="text-2xl font-bold text-red-600">{absentRecords.length}</div>
-          <div className="text-xs text-red-500 mt-1">لم تحضر</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
-          <div className="text-2xl font-bold text-slate-600">{checkedOutRecords.length}</div>
-          <div className="text-xs text-slate-500 mt-1">انصرفت</div>
+        <div className="text-left">
+          <div className="text-2xl font-bold text-[var(--brand-primary)]">{currentTime}</div>
+          {presentCount > 0 && (
+            <button
+              onClick={() => setShowEndShift(true)}
+              className="text-xs text-red-500 hover:text-red-600 font-medium mt-1 flex items-center gap-1"
+            >
+              <Power className="h-3 w-3" />
+              إنهاء الدوام
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ── Quick Check-in (Absent Employees) ── */}
+      {/* ── Stats ── */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-4 text-center">
+          <div className="text-3xl font-black text-emerald-600">{presentCount}</div>
+          <div className="text-[11px] text-emerald-500 font-medium mt-0.5">حاضرة</div>
+        </div>
+        <div className="rounded-2xl bg-orange-50 border border-orange-100 p-4 text-center">
+          <div className="text-3xl font-black text-orange-500">{absentRecords.length}</div>
+          <div className="text-[11px] text-orange-400 font-medium mt-0.5">لم تحضر</div>
+        </div>
+        <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4 text-center">
+          <div className="text-3xl font-black text-slate-400">{checkedOutRecords.length}</div>
+          <div className="text-[11px] text-slate-400 font-medium mt-0.5">انصرفت</div>
+        </div>
+      </div>
+
+      {/* ── Quick Check-in ── */}
       {absentRecords.length > 0 && (
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-          <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2 mb-4">
-            <LogIn className="h-4 w-4 text-[var(--brand-primary)]" />
-            تسجيل حضور — اضغطي على اسم الموظفة لتسجيل وصولها
+        <div>
+          <h3 className="text-sm font-bold text-[var(--foreground)] mb-3">
+            سجّلي حضور 👆
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             {absentRecords.map(r => (
               <button
                 key={r.employeeId}
                 onClick={() => checkInMutation.mutate(r.employeeId)}
                 disabled={checkInMutation.isPending}
-                className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border)] hover:border-emerald-400 hover:bg-emerald-50 transition-all group"
+                className="flex items-center gap-3 p-4 rounded-2xl border-2 border-dashed border-orange-200 bg-white hover:border-emerald-400 hover:bg-emerald-50 active:scale-[0.98] transition-all duration-150 group disabled:opacity-50"
               >
-                <div className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center text-sm font-bold group-hover:bg-emerald-100 group-hover:text-emerald-600 transition-colors">
+                <div className="w-11 h-11 rounded-full bg-orange-100 text-orange-500 group-hover:bg-emerald-100 group-hover:text-emerald-600 flex items-center justify-center text-lg font-bold shrink-0 transition-colors">
                   {r.employee.fullName?.[0]}
                 </div>
                 <div className="text-right flex-1 min-w-0">
-                  <div className="text-xs font-medium truncate">{r.employee.fullName}</div>
-                  <div className="text-[10px] text-[var(--muted-foreground)]">
-                    {ROLE_ICONS[r.employee.role] || '👤'} اضغطي للتحضير
+                  <div className="text-sm font-bold truncate">{r.employee.fullName}</div>
+                  <div className="text-[11px] text-[var(--muted-foreground)]">
+                    {ROLE_ICONS[r.employee.role]} {ROLE_LABELS[r.employee.role] || r.employee.role}
+                  </div>
+                  <div className="text-[10px] text-orange-400 group-hover:text-emerald-500 font-medium mt-0.5 transition-colors">
+                    اضغطي للتحضير ←
                   </div>
                 </div>
               </button>
@@ -202,79 +213,82 @@ export default function AttendancePage(): React.ReactElement {
 
       {/* ── Present Employees ── */}
       {checkedInRecords.length > 0 && (
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-          <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2 mb-4">
-            <Users className="h-4 w-4 text-emerald-600" />
-            الموظفات الحاضرات ({checkedInRecords.length})
+        <div>
+          <h3 className="text-sm font-bold text-[var(--foreground)] mb-3">
+            الموظفات الحاضرات ✅
           </h3>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {checkedInRecords.map(r => {
-              const statusCfg = STATUS_CONFIG[r.computedStatus ?? 'present'];
+              const isBreak = r.computedStatus === 'on_break';
               const isConfirming = confirmCheckOutId === r.employeeId;
 
               return (
                 <div
                   key={r.employeeId}
                   className={cn(
-                    'relative flex items-center justify-between gap-3 p-4 rounded-xl border transition-all',
-                    isConfirming ? 'border-red-300 bg-red-50' : 'border-[var(--border)]',
+                    'relative flex items-center gap-3 p-4 rounded-2xl border transition-all',
+                    isBreak ? 'border-amber-200 bg-amber-50/50' : 'border-[var(--border)] bg-white',
                   )}
                 >
-                  {/* Inline checkout confirmation */}
+                  {/* Checkout Confirmation Overlay */}
                   {isConfirming && (
-                    <div className="absolute inset-0 rounded-xl bg-white/95 backdrop-blur-sm z-10 flex items-center justify-center gap-3 px-4">
-                      <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
-                      <span className="text-sm font-medium">تسجيل خروج {r.employee.fullName}؟</span>
+                    <div className="absolute inset-0 rounded-2xl bg-white/95 backdrop-blur-sm z-10 flex items-center justify-center gap-3">
+                      <span className="text-sm font-medium">خروج {r.employee.fullName}؟</span>
                       <button
                         onClick={() => checkOutMutation.mutate(r.employeeId)}
                         disabled={checkOutMutation.isPending}
-                        className="px-3 py-1.5 rounded-lg bg-red-500 text-white text-xs font-medium hover:bg-red-600 transition disabled:opacity-50"
+                        className="px-4 py-2 rounded-xl bg-red-500 text-white text-xs font-bold hover:bg-red-600 active:scale-95 transition disabled:opacity-50"
                       >
-                        {checkOutMutation.isPending ? '...' : '👋 نعم'}
+                        👋 نعم
                       </button>
                       <button
                         onClick={() => setConfirmCheckOutId(null)}
-                        className="px-3 py-1.5 rounded-lg border text-xs font-medium hover:bg-[var(--muted)] transition"
+                        className="px-4 py-2 rounded-xl border text-xs font-medium hover:bg-slate-50 transition"
                       >
-                        إلغاء
+                        لا
                       </button>
                     </div>
                   )}
 
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white flex items-center justify-center font-bold text-sm">
-                      {r.employee.fullName?.[0]}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold truncate">{r.employee.fullName}</div>
-                      <div className="flex items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
-                        <span>{ROLE_ICONS[r.employee.role] || '👤'}</span>
-                        <Clock className="h-3 w-3" />
-                        <span>دخول: {formatTime(r.checkIn)}</span>
-                      </div>
+                  {/* Avatar */}
+                  <div className={cn(
+                    'w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0',
+                    isBreak
+                      ? 'bg-gradient-to-br from-amber-400 to-amber-500'
+                      : 'bg-gradient-to-br from-emerald-400 to-emerald-600',
+                  )}>
+                    {r.employee.fullName?.[0]}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold">{r.employee.fullName}</div>
+                    <div className="flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)] mt-0.5">
+                      <span>{ROLE_ICONS[r.employee.role]}</span>
+                      <Clock className="h-3 w-3" />
+                      <span>{formatTime(r.checkIn)}</span>
+                      {isBreak && <span className="text-amber-500 font-medium">☕ في استراحة</span>}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    <Badge variant={r.computedStatus === 'on_break' ? 'warning' : 'success'}>
-                      {statusCfg?.label}
-                    </Badge>
+                  {/* Actions */}
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={() => toggleBreakMutation.mutate(r.employeeId)}
                       disabled={toggleBreakMutation.isPending}
                       className={cn(
-                        'p-2 rounded-lg transition-colors',
-                        r.computedStatus === 'on_break'
-                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                          : 'hover:bg-amber-50 text-[var(--muted-foreground)] hover:text-amber-600',
+                        'w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-90',
+                        isBreak
+                          ? 'bg-amber-200 text-amber-700'
+                          : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-amber-100 hover:text-amber-600',
                       )}
-                      title={r.computedStatus === 'on_break' ? 'إنهاء الاستراحة' : 'استراحة'}
+                      title={isBreak ? 'إنهاء الاستراحة' : 'استراحة'}
                     >
                       <Coffee className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => setConfirmCheckOutId(r.employeeId)}
-                      className="p-2 rounded-lg hover:bg-red-50 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
+                      className="w-10 h-10 rounded-xl bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-red-100 hover:text-red-500 flex items-center justify-center transition-all active:scale-90"
                       title="تسجيل خروج"
                     >
                       <LogOut className="h-4 w-4" />
@@ -287,26 +301,24 @@ export default function AttendancePage(): React.ReactElement {
         </div>
       )}
 
-      {/* ── Checked Out (Done) ── */}
+      {/* ── Checked Out ── */}
       {checkedOutRecords.length > 0 && (
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 opacity-70">
-          <h3 className="text-sm font-semibold text-[var(--muted-foreground)] flex items-center gap-2 mb-3">
-            <CheckCircle2 className="h-4 w-4" />
-            انصرفت ({checkedOutRecords.length})
+        <div className="opacity-60">
+          <h3 className="text-sm font-bold text-[var(--muted-foreground)] mb-3">
+            انصرفت 👋
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="space-y-1.5">
             {checkedOutRecords.map(r => (
-              <div key={r.employeeId} className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)] bg-[var(--muted)]/30">
-                <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-xs">
+              <div key={r.employeeId} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center font-bold text-xs shrink-0">
                   {r.employee.fullName?.[0]}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium truncate">{r.employee.fullName}</div>
-                  <div className="text-[10px] text-[var(--muted-foreground)]">
-                    {formatTime(r.checkIn)} → {formatTime(r.checkOut)}
-                  </div>
+                  <span className="text-xs font-medium">{r.employee.fullName}</span>
                 </div>
-                <Badge variant="secondary">انصرفت</Badge>
+                <span className="text-[11px] text-slate-400">
+                  {formatTime(r.checkIn)} → {formatTime(r.checkOut)}
+                </span>
               </div>
             ))}
           </div>
@@ -315,53 +327,60 @@ export default function AttendancePage(): React.ReactElement {
 
       {/* ── Empty State ── */}
       {allRecords.length === 0 && (
-        <div className="text-center py-20">
-          <Clock className="h-12 w-12 mx-auto text-[var(--muted-foreground)] mb-3" />
-          <p className="text-[var(--muted-foreground)]">لا يوجد دوام مسجّل اليوم</p>
-          <p className="text-xs text-[var(--muted-foreground)] mt-1">تأكدي من إضافة جداول عمل للموظفات أولاً</p>
+        <div className="text-center py-16">
+          <div className="w-16 h-16 mx-auto rounded-full bg-[var(--muted)] flex items-center justify-center mb-4">
+            <Clock className="h-8 w-8 text-[var(--muted-foreground)]" />
+          </div>
+          <p className="font-medium text-[var(--foreground)]">لا يوجد دوام مسجّل اليوم</p>
+          <p className="text-xs text-[var(--muted-foreground)] mt-1">أضيفي جداول عمل للموظفات من صفحة الموظفات أولاً</p>
         </div>
       )}
 
       {/* ── End Shift Modal ── */}
       {showEndShift && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-                <Power className="h-6 w-6 text-red-600" />
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-5 animate-in slide-in-from-bottom-4">
+            {/* Header */}
+            <div className="text-center">
+              <div className="w-14 h-14 mx-auto rounded-full bg-red-100 flex items-center justify-center mb-3">
+                <Power className="h-7 w-7 text-red-500" />
               </div>
-              <div>
-                <h3 className="font-bold text-lg">إنهاء الدوام</h3>
-                <p className="text-sm text-[var(--muted-foreground)]">سيتم تسجيل خروج جميع الموظفات</p>
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
-              <div className="flex items-center gap-2 text-amber-700 text-sm font-medium mb-2">
-                <Download className="h-4 w-4" />
-                تذكير: نسخ احتياطي للفواتير
-              </div>
-              <p className="text-xs text-amber-600">
-                قبل إنهاء الدوام، تأكدي من حفظ نسخة احتياطية لفواتير اليوم من صفحة الفواتير.
+              <h3 className="font-bold text-lg">إنهاء الدوام</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mt-1">
+                سيتم تسجيل خروج {presentCount} موظفة
               </p>
             </div>
 
-            <div className="rounded-xl bg-orange-50 border border-orange-200 p-4">
-              <p className="text-xs text-orange-600">
-                ⚠️ سيتم إشعار المديرة بانتهاء الدوام
-              </p>
+            {/* Checklist */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-100">
+                <Download className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-bold text-amber-700">نسخ احتياطي للفواتير</div>
+                  <p className="text-xs text-amber-600 mt-0.5">تأكدي من حفظ نسخة احتياطية من صفحة الفواتير</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 border border-blue-100">
+                <CheckCircle2 className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-bold text-blue-700">إشعار المديرة</div>
+                  <p className="text-xs text-blue-600 mt-0.5">سيتم إبلاغ المديرة بانتهاء الدوام تلقائياً</p>
+                </div>
+              </div>
             </div>
 
-            <div className="flex gap-2 pt-2">
+            {/* Actions */}
+            <div className="flex gap-3">
               <button
                 onClick={handleEndShift}
-                className="flex-1 px-4 py-3 rounded-xl bg-red-500 text-white font-medium text-sm hover:bg-red-600 transition-colors"
+                className="flex-1 py-3.5 rounded-2xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 active:scale-[0.98] transition-all"
               >
                 ✅ تأكيد إنهاء الدوام
               </button>
               <button
                 onClick={() => setShowEndShift(false)}
-                className="px-4 py-3 rounded-xl border border-[var(--border)] text-sm font-medium hover:bg-[var(--muted)] transition-colors"
+                className="px-6 py-3.5 rounded-2xl border-2 border-[var(--border)] font-medium text-sm hover:bg-slate-50 active:scale-[0.98] transition-all"
               >
                 إلغاء
               </button>
