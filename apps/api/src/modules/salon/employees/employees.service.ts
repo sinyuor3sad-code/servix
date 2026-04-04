@@ -147,12 +147,18 @@ export class EmployeesService {
   ): Promise<Record<string, unknown>> {
     await this.findEmployeeOrFail(db, id);
 
-    const employee = await db.employee.update({
-      where: { id },
-      data: { isActive: false },
-    });
-
-    return this.mapDecimalFields(employee);
+    try {
+      // Try actual delete first
+      await db.employee.delete({ where: { id } });
+      return { id, deleted: true };
+    } catch {
+      // If FK constraints prevent deletion, deactivate instead
+      await db.employee.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      return { id, deactivated: true };
+    }
   }
 
   // ─── Schedule Management ───
