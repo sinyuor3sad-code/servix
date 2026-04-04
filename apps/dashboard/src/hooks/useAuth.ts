@@ -78,8 +78,9 @@ export function useAuth() {
     meta: { skipAuthError: true },
   });
 
-  // isLoading = true during hydration OR during the getMe query
-  const isLoading = !_hasHydrated || (!!accessToken && queryLoading);
+  // isLoading = ONLY during hydration (instant, ~5ms from localStorage)
+  // Don't block on getMe network request — validate in background
+  const isLoading = !_hasHydrated;
 
   // If query failed after retry, check if localStorage was cleared by api.ts
   // (meaning refresh token also failed). If so, sync logout to store.
@@ -168,7 +169,7 @@ export function useAuth() {
     currentTenant,
     userRole,
     isOwner,
-    isAuthenticated: !!accessToken && !!user,
+    isAuthenticated: !!accessToken,
     isLoading,
     accessToken,
     login,
