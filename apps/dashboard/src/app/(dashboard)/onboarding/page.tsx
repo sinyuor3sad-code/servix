@@ -88,7 +88,7 @@ const defaultServices = [
 const employeeSchema = z.object({
   fullName: z.string().min(2, 'الاسم مطلوب'),
   phone: z.string().min(10, 'رقم الجوال مطلوب').regex(/^[0-9+]+$/, 'رقم غير صالح'),
-  role: z.enum(['stylist', 'manager', 'receptionist', 'cashier']),
+  role: z.enum(['stylist', 'cashier', 'makeup', 'nails', 'skincare']),
 });
 
 type Step1Data = z.infer<typeof step1Schema>;
@@ -489,10 +489,11 @@ export default function OnboardingPage(): React.ReactElement {
                       {...employeeForm.register('role')}
                       className="rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
                     >
-                      <option value="stylist">مصففة</option>
-                      <option value="manager">مديرة</option>
-                      <option value="receptionist">موظفة استقبال</option>
-                      <option value="cashier">كاشيرة</option>
+                      <option value="stylist">✂️ مصففة</option>
+                      <option value="makeup">💄 مكياج</option>
+                      <option value="nails">💅 أظافر</option>
+                      <option value="skincare">🧴 عناية بالبشرة</option>
+                      <option value="cashier">💵 كاشيرة</option>
                     </select>
                   </div>
                 </div>

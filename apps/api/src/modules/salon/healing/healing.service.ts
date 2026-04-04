@@ -286,9 +286,9 @@ export class HealingService {
 
     if (!appointment) return;
 
-    // Find managers to notify
+    // Find cashiers (supervisors) to notify
     const managers = await db.employee.findMany({
-      where: { role: 'manager', isActive: true },
+      where: { role: 'cashier', isActive: true },
     });
 
     for (const manager of managers) {
