@@ -52,9 +52,9 @@ export default function NewClientPage() {
   const mutation = useMutation({
     mutationFn: (data: ClientFormData) =>
       dashboardService.createClient(data, accessToken!),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('تم إضافة العميل بنجاح');
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      await queryClient.invalidateQueries({ queryKey: ['clients'] });
       router.push('/clients');
     },
     onError: () => {
