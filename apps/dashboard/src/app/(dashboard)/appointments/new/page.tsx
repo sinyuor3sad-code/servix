@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { PageHeader, Button, Input } from '@/components/ui';
+import { PageHeader, Button } from '@/components/ui';
 import { dashboardService } from '@/services/dashboard.service';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
@@ -52,15 +52,11 @@ export default function NewAppointmentPage() {
   const { accessToken } = useAuth();
   const queryClient = useQueryClient();
 
-  // ── State ──
-  const [clientId, setClientId] = useState('');
+  // ── Client: just name + phone, simple and direct ──
   const [clientName, setClientName] = useState('');
-  const [clientSearch, setClientSearch] = useState('');
-  const [showClientDropdown, setShowClientDropdown] = useState(false);
-  const [quickAddName, setQuickAddName] = useState('');
-  const [quickAddPhone, setQuickAddPhone] = useState('');
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [clientPhone, setClientPhone] = useState('');
 
+  // ── Booking details ──
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [employeeId, setEmployeeId] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
@@ -68,12 +64,6 @@ export default function NewAppointmentPage() {
   const [notes, setNotes] = useState('');
 
   // ── Data ──
-  const { data: clientsData } = useQuery({
-    queryKey: ['clients', 'all'],
-    queryFn: () => dashboardService.getClients({ limit: 100 }, accessToken!),
-    enabled: !!accessToken,
-  });
-
   const { data: employeesData } = useQuery({
     queryKey: ['employees', 'all'],
     queryFn: () => dashboardService.getEmployees({ limit: 100 }, accessToken!),
@@ -86,87 +76,77 @@ export default function NewAppointmentPage() {
     enabled: !!accessToken,
   });
 
-  const clients = clientsData?.items ?? [];
   const employees = employeesData?.items ?? [];
   const services = servicesData?.items ?? [];
 
   // ── Days ──
   const days = useMemo(() => generateDays(14), []);
 
-  // ── Filter clients ──
-  const filteredClients = useMemo(() => {
-    if (!clientSearch.trim()) return clients;
-    const q = clientSearch.toLowerCase();
-    return clients.filter(
-      (c) =>
-        c.fullName?.toLowerCase().includes(q) ||
-        c.phone?.includes(q),
-    );
-  }, [clients, clientSearch]);
+  // ── Submit: create client automatically → then create appointment ──
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      // Step 1: Create or find client automatically
+      let resolvedClientId: string | undefined;
 
-  // ── Quick Add Client ──
-  const quickAddMutation = useMutation({
-    mutationFn: (data: { fullName: string; phone: string }) =>
-      dashboardService.createClient(data, accessToken!),
-    onSuccess: async (newClient) => {
-      toast.success('تم إضافة العميل بنجاح');
-      // Refresh client list first so the new client is available
-      await queryClient.invalidateQueries({ queryKey: ['clients'] });
-      // Use response data or fallback to input values
-      const id = newClient?.id;
-      const name = newClient?.fullName || quickAddName.trim();
-      if (id) {
-        setClientId(id);
-        setClientName(name);
-      } else {
-        // If no ID from response, select from refreshed list
-        const refreshedClients = queryClient.getQueryData<any>(['clients', 'all']);
-        const found = refreshedClients?.items?.find(
-          (c: any) => c.fullName === quickAddName.trim(),
+      try {
+        const newClient = await dashboardService.createClient(
+          {
+            fullName: clientName.trim(),
+            phone: clientPhone.trim() || undefined,
+          } as any,
+          accessToken!,
         );
-        if (found) {
-          setClientId(found.id);
-          setClientName(found.fullName);
+        resolvedClientId = newClient?.id;
+      } catch {
+        // Client might already exist — that's fine, try to continue
+      }
+
+      // If client creation didn't return an ID, search for them
+      if (!resolvedClientId && clientPhone.trim()) {
+        try {
+          const searchResult = await dashboardService.getClients(
+            { search: clientPhone.trim(), limit: 1 } as any,
+            accessToken!,
+          );
+          resolvedClientId = searchResult?.items?.[0]?.id;
+        } catch {
+          // ignore
         }
       }
-      setShowQuickAdd(false);
-      setShowClientDropdown(false);
-      setQuickAddName('');
-      setQuickAddPhone('');
-    },
-    onError: () => toast.error('فشل في إضافة العميل'),
-  });
 
-  const handleQuickAdd = useCallback(() => {
-    if (!quickAddName.trim()) return;
-    quickAddMutation.mutate({
-      fullName: quickAddName.trim(),
-      phone: quickAddPhone.trim() || undefined as any,
-    });
-  }, [quickAddName, quickAddPhone, quickAddMutation]);
+      if (!resolvedClientId) {
+        throw new Error('لم نتمكن من إنشاء أو إيجاد العميل');
+      }
 
-  // ── Submit ──
-  const createMutation = useMutation({
-    mutationFn: () =>
-      dashboardService.createAppointment(
+      // Step 2: Create appointment
+      return dashboardService.createAppointment(
         {
-          clientId,
+          clientId: resolvedClientId,
           employeeId,
           date: selectedDate,
           startTime: selectedTime,
           notes: notes || undefined,
         },
         accessToken!,
-      ),
+      );
+    },
     onSuccess: () => {
       toast.success('تم حجز الموعد بنجاح ✅');
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
       router.push('/appointments');
     },
-    onError: () => toast.error('حدث خطأ أثناء حجز الموعد'),
+    onError: (err: any) => {
+      toast.error(err?.message || 'حدث خطأ أثناء حجز الموعد');
+    },
   });
 
-  const canSubmit = clientId && selectedServices.length > 0 && employeeId && selectedDate && selectedTime;
+  const canSubmit =
+    clientName.trim() &&
+    selectedServices.length > 0 &&
+    employeeId &&
+    selectedDate &&
+    selectedTime;
 
   function toggleService(id: string) {
     setSelectedServices((prev) =>
@@ -188,111 +168,46 @@ export default function NewAppointmentPage() {
 
       <div className="space-y-6 mt-6">
 
-        {/* ─── 1. CLIENT SECTION ─── */}
+        {/* ─── 1. CLIENT: Simple name + phone ─── */}
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-[var(--brand-primary)] text-white flex items-center justify-center text-xs font-bold">1</span>
-            العميل
+            بيانات العميل
           </h3>
 
-          {clientId ? (
-            <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--brand-primary)]/5 border border-[var(--brand-primary)]/20">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-[var(--brand-primary)] text-white flex items-center justify-center text-sm font-bold">
-                  {clientName.charAt(0)}
-                </div>
-                <span className="font-medium text-sm">{clientName}</span>
-              </div>
-              <button
-                onClick={() => { setClientId(''); setClientName(''); }}
-                className="text-xs text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
-              >
-                تغيير
-              </button>
-            </div>
-          ) : (
-            <div className="relative">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">
+                اسم العميل *
+              </label>
               <input
                 type="text"
-                placeholder="🔍 ابحث بالاسم أو رقم الجوال..."
-                value={clientSearch}
-                onChange={(e) => { setClientSearch(e.target.value); setShowClientDropdown(true); }}
-                onFocus={() => setShowClientDropdown(true)}
+                placeholder="مثال: فاطمة أحمد"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--background)] text-sm placeholder:text-[var(--muted-foreground)] focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition-all"
               />
-
-              {showClientDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--card)] border border-[var(--border)] rounded-xl shadow-lg z-50 max-h-60 overflow-y-auto">
-                  {filteredClients.length > 0 ? (
-                    filteredClients.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => {
-                          setClientId(c.id);
-                          setClientName(c.fullName);
-                          setShowClientDropdown(false);
-                          setClientSearch('');
-                        }}
-                        className="w-full flex items-center gap-3 p-3 hover:bg-[var(--brand-primary)]/5 transition-colors text-right"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-[var(--border)] flex items-center justify-center text-xs font-bold text-[var(--muted-foreground)]">
-                          {c.fullName?.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">{c.fullName}</p>
-                          {c.phone && <p className="text-xs text-[var(--muted-foreground)]">{c.phone}</p>}
-                        </div>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="p-3 text-center text-sm text-[var(--muted-foreground)]">
-                      لا نتائج
-                    </div>
-                  )}
-
-                  {/* Quick Add Button */}
-                  <div className="border-t border-[var(--border)]">
-                    <button
-                      onClick={() => { setShowQuickAdd(!showQuickAdd); }}
-                      className="w-full p-3 text-sm font-medium text-[var(--brand-primary)] hover:bg-[var(--brand-primary)]/5 transition-colors flex items-center justify-center gap-2"
-                    >
-                      ＋ إضافة عميل جديد
-                    </button>
-
-                    {showQuickAdd && (
-                      <div className="p-3 space-y-2 border-t border-[var(--border)] bg-[var(--background)]/50">
-                        <input
-                          type="text"
-                          placeholder="اسم العميل *"
-                          value={quickAddName}
-                          onChange={(e) => setQuickAddName(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm outline-none focus:border-[var(--brand-primary)]"
-                          autoFocus
-                        />
-                        <input
-                          type="tel"
-                          placeholder="رقم الجوال (اختياري)"
-                          value={quickAddPhone}
-                          onChange={(e) => setQuickAddPhone(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm outline-none focus:border-[var(--brand-primary)]"
-                        />
-                        <button
-                          onClick={handleQuickAdd}
-                          disabled={!quickAddName.trim() || quickAddMutation.isPending}
-                          className="w-full py-2 rounded-lg bg-[var(--brand-primary)] text-white text-sm font-medium disabled:opacity-50 transition-all hover:opacity-90"
-                        >
-                          {quickAddMutation.isPending ? 'جارٍ الإضافة...' : 'إضافة'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
-          )}
+            <div>
+              <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-1">
+                رقم الجوال
+              </label>
+              <input
+                type="tel"
+                dir="ltr"
+                placeholder="05XXXXXXXX"
+                value={clientPhone}
+                onChange={(e) => setClientPhone(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--background)] text-sm placeholder:text-[var(--muted-foreground)] focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition-all text-left"
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-[var(--muted-foreground)]">
+            💡 يتم حفظ بيانات العميل تلقائياً في قسم العملاء للتسويق
+          </p>
         </section>
 
-        {/* ─── 2. SERVICES SECTION ─── */}
+        {/* ─── 2. SERVICES ─── */}
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-[var(--brand-primary)] text-white flex items-center justify-center text-xs font-bold">2</span>
@@ -338,7 +253,7 @@ export default function NewAppointmentPage() {
           </div>
         </section>
 
-        {/* ─── 3. EMPLOYEE SECTION ─── */}
+        {/* ─── 3. EMPLOYEE ─── */}
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-[var(--brand-primary)] text-white flex items-center justify-center text-xs font-bold">3</span>
@@ -374,7 +289,7 @@ export default function NewAppointmentPage() {
           </div>
         </section>
 
-        {/* ─── 4. DATE SECTION ─── */}
+        {/* ─── 4. DATE ─── */}
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-[var(--brand-primary)] text-white flex items-center justify-center text-xs font-bold">4</span>
@@ -408,7 +323,7 @@ export default function NewAppointmentPage() {
           </div>
         </section>
 
-        {/* ─── 5. TIME SECTION ─── */}
+        {/* ─── 5. TIME ─── */}
         <section className="space-y-3">
           <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-[var(--brand-primary)] text-white flex items-center justify-center text-xs font-bold">5</span>
@@ -455,13 +370,13 @@ export default function NewAppointmentPage() {
           />
         </section>
 
-        {/* ─── SUMMARY & SUBMIT ─── */}
+        {/* ─── SUMMARY ─── */}
         {canSubmit && (
           <div className="p-4 rounded-2xl bg-[var(--brand-primary)]/5 border border-[var(--brand-primary)]/20 space-y-2">
             <h4 className="text-sm font-bold text-[var(--foreground)]">ملخص الحجز</h4>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="text-[var(--muted-foreground)]">العميل:</div>
-              <div className="font-medium">{clientName}</div>
+              <div className="font-medium">{clientName}{clientPhone && ` · ${clientPhone}`}</div>
               <div className="text-[var(--muted-foreground)]">الخدمات:</div>
               <div className="font-medium">{selectedServices.length} خدمة ({totalDuration} دقيقة)</div>
               <div className="text-[var(--muted-foreground)]">الموظفة:</div>
@@ -474,6 +389,7 @@ export default function NewAppointmentPage() {
           </div>
         )}
 
+        {/* ─── SUBMIT ─── */}
         <div className="flex items-center gap-3 pt-2 pb-8">
           <Button
             onClick={() => createMutation.mutate()}
@@ -490,14 +406,6 @@ export default function NewAppointmentPage() {
           </Button>
         </div>
       </div>
-
-      {/* Click outside to close dropdown */}
-      {showClientDropdown && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setShowClientDropdown(false)}
-        />
-      )}
     </div>
   );
 }
