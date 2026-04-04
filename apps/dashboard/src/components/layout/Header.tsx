@@ -14,6 +14,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import type { UserRole } from '@/stores/auth.store';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import {
   Avatar,
@@ -25,6 +26,14 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui';
 import { cn } from '@/lib/utils';
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  owner: 'مالكة',
+  manager: 'مديرة',
+  receptionist: 'استقبال',
+  cashier: 'كاشيرة',
+  staff: 'موظفة',
+};
 
 function NotificationBadge() {
   const unreadCount = useUnreadCount();
@@ -42,7 +51,7 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuToggle }: HeaderProps): React.ReactElement {
-  const { user, currentTenant, logout } = useAuth();
+  const { user, currentTenant, userRole, isOwner, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
 
@@ -68,10 +77,15 @@ export function Header({ onMenuToggle }: HeaderProps): React.ReactElement {
       </button>
 
       {/* Salon name */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 flex items-center gap-2">
         <h2 className="truncate text-sm font-semibold text-[var(--foreground)] md:text-base">
           {currentTenant?.nameAr || 'SERVIX'}
         </h2>
+        {userRole && (
+          <span className="hidden sm:inline-flex shrink-0 rounded-full bg-[var(--brand-primary)]/10 px-2.5 py-0.5 text-[10px] font-bold text-[var(--brand-primary)]">
+            {isOwner ? 'مالكة' : ROLE_LABELS[userRole]}
+          </span>
+        )}
       </div>
 
       {/* Search (desktop only) */}
@@ -132,6 +146,11 @@ export function Header({ onMenuToggle }: HeaderProps): React.ReactElement {
               <span className="text-xs text-[var(--muted-foreground)]">
                 {user?.email}
               </span>
+              {userRole && (
+                <span className="mt-1 inline-flex w-fit rounded-full bg-[var(--brand-primary)]/10 px-2 py-0.5 text-[10px] font-bold text-[var(--brand-primary)]">
+                  {isOwner ? 'مالكة الصالون' : ROLE_LABELS[userRole]}
+                </span>
+              )}
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />

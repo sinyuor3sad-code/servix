@@ -30,6 +30,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import type { UserRole } from '@/stores/auth.store';
 
 interface NavItem {
   label: string;
@@ -37,28 +38,30 @@ interface NavItem {
   icon: LucideIcon;
   group?: string;
   comingSoon?: boolean;
+  /** Which roles can see this item. undefined = everyone (owner/manager only by default for admin pages) */
+  roles?: UserRole[] | 'all';
 }
 
 const navItems: NavItem[] = [
-  { label: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'المواعيد', href: '/dashboard/appointments', icon: Calendar },
-  { label: 'العملاء', href: '/dashboard/clients', icon: Users },
-  { label: 'الموظفات', href: '/dashboard/employees', icon: UserCog },
-  { label: 'الحضور', href: '/dashboard/attendance', icon: ClipboardCheck },
-  { label: 'الخدمات', href: '/dashboard/services', icon: Scissors },
-  { label: 'الكاشير', href: '/dashboard/pos', icon: CreditCard },
-  { label: 'كاشير سريع', href: '/dashboard/pos/quick', icon: TabletSmartphone },
-  { label: 'الفواتير', href: '/dashboard/invoices', icon: FileText },
-  { label: 'التقارير', href: '/dashboard/reports', icon: BarChart3 },
-  { label: 'الكوبونات', href: '/dashboard/coupons', icon: Ticket },
-  { label: 'الولاء', href: '/dashboard/loyalty', icon: Heart },
-  { label: 'المصروفات', href: '/dashboard/expenses', icon: Wallet },
-  { label: 'الإعدادات', href: '/dashboard/settings', icon: Settings },
-  { label: 'الورديات', href: '/dashboard/shifts', icon: Clock, comingSoon: true },
-  { label: 'المخزون', href: '/dashboard/inventory', icon: Package, comingSoon: true },
-  { label: 'التسويق', href: '/dashboard/marketing', icon: Megaphone, comingSoon: true },
-  { label: 'التسعير', href: '/dashboard/pricing', icon: TrendingUp, comingSoon: true },
-  { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt, comingSoon: true },
+  { label: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard, roles: ['owner', 'manager', 'receptionist', 'staff'] },
+  { label: 'المواعيد', href: '/dashboard/appointments', icon: Calendar, roles: ['owner', 'manager', 'receptionist'] },
+  { label: 'العملاء', href: '/dashboard/clients', icon: Users, roles: ['owner', 'manager', 'receptionist'] },
+  { label: 'الموظفات', href: '/dashboard/employees', icon: UserCog, roles: ['owner', 'manager'] },
+  { label: 'الحضور', href: '/dashboard/attendance', icon: ClipboardCheck, roles: ['owner', 'manager'] },
+  { label: 'الخدمات', href: '/dashboard/services', icon: Scissors, roles: ['owner', 'manager'] },
+  { label: 'الكاشير', href: '/dashboard/pos', icon: CreditCard, roles: 'all' },
+  { label: 'كاشير سريع', href: '/dashboard/pos/quick', icon: TabletSmartphone, roles: 'all' },
+  { label: 'الفواتير', href: '/dashboard/invoices', icon: FileText, roles: ['owner', 'manager', 'cashier'] },
+  { label: 'التقارير', href: '/dashboard/reports', icon: BarChart3, roles: ['owner', 'manager'] },
+  { label: 'الكوبونات', href: '/dashboard/coupons', icon: Ticket, roles: ['owner', 'manager'] },
+  { label: 'الولاء', href: '/dashboard/loyalty', icon: Heart, roles: ['owner', 'manager'] },
+  { label: 'المصروفات', href: '/dashboard/expenses', icon: Wallet, roles: ['owner', 'manager'] },
+  { label: 'الإعدادات', href: '/dashboard/settings', icon: Settings, roles: ['owner', 'manager'] },
+  { label: 'الورديات', href: '/dashboard/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
+  { label: 'المخزون', href: '/dashboard/inventory', icon: Package, comingSoon: true, roles: ['owner', 'manager'] },
+  { label: 'التسويق', href: '/dashboard/marketing', icon: Megaphone, comingSoon: true, roles: ['owner', 'manager'] },
+  { label: 'التسعير', href: '/dashboard/pricing', icon: TrendingUp, comingSoon: true, roles: ['owner', 'manager'] },
+  { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt, comingSoon: true, roles: ['owner', 'manager'] },
 ];
 
 interface SidebarProps {
@@ -71,10 +74,26 @@ function isActiveRoute(pathname: string, href: string): boolean {
   return pathname.startsWith(href);
 }
 
+const ROLE_LABELS: Record<UserRole, string> = {
+  owner: 'مالكة',
+  manager: 'مديرة',
+  receptionist: 'استقبال',
+  cashier: 'كاشيرة',
+  staff: 'موظفة',
+};
+
 export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.ReactElement {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const { currentTenant } = useAuth();
+  const { currentTenant, userRole, isOwner } = useAuth();
+
+  // Filter nav items based on user role — owner always sees everything
+  const visibleItems = navItems.filter((item) => {
+    if (isOwner) return true; // Owner sees all
+    if (!item.roles) return true; // No restriction
+    if (item.roles === 'all') return true; // Everyone
+    return userRole ? item.roles.includes(userRole) : false;
+  });
 
   const toggleCollapse = useCallback(() => {
     setCollapsed((prev) => !prev);
@@ -118,7 +137,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-3">
         <ul className="space-y-1">
-          {navItems.map((item) => {
+          {visibleItems.map((item) => {
             const active = isActiveRoute(pathname, item.href);
             const Icon = item.icon;
 
