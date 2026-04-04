@@ -373,7 +373,7 @@ function usePOSEngine() {
   const splitRem = useMemo(() => Math.max(0, total - splits.reduce((s, e) => s + (e.amount || 0), 0)), [splits, total]);
 
   /* ── Payment ── */
-  const canPay = cart.length > 0 && (client || (walkInMode && walkName.trim() && walkPhone.trim()));
+  const canPay = cart.length > 0;
 
   const payMut = useMutation({
     mutationFn: async (method: string) => {
@@ -917,14 +917,22 @@ function TouchPOS({ e }: { e: E }) {
       </div>
 
       {/* MOBILE BOTTOM BAR — glass with safe area */}
-      <div className={`flex shrink-0 items-center justify-between border-t ${brd(4)} px-4 py-3 md:hidden glass`} style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom, 0px))' }}>
+      <div className={`flex shrink-0 items-center justify-between border-t ${brd(4)} px-4 py-2.5 md:hidden glass`} style={{ paddingBottom: 'max(0.625rem, var(--safe-bottom, 0px))' }}>
         <div>
           <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]" style={{ opacity: 0.4 }}>الإجمالي</p>
-          <p className="text-[20px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)}</p>
+          <p className="text-[20px] font-black leading-tight" style={{ ...TN, ...accentColor }}>{fmt(e.total)}</p>
         </div>
         <div className="flex items-center gap-2">
-          {e.cartCount > 0 && <button onClick={() => setShowCart(!showCart)} className={`${B} flex items-center gap-1.5 rounded-xl px-3 py-2.5 ${G1}`}><ShoppingCart size={14} style={accentColor} /><span className="text-[12px] font-black text-[var(--foreground)]" style={TN}>{e.cartCount}</span></button>}
-          <button onClick={() => e.pay('cash')} disabled={e.payMut.isPending || !e.canPay} className={`${B} rounded-xl px-6 py-3 text-[13px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>{e.payMut.isPending ? '...' : 'ادفع'}</button>
+          {e.cartCount > 0 ? (
+            <button onClick={() => setShowCart(true)} className={`${B} flex items-center gap-2 rounded-xl px-5 py-3 text-[13px] font-bold text-black shadow-lg`} style={accentBg}>
+              <ShoppingCart size={16} />
+              <span style={TN}>{e.cartCount}</span>
+              <span className="mx-0.5">·</span>
+              <span>ادفع</span>
+            </button>
+          ) : (
+            <span className="text-[12px] text-[var(--muted-foreground)]">اختر خدمة للبدء</span>
+          )}
         </div>
       </div>
 
@@ -932,14 +940,20 @@ function TouchPOS({ e }: { e: E }) {
       {showCart && (
         <>
           <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden animate-fade-in" onClick={() => setShowCart(false)} />
-          <div className="fixed inset-x-0 bottom-0 z-50 max-h-[70vh] rounded-t-3xl bg-[var(--background)] border-t border-[var(--border)] shadow-2xl overflow-y-auto md:hidden animate-fade-in-up" style={{ paddingBottom: 'max(1rem, var(--safe-bottom, 0px))' }}>
-            <div className="sticky top-0 bg-[var(--background)] p-4 pb-2 border-b border-[var(--border)]">
+          <div className="fixed inset-x-0 bottom-0 z-50 max-h-[80vh] rounded-t-3xl bg-[var(--background)] border-t border-[var(--border)] shadow-2xl overflow-y-auto md:hidden animate-fade-in-up" style={{ paddingBottom: 'max(1rem, var(--safe-bottom, 0px))' }}>
+            {/* Handle bar + header */}
+            <div className="sticky top-0 bg-[var(--background)] p-4 pb-2 border-b border-[var(--border)] z-10">
               <div className="mx-auto h-1 w-10 rounded-full bg-[var(--muted)] mb-3" />
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2"><ShoppingCart size={16} style={accentColor} /><span className="text-sm font-bold">السلة</span><span className="text-xs font-black px-1.5 py-0.5 rounded-md text-black" style={accentBg}>{e.cartCount}</span></div>
-                <button onClick={() => setShowCart(false)} className="p-1.5 rounded-lg hover:bg-[var(--muted)]"><X size={18} /></button>
+                <div className="flex items-center gap-2">
+                  {e.cart.length > 0 && <button onClick={e.clearAll} className={`${BS} text-[11px] font-semibold text-red-400 rounded-lg px-2 py-1`}>مسح الكل</button>}
+                  <button onClick={() => setShowCart(false)} className="p-1.5 rounded-lg hover:bg-[var(--muted)]"><X size={18} /></button>
+                </div>
               </div>
             </div>
+
+            {/* Cart items */}
             <div className="p-4 space-y-2">
               {e.cart.map(item => {
                 const info = e.itemTotals.find(t => t.id === item.id);
@@ -959,9 +973,39 @@ function TouchPOS({ e }: { e: E }) {
                 );
               })}
             </div>
-            <div className="p-4 pt-0">
-              <button onClick={() => { setShowCart(false); e.pay('cash'); }} disabled={!e.canPay} className={`${B} w-full rounded-xl py-3.5 text-[14px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>
-                ادفع — {fmt(e.total)} ر.س
+
+            {/* Summary + Payment */}
+            <div className="p-4 pt-0 space-y-3">
+              {/* Financial summary */}
+              <div className={`rounded-xl ${bg(2)} p-3 space-y-1.5`}>
+                <div className="flex justify-between text-[12px]"><span className="text-[var(--muted-foreground)]">المجموع الفرعي</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.subtotal)}</span></div>
+                <div className="flex justify-between text-[12px]"><span className="text-[var(--muted-foreground)]">ضريبة 15%</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.tax)}</span></div>
+                <div className={`flex items-baseline justify-between border-t ${brd(4)} pt-1.5`}><span className="text-[13px] font-bold text-[var(--foreground)]">الإجمالي</span><span className="text-[20px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)} <span className="text-[9px] font-semibold opacity-40">ر.س</span></span></div>
+              </div>
+
+              {/* Payment methods */}
+              <div className="grid grid-cols-4 gap-2">
+                {PAY.map(pm => (
+                  <button
+                    key={pm.id}
+                    onClick={() => { setShowCart(false); e.pay(pm.id); }}
+                    disabled={e.payMut.isPending || !e.canPay}
+                    className={`${BS} flex flex-col items-center gap-1.5 rounded-xl border ${brd(4)} ${bg(2)} py-3 text-[var(--muted-foreground)] active:text-[var(--foreground)] disabled:opacity-15`}
+                  >
+                    <pm.icon size={18} strokeWidth={1.5} />
+                    <span className="text-[9px] font-bold">{pm.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Main pay button */}
+              <button
+                onClick={() => { setShowCart(false); e.pay('cash'); }}
+                disabled={!e.canPay || e.payMut.isPending}
+                className={`${B} relative w-full rounded-xl py-4 text-[15px] font-black text-black shadow-lg disabled:opacity-20 overflow-hidden`}
+                style={e.canPay ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}
+              >
+                {e.payMut.isPending ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black mx-auto block" /> : <>ادفع نقدي — {fmt(e.total)} ر.س</>}
               </button>
             </div>
           </div>
