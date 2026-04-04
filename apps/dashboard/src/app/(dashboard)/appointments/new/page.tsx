@@ -108,15 +108,31 @@ export default function NewAppointmentPage() {
   const quickAddMutation = useMutation({
     mutationFn: (data: { fullName: string; phone: string }) =>
       dashboardService.createClient(data, accessToken!),
-    onSuccess: (newClient) => {
+    onSuccess: async (newClient) => {
       toast.success('تم إضافة العميل بنجاح');
-      setClientId(newClient.id);
-      setClientName(newClient.fullName);
+      // Refresh client list first so the new client is available
+      await queryClient.invalidateQueries({ queryKey: ['clients'] });
+      // Use response data or fallback to input values
+      const id = newClient?.id;
+      const name = newClient?.fullName || quickAddName.trim();
+      if (id) {
+        setClientId(id);
+        setClientName(name);
+      } else {
+        // If no ID from response, select from refreshed list
+        const refreshedClients = queryClient.getQueryData<any>(['clients', 'all']);
+        const found = refreshedClients?.items?.find(
+          (c: any) => c.fullName === quickAddName.trim(),
+        );
+        if (found) {
+          setClientId(found.id);
+          setClientName(found.fullName);
+        }
+      }
       setShowQuickAdd(false);
       setShowClientDropdown(false);
       setQuickAddName('');
       setQuickAddPhone('');
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
     },
     onError: () => toast.error('فشل في إضافة العميل'),
   });
