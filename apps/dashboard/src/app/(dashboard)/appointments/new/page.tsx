@@ -88,27 +88,34 @@ export default function NewAppointmentPage() {
       // Step 1: Create or find client automatically
       let resolvedClientId: string | undefined;
 
+      const phoneToSend = clientPhone.trim() || '0000000000';
+
       try {
         const newClient = await dashboardService.createClient(
           {
             fullName: clientName.trim(),
-            phone: clientPhone.trim() || undefined,
+            phone: phoneToSend,
+            gender: 'female',
+            source: 'walk_in',
           } as any,
           accessToken!,
         );
         resolvedClientId = newClient?.id;
       } catch {
-        // Client might already exist — that's fine, try to continue
+        // Client might already exist — try to find by phone
       }
 
       // If client creation didn't return an ID, search for them
-      if (!resolvedClientId && clientPhone.trim()) {
+      if (!resolvedClientId) {
         try {
           const searchResult = await dashboardService.getClients(
-            { search: clientPhone.trim(), limit: 1 } as any,
+            { search: clientPhone.trim() || clientName.trim(), limit: 5 } as any,
             accessToken!,
           );
-          resolvedClientId = searchResult?.items?.[0]?.id;
+          const found = searchResult?.items?.find(
+            (c: any) => c.phone === phoneToSend || c.fullName === clientName.trim(),
+          );
+          resolvedClientId = found?.id;
         } catch {
           // ignore
         }
@@ -118,7 +125,7 @@ export default function NewAppointmentPage() {
         throw new Error('لم نتمكن من إنشاء أو إيجاد العميل');
       }
 
-      // Step 2: Create appointment
+      // Step 2: Create appointment with services array format
       return dashboardService.createAppointment(
         {
           clientId: resolvedClientId,
@@ -126,7 +133,11 @@ export default function NewAppointmentPage() {
           date: selectedDate,
           startTime: selectedTime,
           notes: notes || undefined,
-        },
+          services: selectedServices.map((serviceId) => ({
+            serviceId,
+            employeeId,
+          })),
+        } as any,
         accessToken!,
       );
     },
