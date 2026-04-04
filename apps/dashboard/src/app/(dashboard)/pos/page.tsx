@@ -13,6 +13,7 @@ import {
   Split, Mail, Users, ChevronDown, ChevronUp, AlertTriangle,
   Hash, Check, CircleDollarSign, Wifi, WifiOff,
   Package, StarOff, Percent, Monitor,
+  ClipboardCheck, LogIn, LogOut, Coffee, Power,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboard.service';
@@ -58,7 +59,7 @@ interface ServiceBundle {
   savings: number;
 }
 
-type PanelId = null | 'split' | 'hold-list' | 'refund' | 'receipt' | 'bundles';
+type PanelId = null | 'split' | 'hold-list' | 'refund' | 'receipt' | 'bundles' | 'attendance';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    CONSTANTS + HELPERS
@@ -544,6 +545,132 @@ function ReceiptPanel({ e }: { e: E }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   ATTENDANCE PANEL — Cashier checks in/out employees
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+interface AttRec {
+  id: string | null;
+  employeeId: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  isOnBreak: boolean;
+  computedStatus?: string;
+  employee: { id: string; fullName: string; role: string };
+}
+
+const ROLE_ICO: Record<string, string> = { stylist: '✂️', cashier: '💵', makeup: '💄', nails: '💅', skincare: '🧴' };
+
+function fmtT(t: string | null) {
+  if (!t) return '';
+  const [h, m] = t.split(':');
+  const hr = parseInt(h ?? '0', 10);
+  return `${hr % 12 || 12}:${m} ${hr >= 12 ? 'م' : 'ص'}`;
+}
+
+function AttendancePanel({ e }: { e: E }) {
+  const { accessToken } = useAuth();
+  const [recs, setRecs] = useState<AttRec[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api.get<AttRec[]>('/attendance/today', accessToken!);
+      setRecs(data ?? []);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, [accessToken]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const doCheckIn = async (empId: string) => {
+    try {
+      await api.post('/attendance/check-in', { employeeId: empId }, accessToken!);
+      toast.success('✅ تم التحضير');
+      load();
+    } catch (err: any) { toast.error(err.message || 'خطأ'); }
+  };
+
+  const doCheckOut = async (empId: string) => {
+    try {
+      await api.put('/attendance/check-out', { employeeId: empId }, accessToken!);
+      toast.success('👋 تم الخروج');
+      load();
+    } catch (err: any) { toast.error(err.message || 'خطأ'); }
+  };
+
+  const doBreak = async (empId: string) => {
+    try {
+      await api.put('/attendance/toggle-break', { employeeId: empId }, accessToken!);
+      load();
+    } catch (err: any) { toast.error(err.message || 'خطأ'); }
+  };
+
+  const absent = recs.filter(r => r.computedStatus === 'absent');
+  const present = recs.filter(r => r.computedStatus === 'present' || r.computedStatus === 'on_break');
+  const done = recs.filter(r => r.computedStatus === 'off_duty');
+
+  if (loading) return <div className="py-12 text-center text-[var(--muted-foreground)] text-[11px]">تحميل...</div>;
+
+  return (
+    <div className="space-y-4" dir="rtl">
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl bg-emerald-500/10 p-3 text-center"><span className="text-lg font-black text-emerald-500">{present.length}</span><div className="text-[9px] text-emerald-500 font-medium">حاضرة</div></div>
+        <div className="rounded-xl bg-orange-500/10 p-3 text-center"><span className="text-lg font-black text-orange-500">{absent.length}</span><div className="text-[9px] text-orange-400 font-medium">لم تحضر</div></div>
+        <div className={`rounded-xl ${bg(3)} p-3 text-center`}><span className="text-lg font-black text-[var(--muted-foreground)]">{done.length}</span><div className="text-[9px] text-[var(--muted-foreground)] font-medium">انصرفت</div></div>
+      </div>
+
+      {/* Absent — Quick check-in */}
+      {absent.length > 0 && (
+        <div>
+          <div className="text-[10px] font-bold text-[var(--foreground)] mb-2">👆 اضغطي للتحضير</div>
+          <div className="grid grid-cols-2 gap-2">
+            {absent.map(r => (
+              <button key={r.employeeId} onClick={() => doCheckIn(r.employeeId)} className={`${BS} flex items-center gap-2 rounded-xl border-2 border-dashed ${brd(8)} p-3 hover:border-emerald-400 hover:bg-emerald-500/5`}>
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-500/10 text-[11px] font-bold text-orange-500">{r.employee.fullName?.[0]}</div>
+                <div className="text-right flex-1 min-w-0"><div className="text-[11px] font-bold truncate">{r.employee.fullName}</div><div className="text-[9px] text-[var(--muted-foreground)]">{ROLE_ICO[r.employee.role] || '👤'}</div></div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Present */}
+      {present.length > 0 && (
+        <div>
+          <div className="text-[10px] font-bold text-[var(--foreground)] mb-2">✅ حاضرات الآن</div>
+          <div className="space-y-1.5">
+            {present.map(r => (
+              <div key={r.employeeId} className={`flex items-center gap-2 rounded-xl ${bg(3)} p-3`}>
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white">{r.employee.fullName?.[0]}</div>
+                <div className="flex-1 min-w-0"><div className="text-[11px] font-bold truncate">{r.employee.fullName}</div><div className="text-[9px] text-[var(--muted-foreground)]">{ROLE_ICO[r.employee.role]} دخول: {fmtT(r.checkIn)} {r.computedStatus === 'on_break' ? '☕' : ''}</div></div>
+                <button onClick={() => doBreak(r.employeeId)} className={`${BS} flex h-8 w-8 items-center justify-center rounded-lg ${r.computedStatus === 'on_break' ? 'bg-amber-500/20 text-amber-500' : `${bg(5)} text-[var(--muted-foreground)]`}`}><Coffee size={13} /></button>
+                <button onClick={() => doCheckOut(r.employeeId)} className={`${BS} flex h-8 w-8 items-center justify-center rounded-lg ${bg(5)} text-[var(--muted-foreground)] hover:text-red-400 hover:bg-red-500/10`}><LogOut size={13} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Done */}
+      {done.length > 0 && (
+        <div className="opacity-50">
+          <div className="text-[9px] font-bold text-[var(--muted-foreground)] mb-1.5">👋 انصرفت</div>
+          {done.map(r => (
+            <div key={r.employeeId} className={`flex items-center gap-2 rounded-lg ${bg(2)} p-2 mb-1`}>
+              <span className="text-[10px] font-medium flex-1">{r.employee.fullName}</span>
+              <span className="text-[9px] text-[var(--muted-foreground)]">{fmtT(r.checkIn)} → {fmtT(r.checkOut)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {recs.length === 0 && <div className="py-8 text-center text-[11px] text-[var(--muted-foreground)]">لا يوجد موظفات نشطات</div>}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    SHARED MODALS RENDERER
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -555,6 +682,7 @@ function PanelModals({ e }: { e: E }) {
       <Modal open={e.panel === 'refund'} onClose={() => e.setPanel(null)} title="إرجاع / إلغاء"><RefundPanel e={e} /></Modal>
       <Modal open={e.panel === 'bundles'} onClose={() => e.setPanel(null)} title="الباقات"><BundlesPanel e={e} /></Modal>
       <Modal open={e.panel === 'receipt'} onClose={() => e.setPanel(null)} title="إعدادات الإيصال"><ReceiptPanel e={e} /></Modal>
+      <Modal open={e.panel === 'attendance'} onClose={() => e.setPanel(null)} title="تحضير الموظفات" wide><AttendancePanel e={e} /></Modal>
     </>
   );
 }
@@ -724,6 +852,7 @@ function DesktopPOS({ e }: { e: E }) {
           <button onClick={() => e.setPanel('hold-list')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Play size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] sm:inline">استدعاء</span></button>
           <button onClick={() => e.setPanel('refund')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><RotateCcw size={12} className="text-[var(--muted-foreground)] group-hover:text-red-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-red-400 sm:inline">إرجاع</span></button>
           <button onClick={() => e.setPanel('receipt')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Printer size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /></button>
+          <button onClick={() => e.setPanel('attendance')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><ClipboardCheck size={12} className="text-[var(--muted-foreground)] group-hover:text-emerald-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-emerald-400 sm:inline">تحضير</span></button>
           <div className={`mx-0.5 h-4 w-px ${bg(6)}`} />
           <Link href="/" className={`${B} flex h-8 w-8 items-center justify-center rounded-xl ${G3} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><ArrowLeft size={13} /></Link>
         </div>
@@ -866,6 +995,7 @@ function TouchPOS({ e }: { e: E }) {
           <button onClick={() => e.setPanel('hold-list')} className={`${B} flex h-9 w-9 md:h-11 md:w-auto md:px-4 items-center justify-center md:gap-2 rounded-xl md:rounded-2xl ${G1}`}><Play size={15} className="text-[var(--muted-foreground)]" /><span className="hidden md:inline text-[12px] font-bold text-[var(--muted-foreground)]">استدعاء</span></button>
           <button onClick={() => e.setPanel('refund')} className={`${B} flex h-9 w-9 md:h-11 md:w-auto md:px-4 items-center justify-center md:gap-2 rounded-xl md:rounded-2xl ${G1}`}><RotateCcw size={15} className="text-[var(--muted-foreground)]" /><span className="hidden md:inline text-[12px] font-bold text-[var(--muted-foreground)]">إرجاع</span></button>
           <button onClick={() => e.setPanel('receipt')} className={`${B} flex h-9 w-9 md:h-11 md:w-11 items-center justify-center rounded-xl md:rounded-2xl ${G1}`}><Printer size={15} className="text-[var(--muted-foreground)]" /></button>
+          <button onClick={() => e.setPanel('attendance')} className={`${B} flex h-9 w-9 md:h-11 md:w-auto md:px-4 items-center justify-center md:gap-2 rounded-xl md:rounded-2xl bg-emerald-500/10 text-emerald-500`}><ClipboardCheck size={15} /><span className="hidden md:inline text-[12px] font-bold">تحضير</span></button>
           <Link href="/" className={`${B} flex h-9 w-9 md:h-11 md:w-11 items-center justify-center rounded-xl md:rounded-2xl ${G1}`}><ArrowLeft size={15} className="text-[var(--muted-foreground)]" /></Link>
         </div>
       </header>
