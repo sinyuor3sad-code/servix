@@ -12,12 +12,8 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   currentTenant: Tenant | null;
-  /** Current user's role within the active tenant */
   userRole: UserRole | null;
-  /** Whether the user is the tenant owner (supersedes role) */
   isOwner: boolean;
-  /** Whether zustand has finished loading from localStorage */
-  _hasHydrated: boolean;
 }
 
 interface AuthActions {
@@ -29,7 +25,7 @@ interface AuthActions {
   logout: () => void;
 }
 
-const initialState: Omit<AuthState, '_hasHydrated'> = {
+const initialState: AuthState = {
   user: null,
   accessToken: null,
   refreshToken: null,
@@ -42,7 +38,6 @@ export const useAuthStore = create<AuthState & AuthActions>()(
   persist(
     (set) => ({
       ...initialState,
-      _hasHydrated: false,
 
       setUser: (user) => set({ user }),
 
@@ -68,18 +63,9 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         userRole: state.userRole,
         isOwner: state.isOwner,
       }),
-      onRehydrateStorage: () => (state, error) => {
-        if (error) {
-          console.error('[AuthStore] Failed to hydrate from localStorage, resetting:', error);
-          try {
-            localStorage.removeItem('servix-auth');
-          } catch {
-            // ignore
-          }
-        }
-        // Mark hydration as complete regardless of success/failure
-        useAuthStore.setState({ _hasHydrated: true });
-      },
+      // DO NOT use onRehydrateStorage — it causes circular reference
+      // errors in production builds (minified variable names).
+      // Hydration is handled by useAuth hook reading localStorage directly.
     },
   ),
 );
