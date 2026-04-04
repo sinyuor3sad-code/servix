@@ -546,6 +546,7 @@ function ReceiptPanel({ e }: { e: E }) {
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    ATTENDANCE PANEL — Cashier checks in/out employees
+   Premium full-screen design for iPad, Phone & Desktop
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 interface AttRec {
@@ -559,6 +560,7 @@ interface AttRec {
 }
 
 const ROLE_ICO: Record<string, string> = { stylist: '✂️', cashier: '💵', makeup: '💄', nails: '💅', skincare: '🧴' };
+const ROLE_LBL: Record<string, string> = { stylist: 'مصففة', cashier: 'كاشيرة', makeup: 'مكياج', nails: 'أظافر', skincare: 'عناية' };
 
 function fmtT(t: string | null) {
   if (!t) return '';
@@ -571,6 +573,7 @@ function AttendancePanel({ e }: { e: E }) {
   const { accessToken } = useAuth();
   const [recs, setRecs] = useState<AttRec[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -582,90 +585,168 @@ function AttendancePanel({ e }: { e: E }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const doCheckIn = async (empId: string) => {
+  const doAction = async (action: 'in' | 'out' | 'break', empId: string) => {
+    setBusyId(empId);
     try {
-      await api.post('/attendance/check-in', { employeeId: empId }, accessToken!);
-      toast.success('✅ تم التحضير');
-      load();
-    } catch (err: any) { toast.error(err.message || 'خطأ'); }
-  };
-
-  const doCheckOut = async (empId: string) => {
-    try {
-      await api.put('/attendance/check-out', { employeeId: empId }, accessToken!);
-      toast.success('👋 تم الخروج');
-      load();
-    } catch (err: any) { toast.error(err.message || 'خطأ'); }
-  };
-
-  const doBreak = async (empId: string) => {
-    try {
-      await api.put('/attendance/toggle-break', { employeeId: empId }, accessToken!);
-      load();
-    } catch (err: any) { toast.error(err.message || 'خطأ'); }
+      if (action === 'in') {
+        await api.post('/attendance/check-in', { employeeId: empId }, accessToken!);
+        toast.success('✅ تم التحضير');
+      } else if (action === 'out') {
+        await api.put('/attendance/check-out', { employeeId: empId }, accessToken!);
+        toast.success('👋 تم تسجيل الخروج');
+      } else {
+        await api.put('/attendance/toggle-break', { employeeId: empId }, accessToken!);
+      }
+      await load();
+    } catch (err: any) { toast.error(err.message || 'حدث خطأ'); }
+    setBusyId(null);
   };
 
   const absent = recs.filter(r => r.computedStatus === 'absent');
   const present = recs.filter(r => r.computedStatus === 'present' || r.computedStatus === 'on_break');
   const done = recs.filter(r => r.computedStatus === 'off_duty');
+  const nowTime = new Date();
+  const timeStr = `${nowTime.getHours() % 12 || 12}:${String(nowTime.getMinutes()).padStart(2, '0')} ${nowTime.getHours() >= 12 ? 'م' : 'ص'}`;
 
-  if (loading) return <div className="py-12 text-center text-[var(--muted-foreground)] text-[11px]">تحميل...</div>;
+  if (loading) return (
+    <div className="py-16 text-center">
+      <div className="inline-block h-8 w-8 rounded-full border-2 border-[var(--brand-primary)] border-t-transparent animate-spin" />
+      <p className="text-[11px] text-[var(--muted-foreground)] mt-3">جارٍ التحميل...</p>
+    </div>
+  );
 
   return (
-    <div className="space-y-4" dir="rtl">
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-xl bg-emerald-500/10 p-3 text-center"><span className="text-lg font-black text-emerald-500">{present.length}</span><div className="text-[9px] text-emerald-500 font-medium">حاضرة</div></div>
-        <div className="rounded-xl bg-orange-500/10 p-3 text-center"><span className="text-lg font-black text-orange-500">{absent.length}</span><div className="text-[9px] text-orange-400 font-medium">لم تحضر</div></div>
-        <div className={`rounded-xl ${bg(3)} p-3 text-center`}><span className="text-lg font-black text-[var(--muted-foreground)]">{done.length}</span><div className="text-[9px] text-[var(--muted-foreground)] font-medium">انصرفت</div></div>
+    <div className="space-y-5" dir="rtl">
+      {/* Live Time + Stats */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={accentBg}>
+            <ClipboardCheck size={18} className="text-black" />
+          </div>
+          <div>
+            <div className="text-[13px] font-black text-[var(--foreground)]">تحضير الموظفات</div>
+            <div className="text-[10px] text-[var(--muted-foreground)]">الوقت الحالي: <span className="font-bold" style={accentColor}>{timeStr}</span></div>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {[
+            { n: present.length, l: 'حاضرة', c: 'bg-emerald-500/15 text-emerald-500' },
+            { n: absent.length, l: 'بانتظار', c: 'bg-orange-500/15 text-orange-500' },
+            { n: done.length, l: 'انصرفت', c: `${bg(4)} text-[var(--muted-foreground)]` },
+          ].map(s => (
+            <div key={s.l} className={`rounded-xl ${s.c} px-3 py-2 text-center min-w-[60px]`}>
+              <div className="text-[16px] font-black" style={TN}>{s.n}</div>
+              <div className="text-[8px] font-bold">{s.l}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Absent — Quick check-in */}
+      {/* Quick Check-in Cards */}
       {absent.length > 0 && (
         <div>
-          <div className="text-[10px] font-bold text-[var(--foreground)] mb-2">👆 اضغطي للتحضير</div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
+            <span className="text-[11px] font-bold text-[var(--foreground)]">بانتظار التحضير — اضغطي على الاسم</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             {absent.map(r => (
-              <button key={r.employeeId} onClick={() => doCheckIn(r.employeeId)} className={`${BS} flex items-center gap-2 rounded-xl border-2 border-dashed ${brd(8)} p-3 hover:border-emerald-400 hover:bg-emerald-500/5`}>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-500/10 text-[11px] font-bold text-orange-500">{r.employee.fullName?.[0]}</div>
-                <div className="text-right flex-1 min-w-0"><div className="text-[11px] font-bold truncate">{r.employee.fullName}</div><div className="text-[9px] text-[var(--muted-foreground)]">{ROLE_ICO[r.employee.role] || '👤'}</div></div>
+              <button
+                key={r.employeeId}
+                onClick={() => doAction('in', r.employeeId)}
+                disabled={busyId === r.employeeId}
+                className={`${BS} group relative flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed ${brd(10)} p-4 hover:border-emerald-400 hover:${bg(2)} disabled:opacity-40`}
+              >
+                {busyId === r.employeeId && <div className="absolute inset-0 rounded-2xl bg-emerald-500/10 flex items-center justify-center"><div className="h-5 w-5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" /></div>}
+                <div className={`flex h-12 w-12 items-center justify-center rounded-2xl text-[16px] font-black ${T} group-hover:scale-110`} style={{ background: 'color-mix(in srgb, var(--brand-accent) 15%, transparent)', color: 'var(--brand-accent)' }}>
+                  {r.employee.fullName?.[0]}
+                </div>
+                <div className="text-center">
+                  <div className="text-[12px] font-bold text-[var(--foreground)] truncate max-w-[120px]">{r.employee.fullName}</div>
+                  <div className="text-[10px] text-[var(--muted-foreground)]">{ROLE_ICO[r.employee.role]} {ROLE_LBL[r.employee.role] || ''}</div>
+                </div>
+                <div className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[9px] font-bold ${T} group-hover:bg-emerald-500 group-hover:text-white`} style={accentMix(10)}>
+                  <LogIn size={10} />
+                  <span>تحضير</span>
+                </div>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Present */}
+      {/* Present Employees */}
       {present.length > 0 && (
         <div>
-          <div className="text-[10px] font-bold text-[var(--foreground)] mb-2">✅ حاضرات الآن</div>
-          <div className="space-y-1.5">
-            {present.map(r => (
-              <div key={r.employeeId} className={`flex items-center gap-2 rounded-xl ${bg(3)} p-3`}>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white">{r.employee.fullName?.[0]}</div>
-                <div className="flex-1 min-w-0"><div className="text-[11px] font-bold truncate">{r.employee.fullName}</div><div className="text-[9px] text-[var(--muted-foreground)]">{ROLE_ICO[r.employee.role]} دخول: {fmtT(r.checkIn)} {r.computedStatus === 'on_break' ? '☕' : ''}</div></div>
-                <button onClick={() => doBreak(r.employeeId)} className={`${BS} flex h-8 w-8 items-center justify-center rounded-lg ${r.computedStatus === 'on_break' ? 'bg-amber-500/20 text-amber-500' : `${bg(5)} text-[var(--muted-foreground)]`}`}><Coffee size={13} /></button>
-                <button onClick={() => doCheckOut(r.employeeId)} className={`${BS} flex h-8 w-8 items-center justify-center rounded-lg ${bg(5)} text-[var(--muted-foreground)] hover:text-red-400 hover:bg-red-500/10`}><LogOut size={13} /></button>
-              </div>
-            ))}
+          <div className="flex items-center gap-2 mb-3">
+            <div className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="text-[11px] font-bold text-[var(--foreground)]">حاضرات الآن</span>
+          </div>
+          <div className="space-y-2">
+            {present.map(r => {
+              const isBreak = r.computedStatus === 'on_break';
+              return (
+                <div key={r.employeeId} className={`flex items-center gap-3 rounded-2xl p-3.5 ${T} ${isBreak ? 'bg-amber-500/5 border border-amber-500/20' : `${bg(3)}`}`}>
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[13px] font-black text-white ${isBreak ? 'bg-gradient-to-br from-amber-400 to-amber-500' : 'bg-gradient-to-br from-emerald-400 to-emerald-600'}`}>
+                    {r.employee.fullName?.[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-bold text-[var(--foreground)] truncate">{r.employee.fullName}</div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-[var(--muted-foreground)]">
+                      <span>{ROLE_ICO[r.employee.role]}</span>
+                      <Clock size={10} />
+                      <span style={TN}>{fmtT(r.checkIn)}</span>
+                      {isBreak && <span className="rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[8px] font-bold text-amber-500">☕ استراحة</span>}
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => doAction('break', r.employeeId)} disabled={busyId === r.employeeId}
+                      className={`${BS} flex h-9 w-9 items-center justify-center rounded-xl ${isBreak ? 'bg-amber-500/20 text-amber-500' : `${bg(5)} text-[var(--muted-foreground)] hover:bg-amber-500/10 hover:text-amber-500`}`}
+                      title={isBreak ? 'إنهاء استراحة' : 'استراحة'}>
+                      <Coffee size={14} />
+                    </button>
+                    <button onClick={() => doAction('out', r.employeeId)} disabled={busyId === r.employeeId}
+                      className={`${BS} flex h-9 w-9 items-center justify-center rounded-xl ${bg(5)} text-[var(--muted-foreground)] hover:bg-red-500/10 hover:text-red-400`}
+                      title="تسجيل خروج">
+                      <LogOut size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Done */}
       {done.length > 0 && (
-        <div className="opacity-50">
-          <div className="text-[9px] font-bold text-[var(--muted-foreground)] mb-1.5">👋 انصرفت</div>
-          {done.map(r => (
-            <div key={r.employeeId} className={`flex items-center gap-2 rounded-lg ${bg(2)} p-2 mb-1`}>
-              <span className="text-[10px] font-medium flex-1">{r.employee.fullName}</span>
-              <span className="text-[9px] text-[var(--muted-foreground)]">{fmtT(r.checkIn)} → {fmtT(r.checkOut)}</span>
-            </div>
-          ))}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`h-2 w-2 rounded-full ${bg(15)}`} />
+            <span className="text-[10px] font-bold text-[var(--muted-foreground)]">انصرفت ({done.length})</span>
+          </div>
+          <div className={`rounded-xl ${bg(2)} p-3 space-y-1.5`}>
+            {done.map(r => (
+              <div key={r.employeeId} className="flex items-center gap-2.5">
+                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${bg(5)} text-[9px] font-bold text-[var(--muted-foreground)]`}>{r.employee.fullName?.[0]}</div>
+                <span className="text-[10px] font-medium text-[var(--muted-foreground)] flex-1 truncate">{r.employee.fullName}</span>
+                <span className="text-[9px] text-[var(--muted-foreground)]" style={TN}>{fmtT(r.checkIn)} → {fmtT(r.checkOut)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {recs.length === 0 && <div className="py-8 text-center text-[11px] text-[var(--muted-foreground)]">لا يوجد موظفات نشطات</div>}
+      {/* Empty */}
+      {recs.length === 0 && (
+        <div className="py-10 text-center">
+          <div className={`flex h-16 w-16 mx-auto items-center justify-center rounded-3xl ${bg(4)} mb-4`}>
+            <Users size={28} className="text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} />
+          </div>
+          <p className="text-[12px] font-bold text-[var(--foreground)]">لا توجد موظفات نشطات</p>
+          <p className="text-[10px] text-[var(--muted-foreground)] mt-1">أضيفي موظفات من قسم الموظفات أولاً</p>
+        </div>
+      )}
     </div>
   );
 }
