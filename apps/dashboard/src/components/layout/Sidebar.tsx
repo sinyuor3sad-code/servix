@@ -221,10 +221,10 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
         {sidebarContent}
       </aside>
 
-      {/* Mobile Overlay */}
+      {/* Mobile Overlay — blur backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden animate-fade-in"
           onClick={onMobileClose}
           aria-hidden="true"
         />
@@ -233,7 +233,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
       {/* Mobile Sidebar — slides in from the right (RTL start) */}
       <aside
         className={cn(
-          'fixed inset-y-0 end-0 z-50 w-[var(--sidebar-width)] border-s border-[var(--border)] bg-[var(--background)] transition-transform duration-300 md:hidden',
+          'fixed inset-y-0 end-0 z-50 w-[280px] max-w-[85vw] border-s border-[var(--border)] bg-[var(--background)] shadow-2xl transition-transform duration-300 ease-out md:hidden',
           mobileOpen ? 'translate-x-0' : 'translate-x-full rtl:-translate-x-full'
         )}
       >

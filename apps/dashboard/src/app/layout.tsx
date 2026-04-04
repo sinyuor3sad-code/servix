@@ -1,4 +1,23 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#a855f7',
+};
+
+export const metadata: Metadata = {
+  title: 'SERVIX — لوحة التحكم',
+  description: 'منصة إدارة صالونات التجميل',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'SERVIX',
+  },
+};
 import { Cairo, Tajawal, Amiri } from 'next/font/google';
 import { Providers } from '@/lib/providers';
 import './globals.css';
@@ -27,10 +46,6 @@ const amiri = Amiri({
   preload: false,
 });
 
-export const metadata: Metadata = {
-  title: 'SERVIX — لوحة التحكم',
-  description: 'منصة إدارة صالونات التجميل',
-};
 
 export default function RootLayout({
   children,

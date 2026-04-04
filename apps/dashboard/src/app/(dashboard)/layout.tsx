@@ -99,7 +99,7 @@ export default function DashboardLayout({
         <Header onMenuToggle={handleMobileOpen} />
         <SubscriptionBanner />
 
-        <main className="flex-1 p-4 pb-20 md:p-6 md:pb-6">
+        <main className="flex-1 p-3 pb-24 sm:p-4 sm:pb-24 md:p-6 md:pb-6 animate-fade-in-up" style={{ paddingBottom: 'max(6rem, calc(5rem + var(--safe-bottom, 0px)))' }}>
           {children}
         </main>
       </div>

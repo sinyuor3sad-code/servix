@@ -45,6 +45,7 @@ export default function EmployeesPage() {
     {
       key: 'fullName',
       header: 'الاسم',
+      primary: true,
       render: (row) => (
         <span className="font-medium text-[var(--foreground)]">{row.fullName}</span>
       ),

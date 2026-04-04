@@ -4,7 +4,6 @@ import * as React from 'react';
 import { Search, ChevronRight, ChevronLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from './table';
-import { Input } from './input';
 import { Button } from './button';
 import { Spinner } from './spinner';
 import { EmptyState } from './empty-state';
@@ -14,6 +13,10 @@ interface Column<T> {
   header: string;
   render?: (row: T) => React.ReactNode;
   className?: string;
+  /** If true, this column is shown as the card title on mobile */
+  primary?: boolean;
+  /** If true, hide this column in mobile card view */
+  hideMobile?: boolean;
 }
 
 interface DataTableProps<T> {
@@ -30,6 +33,8 @@ interface DataTableProps<T> {
   totalPages?: number;
   onPageChange?: (page: number) => void;
   className?: string;
+  /** Custom mobile card renderer — if provided, overrides default card layout */
+  mobileCard?: (row: T) => React.ReactNode;
 }
 
 function DataTable<T>({
@@ -46,6 +51,7 @@ function DataTable<T>({
   totalPages = 1,
   onPageChange,
   className,
+  mobileCard,
 }: DataTableProps<T>): React.ReactElement {
   const [searchQuery, setSearchQuery] = React.useState('');
 
@@ -58,14 +64,14 @@ function DataTable<T>({
   return (
     <div className={cn('w-full space-y-4', className)}>
       {searchable && (
-        <div className="relative max-w-sm">
+        <div className="relative">
           <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
           <input
             type="text"
             value={searchQuery}
             onChange={handleSearch}
             placeholder={searchPlaceholder}
-            className="flex h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] ps-10 pe-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+            className="flex h-11 w-full sm:max-w-sm rounded-xl border border-[var(--border)] bg-[var(--background)] ps-10 pe-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
           />
         </div>
       )}
@@ -77,37 +83,88 @@ function DataTable<T>({
       ) : data.length === 0 ? (
         <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : (
-        <div className="rounded-xl border border-[var(--border)] overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {columns.map((col) => (
-                  <TableHead key={col.key} className={col.className}>
-                    {col.header}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.map((row) => (
-                <TableRow key={keyExtractor(row)}>
+        <>
+          {/* ── Desktop: Table View ── */}
+          <div className="hidden sm:block rounded-xl border border-[var(--border)] overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
                   {columns.map((col) => (
-                    <TableCell key={col.key} className={col.className}>
-                      {col.render
-                        ? col.render(row)
-                        : String((row as Record<string, unknown>)[col.key] ?? '')}
-                    </TableCell>
+                    <TableHead key={col.key} className={col.className}>
+                      {col.header}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {data.map((row) => (
+                  <TableRow key={keyExtractor(row)}>
+                    {columns.map((col) => (
+                      <TableCell key={col.key} className={col.className}>
+                        {col.render
+                          ? col.render(row)
+                          : String((row as Record<string, unknown>)[col.key] ?? '')}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* ── Mobile: Card View ── */}
+          <div className="sm:hidden space-y-2 animate-stagger">
+            {data.map((row) => (
+              <div
+                key={keyExtractor(row)}
+                className="mobile-card rounded-xl border border-[var(--border)] bg-[var(--card)] p-3.5 shadow-sm"
+              >
+                {mobileCard ? (
+                  mobileCard(row)
+                ) : (
+                  <div className="space-y-2">
+                    {columns
+                      .filter((col) => !col.hideMobile)
+                      .map((col) => {
+                        const value = col.render
+                          ? col.render(row)
+                          : String((row as Record<string, unknown>)[col.key] ?? '');
+
+                        if (col.primary) {
+                          return (
+                            <div key={col.key} className="flex items-center justify-between">
+                              <div className="text-sm font-bold text-[var(--foreground)]">{value}</div>
+                            </div>
+                          );
+                        }
+
+                        // Actions column — render as full-width
+                        if (col.key === 'actions') {
+                          return (
+                            <div key={col.key} className="pt-1 border-t border-[var(--border)]">
+                              {value}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div key={col.key} className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold text-[var(--muted-foreground)]">{col.header}</span>
+                            <div className="text-[13px] text-[var(--foreground)]">{value}</div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-2">
-          <p className="text-sm text-[var(--muted-foreground)]">
+        <div className="flex items-center justify-between px-1">
+          <p className="text-xs sm:text-sm text-[var(--muted-foreground)]">
             صفحة {page} من {totalPages}
           </p>
           <div className="flex items-center gap-1">
