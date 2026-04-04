@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, type UserRole } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
@@ -44,20 +44,56 @@ export function useAuth() {
 
   const { data, isLoading: queryLoading, isError } = useQuery({
     queryKey: ['auth', 'me'],
-    queryFn: () => authService.getMe(accessToken!),
+    queryFn: () => {
+      // Always read latest token from store (may have been refreshed)
+      const latestToken = useAuthStore.getState().accessToken;
+      return authService.getMe(latestToken!);
+    },
     enabled: !!accessToken,
     staleTime: 5 * 60 * 1000,
-    retry: false,
+    retry: (failureCount, error) => {
+      // After api.ts auto-refreshes the token, retry once
+      if (failureCount < 1) {
+        // Re-read token from localStorage (api.ts updated it)
+        try {
+          const raw = localStorage.getItem('servix-auth');
+          if (raw) {
+            const stored = JSON.parse(raw);
+            const newToken = stored?.state?.accessToken;
+            if (newToken && newToken !== accessToken) {
+              // Sync refreshed token back to zustand store
+              useAuthStore.getState().setTokens(
+                newToken,
+                stored?.state?.refreshToken || ''
+              );
+              return true; // retry with new token
+            }
+          }
+        } catch { /* ignore */ }
+      }
+      return false;
+    },
+    retryDelay: 500,
     meta: { skipAuthError: true },
   });
 
   // isLoading should be false when query is disabled (no token)
   const isLoading = !!accessToken && queryLoading;
 
-  // If query failed, don't immediately logout — the API client's
-  // auto-refresh logic in api.ts handles 401 → refresh → retry.
-  // Only clear if the token is truly invalid (after refresh attempt).
-  // The clearStaleAuth() in api.ts will handle storage cleanup.
+  // If query failed after retry, check if localStorage was cleared by api.ts
+  // (meaning refresh token also failed). If so, sync logout to store.
+  useEffect(() => {
+    if (isError && accessToken) {
+      try {
+        const raw = localStorage.getItem('servix-auth');
+        if (!raw) {
+          // api.ts cleared storage — sync to store
+          storeLogout();
+          queryClient.clear();
+        }
+      } catch { /* ignore */ }
+    }
+  }, [isError, accessToken, storeLogout, queryClient]);
 
   // Sync user data from query into store (with safe null checks)
   if (data?.user && data.user.id !== user?.id) {

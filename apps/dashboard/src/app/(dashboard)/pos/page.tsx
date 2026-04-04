@@ -394,7 +394,19 @@ function usePOSEngine() {
         }, accessToken!);
         clientId = c.id;
       }
-      const inv = await api.post<{ id: string }>('/invoices', { clientId, notes: custNote || undefined, items: cart.map(i => ({ serviceId: i.service.id, description: i.service.nameAr, quantity: i.quantity, unitPrice: i.service.price, employeeId: i.employeeId })) }, accessToken!);
+      // Determine a fallback employee (first available)
+      const fallbackEmpId = emps.length > 0 ? emps[0].id : null;
+      const inv = await api.post<{ id: string }>('/invoices', {
+        clientId,
+        notes: custNote || undefined,
+        items: cart.map(i => ({
+          serviceId: i.service.id,
+          description: i.service.nameAr,
+          quantity: i.quantity,
+          unitPrice: i.service.price,
+          employeeId: i.employeeId || fallbackEmpId,
+        })),
+      }, accessToken!);
       if (gDiscVal > 0) await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: gDiscVal }, accessToken!);
       if (method === 'split') { for (const e of splits) { if (e.amount > 0) await dashboardService.recordInvoicePayment(inv.id, { amount: e.amount, method: (e.method === 'apple_pay' ? 'card' : e.method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!); } }
       else await dashboardService.recordInvoicePayment(inv.id, { amount: total, method: (method === 'apple_pay' ? 'card' : method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!);
