@@ -827,22 +827,24 @@ function DesktopPOS({ e }: { e: E }) {
 
 function TouchPOS({ e }: { e: E }) {
   const [showCart, setShowCart] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--background)]" dir="rtl">
-      {/* HEADER */}
-      <header className={`flex shrink-0 items-center justify-between px-4 py-2.5 ${G2} ${brd(4)} border-b`}>
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={primaryBg}><Receipt size={16} className="text-white" /></div>
-          <div><span className="text-[15px] font-black text-[var(--foreground)]">Quick POS</span><span className="ms-1.5 text-[10px] font-bold" style={accentColor}>iPad</span></div>
-          <div className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[10px] font-bold ${e.online ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/15 text-red-400 animate-pulse'}`}>{e.online ? <Wifi size={12} /> : <WifiOff size={12} />}{e.online ? 'متصل' : 'غير متصل'}</div>
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--background)]" dir="rtl" style={{ paddingTop: 'var(--safe-top, 0px)' }}>
+      {/* HEADER — compact on phone, full on tablet */}
+      <header className={`flex shrink-0 items-center justify-between px-3 py-2 md:px-4 md:py-2.5 ${G2} ${brd(4)} border-b`}>
+        <div className="flex items-center gap-2 md:gap-3">
+          <div className="flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-xl md:rounded-2xl" style={primaryBg}><Receipt size={14} className="text-white" /></div>
+          <div className="hidden sm:block"><span className="text-[14px] font-black text-[var(--foreground)]">SERVIX</span><span className="ms-1 text-[10px] font-bold" style={accentColor}>pos</span></div>
+          <div className={`flex items-center gap-1 rounded-lg px-2 py-1 md:rounded-xl md:px-3 md:py-1.5 text-[9px] md:text-[10px] font-bold ${e.online ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/15 text-red-400 animate-pulse'}`}>{e.online ? <Wifi size={10} /> : <WifiOff size={10} />}<span className="hidden xs:inline">{e.online ? 'متصل' : 'غير متصل'}</span></div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={e.holdBill} className={`${B} group relative flex h-11 items-center gap-2 rounded-2xl px-4 ${G1}`}><Pause size={16} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /><span className="text-[12px] font-bold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]">تعليق</span>{e.held.length > 0 && <span className="absolute -end-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black text-black" style={accentBg}>{e.held.length}</span>}</button>
-          <button onClick={() => e.setPanel('hold-list')} className={`${B} group flex h-11 items-center gap-2 rounded-2xl px-4 ${G1}`}><Play size={16} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /><span className="text-[12px] font-bold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]">استدعاء</span></button>
-          <button onClick={() => e.setPanel('refund')} className={`${B} group flex h-11 items-center gap-2 rounded-2xl px-4 ${G1} hover:border-red-500/20`}><RotateCcw size={16} className="text-[var(--muted-foreground)] group-hover:text-red-400" /><span className="text-[12px] font-bold text-[var(--muted-foreground)] group-hover:text-red-400">إرجاع</span></button>
-          <button onClick={() => e.setPanel('bundles')} className={`${B} group flex h-11 items-center gap-2 rounded-2xl px-4 ${G1}`}><Package size={16} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /><span className="text-[12px] font-bold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]">الباقات</span></button>
-          <button onClick={() => e.setPanel('receipt')} className={`${B} group flex h-11 w-11 items-center justify-center rounded-2xl ${G1}`}><Printer size={16} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /></button>
+        <div className="flex items-center gap-1.5 md:gap-2">
+          {/* Phone: compact icon buttons */}
+          <button onClick={e.holdBill} className={`${B} group relative flex h-9 w-9 md:h-11 md:w-auto md:px-4 items-center justify-center md:gap-2 rounded-xl md:rounded-2xl ${G1}`}><Pause size={15} className="text-[var(--muted-foreground)]" /><span className="hidden md:inline text-[12px] font-bold text-[var(--muted-foreground)]">تعليق</span>{e.held.length > 0 && <span className="absolute -end-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-black text-black" style={accentBg}>{e.held.length}</span>}</button>
+          <button onClick={() => e.setPanel('hold-list')} className={`${B} flex h-9 w-9 md:h-11 md:w-auto md:px-4 items-center justify-center md:gap-2 rounded-xl md:rounded-2xl ${G1}`}><Play size={15} className="text-[var(--muted-foreground)]" /><span className="hidden md:inline text-[12px] font-bold text-[var(--muted-foreground)]">استدعاء</span></button>
+          <button onClick={() => e.setPanel('refund')} className={`${B} flex h-9 w-9 md:h-11 md:w-auto md:px-4 items-center justify-center md:gap-2 rounded-xl md:rounded-2xl ${G1}`}><RotateCcw size={15} className="text-[var(--muted-foreground)]" /><span className="hidden md:inline text-[12px] font-bold text-[var(--muted-foreground)]">إرجاع</span></button>
+          <button onClick={() => e.setPanel('receipt')} className={`${B} flex h-9 w-9 md:h-11 md:w-11 items-center justify-center rounded-xl md:rounded-2xl ${G1}`}><Printer size={15} className="text-[var(--muted-foreground)]" /></button>
+          <Link href="/" className={`${B} flex h-9 w-9 md:h-11 md:w-11 items-center justify-center rounded-xl md:rounded-2xl ${G1}`}><ArrowLeft size={15} className="text-[var(--muted-foreground)]" /></Link>
         </div>
       </header>
 
@@ -850,15 +852,15 @@ function TouchPOS({ e }: { e: E }) {
       <div className="flex flex-1 min-h-0">
         {/* SERVICES */}
         <div className="flex flex-1 flex-col min-w-0">
-          <div className="shrink-0 p-4 pb-2">
+          <div className="shrink-0 p-3 pb-1 md:p-4 md:pb-2">
             <div className="relative">
-              <Search className="pointer-events-none absolute start-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} />
-              <input value={e.svcSearch} onChange={ev => e.setSvcSearch(ev.target.value)} placeholder="بحث سريع..." className={`flex h-14 ${INP} rounded-2xl ps-12 pe-12 text-[16px]`} />
-              {e.svcSearch && <button onClick={() => e.setSvcSearch('')} className={`${BS} absolute end-3 top-1/2 -translate-y-1/2 rounded-xl p-2 text-[var(--muted-foreground)] hover:${bg(5)}`}><X size={16} /></button>}
+              <Search className="pointer-events-none absolute start-3 md:start-4 top-1/2 h-4 w-4 md:h-5 md:w-5 -translate-y-1/2 text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} />
+              <input value={e.svcSearch} onChange={ev => e.setSvcSearch(ev.target.value)} placeholder="بحث عن خدمة... 🔍" className={`flex h-12 md:h-14 ${INP} rounded-xl md:rounded-2xl ps-10 md:ps-12 pe-10 md:pe-12 text-[16px]`} />
+              {e.svcSearch && <button onClick={() => e.setSvcSearch('')} className={`${BS} absolute end-2 md:end-3 top-1/2 -translate-y-1/2 rounded-lg md:rounded-xl p-1.5 md:p-2 text-[var(--muted-foreground)]`}><X size={16} /></button>}
             </div>
           </div>
           <CategoryBar e={e} lg />
-          <div className="flex-1 overflow-y-auto p-4 pt-2"><ServiceGrid e={e} lg /></div>
+          <div className="flex-1 overflow-y-auto p-3 pt-1 md:p-4 md:pt-2 overscroll-contain"><ServiceGrid e={e} lg /></div>
         </div>
 
         {/* CART SIDEBAR (tablet) */}
@@ -914,14 +916,57 @@ function TouchPOS({ e }: { e: E }) {
         </aside>
       </div>
 
-      {/* MOBILE BOTTOM BAR */}
-      <div className={`flex shrink-0 items-center justify-between border-t ${brd(4)} px-5 py-3.5 md:hidden ${G2}`}>
-        <div><p className="text-[9px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]" style={{ opacity: 0.4 }}>الإجمالي</p><p className="text-[22px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)}</p></div>
-        <div className="flex items-center gap-3">
-          {e.cartCount > 0 && <button onClick={() => setShowCart(!showCart)} className={`${B} flex items-center gap-2 rounded-2xl px-4 py-3 ${G1}`}><ShoppingCart size={16} style={accentColor} /><span className="text-[13px] font-black text-[var(--foreground)]" style={TN}>{e.cartCount}</span></button>}
-          <button onClick={() => e.pay('cash')} disabled={e.payMut.isPending || !e.canPay} className={`${B} rounded-2xl px-8 py-3.5 text-[14px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>{e.payMut.isPending ? '...' : 'ادفع'}</button>
+      {/* MOBILE BOTTOM BAR — glass with safe area */}
+      <div className={`flex shrink-0 items-center justify-between border-t ${brd(4)} px-4 py-3 md:hidden glass`} style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom, 0px))' }}>
+        <div>
+          <p className="text-[9px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]" style={{ opacity: 0.4 }}>الإجمالي</p>
+          <p className="text-[20px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {e.cartCount > 0 && <button onClick={() => setShowCart(!showCart)} className={`${B} flex items-center gap-1.5 rounded-xl px-3 py-2.5 ${G1}`}><ShoppingCart size={14} style={accentColor} /><span className="text-[12px] font-black text-[var(--foreground)]" style={TN}>{e.cartCount}</span></button>}
+          <button onClick={() => e.pay('cash')} disabled={e.payMut.isPending || !e.canPay} className={`${B} rounded-xl px-6 py-3 text-[13px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>{e.payMut.isPending ? '...' : 'ادفع'}</button>
         </div>
       </div>
+
+      {/* MOBILE CART SHEET */}
+      {showCart && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden animate-fade-in" onClick={() => setShowCart(false)} />
+          <div className="fixed inset-x-0 bottom-0 z-50 max-h-[70vh] rounded-t-3xl bg-[var(--background)] border-t border-[var(--border)] shadow-2xl overflow-y-auto md:hidden animate-fade-in-up" style={{ paddingBottom: 'max(1rem, var(--safe-bottom, 0px))' }}>
+            <div className="sticky top-0 bg-[var(--background)] p-4 pb-2 border-b border-[var(--border)]">
+              <div className="mx-auto h-1 w-10 rounded-full bg-[var(--muted)] mb-3" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2"><ShoppingCart size={16} style={accentColor} /><span className="text-sm font-bold">السلة</span><span className="text-xs font-black px-1.5 py-0.5 rounded-md text-black" style={accentBg}>{e.cartCount}</span></div>
+                <button onClick={() => setShowCart(false)} className="p-1.5 rounded-lg hover:bg-[var(--muted)]"><X size={18} /></button>
+              </div>
+            </div>
+            <div className="p-4 space-y-2">
+              {e.cart.map(item => {
+                const info = e.itemTotals.find(t => t.id === item.id);
+                return (
+                  <div key={item.id} className={`flex items-center gap-2.5 rounded-xl border ${brd(4)} ${bg(2)} p-3`}>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-bold text-[var(--foreground)]">{item.service.nameAr}</p>
+                      <p className="text-[11px] text-[var(--muted-foreground)]" style={TN}>{fmt(info?.net ?? 0)} ر.س</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => e.updateQty(item.id, -1)} className={`${BS} flex h-8 w-8 items-center justify-center rounded-lg border ${brd(6)}`}><Minus size={14} /></button>
+                      <span className="w-6 text-center text-[13px] font-black" style={TN}>{item.quantity}</span>
+                      <button onClick={() => e.updateQty(item.id, 1)} className={`${BS} flex h-8 w-8 items-center justify-center rounded-lg border ${brd(6)}`}><Plus size={14} /></button>
+                      <button onClick={() => e.removeItem(item.id)} className={`${BS} flex h-8 w-8 items-center justify-center rounded-lg text-red-400`}><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="p-4 pt-0">
+              <button onClick={() => { setShowCart(false); e.pay('cash'); }} disabled={!e.canPay} className={`${B} w-full rounded-xl py-3.5 text-[14px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>
+                ادفع — {fmt(e.total)} ر.س
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       <PanelModals e={e} />
     </div>
