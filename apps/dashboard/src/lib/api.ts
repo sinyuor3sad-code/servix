@@ -157,8 +157,8 @@ async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise
           }
         }
       }
-      // Refresh failed — clear auth
-      clearStaleAuth();
+      // Refresh failed — DON'T clear localStorage.
+      // Only explicit logout should remove auth state.
     }
 
     let errorBody: ApiErrorBody | undefined;
