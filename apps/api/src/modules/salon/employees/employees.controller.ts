@@ -23,6 +23,7 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { SetScheduleDto } from './dto/set-schedule.dto';
 import { SetServicesDto } from './dto/set-services.dto';
 import { QueryEmployeesDto } from './dto/query-employees.dto';
+import { CreateEmployeeAccountDto } from './dto/create-employee-account.dto';
 import { TenantGuard } from '../../../shared/guards';
 import { AuthenticatedRequest } from '../../../shared/types';
 
@@ -165,6 +166,24 @@ export class EmployeesController {
   ): Promise<Record<string, unknown>[]> {
     return this.employeesService.setAssignedServices(
       req.tenantDb!,
+      id,
+      dto,
+    );
+  }
+
+  @Post(':id/account')
+  @ApiOperation({ summary: 'إنشاء حساب دخول لموظف (كاشير/مديرة/إلخ)' })
+  @ApiResponse({ status: 201, description: 'تم إنشاء حساب الدخول بنجاح' })
+  @ApiResponse({ status: 404, description: 'الموظف غير موجود' })
+  @ApiResponse({ status: 409, description: 'البريد الإلكتروني مسجل مسبقاً' })
+  async createAccount(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateEmployeeAccountDto,
+  ): Promise<{ message: string; userId: string }> {
+    return this.employeesService.createAccount(
+      req.tenantDb!,
+      req.tenant!.id,
       id,
       dto,
     );

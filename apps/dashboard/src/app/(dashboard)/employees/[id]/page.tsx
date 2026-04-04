@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import { Phone, Mail, Percent, Banknote } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Phone, Mail, Percent, Banknote, KeyRound, CheckCircle } from 'lucide-react';
 import {
   PageHeader,
   Button,
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { dashboardService } from '@/services/dashboard.service';
+import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import type { EmployeeRole } from '@/types';
 
@@ -59,7 +60,34 @@ export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { accessToken } = useAuth();
+  const queryClient = useQueryClient();
   const [schedule, setSchedule] = useState<WeekSchedule>(DEFAULT_SCHEDULE);
+
+  // Account creation form state
+  const [accountEmail, setAccountEmail] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [accountSuccess, setAccountSuccess] = useState('');
+  const [accountError, setAccountError] = useState('');
+
+  const createAccountMutation = useMutation({
+    mutationFn: (data: { email: string; password: string }) =>
+      api.post<{ message: string }>(
+        `/employees/${id}/account`,
+        data,
+        accessToken!,
+      ),
+    onSuccess: (result) => {
+      setAccountSuccess(result.message || 'تم إنشاء حساب الدخول بنجاح');
+      setAccountError('');
+      setAccountEmail('');
+      setAccountPassword('');
+      queryClient.invalidateQueries({ queryKey: ['employee', id] });
+    },
+    onError: (err: Error) => {
+      setAccountError(err.message || 'حدث خطأ أثناء إنشاء الحساب');
+      setAccountSuccess('');
+    },
+  });
 
   const { data: employee, isLoading } = useQuery({
     queryKey: ['employee', id],
@@ -268,6 +296,98 @@ export default function EmployeeDetailPage() {
             <p className="text-sm text-center text-[var(--muted-foreground)] py-8">
               لا توجد خدمات معيّنة
             </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Create Login Account */}
+      <Card className="mt-6 border-[var(--brand-primary)]/20">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-[var(--brand-primary)]" />
+            حساب الدخول
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {accountSuccess ? (
+            <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+              <CheckCircle className="h-5 w-5 shrink-0 text-green-600" />
+              <div>
+                <p className="text-sm font-medium text-green-700 dark:text-green-400">
+                  {accountSuccess}
+                </p>
+                <p className="text-xs text-green-600 dark:text-green-500 mt-1">
+                  يمكنها الآن تسجيل الدخول من app.servi-x.com/login
+                </p>
+              </div>
+            </div>
+          ) : employee.email ? (
+            <div className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--muted)]/30 p-4">
+              <CheckCircle className="h-5 w-5 shrink-0 text-[var(--brand-primary)]" />
+              <div>
+                <p className="text-sm font-medium text-[var(--foreground)]">
+                  يوجد حساب مرتبط بهذه الموظفة
+                </p>
+                <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                  البريد: {employee.email} — الدور: {ROLE_LABELS[employee.role]}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-[var(--muted-foreground)]">
+                أنشئ حساب دخول لهذه الموظفة لتتمكن من الدخول للوحة التحكم بدور{' '}
+                <strong>{ROLE_LABELS[employee.role]}</strong>.
+                {employee.role === 'cashier' && (
+                  <span className="block mt-1 text-[var(--brand-primary)] font-medium">
+                    الكاشيرة سترى فقط صفحة الكاشير والفواتير — لن تستطيع الوصول لباقي الصفحات.
+                  </span>
+                )}
+              </p>
+
+              {accountError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                  {accountError}
+                </div>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+                    البريد الإلكتروني
+                  </label>
+                  <input
+                    type="email"
+                    value={accountEmail}
+                    onChange={(e) => setAccountEmail(e.target.value)}
+                    placeholder="cashier@salon.com"
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+                    كلمة المرور
+                  </label>
+                  <input
+                    type="password"
+                    value={accountPassword}
+                    onChange={(e) => setAccountPassword(e.target.value)}
+                    placeholder="أدخل كلمة مرور (6 أحرف على الأقل)"
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                    dir="ltr"
+                  />
+                </div>
+              </div>
+
+              <Button
+                onClick={() => createAccountMutation.mutate({ email: accountEmail, password: accountPassword })}
+                disabled={!accountEmail || accountPassword.length < 6 || createAccountMutation.isPending}
+              >
+                <KeyRound className="h-4 w-4" />
+                {createAccountMutation.isPending ? 'جاري الإنشاء...' : 'إنشاء حساب الدخول'}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

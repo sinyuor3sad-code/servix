@@ -1,15 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import { hash } from 'bcryptjs';
 import { TenantPrismaClient } from '../../../shared/types';
+import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { SetScheduleDto } from './dto/set-schedule.dto';
 import { SetServicesDto } from './dto/set-services.dto';
 import { QueryEmployeesDto } from './dto/query-employees.dto';
+import { CreateEmployeeAccountDto } from './dto/create-employee-account.dto';
 import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
+
+const BCRYPT_ROUNDS = 12;
 
 
 @Injectable()
 export class EmployeesService {
+  constructor(private readonly platformPrisma: PlatformPrismaClient) {}
   private mapDecimalFields<
     T extends {
       commissionValue: { toNumber?: () => number } | number;
@@ -250,5 +256,85 @@ export class EmployeesService {
         price: Number(a.service.price),
       },
     }));
+  }
+
+  // ─── Account Management ───
+
+  /**
+   * Create a login account (User + TenantUser) for an existing employee.
+   * This allows the employee to log in to the dashboard with their assigned role.
+   */
+  async createAccount(
+    db: TenantPrismaClient,
+    tenantId: string,
+    employeeId: string,
+    dto: CreateEmployeeAccountDto,
+  ): Promise<{ message: string; userId: string }> {
+    // 1. Verify the employee exists
+    const employee = await db.employee.findUnique({ where: { id: employeeId } });
+    if (!employee) {
+      throw new NotFoundException('الموظف غير موجود');
+    }
+
+    // 2. Check if email is already taken
+    const existingUser = await this.platformPrisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (existingUser) {
+      throw new ConflictException('البريد الإلكتروني مسجل مسبقاً');
+    }
+
+    // 3. Map employee role to platform role name
+    const roleMap: Record<string, string> = {
+      stylist: 'staff',
+      manager: 'manager',
+      receptionist: 'receptionist',
+      cashier: 'cashier',
+    };
+    const platformRoleName = roleMap[employee.role] || 'staff';
+
+    // 4. Find the role in the platform DB
+    const role = await this.platformPrisma.role.findUnique({
+      where: { name: platformRoleName },
+    });
+    if (!role) {
+      throw new InternalServerErrorException(`الدور ${platformRoleName} غير موجود في النظام`);
+    }
+
+    // 5. Create user + tenant-user in a transaction
+    const passwordHash = await hash(dto.password, BCRYPT_ROUNDS);
+
+    const result = await this.platformPrisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          fullName: employee.fullName,
+          email: dto.email,
+          phone: employee.phone ?? '',
+          passwordHash,
+        },
+      });
+
+      await tx.tenantUser.create({
+        data: {
+          tenantId,
+          userId: user.id,
+          roleId: role.id,
+          isOwner: false,
+        },
+      });
+
+      return user;
+    });
+
+    // 6. Update employee record with the email
+    await db.employee.update({
+      where: { id: employeeId },
+      data: { email: dto.email },
+    });
+
+    return {
+      message: `تم إنشاء حساب الدخول بنجاح لـ ${employee.fullName}`,
+      userId: result.id,
+    };
   }
 }
