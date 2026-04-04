@@ -181,35 +181,42 @@ export class AttendanceService {
     return result;
   }
 
-  /** Get today's attendance including scheduled-but-absent employees (CLAUDE.md: 4 statuses) */
+  /** Get today's attendance: show all active employees (with or without schedule) */
   async getToday(
     db: TenantPrismaClient,
   ): Promise<Record<string, unknown>[]> {
     const today = this.getTodayDate();
     const dayOfWeek = today.getDay();
 
-    const [attendanceRecords, scheduledEmployees] = await Promise.all([
+    const [attendanceRecords, allActiveEmployees] = await Promise.all([
       db.attendance.findMany({
         where: { date: today },
         include: { employee: { select: { id: true, fullName: true, role: true, avatarUrl: true } } },
         orderBy: { checkIn: 'asc' },
       }),
+      // Get ALL active employees — not just scheduled ones
       db.employee.findMany({
-        where: {
-          isActive: true,
+        where: { isActive: true },
+        select: {
+          id: true, fullName: true, role: true, avatarUrl: true,
           employeeSchedules: {
-            some: {
-              dayOfWeek,
-              isDayOff: false,
-            },
+            where: { dayOfWeek },
+            select: { isDayOff: true },
           },
         },
-        select: { id: true, fullName: true, role: true, avatarUrl: true },
       }),
     ]);
 
     const attendedIds = new Set(attendanceRecords.map((r) => r.employeeId));
-    const absentEmployees = scheduledEmployees.filter((e) => !attendedIds.has(e.id));
+
+    // Employees who haven't checked in yet (exclude those whose schedule says isDayOff)
+    const absentEmployees = allActiveEmployees.filter((e) => {
+      if (attendedIds.has(e.id)) return false;
+      // If employee has a schedule entry for today and it's a day off, skip
+      const todaySchedule = e.employeeSchedules?.[0];
+      if (todaySchedule?.isDayOff) return false;
+      return true;
+    });
 
     const result: Record<string, unknown>[] = attendanceRecords.map((r) =>
       this.enrichWithComputedStatus(db, r as unknown as Record<string, unknown>),
@@ -224,7 +231,7 @@ export class AttendanceService {
         checkOut: null,
         isOnBreak: false,
         computedStatus: 'absent',
-        employee: emp,
+        employee: { id: emp.id, fullName: emp.fullName, role: emp.role, avatarUrl: emp.avatarUrl },
       });
     }
 
