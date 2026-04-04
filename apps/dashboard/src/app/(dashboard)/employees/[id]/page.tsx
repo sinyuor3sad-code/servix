@@ -69,7 +69,7 @@ export default function EmployeeDetailPage() {
 
   const { data: servicesData } = useQuery({
     queryKey: ['services', 'all'],
-    queryFn: () => dashboardService.getServices({ limit: 200 }, accessToken!),
+    queryFn: () => dashboardService.getServices({ limit: 100 }, accessToken!),
     enabled: !!accessToken,
   });
 

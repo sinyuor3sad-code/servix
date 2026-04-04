@@ -50,21 +50,21 @@ export default function NewAppointmentPage() {
   const { data: clientsData } = useQuery({
     queryKey: ['clients', 'all'],
     queryFn: () =>
-      dashboardService.getClients({ limit: 200 }, accessToken!),
+      dashboardService.getClients({ limit: 100 }, accessToken!),
     enabled: !!accessToken,
   });
 
   const { data: employeesData } = useQuery({
     queryKey: ['employees', 'all'],
     queryFn: () =>
-      dashboardService.getEmployees({ limit: 200 }, accessToken!),
+      dashboardService.getEmployees({ limit: 100 }, accessToken!),
     enabled: !!accessToken,
   });
 
   const { data: servicesData } = useQuery({
     queryKey: ['services', 'all'],
     queryFn: () =>
-      dashboardService.getServices({ limit: 200 }, accessToken!),
+      dashboardService.getServices({ limit: 100 }, accessToken!),
     enabled: !!accessToken,
   });
 

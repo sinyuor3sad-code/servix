@@ -243,8 +243,8 @@ function usePOSEngine() {
   const { data: svcsData } = useQuery({
     queryKey: ['pos-svcs'],
     queryFn: () => isDev(accessToken)
-      ? Promise.resolve({ items: M_SVCS, total: M_SVCS.length, page: 1, limit: 500, totalPages: 1 } as PaginatedResponse<Service>)
-      : dashboardService.getServices({ limit: 500 }, accessToken!),
+      ? Promise.resolve({ items: M_SVCS, total: M_SVCS.length, page: 1, limit: 100, totalPages: 1 } as PaginatedResponse<Service>)
+      : dashboardService.getServices({ limit: 100 }, accessToken!),
   });
   const { data: empData } = useQuery({
     queryKey: ['pos-emp'],

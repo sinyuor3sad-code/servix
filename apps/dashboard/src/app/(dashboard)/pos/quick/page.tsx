@@ -252,8 +252,8 @@ export default function QuickPOSPage(): React.ReactElement {
   const { data: svcsData } = useQuery({
     queryKey: ['qpos-svcs'], enabled: true,
     queryFn: () => isDev(accessToken)
-      ? Promise.resolve({ items: M_SVCS, total: M_SVCS.length, page: 1, limit: 500, totalPages: 1 } as PaginatedResponse<Service>)
-      : dashboardService.getServices({ limit: 500 }, accessToken!),
+      ? Promise.resolve({ items: M_SVCS, total: M_SVCS.length, page: 1, limit: 100, totalPages: 1 } as PaginatedResponse<Service>)
+      : dashboardService.getServices({ limit: 100 }, accessToken!),
   });
   const { data: empData } = useQuery({
     queryKey: ['qpos-emp'], enabled: true,

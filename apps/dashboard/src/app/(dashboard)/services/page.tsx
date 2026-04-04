@@ -22,7 +22,7 @@ export default function ServicesPage() {
 
   const { data: servicesData } = useQuery({
     queryKey: ['services', 'all'],
-    queryFn: () => dashboardService.getServices({ limit: 500 }, accessToken!),
+    queryFn: () => dashboardService.getServices({ limit: 100 }, accessToken!),
     enabled: !!accessToken,
   });
 
