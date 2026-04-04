@@ -63,8 +63,8 @@ export default function ExpensesPage(): React.ReactElement {
     page: String(page),
     limit: '10',
     ...(category && { category }),
-    ...(dateFrom && { from: dateFrom }),
-    ...(dateTo && { to: dateTo }),
+    ...(dateFrom && { dateFrom }),
+    ...(dateTo && { dateTo }),
   }).toString();
 
   const { data, isLoading } = useQuery({
