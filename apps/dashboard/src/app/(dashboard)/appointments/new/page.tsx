@@ -114,7 +114,7 @@ export default function NewAppointmentPage() {
           label="العميل"
           placeholder="اختر العميل"
           options={
-            clientsData?.items.map((c) => ({
+            clientsData?.items?.map((c) => ({
               value: c.id,
               label: c.fullName,
             })) ?? []
@@ -128,7 +128,7 @@ export default function NewAppointmentPage() {
             الخدمات
           </label>
           <div className="grid gap-2 sm:grid-cols-2">
-            {servicesData?.items.map((service) => (
+            {(servicesData?.items ?? []).map((service) => (
               <label
                 key={service.id}
                 className={cn(
@@ -166,7 +166,7 @@ export default function NewAppointmentPage() {
           label="الموظفة"
           placeholder="اختر الموظفة"
           options={
-            employeesData?.items.map((e) => ({
+            employeesData?.items?.map((e) => ({
               value: e.id,
               label: e.fullName,
             })) ?? []
