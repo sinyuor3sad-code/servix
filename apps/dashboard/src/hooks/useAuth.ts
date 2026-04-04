@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, type UserRole } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
@@ -35,7 +35,6 @@ export function useAuth() {
     currentTenant,
     userRole,
     isOwner,
-    _hasHydrated,
     login: storeLogin,
     logout: storeLogout,
     setUser,
@@ -43,53 +42,33 @@ export function useAuth() {
     setUserRole,
   } = useAuthStore();
 
+  // Client-side hydration check: useEffect runs AFTER zustand has loaded from localStorage
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => { setHydrated(true); }, []);
+
   const { data, isLoading: queryLoading, isError } = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: () => {
-      // Always read latest token from store (may have been refreshed)
       const latestToken = useAuthStore.getState().accessToken;
       return authService.getMe(latestToken!);
     },
-    enabled: !!accessToken,
+    enabled: hydrated && !!accessToken,
     staleTime: 5 * 60 * 1000,
-    retry: (failureCount, error) => {
-      // After api.ts auto-refreshes the token, retry once
-      if (failureCount < 1) {
-        // Re-read token from localStorage (api.ts updated it)
-        try {
-          const raw = localStorage.getItem('servix-auth');
-          if (raw) {
-            const stored = JSON.parse(raw);
-            const newToken = stored?.state?.accessToken;
-            if (newToken && newToken !== accessToken) {
-              // Sync refreshed token back to zustand store
-              useAuthStore.getState().setTokens(
-                newToken,
-                stored?.state?.refreshToken || ''
-              );
-              return true; // retry with new token
-            }
-          }
-        } catch { /* ignore */ }
-      }
-      return false;
-    },
+    retry: 1,
     retryDelay: 500,
     meta: { skipAuthError: true },
   });
 
-  // isLoading = ONLY during hydration (instant, ~5ms from localStorage)
-  // Don't block on getMe network request — validate in background
-  const isLoading = !_hasHydrated;
+  // isLoading = only during SSR→Client hydration (one tick)
+  const isLoading = !hydrated;
 
-  // Background validation: if getMe fails completely after auto-refresh attempt,
-  // the token is truly invalid/revoked — force logout.
+  // Background validation: if getMe fails, the token is invalid — force logout
   useEffect(() => {
-    if (isError && accessToken && _hasHydrated) {
+    if (isError && accessToken && hydrated) {
       storeLogout();
       queryClient.clear();
     }
-  }, [isError, accessToken, _hasHydrated, storeLogout, queryClient]);
+  }, [isError, accessToken, hydrated, storeLogout, queryClient]);
 
   // Sync user data from query into store (with safe null checks)
   if (data?.user && data.user.id !== user?.id) {
