@@ -28,6 +28,11 @@ export class ResponseTransformInterceptor<T>
   ): Observable<ApiResponse<T>> {
     return next.handle().pipe(
       map((data) => {
+        // Skip wrapping if controller already returned { success, data } format
+        if (data && typeof data === 'object' && 'success' in data) {
+          return data;
+        }
+
         if (data && typeof data === 'object' && 'meta' in data) {
           const { meta, ...rest } = data as Record<string, unknown>;
           return {
