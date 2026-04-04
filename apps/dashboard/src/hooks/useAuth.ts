@@ -82,20 +82,14 @@ export function useAuth() {
   // Don't block on getMe network request — validate in background
   const isLoading = !_hasHydrated;
 
-  // If query failed after retry, check if localStorage was cleared by api.ts
-  // (meaning refresh token also failed). If so, sync logout to store.
+  // Background validation: if getMe fails completely after auto-refresh attempt,
+  // the token is truly invalid/revoked — force logout.
   useEffect(() => {
-    if (isError && accessToken) {
-      try {
-        const raw = localStorage.getItem('servix-auth');
-        if (!raw) {
-          // api.ts cleared storage — sync to store
-          storeLogout();
-          queryClient.clear();
-        }
-      } catch { /* ignore */ }
+    if (isError && accessToken && _hasHydrated) {
+      storeLogout();
+      queryClient.clear();
     }
-  }, [isError, accessToken, storeLogout, queryClient]);
+  }, [isError, accessToken, _hasHydrated, storeLogout, queryClient]);
 
   // Sync user data from query into store (with safe null checks)
   if (data?.user && data.user.id !== user?.id) {
