@@ -963,8 +963,61 @@ function TouchPOS({ e }: { e: E }) {
               </div>
             </div>
 
+            {/* Client section — mobile-friendly */}
+            <div className={`mx-4 mt-3 mb-1 rounded-xl border ${brd(4)} ${bg(2)} p-3 space-y-2`}>
+              <div className="flex items-center gap-1.5">
+                <User size={13} style={accentColor} />
+                <span className="text-[12px] font-bold text-[var(--foreground)]">العميل</span>
+                {!e.client && !e.walkInMode && <span className="text-[10px] text-[var(--muted-foreground)]">(اختياري — زائر تلقائي)</span>}
+              </div>
+
+              {e.client ? (
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" style={{ ...accentMix(15), ...accentColor }}>{e.client.fullName.charAt(0)}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-bold text-[var(--foreground)]">{e.client.fullName}</p>
+                    <p className="text-[11px] text-[var(--muted-foreground)]" dir="ltr">{e.client.phone}</p>
+                  </div>
+                  <button onClick={() => e.setClient(null)} className={`${BS} text-[11px] font-semibold px-2 py-1 rounded-lg`} style={accentColor}>تغيير</button>
+                </div>
+              ) : e.walkInMode ? (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <User size={13} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} />
+                    <input value={e.walkName} onChange={ev => e.setWalkName(ev.target.value)} placeholder="اسم العميل" className={`${INP} py-2.5 ps-9 pe-3 text-[13px] rounded-xl`} />
+                  </div>
+                  <div className="relative">
+                    <Phone size={13} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} />
+                    <input value={e.walkPhone} onChange={ev => e.setWalkPhone(ev.target.value)} placeholder="05xxxxxxxx" dir="ltr" className={`${INP} py-2.5 ps-9 pe-3 text-[13px] rounded-xl`} />
+                  </div>
+                  <button onClick={() => { e.setWalkInMode(false); e.setWalkName(''); e.setWalkPhone(''); }} className="text-[11px] text-[var(--muted-foreground)]">إلغاء</button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search size={13} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} />
+                    <input value={e.cliSearch} onChange={ev => e.setCliSearch(ev.target.value)} placeholder="بحث بالاسم أو الجوال..." className={`${INP} py-2.5 ps-9 pe-3 text-[13px] rounded-xl`} />
+                    {e.cliResults.length > 0 && e.cliSearch.length >= 2 && (
+                      <div className={`absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-xl border ${brd(4)} bg-[var(--background)] shadow-lg`}>
+                        {e.cliResults.map(c => (
+                          <button key={c.id} onClick={() => { e.setClient(c); e.setCliSearch(''); }} className={`${B} flex w-full items-center gap-2.5 px-3 py-2.5 text-start border-b ${brd(3)} last:border-0`}>
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold" style={{ ...accentMix(12), ...accentColor }}>{c.fullName.charAt(0)}</div>
+                            <div className="min-w-0 flex-1"><p className="truncate text-[12px] font-semibold text-[var(--foreground)]">{c.fullName}</p><p className="text-[10px] text-[var(--muted-foreground)]" dir="ltr">{c.phone}</p></div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => e.setWalkInMode(true)} className={`${B} flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed ${brd(6)} py-2.5 text-[12px] font-semibold text-[var(--muted-foreground)]`}>
+                    <UserPlus size={14} />
+                    عميل جديد
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Cart items */}
-            <div className="p-4 space-y-2">
+            <div className="p-4 pt-2 space-y-2">
               {e.cart.map(item => {
                 const info = e.itemTotals.find(t => t.id === item.id);
                 return (
