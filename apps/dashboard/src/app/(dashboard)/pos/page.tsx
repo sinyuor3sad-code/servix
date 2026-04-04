@@ -379,11 +379,21 @@ function usePOSEngine() {
     mutationFn: async (method: string) => {
       if (isDev(accessToken)) { await new Promise(r => setTimeout(r, 500)); return { id: 'INV-' + Date.now() }; }
       let clientId = client?.id;
+      // If walk-in mode with name/phone provided, create client
       if (!clientId && walkInMode && walkName.trim() && walkPhone.trim()) {
         const c = await dashboardService.createClient({ fullName: walkName.trim(), phone: walkPhone.trim(), source: 'walk_in' }, accessToken!);
         clientId = c.id;
       }
-      if (!clientId) throw new Error('العميل مطلوب');
+      // Auto-create anonymous walk-in if still no client
+      if (!clientId) {
+        const ts = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+        const c = await dashboardService.createClient({
+          fullName: `زائر ${ts}`,
+          phone: `0500000${Math.floor(Math.random() * 9000 + 1000)}`,
+          source: 'walk_in',
+        }, accessToken!);
+        clientId = c.id;
+      }
       const inv = await api.post<{ id: string }>('/invoices', { clientId, notes: custNote || undefined, items: cart.map(i => ({ serviceId: i.service.id, description: i.service.nameAr, quantity: i.quantity, unitPrice: i.service.price, employeeId: i.employeeId })) }, accessToken!);
       if (gDiscVal > 0) await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: gDiscVal }, accessToken!);
       if (method === 'split') { for (const e of splits) { if (e.amount > 0) await dashboardService.recordInvoicePayment(inv.id, { amount: e.amount, method: (e.method === 'apple_pay' ? 'card' : e.method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!); } }

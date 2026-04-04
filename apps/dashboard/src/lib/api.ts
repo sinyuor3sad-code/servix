@@ -8,6 +8,44 @@ interface ApiOptions {
 }
 
 /**
+ * Try to refresh the access token using the stored refresh token.
+ * Returns the new access token or null if refresh fails.
+ */
+async function tryRefreshToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('servix-auth');
+    if (!raw) return null;
+    const stored = JSON.parse(raw);
+    const refreshToken = stored?.state?.refreshToken;
+    if (!refreshToken) return null;
+
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    const newAccessToken = json?.data?.accessToken ?? json?.accessToken;
+    const newRefreshToken = json?.data?.refreshToken ?? json?.refreshToken ?? refreshToken;
+
+    if (!newAccessToken) return null;
+
+    // Update the zustand store in localStorage
+    stored.state.accessToken = newAccessToken;
+    stored.state.refreshToken = newRefreshToken;
+    localStorage.setItem('servix-auth', JSON.stringify(stored));
+
+    return newAccessToken;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Clear stale auth state from localStorage when token is expired/invalid.
  * This prevents infinite crash loops on pages that use useAuth().
  */
@@ -81,8 +119,33 @@ async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise
   });
 
   if (!response.ok) {
-    // Auto-clear stale auth on 401 — prevents crash loops
+    // On 401, try to refresh the token before giving up
     if (response.status === 401 && options.token) {
+      const newToken = await tryRefreshToken();
+      if (newToken) {
+        // Retry the original request with new token
+        const retryHeaders: Record<string, string> = {
+          ...requestHeaders,
+          'Authorization': `Bearer ${newToken}`,
+        };
+        const retryRes = await fetch(`${API_BASE}${endpoint}`, {
+          method,
+          headers: retryHeaders,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (retryRes.ok) {
+          if (retryRes.status === 204) return undefined as T;
+          const retryText = await retryRes.text();
+          if (!retryText) return undefined as T;
+          try {
+            const retryJson = JSON.parse(retryText) as ApiSuccessResponse<T>;
+            return retryJson.data;
+          } catch {
+            return undefined as T;
+          }
+        }
+      }
+      // Refresh failed — clear auth
       clearStaleAuth();
     }
 

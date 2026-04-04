@@ -54,11 +54,10 @@ export function useAuth() {
   // isLoading should be false when query is disabled (no token)
   const isLoading = !!accessToken && queryLoading;
 
-  // If query failed (401 expired token), clear auth state so user can proceed
-  if (isError && accessToken) {
-    storeLogout();
-    queryClient.clear();
-  }
+  // If query failed, don't immediately logout — the API client's
+  // auto-refresh logic in api.ts handles 401 → refresh → retry.
+  // Only clear if the token is truly invalid (after refresh attempt).
+  // The clearStaleAuth() in api.ts will handle storage cleanup.
 
   // Sync user data from query into store (with safe null checks)
   if (data?.user && data.user.id !== user?.id) {
