@@ -59,6 +59,9 @@ export const dashboardService = {
   updateAppointment: (id: string, data: Partial<Appointment>, token: string) =>
     api.put<Appointment>(`/appointments/${id}`, data, token),
 
+  changeAppointmentStatus: (id: string, status: string, cancellationReason?: string, token?: string) =>
+    api.put<Appointment>(`/appointments/${id}/status`, { status, cancellationReason }, token!),
+
   cancelAppointment: (id: string, reason: string, token: string) =>
     api.post<Appointment>(`/appointments/${id}/cancel`, { reason }, token),
 

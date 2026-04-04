@@ -141,7 +141,20 @@ export default function NewAppointmentPage() {
         accessToken!,
       );
     },
-    onSuccess: () => {
+    onSuccess: async (newAppointment: any) => {
+      // Auto-confirm: appointments created from dashboard are confirmed directly
+      if (newAppointment?.id) {
+        try {
+          await dashboardService.changeAppointmentStatus(
+            newAppointment.id,
+            'confirmed',
+            undefined,
+            accessToken!,
+          );
+        } catch {
+          // Ignore — appointment was created, confirmation just failed
+        }
+      }
       toast.success('تم حجز الموعد بنجاح ✅');
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
       queryClient.invalidateQueries({ queryKey: ['clients'] });

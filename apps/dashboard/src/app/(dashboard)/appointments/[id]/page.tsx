@@ -62,7 +62,7 @@ export default function AppointmentDetailPage() {
 
   const updateMutation = useMutation({
     mutationFn: (status: AppointmentStatus) =>
-      dashboardService.updateAppointment(id, { status }, accessToken!),
+      dashboardService.changeAppointmentStatus(id, status, undefined, accessToken!),
     onSuccess: () => {
       toast.success('تم تحديث حالة الموعد');
       queryClient.invalidateQueries({ queryKey: ['appointment', id] });
