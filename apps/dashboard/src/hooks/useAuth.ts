@@ -62,11 +62,19 @@ export function useAuth() {
   // isLoading = only during SSR→Client hydration (one tick)
   const isLoading = !hydrated;
 
-  // Background validation: if getMe fails, the token is invalid — force logout
+  // Background validation: if getMe fails, check if token was refreshed
   useEffect(() => {
     if (isError && accessToken && hydrated) {
-      storeLogout();
-      queryClient.clear();
+      // Check if api.ts refreshed the token (token changed in store)
+      const currentToken = useAuthStore.getState().accessToken;
+      if (currentToken && currentToken !== accessToken) {
+        // Token was refreshed — retry the query with new token
+        queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
+      } else {
+        // Token is truly invalid — force logout
+        storeLogout();
+        queryClient.clear();
+      }
     }
   }, [isError, accessToken, hydrated, storeLogout, queryClient]);
 

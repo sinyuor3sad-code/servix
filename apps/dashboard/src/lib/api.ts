@@ -10,6 +10,10 @@ interface ApiOptions {
 /**
  * Try to refresh the access token using the stored refresh token.
  * Returns the new access token or null if refresh fails.
+ * 
+ * CRITICAL: Updates BOTH localStorage AND zustand in-memory store.
+ * Without updating the in-memory store, zustand would overwrite the
+ * new token in localStorage with the old one on the next state change.
  */
 async function tryRefreshToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
@@ -34,10 +38,18 @@ async function tryRefreshToken(): Promise<string | null> {
 
     if (!newAccessToken) return null;
 
-    // Update the zustand store in localStorage
+    // 1. Update localStorage directly (for next page load)
     stored.state.accessToken = newAccessToken;
     stored.state.refreshToken = newRefreshToken;
     localStorage.setItem('servix-auth', JSON.stringify(stored));
+
+    // 2. Update zustand in-memory store (CRITICAL — prevents overwrite)
+    try {
+      const { useAuthStore } = await import('@/stores/auth.store');
+      useAuthStore.getState().setTokens(newAccessToken, newRefreshToken);
+    } catch {
+      // Store not available (SSR) — localStorage update is sufficient
+    }
 
     return newAccessToken;
   } catch {
