@@ -43,13 +43,10 @@ async function tryRefreshToken(): Promise<string | null> {
     stored.state.refreshToken = newRefreshToken;
     localStorage.setItem('servix-auth', JSON.stringify(stored));
 
-    // 2. Update zustand in-memory store (CRITICAL — prevents overwrite)
-    try {
-      const { useAuthStore } = await import('@/stores/auth.store');
-      useAuthStore.getState().setTokens(newAccessToken, newRefreshToken);
-    } catch {
-      // Store not available (SSR) — localStorage update is sufficient
-    }
+    // 2. Notify zustand store via window event (avoids circular import issues)
+    window.dispatchEvent(new CustomEvent('servix:token-refresh', {
+      detail: { accessToken: newAccessToken, refreshToken: newRefreshToken },
+    }));
 
     return newAccessToken;
   } catch {

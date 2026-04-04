@@ -42,6 +42,20 @@ export function useAuth() {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => { setHydrated(true); }, []);
 
+  // Listen for token refresh events from api.ts
+  // This syncs refreshed tokens to zustand in-memory store,
+  // preventing zustand from overwriting new tokens with old ones
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { accessToken: newAT, refreshToken: newRT } = (e as CustomEvent).detail;
+      if (newAT) {
+        useAuthStore.getState().setTokens(newAT, newRT);
+      }
+    };
+    window.addEventListener('servix:token-refresh', handler);
+    return () => window.removeEventListener('servix:token-refresh', handler);
+  }, []);
+
   // Background user data fetch — NEVER causes logout
   const { data } = useQuery({
     queryKey: ['auth', 'me'],
