@@ -35,6 +35,7 @@ export function useAuth() {
     currentTenant,
     userRole,
     isOwner,
+    _hasHydrated,
     login: storeLogin,
     logout: storeLogout,
     setUser,
@@ -77,8 +78,8 @@ export function useAuth() {
     meta: { skipAuthError: true },
   });
 
-  // isLoading should be false when query is disabled (no token)
-  const isLoading = !!accessToken && queryLoading;
+  // isLoading = true during hydration OR during the getMe query
+  const isLoading = !_hasHydrated || (!!accessToken && queryLoading);
 
   // If query failed after retry, check if localStorage was cleared by api.ts
   // (meaning refresh token also failed). If so, sync logout to store.

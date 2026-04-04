@@ -16,6 +16,8 @@ interface AuthState {
   userRole: UserRole | null;
   /** Whether the user is the tenant owner (supersedes role) */
   isOwner: boolean;
+  /** Whether zustand has finished loading from localStorage */
+  _hasHydrated: boolean;
 }
 
 interface AuthActions {
@@ -27,7 +29,7 @@ interface AuthActions {
   logout: () => void;
 }
 
-const initialState: AuthState = {
+const initialState: Omit<AuthState, '_hasHydrated'> = {
   user: null,
   accessToken: null,
   refreshToken: null,
@@ -40,6 +42,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
   persist(
     (set) => ({
       ...initialState,
+      _hasHydrated: false,
 
       setUser: (user) => set({ user }),
 
@@ -65,7 +68,6 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         userRole: state.userRole,
         isOwner: state.isOwner,
       }),
-      // If localStorage data is corrupted/incompatible, reset instead of crashing
       onRehydrateStorage: () => (state, error) => {
         if (error) {
           console.error('[AuthStore] Failed to hydrate from localStorage, resetting:', error);
@@ -75,6 +77,8 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             // ignore
           }
         }
+        // Mark hydration as complete regardless of success/failure
+        useAuthStore.setState({ _hasHydrated: true });
       },
     },
   ),
