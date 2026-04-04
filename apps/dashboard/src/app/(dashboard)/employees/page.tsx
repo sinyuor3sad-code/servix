@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Phone, Mail, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Phone, Mail, Sparkles, X, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, Badge, Button, Spinner } from '@/components/ui';
 import { dashboardService } from '@/services/dashboard.service';
@@ -25,6 +25,7 @@ export default function EmployeesPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState<string>('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['employees', 'all', search, filterRole],
@@ -39,19 +40,17 @@ export default function EmployeesPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => dashboardService.deleteEmployee(id, accessToken!),
     onSuccess: () => {
-      toast.success('تم حذف الموظفة بنجاح');
+      toast.success('تم حذف الموظفة بنجاح ✅');
+      setConfirmDeleteId(null);
       queryClient.invalidateQueries({ queryKey: ['employees'] });
     },
-    onError: () => toast.error('فشل في حذف الموظفة'),
+    onError: () => {
+      toast.error('فشل في حذف الموظفة');
+      setConfirmDeleteId(null);
+    },
   });
 
   const employees = data?.items ?? [];
-
-  const handleDelete = (emp: Employee) => {
-    if (window.confirm(`هل أنتِ متأكدة من حذف "${emp.fullName}"؟`)) {
-      deleteMutation.mutate(emp.id);
-    }
-  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
@@ -134,15 +133,46 @@ export default function EmployeesPage() {
               .map((w: string) => w[0])
               .slice(0, 2)
               .join('');
+            const isConfirmingDelete = confirmDeleteId === emp.id;
 
             return (
               <div
                 key={emp.id}
-                className="group relative p-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] hover:shadow-lg hover:border-[var(--brand-primary)]/30 transition-all duration-300"
+                className={cn(
+                  'group relative p-5 rounded-2xl border bg-[var(--card)] transition-all duration-300',
+                  isConfirmingDelete
+                    ? 'border-red-300 shadow-lg shadow-red-100'
+                    : 'border-[var(--border)] hover:shadow-lg hover:border-[var(--brand-primary)]/30',
+                )}
               >
-                {/* Delete button */}
+                {/* ── Inline Delete Confirmation ── */}
+                {isConfirmingDelete ? (
+                  <div className="absolute inset-0 rounded-2xl bg-white/95 backdrop-blur-sm z-10 flex flex-col items-center justify-center gap-3 p-4">
+                    <AlertTriangle className="h-8 w-8 text-red-500" />
+                    <p className="text-sm font-semibold text-center">
+                      حذف <span className="text-red-600">{emp.fullName}</span>؟
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => deleteMutation.mutate(emp.id)}
+                        disabled={deleteMutation.isPending}
+                        className="px-4 py-2 rounded-lg bg-red-500 text-white text-xs font-medium hover:bg-red-600 transition-colors disabled:opacity-50"
+                      >
+                        {deleteMutation.isPending ? 'جارٍ الحذف...' : '🗑️ نعم، احذفي'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="px-4 py-2 rounded-lg border border-[var(--border)] text-xs font-medium hover:bg-[var(--muted)] transition-colors"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Delete trigger button */}
                 <button
-                  onClick={() => handleDelete(emp)}
+                  onClick={() => setConfirmDeleteId(emp.id)}
                   className="absolute top-3 left-3 p-1.5 rounded-lg text-[var(--muted-foreground)] hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
                   title="حذف"
                 >
