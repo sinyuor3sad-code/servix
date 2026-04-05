@@ -114,21 +114,21 @@ export default function TogglesPage() {
               </div>
             </div>
             <div className="divide-y divide-[var(--border)]">
-              {group.keys.map(({ key, label, desc, type }) => (
-                <div key={key} className="flex items-center justify-between gap-4 px-5 py-3.5">
+              {group.keys.map((item) => (
+                <div key={item.key} className="flex items-center justify-between gap-4 px-5 py-3.5">
                   <div className="min-w-0">
-                    <p className="text-sm font-bold truncate">{label}</p>
-                    {desc && <p className="text-[10px] text-[var(--muted-foreground)]">{desc}</p>}
+                    <p className="text-sm font-bold truncate">{item.label}</p>
+                    {'desc' in item && item.desc && <p className="text-[10px] text-[var(--muted-foreground)]">{item.desc}</p>}
                   </div>
-                  {type === 'toggle' ? (
-                    <Switch checked={parseBool(settings[key])} onCheckedChange={c => handleToggle(key, c)} disabled={mut.isPending} />
+                  {item.type === 'toggle' ? (
+                    <Switch checked={parseBool(settings[item.key])} onCheckedChange={c => handleToggle(item.key, c)} disabled={mut.isPending} />
                   ) : (
                     <input
-                      type={type === 'number' ? 'number' : type === 'date' ? 'date' : 'text'}
+                      type={item.type === 'number' ? 'number' : item.type === 'date' ? 'date' : 'text'}
                       dir="ltr"
-                      value={editing[key] ?? settings[key] ?? ''}
-                      onChange={e => setEditing(p => ({ ...p, [key]: e.target.value }))}
-                      onBlur={e => handleSave(key, e.target.value)}
+                      value={editing[item.key] ?? settings[item.key] ?? ''}
+                      onChange={e => setEditing(p => ({ ...p, [item.key]: e.target.value }))}
+                      onBlur={e => handleSave(item.key, e.target.value)}
                       className={cn(inputClass, 'w-36 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')}
                       disabled={mut.isPending}
                     />
