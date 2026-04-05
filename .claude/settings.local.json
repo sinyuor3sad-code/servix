@@ -72,7 +72,9 @@
       "Bash(ls -la /c/Users/Admin/projects/servix/apps/dashboard/src/app/\\\\\\(dashboard\\\\\\)/pos/)",
       "Bash(xargs wc:*)",
       "Bash(xargs basename:*)",
-      "Bash(find /c/Users/Admin/projects/servix -name \"package.json\" -path \"*/apps/api/*\" -exec cat {})"
+      "Bash(find /c/Users/Admin/projects/servix -name \"package.json\" -path \"*/apps/api/*\" -exec cat {})",
+      "Bash(pnpm exec:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
