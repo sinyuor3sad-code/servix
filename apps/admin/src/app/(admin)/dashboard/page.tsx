@@ -4,26 +4,18 @@ import { useState, useEffect, useRef, type ReactElement } from 'react';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth.store';
 import { adminService, type AdminStats } from '@/services/admin.service';
-import { AmbientCanvas } from '@/components/nexus/AmbientCanvas';
+import { Fabric } from '@/components/nexus/AmbientCanvas';
 import {
-  Building2,
-  DollarSign,
-  BarChart3,
-  Shield,
-  LogOut,
-  Zap,
-  AlertTriangle,
-  TrendingUp,
-  Clock,
+  Building2, DollarSign, BarChart3, Shield, Settings,
+  LogOut, Zap, AlertTriangle, TrendingUp,
 } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════
-   COUNTUP — Numbers that reveal themselves with authority
+   COUNTUP — Numbers emerge from the void with purpose
    ═══════════════════════════════════════════════════════════════ */
-function CountUp({ target, duration = 1500 }: { target: number; duration?: number }) {
+function CountUp({ target, duration = 2000 }: { target: number; duration?: number }) {
   const [val, setVal] = useState(0);
   const raf = useRef(0);
-
   useEffect(() => {
     if (target === 0) { setVal(0); return; }
     const start = performance.now();
@@ -36,174 +28,76 @@ function CountUp({ target, duration = 1500 }: { target: number; duration?: numbe
     raf.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf.current);
   }, [target, duration]);
-
   return <>{val.toLocaleString('en-US')}</>;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   INTERSECTION OBSERVER HOOK — Reveal on scroll
+   TEMPORAL INTELLIGENCE
    ═══════════════════════════════════════════════════════════════ */
-function useReveal() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setVisible(true); },
-      { threshold: 0.15 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  return { ref, visible };
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 6) return 'مسيطر على الليل';
+  if (h < 12) return 'صباح القيادة';
+  if (h < 17) return 'ذروة التشغيل';
+  if (h < 21) return 'فترة المراجعة';
+  return 'الحراسة الليلية';
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   INSIGHT GENERATOR
+   INSIGHT GENERATOR — Intelligence, not notifications
    ═══════════════════════════════════════════════════════════════ */
 function generateInsights(stats: AdminStats | null) {
-  const items: { key: string; color: string; icon: React.ElementType; text: string }[] = [];
+  const items: { key: string; color: string; text: string }[] = [];
 
   if (!stats || stats.totalTenants === 0) {
-    items.push({
-      key: 'ready',
-      color: '#C9A84C',
-      icon: Zap,
-      text: 'المنصة في حالة <strong>استعداد كامل</strong> — البنية التحتية جاهزة لاستقبال أول صالون',
-    });
-    items.push({
-      key: 'power',
-      color: '#6366F1',
-      icon: Shield,
-      text: 'جميع الأنظمة <strong>تعمل بكفاءة قصوى</strong> — قاعدة البيانات، التخزين، والـ API',
-    });
-    items.push({
-      key: 'launch',
-      color: '#10B981',
-      icon: TrendingUp,
-      text: 'شارك <strong>رابط التسجيل</strong> مع عملائك لبدء استقبال الصالونات وتفعيل الإيرادات',
-    });
+    items.push(
+      { key: 'ready', color: '#b8993e', text: '<strong>جاهز للإطلاق</strong> — البنية التحتية مفعّلة بالكامل' },
+      { key: 'power', color: '#6366F1', text: '<strong>الأنظمة الأساسية</strong> — قاعدة البيانات · الـ API · التخزين' },
+      { key: 'await', color: '#10b981', text: '<strong>في انتظار</strong> أول صالون يدخل المنصة' },
+    );
     return items;
   }
 
   if (stats.pendingTenants > 0) {
-    items.push({
-      key: 'pending',
-      color: '#F59E0B',
-      icon: AlertTriangle,
-      text: `<strong>${stats.pendingTenants} صالون</strong> بانتظار مراجعتك — التفعيل السريع يزيد التحويل`,
-    });
+    items.push({ key: 'p', color: '#F59E0B', text: `<strong>${stats.pendingTenants}</strong> بانتظار التفعيل` });
   }
-
   if (stats.activeTenants > 0) {
-    const rate = Math.round((stats.activeTenants / stats.totalTenants) * 100);
-    items.push({
-      key: 'active',
-      color: rate >= 80 ? '#10B981' : '#EF4444',
-      icon: TrendingUp,
-      text: `معدل النشاط <strong>${rate}%</strong> — ${rate >= 80 ? 'أداء ممتاز' : 'يحتاج متابعة'}`,
-    });
+    const r = Math.round((stats.activeTenants / stats.totalTenants) * 100);
+    items.push({ key: 'a', color: r >= 80 ? '#10b981' : '#EF4444', text: `معدل النشاط <strong>${r}%</strong>` });
   }
-
   if (stats.monthlyRevenue > 0) {
-    items.push({
-      key: 'rev',
-      color: '#C9A84C',
-      icon: DollarSign,
-      text: `إيرادات الشهر <strong>${stats.monthlyRevenue.toLocaleString('en-US')} ر.س</strong>`,
-    });
+    items.push({ key: 'r', color: '#b8993e', text: `إيرادات الشهر <strong>${stats.monthlyRevenue.toLocaleString('en-US')} SAR</strong>` });
   }
-
   if (stats.newTenantsThisMonth > 0) {
-    items.push({
-      key: 'growth',
-      color: '#6366F1',
-      icon: Zap,
-      text: `<strong>${stats.newTenantsThisMonth} صالون جديد</strong> انضم هذا الشهر`,
-    });
+    items.push({ key: 'n', color: '#6366F1', text: `<strong>+${stats.newTenantsThisMonth}</strong> صالون جديد هذا الشهر` });
   }
-
   if (items.length === 0) {
-    items.push({
-      key: 'stable',
-      color: '#10B981',
-      icon: Shield,
-      text: 'الوضع <strong>مستقر</strong> — لا توجد تنبيهات تتطلب اهتماماً',
-    });
+    items.push({ key: 's', color: '#10b981', text: '<strong>مستقر</strong> — لا تنبيهات' });
   }
-
   return items;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   PORTAL DATA
-   ═══════════════════════════════════════════════════════════ */
+   TERRITORY PORTALS
+   ═══════════════════════════════════════════════════════════════ */
 const PORTALS = [
-  {
-    id: 'tenants',
-    name: 'الأقاليم',
-    desc: 'إدارة جميع الصالونات المسجلة',
-    href: '/tenants',
-    icon: Building2,
-    color: 'rgba(139,92,246,0.5)',
-    bg: 'rgba(139,92,246,0.08)',
-    iconColor: '#8B5CF6',
-    metricKey: 'totalTenants' as const,
-    metricLabel: 'صالون مسجل',
-  },
-  {
-    id: 'revenue',
-    name: 'الإيرادات',
-    desc: 'الاشتراكات والمدفوعات والفواتير',
-    href: '/subscriptions',
-    icon: DollarSign,
-    color: 'rgba(16,185,129,0.5)',
-    bg: 'rgba(16,185,129,0.08)',
-    iconColor: '#10B981',
-    metricKey: 'totalSubscriptions' as const,
-    metricLabel: 'اشتراك نشط',
-  },
-  {
-    id: 'intelligence',
-    name: 'الاستخبارات',
-    desc: 'التحليلات والتقارير والنشاط',
-    href: '/analytics',
-    icon: BarChart3,
-    color: 'rgba(99,102,241,0.5)',
-    bg: 'rgba(99,102,241,0.08)',
-    iconColor: '#6366F1',
-    metricKey: 'planDistribution' as const,
-    metricLabel: 'تحليل متاح',
-  },
-  {
-    id: 'codex',
-    name: 'البنية التحتية',
-    desc: 'صحة النظام والإعدادات والسجلات',
-    href: '/system',
-    icon: Shield,
-    color: 'rgba(201,168,76,0.5)',
-    bg: 'rgba(201,168,76,0.08)',
-    iconColor: '#C9A84C',
-    metricKey: null,
-    metricLabel: 'خدمة نشطة',
-  },
+  { id: 'tenants',  name: 'الأقاليم',    href: '/tenants',       icon: Building2 },
+  { id: 'revenue',  name: 'الإيرادات',   href: '/subscriptions', icon: DollarSign },
+  { id: 'intel',    name: 'الاستخبارات', href: '/analytics',     icon: BarChart3 },
+  { id: 'codex',    name: 'البنية',      href: '/system',        icon: Shield },
+  { id: 'config',   name: 'الإعدادات',   href: '/settings',      icon: Settings },
 ];
 
 /* ═══════════════════════════════════════════════════════════════
-   NEXUS PAGE
+   NEXUS — THE SUPREME COMMAND SURFACE
    ═══════════════════════════════════════════════════════════════ */
 export default function NexusPage(): ReactElement {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [time, setTime] = useState('');
+  const [clock, setClock] = useState('');
+  const [date, setDate] = useState('');
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-
-  const intelReveal = useReveal();
-  const portalReveal = useReveal();
 
   useEffect(() => {
     adminService.getStats()
@@ -213,172 +107,163 @@ export default function NexusPage(): ReactElement {
   }, []);
 
   useEffect(() => {
-    const tick = () => setTime(new Date().toLocaleTimeString('en-US', {
-      hour: '2-digit', minute: '2-digit', hour12: false,
-    }));
+    const tick = () => {
+      const now = new Date();
+      setClock(now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }));
+      setDate(now.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' }));
+    };
     tick();
-    const id = setInterval(tick, 30000);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
 
   const totalTenants = stats?.totalTenants ?? 0;
   const activeTenants = stats?.activeTenants ?? 0;
   const monthlyRevenue = stats?.monthlyRevenue ?? 0;
+  const totalSubs = stats?.totalSubscriptions ?? 0;
+  const pendingTenants = stats?.pendingTenants ?? 0;
+  const newThisMonth = stats?.newTenantsThisMonth ?? 0;
   const insights = generateInsights(stats);
-
-  const getPortalMetric = (key: string | null): number => {
-    if (!key || !stats) return key === null ? 4 : 0;
-    if (key === 'planDistribution') return stats.planDistribution?.length ?? 0;
-    return (stats as Record<string, number>)[key] ?? 0;
-  };
 
   return (
     <>
-      {/* AMBIENT LIVING BACKGROUND */}
-      <AmbientCanvas />
+      {/* THE LIVING FABRIC */}
+      <Fabric />
 
-      {/* ══════════════════════════════════════════════════════
-          HERO SCENE — The Throne Entrance
-          ══════════════════════════════════════════════════════ */}
-      <section className="nx-hero">
-        {/* Orbital rings */}
-        <div className="nx-orbital-ring" />
-        <div className="nx-orbital-ring nx-orbital-ring-2" />
+      {/* THE VIEWPORT */}
+      <div className="sv-viewport">
 
-        {/* Logout button — top left */}
-        <button
-          onClick={logout}
-          style={{
-            position: 'absolute',
-            top: 28,
-            left: 28,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 8,
-            borderRadius: 10,
-            transition: 'all 0.3s',
-            zIndex: 10,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.08)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
-          title="تسجيل الخروج"
-        >
-          <LogOut size={16} strokeWidth={1.5} color="rgba(255,255,255,0.15)" />
-        </button>
+        {/* ── TIME ZONE ── */}
+        <div className="sv-time">
+          <div className="sv-time-clock">{clock}</div>
+          <div className="sv-time-date">{date}</div>
+          <div className="sv-time-greeting">{getGreeting()}</div>
+        </div>
 
-        {/* System Insignia */}
-        <div className="nx-insignia" style={{ opacity: 0, animation: 'nx-title-enter 1s var(--os-ease) 0.1s forwards' }}>
-          <div className="nx-insignia-ring" />
-          <div className="nx-insignia-ring nx-insignia-ring-2" />
-          <div className="nx-insignia-core">
-            {user?.fullName?.charAt(0) || 'S'}
+        {/* ── THE CROWN ── */}
+        <div className="sv-crown">
+          <h1 className="sv-crown-name">{user?.fullName || 'SERVIX'}</h1>
+          <p className="sv-crown-title">
+            {loading ? '— جاري الاتصال بالنظام —' : 'مركز القيادة السيادي'}
+          </p>
+        </div>
+
+        {/* ── STATUS ZONE ── */}
+        <div className="sv-status">
+          <div className="sv-heartbeat">
+            <span className="sv-heartbeat-dot" />
+            <span className="sv-heartbeat-text">OPERATIONAL</span>
+          </div>
+          <span className="sv-uptime">UPTIME 99.9%</span>
+          <button
+            onClick={logout}
+            style={{
+              marginTop: 8, background: 'none', border: 'none', cursor: 'pointer',
+              padding: 6, borderRadius: 6, transition: 'all 0.3s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.06)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+            title="تسجيل الخروج"
+          >
+            <LogOut size={14} strokeWidth={1.5} color="rgba(255,255,255,0.1)" />
+          </button>
+        </div>
+
+        {/* ── LEFT RAIL ── */}
+        <div className="sv-left">
+          <div className="sv-data-point">
+            <div className="sv-data-value"><CountUp target={totalSubs} /></div>
+            <div className="sv-data-label">اشتراك نشط</div>
+          </div>
+          <div className="sv-data-point">
+            <div className="sv-data-value"><CountUp target={pendingTenants} /></div>
+            <div className="sv-data-label">بانتظار التفعيل</div>
           </div>
         </div>
 
-        {/* Title */}
-        <h1 className="nx-hero-title">
-          {user?.fullName || 'مركز القيادة'}
-        </h1>
-        <p className="nx-hero-subtitle">
-          SERVIX COMMAND NEXUS
-        </p>
-
-        {/* System Status Beacon */}
-        <div className="nx-hero-status">
-          <span className="nx-status-dot" />
-          <span className="nx-status-text">
-            {loading ? 'جاري الاتصال...' : 'جميع الأنظمة تعمل'}
-          </span>
-          <span className="nx-status-time">{time}</span>
-        </div>
-
-        {/* Empire Metrics */}
-        <div className="nx-metrics">
-          <div className="nx-metric">
-            <div className="nx-metric-value">
-              <CountUp target={activeTenants} />
+        {/* ── THE CORE — Central metrics as environment ── */}
+        <div className="sv-core">
+          {/* Nerve line */}
+          <div className="sv-nerve">
+            <div className="sv-nerve-line">
+              <div className="sv-nerve-pulse" />
             </div>
-            <div className="nx-metric-label">صالون نشط</div>
           </div>
-          <div className="nx-metric">
-            <div className="nx-metric-value">
-              <CountUp target={monthlyRevenue} />
-              <span className="nx-metric-suffix">SAR</span>
+
+          <div className="sv-core-metrics">
+            <div className="sv-core-metric">
+              <div className="sv-metric-num">
+                <CountUp target={activeTenants} />
+              </div>
+              <div className="sv-metric-label">صالون نشط</div>
+              {totalTenants === 0 && (
+                <div className="sv-dormant-line">في انتظار الإطلاق</div>
+              )}
             </div>
-            <div className="nx-metric-label">إيرادات الشهر</div>
-          </div>
-          <div className="nx-metric">
-            <div className="nx-metric-value">
-              <CountUp target={totalTenants} />
+
+            <div className="sv-core-metric">
+              <div className="sv-metric-num">
+                <CountUp target={monthlyRevenue} />
+                <span className="sv-metric-suffix">SAR</span>
+              </div>
+              <div className="sv-metric-label">إيرادات الشهر</div>
             </div>
-            <div className="nx-metric-label">إجمالي الصالونات</div>
+
+            <div className="sv-core-metric">
+              <div className="sv-metric-num">
+                <CountUp target={totalTenants} />
+              </div>
+              <div className="sv-metric-label">إجمالي الأقاليم</div>
+            </div>
           </div>
         </div>
 
-        {/* Scroll indicator */}
-        <div className="nx-scroll-hint">
-          <div className="nx-scroll-line" />
-        </div>
-      </section>
-
-      {/* ══════════════════════════════════════════════════════
-          COMMAND FIELD — Below the fold
-          ══════════════════════════════════════════════════════ */}
-      <div className="nx-command-field">
-
-        {/* Intelligence Stream */}
-        <div ref={intelReveal.ref} className={`nx-reveal ${intelReveal.visible ? 'visible' : ''}`}>
-          <div className="nx-section-marker">
-            <span className="nx-section-marker-text">استخبارات المنصة</span>
+        {/* ── RIGHT RAIL ── */}
+        <div className="sv-right">
+          <div className="sv-data-point">
+            <div className="sv-data-value"><CountUp target={newThisMonth} /></div>
+            <div className="sv-data-label">جديد هذا الشهر</div>
           </div>
-          <div className="nx-intel-stream">
-            {insights.map((item) => {
-              const Icon = item.icon;
-              return (
-                <div key={item.key} className="nx-intel-item">
-                  <div className="nx-intel-dot" style={{ background: item.color }} />
-                  <Icon size={16} strokeWidth={1.5} style={{ color: item.color, flexShrink: 0, opacity: 0.7 }} />
-                  <p className="nx-intel-text" dangerouslySetInnerHTML={{ __html: item.text }} />
-                </div>
-              );
-            })}
+          <div className="sv-data-point">
+            <div className="sv-data-value">
+              {stats?.planDistribution?.length ?? 0}
+            </div>
+            <div className="sv-data-label">باقة مفعّلة</div>
           </div>
         </div>
 
-        {/* Territory Portals */}
-        <div ref={portalReveal.ref} className={`nx-reveal ${portalReveal.visible ? 'visible' : ''}`}>
-          <div className="nx-section-marker">
-            <span className="nx-section-marker-text">مراكز القيادة</span>
-          </div>
-          <div className="nx-portals">
-            {PORTALS.map((p) => {
-              const Icon = p.icon;
-              const metric = getPortalMetric(p.metricKey);
-              return (
-                <Link
-                  key={p.id}
-                  href={p.href}
-                  className="nx-portal"
-                  style={{
-                    '--portal-color': p.color,
-                    '--portal-bg': p.bg,
-                  } as React.CSSProperties}
-                >
-                  <div className="nx-portal-icon" style={{ background: p.bg }}>
-                    <Icon size={20} strokeWidth={1.5} style={{ color: p.iconColor }} />
-                  </div>
-                  <div className="nx-portal-name">{p.name}</div>
-                  <div className="nx-portal-desc">{p.desc}</div>
-                  <div className="nx-portal-metric">
-                    {metric.toLocaleString('en-US')}
-                  </div>
-                  <div className="nx-portal-metric-label">{p.metricLabel}</div>
-                </Link>
-              );
-            })}
-          </div>
+        {/* ── INTEL STREAM ── */}
+        <div className="sv-intel">
+          <div className="sv-intel-marker">استخبارات</div>
+          {insights.map((item) => (
+            <div key={item.key} className="sv-intel-item">
+              <div className="sv-intel-bar" style={{ background: item.color }} />
+              <p className="sv-intel-text" dangerouslySetInnerHTML={{ __html: item.text }} />
+            </div>
+          ))}
         </div>
+
+        {/* ── GROUND — Territory portals ── */}
+        <div className="sv-ground">
+          {PORTALS.map((p) => {
+            const Icon = p.icon;
+            return (
+              <Link key={p.id} href={p.href} className="sv-portal">
+                <Icon size={18} strokeWidth={1.2} className="sv-portal-icon" />
+                <span className="sv-portal-name">{p.name}</span>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* ── NAV — Minimal bottom-right ── */}
+        <div className="sv-nav">
+          <Link href="/dashboard" className="sv-nav-item active">NEXUS</Link>
+          <Link href="/audit-logs" className="sv-nav-item">LOG</Link>
+          <Link href="/plans" className="sv-nav-item">PLANS</Link>
+          <Link href="/features" className="sv-nav-item">FLAGS</Link>
+        </div>
+
       </div>
     </>
   );
