@@ -1,58 +1,18 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import {
-  UserCog,
-  Star,
-} from 'lucide-react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-} from 'recharts';
-import {
-  PageHeader,
-  StatCard,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-  Skeleton,
-} from '@/components/ui';
+import { ArrowRight, UserCog, Star, Trophy, TrendingUp } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 
-interface EmployeePerformance {
-  id: string;
-  fullName: string;
-  appointments: number;
-  revenue: number;
-  averageRating: number;
-}
+interface EmpPerf { id: string; fullName: string; appointments: number; revenue: number; averageRating: number; }
+interface EmpReport { totalEmployees: number; averageRating: number; employees: EmpPerf[]; }
 
-interface EmployeesReportData {
-  totalEmployees: number;
-  averageRating: number;
-  employees: EmployeePerformance[];
-}
-
-function formatCurrency(value: number): string {
-  return `${value.toLocaleString('ar-SA')} ر.س`;
-}
-
-const placeholderData: EmployeesReportData = {
-  totalEmployees: 8,
-  averageRating: 4.6,
+const PLACEHOLDER: EmpReport = {
+  totalEmployees: 8, averageRating: 4.6,
   employees: [
     { id: '1', fullName: 'فاطمة العلي', appointments: 45, revenue: 12500, averageRating: 4.9 },
     { id: '2', fullName: 'منى السعيد', appointments: 38, revenue: 10200, averageRating: 4.7 },
@@ -62,130 +22,114 @@ const placeholderData: EmployeesReportData = {
   ],
 };
 
-export default function EmployeesReportPage(): React.ReactElement {
+function Stars({ rating }: { rating: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map(i => (
+        <Star key={i} className={cn('h-3 w-3', i <= Math.round(rating) ? 'fill-amber-400 text-amber-400' : 'text-[var(--border)]')} />
+      ))}
+      <span className="text-[10px] font-bold text-[var(--muted-foreground)] mr-1 tabular-nums">{rating}</span>
+    </div>
+  );
+}
+
+export default function EmployeesReportPage() {
+  const router = useRouter();
   const { accessToken } = useAuth();
 
-  const { data, isLoading } = useQuery<EmployeesReportData>({
+  const { data, isLoading } = useQuery<EmpReport>({
     queryKey: ['reports', 'employees'],
-    queryFn: () =>
-      api.get<EmployeesReportData>('/reports/employees', accessToken!),
-    enabled: !!accessToken,
-    staleTime: 5 * 60 * 1000,
+    queryFn: () => api.get<EmpReport>('/reports/employees', accessToken!),
+    enabled: !!accessToken, staleTime: 5 * 60 * 1000,
   });
 
-  const report = data ?? placeholderData;
+  const r = data ?? PLACEHOLDER;
+  const sorted = [...r.employees].sort((a, b) => b.revenue - a.revenue);
+  const maxRev = Math.max(...sorted.map(e => e.revenue), 1);
+  const maxAppt = Math.max(...sorted.map(e => e.appointments), 1);
 
-  const revenueChartData = report.employees.map((emp) => ({
-    name: emp.fullName,
-    revenue: emp.revenue,
-  }));
+  if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <PageHeader title="تقرير الموظفات" description="تحليل أداء الموظفات" />
-
-      {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <Skeleton key={i} className="h-[120px] rounded-xl" />
-          ))}
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <button onClick={() => router.push('/reports')} className="p-2 rounded-xl border border-[var(--border)] hover:bg-[var(--muted)] transition">
+          <ArrowRight className="h-4 w-4" />
+        </button>
+        <div>
+          <h1 className="text-xl font-black">تقرير الموظفات</h1>
+          <p className="text-xs text-[var(--muted-foreground)]">تحليل أداء وإنتاجية الفريق</p>
         </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <StatCard
-              icon={UserCog}
-              label="إجمالي الموظفات"
-              value={report.totalEmployees}
-            />
-            <StatCard
-              icon={Star}
-              label="متوسط التقييم"
-              value={`${report.averageRating} / 5`}
-            />
-          </div>
+      </div>
 
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>الإيرادات لكل موظفة</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={revenueChartData}
-                    layout="vertical"
-                    margin={{ top: 5, right: 20, left: 20, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis
-                      type="number"
-                      stroke="var(--muted-foreground)"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(val: number) => `${val}`}
-                    />
-                    <YAxis
-                      dataKey="name"
-                      type="category"
-                      stroke="var(--muted-foreground)"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      width={100}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'var(--background)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '0.5rem',
-                      }}
-                      formatter={(val: number) => [formatCurrency(val), 'الإيرادات']}
-                    />
-                    <Bar dataKey="revenue" fill="var(--brand-primary)" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 p-5 text-white">
+          <UserCog className="h-5 w-5 mb-2 opacity-60" />
+          <p className="text-xs opacity-70">إجمالي الموظفات</p>
+          <p className="text-3xl font-black mt-1">{r.totalEmployees}</p>
+        </div>
+        <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 p-5 text-white">
+          <Star className="h-5 w-5 mb-2 opacity-60" />
+          <p className="text-xs opacity-70">متوسط التقييم</p>
+          <p className="text-3xl font-black mt-1 tabular-nums">{r.averageRating} <span className="text-base font-medium opacity-70">/ 5</span></p>
+        </div>
+        <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-5 text-white">
+          <TrendingUp className="h-5 w-5 mb-2 opacity-60" />
+          <p className="text-xs opacity-70">إجمالي الإيرادات</p>
+          <p className="text-3xl font-black mt-1 tabular-nums" dir="ltr">{sorted.reduce((s, e) => s + e.revenue, 0).toLocaleString('en')}</p>
+          <p className="text-[10px] opacity-50">SAR</p>
+        </div>
+      </div>
 
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>تفاصيل الأداء</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>الموظفة</TableHead>
-                      <TableHead>المواعيد</TableHead>
-                      <TableHead>الإيرادات</TableHead>
-                      <TableHead>التقييم</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {report.employees.map((emp) => (
-                      <TableRow key={emp.id}>
-                        <TableCell className="font-medium">{emp.fullName}</TableCell>
-                        <TableCell>{emp.appointments}</TableCell>
-                        <TableCell>{formatCurrency(emp.revenue)}</TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center gap-1">
-                            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                            {emp.averageRating}
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+      {/* Employee Cards */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <h3 className="text-sm font-bold flex items-center gap-2"><Trophy className="h-4 w-4 text-amber-500" /> ترتيب الموظفات حسب الإيرادات</h3>
+        </div>
+        <div className="divide-y divide-[var(--border)]">
+          {sorted.map((emp, i) => {
+            const revPct = Math.round((emp.revenue / maxRev) * 100);
+            const medals = ['🥇', '🥈', '🥉'];
+
+            return (
+              <div key={emp.id} className="p-5 hover:bg-[var(--muted)]/20 transition">
+                <div className="flex items-center gap-4 mb-3">
+                  {/* Rank */}
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--brand-primary)]/10 to-[var(--brand-primary)]/5 flex items-center justify-center text-lg font-black flex-shrink-0">
+                    {medals[i] || <span className="text-xs text-[var(--muted-foreground)]">{i + 1}</span>}
+                  </div>
+                  {/* Name + Rating */}
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-bold text-[var(--foreground)]">{emp.fullName}</span>
+                    <div className="mt-0.5"><Stars rating={emp.averageRating} /></div>
+                  </div>
+                  {/* Revenue */}
+                  <div className="text-left flex-shrink-0">
+                    <div className="text-lg font-black tabular-nums text-[var(--foreground)]" dir="ltr">{emp.revenue.toLocaleString('en')}</div>
+                    <p className="text-[10px] text-[var(--muted-foreground)]">SAR · {emp.appointments} موعد</p>
+                  </div>
+                </div>
+                {/* Revenue Bar */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-bold text-[var(--muted-foreground)] w-14">الإيرادات</span>
+                  <div className="flex-1 h-2 rounded-full bg-[var(--muted)] overflow-hidden">
+                    <div className="h-full rounded-full bg-gradient-to-l from-emerald-500 to-emerald-400 transition-all" style={{ width: `${revPct}%` }} />
+                  </div>
+                </div>
+                {/* Appointments Bar */}
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[9px] font-bold text-[var(--muted-foreground)] w-14">المواعيد</span>
+                  <div className="flex-1 h-2 rounded-full bg-[var(--muted)] overflow-hidden">
+                    <div className="h-full rounded-full bg-gradient-to-l from-violet-500 to-violet-400 transition-all" style={{ width: `${Math.round((emp.appointments / maxAppt) * 100)}%` }} />
+                  </div>
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
