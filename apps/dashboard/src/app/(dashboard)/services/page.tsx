@@ -11,6 +11,15 @@ import { dashboardService } from '@/services/dashboard.service';
 import { useAuth } from '@/hooks/useAuth';
 import type { Service, ServiceCategory } from '@/types';
 
+const CAT_GRADIENTS = [
+  'from-purple-500 to-violet-600',
+  'from-pink-500 to-rose-600',
+  'from-amber-500 to-orange-600',
+  'from-emerald-500 to-teal-600',
+  'from-sky-500 to-blue-600',
+  'from-red-500 to-pink-600',
+];
+
 export default function ServicesPage() {
   const { accessToken } = useAuth();
   const queryClient = useQueryClient();
@@ -63,6 +72,10 @@ export default function ServicesPage() {
   });
 
   const getCatName = (id: string) => categories?.find(c => c.id === id)?.nameAr || '';
+  const getCatGrad = (id: string) => {
+    const idx = categories?.findIndex(c => c.id === id) ?? 0;
+    return CAT_GRADIENTS[idx % CAT_GRADIENTS.length];
+  };
 
   if (cL || sL) return <div className="flex min-h-[50vh] items-center justify-center"><Spinner size="lg" /></div>;
 
@@ -150,10 +163,11 @@ export default function ServicesPage() {
 
                 return (
                   <div key={svc.id} className={cn(
-                    'group relative rounded-2xl border bg-[var(--card)] transition-all',
-                    isDeleting ? 'border-red-300' : 'border-[var(--border)] hover:shadow-sm',
-                    !svc.isActive && 'opacity-50',
+                    'group relative rounded-2xl border bg-[var(--card)] overflow-hidden transition-all',
+                    isDeleting ? 'border-red-300 shadow-lg' : 'border-[var(--border)] hover:shadow-md hover:border-[var(--brand-primary)]/20',
                   )}>
+                    {/* Category Color Ribbon */}
+                    <div className={cn('h-1 bg-gradient-to-l', getCatGrad(svc.categoryId))} />
                     {/* Delete overlay */}
                     {isDeleting && (
                       <div className="absolute inset-0 rounded-2xl bg-white/95 backdrop-blur-sm z-10 flex items-center justify-center gap-3">
@@ -164,7 +178,7 @@ export default function ServicesPage() {
                       </div>
                     )}
 
-                    <div className="flex items-center gap-4 p-4">
+                    <div className={cn('flex items-center gap-4 p-4', !svc.isActive && 'opacity-40')}>
                       {/* Service Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -178,6 +192,9 @@ export default function ServicesPage() {
                           <span className="inline-flex items-center gap-1 text-[11px] text-[var(--muted-foreground)]">
                             <Clock className="h-3 w-3" /> {svc.duration} min
                           </span>
+                          <Badge variant={svc.isActive ? 'success' : 'secondary'} className="text-[9px]">
+                            {svc.isActive ? 'نشطة' : 'معطلة'}
+                          </Badge>
                         </div>
                       </div>
 
@@ -208,7 +225,7 @@ export default function ServicesPage() {
                       )}
 
                       {/* Actions */}
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-0.5">
                         <button
                           onClick={() => toggleMut.mutate({ id: svc.id, isActive: !svc.isActive })}
                           className="p-1.5 rounded-lg hover:bg-[var(--muted)] text-[var(--muted-foreground)] transition"
