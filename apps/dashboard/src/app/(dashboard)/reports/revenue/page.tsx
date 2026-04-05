@@ -53,26 +53,12 @@ function getDateRange(period: Period): { from: string; to: string } {
   return { from: from.toISOString().split('T')[0], to };
 }
 
-const PLACEHOLDER: RevenueData = {
-  totalRevenue: 24500,
-  totalInvoices: 87,
-  averageTicket: 281.6,
-  dailyRevenue: [
-    { date: '2026-03-01', revenue: 3200 },
-    { date: '2026-03-02', revenue: 2800 },
-    { date: '2026-03-03', revenue: 1500 },
-    { date: '2026-03-04', revenue: 4100 },
-    { date: '2026-03-05', revenue: 3600 },
-    { date: '2026-03-06', revenue: 5200 },
-    { date: '2026-03-07', revenue: 4100 },
-  ],
-  serviceBreakdown: [
-    { serviceName: 'قص شعر', count: 32, revenue: 6400 },
-    { serviceName: 'صبغة شعر', count: 18, revenue: 7200 },
-    { serviceName: 'مانيكير', count: 25, revenue: 3750 },
-    { serviceName: 'باديكير', count: 20, revenue: 4000 },
-    { serviceName: 'تنظيف بشرة', count: 12, revenue: 3150 },
-  ],
+const EMPTY: RevenueData = {
+  totalRevenue: 0,
+  totalInvoices: 0,
+  averageTicket: 0,
+  dailyRevenue: [],
+  serviceBreakdown: [],
 };
 
 export default function RevenueReportPage() {
@@ -89,12 +75,12 @@ export default function RevenueReportPage() {
 
   const { data, isLoading } = useQuery<RevenueData>({
     queryKey: ['reports', 'revenue', dateRange.from, dateRange.to],
-    queryFn: () => api.get<RevenueData>(`/reports/revenue?from=${dateRange.from}&to=${dateRange.to}`, accessToken!),
+    queryFn: () => api.get<RevenueData>(`/reports/revenue?dateFrom=${dateRange.from}&dateTo=${dateRange.to}`, accessToken!),
     enabled: !!accessToken,
     staleTime: 5 * 60 * 1000,
   });
 
-  const report = data ?? PLACEHOLDER;
+  const report = data ?? EMPTY;
   const maxRev = Math.max(...(report.dailyRevenue?.map(d => d.revenue) ?? [0]));
   const totalSvcRevenue = report.serviceBreakdown?.reduce((s, r) => s + r.revenue, 0) || 1;
 

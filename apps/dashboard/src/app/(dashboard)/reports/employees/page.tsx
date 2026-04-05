@@ -11,15 +11,9 @@ import { api } from '@/lib/api';
 interface EmpPerf { id: string; fullName: string; appointments: number; revenue: number; averageRating: number; }
 interface EmpReport { totalEmployees: number; averageRating: number; employees: EmpPerf[]; }
 
-const PLACEHOLDER: EmpReport = {
-  totalEmployees: 8, averageRating: 4.6,
-  employees: [
-    { id: '1', fullName: 'فاطمة العلي', appointments: 45, revenue: 12500, averageRating: 4.9 },
-    { id: '2', fullName: 'منى السعيد', appointments: 38, revenue: 10200, averageRating: 4.7 },
-    { id: '3', fullName: 'عبير الحربي', appointments: 32, revenue: 8900, averageRating: 4.5 },
-    { id: '4', fullName: 'هدى المطيري', appointments: 28, revenue: 7600, averageRating: 4.8 },
-    { id: '5', fullName: 'أمل الشمري', appointments: 25, revenue: 6800, averageRating: 4.3 },
-  ],
+const EMPTY: EmpReport = {
+  totalEmployees: 0, averageRating: 0,
+  employees: [],
 };
 
 function Stars({ rating }: { rating: number }) {
@@ -37,13 +31,17 @@ export default function EmployeesReportPage() {
   const router = useRouter();
   const { accessToken } = useAuth();
 
+  const now = new Date();
+  const dateFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const dateTo = now.toISOString().split('T')[0];
+
   const { data, isLoading } = useQuery<EmpReport>({
     queryKey: ['reports', 'employees'],
-    queryFn: () => api.get<EmpReport>('/reports/employees', accessToken!),
+    queryFn: () => api.get<EmpReport>(`/reports/employees?dateFrom=${dateFrom}&dateTo=${dateTo}`, accessToken!),
     enabled: !!accessToken, staleTime: 5 * 60 * 1000,
   });
 
-  const r = data ?? PLACEHOLDER;
+  const r = data ?? EMPTY;
   const sorted = [...r.employees].sort((a, b) => b.revenue - a.revenue);
   const maxRev = Math.max(...sorted.map(e => e.revenue), 1);
   const maxAppt = Math.max(...sorted.map(e => e.appointments), 1);

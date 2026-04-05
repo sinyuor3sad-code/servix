@@ -16,20 +16,11 @@ interface ApptReport {
   dailyTrend: { date: string; count: number }[];
 }
 
-const PLACEHOLDER: ApptReport = {
-  total: 156, completed: 120, cancelled: 22, noShow: 14,
-  completedRate: 76.9, cancelledRate: 14.1, noShowRate: 9.0,
-  statusDistribution: [
-    { name: 'مكتمل', value: 120, color: '#10b981' },
-    { name: 'ملغي', value: 22, color: '#ef4444' },
-    { name: 'لم يحضر', value: 14, color: '#f59e0b' },
-  ],
-  dailyTrend: [
-    { date: '2026-03-01', count: 8 }, { date: '2026-03-02', count: 12 },
-    { date: '2026-03-03', count: 6 }, { date: '2026-03-04', count: 15 },
-    { date: '2026-03-05', count: 10 }, { date: '2026-03-06', count: 18 },
-    { date: '2026-03-07', count: 9 },
-  ],
+const EMPTY: ApptReport = {
+  total: 0, completed: 0, cancelled: 0, noShow: 0,
+  completedRate: 0, cancelledRate: 0, noShowRate: 0,
+  statusDistribution: [],
+  dailyTrend: [],
 };
 
 function getDefaultDates() {
@@ -46,11 +37,11 @@ export default function AppointmentsReportPage() {
 
   const { data, isLoading } = useQuery<ApptReport>({
     queryKey: ['reports', 'appointments', dateFrom, dateTo],
-    queryFn: () => api.get<ApptReport>(`/reports/appointments?from=${dateFrom}&to=${dateTo}`, accessToken!),
+    queryFn: () => api.get<ApptReport>(`/reports/appointments?dateFrom=${dateFrom}&dateTo=${dateTo}`, accessToken!),
     enabled: !!accessToken, staleTime: 5 * 60 * 1000,
   });
 
-  const r = data ?? PLACEHOLDER;
+  const r = data ?? EMPTY;
   const maxCount = Math.max(...(r.dailyTrend?.map(d => d.count) ?? [0]));
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;

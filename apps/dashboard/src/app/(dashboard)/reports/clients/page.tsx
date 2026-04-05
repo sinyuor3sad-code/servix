@@ -15,28 +15,26 @@ interface ClientsReport {
   topClients: { id: string; fullName: string; phone: string; totalVisits: number; totalSpent: number }[];
 }
 
-const PLACEHOLDER: ClientsReport = {
-  totalClients: 342, newThisMonth: 28, returningRate: 65.4,
-  topClients: [
-    { id: '1', fullName: 'نورة الأحمد', phone: '0501234567', totalVisits: 24, totalSpent: 8400 },
-    { id: '2', fullName: 'سارة المحمد', phone: '0559876543', totalVisits: 18, totalSpent: 6200 },
-    { id: '3', fullName: 'ريم العتيبي', phone: '0541112233', totalVisits: 15, totalSpent: 5100 },
-    { id: '4', fullName: 'هند القحطاني', phone: '0533445566', totalVisits: 12, totalSpent: 4800 },
-    { id: '5', fullName: 'لمياء الدوسري', phone: '0527788990', totalVisits: 11, totalSpent: 3900 },
-  ],
+const EMPTY: ClientsReport = {
+  totalClients: 0, newThisMonth: 0, returningRate: 0,
+  topClients: [],
 };
 
 export default function ClientsReportPage() {
   const router = useRouter();
   const { accessToken } = useAuth();
 
+  const now = new Date();
+  const dateFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const dateTo = now.toISOString().split('T')[0];
+
   const { data, isLoading } = useQuery<ClientsReport>({
     queryKey: ['reports', 'clients'],
-    queryFn: () => api.get<ClientsReport>('/reports/clients', accessToken!),
+    queryFn: () => api.get<ClientsReport>(`/reports/clients?dateFrom=${dateFrom}&dateTo=${dateTo}`, accessToken!),
     enabled: !!accessToken, staleTime: 5 * 60 * 1000,
   });
 
-  const report = data ?? PLACEHOLDER;
+  const report = data ?? EMPTY;
   const maxSpent = Math.max(...report.topClients.map(c => c.totalSpent), 1);
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
