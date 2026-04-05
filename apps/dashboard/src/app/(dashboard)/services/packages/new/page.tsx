@@ -49,25 +49,29 @@ export default function NewPackagePage() {
 
   const getCatName = (id: string) => cats?.find(c => c.id === id)?.nameAr || '';
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!nameAr.trim()) return toast.error('أدخلي اسم الباقة');
     if (selectedIds.length < 2) return toast.error('اختاري خدمتين على الأقل');
     if (pkgPrice <= 0) return toast.error('أدخلي سعر الباقة');
 
-    // Save to localStorage as a simple solution (no backend yet)
-    const packages = JSON.parse(localStorage.getItem('servix_packages') || '[]');
-    packages.push({
-      id: Math.random().toString(36).slice(2),
-      nameAr,
-      nameEn,
-      serviceIds: selectedIds,
-      originalPrice,
-      packagePrice: pkgPrice,
-      createdAt: new Date().toISOString(),
-    });
-    localStorage.setItem('servix_packages', JSON.stringify(packages));
-    toast.success('✅ تم إنشاء الباقة');
-    router.push('/services');
+    try {
+      const { api } = await import('@/lib/api');
+      await api.post('/packages', {
+        nameAr,
+        nameEn: nameEn || undefined,
+        serviceIds: selectedIds,
+        packagePrice: pkgPrice,
+      }, accessToken!);
+      toast.success('✅ تم إنشاء الباقة');
+      router.push('/services');
+    } catch {
+      // Fallback to localStorage
+      const packages = JSON.parse(localStorage.getItem('servix_packages') || '[]');
+      packages.push({ id: Math.random().toString(36).slice(2), nameAr, nameEn, serviceIds: selectedIds, originalPrice, packagePrice: pkgPrice, createdAt: new Date().toISOString() });
+      localStorage.setItem('servix_packages', JSON.stringify(packages));
+      toast.success('✅ تم إنشاء الباقة (محلياً)');
+      router.push('/services');
+    }
   };
 
   if (isLoading) return <div className="flex min-h-[50vh] items-center justify-center"><Spinner size="lg" /></div>;

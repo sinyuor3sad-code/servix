@@ -21,6 +21,8 @@ import { ClientDnaModule } from './client-dna/client-dna.module';
 import { ZatcaModule } from './zatca/zatca.module';
 import { MarketingModule } from './marketing/marketing.module';
 import { DynamicPricingModule } from './dynamic-pricing/dynamic-pricing.module';
+import { PackagesModule } from './packages/packages.module';
+import { DebtsModule } from './debts/debts.module';
 
 @Module({
   imports: [
@@ -46,6 +48,8 @@ import { DynamicPricingModule } from './dynamic-pricing/dynamic-pricing.module';
     ZatcaModule,
     MarketingModule,
     DynamicPricingModule,
+    PackagesModule,
+    DebtsModule,
   ],
 })
 export class SalonModule {}

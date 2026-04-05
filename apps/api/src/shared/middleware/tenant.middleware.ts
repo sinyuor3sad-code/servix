@@ -31,6 +31,8 @@ const TENANT_REQUIRED_PREFIXES = [
   '/api/v1/reports',
   '/api/v1/notifications',
   '/api/v1/account',
+  '/api/v1/packages',
+  '/api/v1/debts',
 ];
 
 const PUBLIC_TENANT_PATHS = [
