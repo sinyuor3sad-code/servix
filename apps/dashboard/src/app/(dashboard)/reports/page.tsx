@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { DollarSign, Calendar, Users, UserCog, TrendingUp, ChevronLeft, BarChart3, PieChart, Activity } from 'lucide-react';
+import { DollarSign, Calendar, Users, UserCog, TrendingUp, ChevronLeft, BarChart3, PieChart, Activity, Scissors, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -50,6 +50,26 @@ const REPORT_CARDS = [
     format: (v: number) => `${v} موظفة`,
     gradient: 'from-rose-500 to-pink-600',
     iconBg: 'bg-rose-400/20',
+  },
+  {
+    title: 'الخدمات',
+    desc: 'الأكثر طلباً والأعلى إيراداً',
+    href: '/reports/services',
+    icon: Scissors,
+    statKey: 'totalClients' as keyof DashboardStats,
+    format: () => 'تفاصيل ←',
+    gradient: 'from-amber-500 to-orange-600',
+    iconBg: 'bg-amber-400/20',
+  },
+  {
+    title: 'المصروفات والأرباح',
+    desc: 'تحليل مالي شامل',
+    href: '/reports/expenses',
+    icon: Wallet,
+    statKey: 'monthlyRevenue' as keyof DashboardStats,
+    format: () => 'تفاصيل ←',
+    gradient: 'from-slate-600 to-zinc-700',
+    iconBg: 'bg-slate-400/20',
   },
 ];
 
