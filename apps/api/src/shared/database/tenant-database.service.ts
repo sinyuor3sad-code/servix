@@ -1,15 +1,73 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { PlatformPrismaClient } from './platform.client';
 import { TenantClientFactory } from './tenant-client.factory';
 
 @Injectable()
-export class TenantDatabaseService {
+export class TenantDatabaseService implements OnApplicationBootstrap {
   private readonly logger = new Logger(TenantDatabaseService.name);
 
   constructor(
     private readonly platformPrisma: PlatformPrismaClient,
     private readonly tenantClientFactory: TenantClientFactory,
   ) {}
+
+  /**
+   * On app startup, sync tenant schema to all existing tenant databases.
+   * Runs in background so it doesn't block the API from starting.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    // Run in background - don't block API startup
+    this.syncAllTenantSchemas().catch((err) => {
+      this.logger.error(`Tenant schema sync failed: ${err.message}`);
+    });
+  }
+
+  /**
+   * Push the tenant schema to ALL existing tenant databases.
+   * Called on startup to ensure all tenants have the latest schema.
+   */
+  async syncAllTenantSchemas(): Promise<void> {
+    this.logger.log('🔄 Starting tenant schema sync...');
+
+    try {
+      const tenants = await this.platformPrisma.tenant.findMany({
+        where: { status: { not: 'cancelled' } },
+        select: { id: true, slug: true, databaseName: true },
+      });
+
+      // Filter out platform DB and template
+      const tenantDbs = tenants
+        .filter(t => t.databaseName !== 'servix_platform')
+        .map(t => t.databaseName);
+
+      if (tenantDbs.length === 0) {
+        this.logger.log('No tenant databases to sync');
+        return;
+      }
+
+      this.logger.log(`Found ${tenantDbs.length} tenant databases to sync`);
+
+      let success = 0;
+      let failed = 0;
+
+      for (const dbName of tenantDbs) {
+        try {
+          await this.pushTenantSchema(dbName);
+          success++;
+          this.logger.log(`✅ Schema synced: ${dbName} (${success}/${tenantDbs.length})`);
+        } catch (error: unknown) {
+          failed++;
+          const msg = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`⚠️ Schema sync failed for ${dbName}: ${msg}`);
+        }
+      }
+
+      this.logger.log(`🎉 Tenant schema sync complete: ${success} success, ${failed} failed, ${tenantDbs.length} total`);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to fetch tenants for sync: ${msg}`);
+    }
+  }
 
   /**
    * Creates a new PostgreSQL database for a tenant and runs migrations.
@@ -19,9 +77,7 @@ export class TenantDatabaseService {
     this.logger.log(`Creating tenant database: ${databaseName}`);
 
     // Step 1: Create the PostgreSQL database using raw SQL on platform connection
-    // We need to use $queryRawUnsafe because CREATE DATABASE cannot run inside a transaction
     try {
-      // Check if database already exists
       const existing = await this.platformPrisma.$queryRawUnsafe<{ count: bigint }[]>(
         `SELECT COUNT(*) as count FROM pg_database WHERE datname = $1`,
         databaseName,
@@ -31,7 +87,6 @@ export class TenantDatabaseService {
       if (count > 0) {
         this.logger.warn(`Database ${databaseName} already exists, skipping creation`);
       } else {
-        // CREATE DATABASE cannot use parameterized queries, so we sanitize manually
         const safeName = databaseName.replace(/[^a-zA-Z0-9_]/g, '');
         await this.platformPrisma.$executeRawUnsafe(
           `CREATE DATABASE "${safeName}"`,
@@ -40,7 +95,6 @@ export class TenantDatabaseService {
       }
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      // If database already exists, that's fine
       if (errMsg.includes('already exists')) {
         this.logger.warn(`Database ${databaseName} already exists`);
       } else {
@@ -49,11 +103,8 @@ export class TenantDatabaseService {
       }
     }
 
-    // Step 2: Push the tenant schema to the new database using Prisma
+    // Step 2: Push the tenant schema to the new database
     try {
-      const tenantClient = this.tenantClientFactory.getTenantClient(databaseName);
-      // This will create all tables defined in tenant.prisma
-      // We use $executeRawUnsafe to create the schema via the tenant connection
       await this.pushTenantSchema(databaseName);
       this.logger.log(`Tenant schema pushed to ${databaseName}`);
     } catch (error: unknown) {
@@ -119,3 +170,4 @@ export class TenantDatabaseService {
     this.logger.log(`Database ${databaseName} dropped successfully`);
   }
 }
+
