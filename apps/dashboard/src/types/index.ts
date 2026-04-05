@@ -413,6 +413,19 @@ export interface CalendarGap {
   employeeId?: string;
 }
 
+// ─────────────────── Packages ───────────────────
+
+export interface Package {
+  id: string;
+  nameAr: string;
+  nameEn: string | null;
+  originalPrice: number;
+  packagePrice: number;
+  isActive: boolean;
+  createdAt: string;
+  services: Array<{ id: string; nameAr: string; nameEn: string | null; price: number; duration: number }>;
+}
+
 // ─────────────────── ZATCA ───────────────────
 
 export interface ZatcaCertificate {

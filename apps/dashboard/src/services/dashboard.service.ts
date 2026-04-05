@@ -12,6 +12,7 @@ import type {
   ProductCategory,
   InventoryMovement,
   ServiceProduct,
+  Package,
   Shift,
   ClientDna,
   PricingRule,
@@ -175,6 +176,16 @@ export const dashboardService = {
 
   linkProductToService: (serviceId: string, data: { productId: string; quantityPerUse: number }, token: string) =>
     api.post<ServiceProduct>(`/inventory/services/${serviceId}/products`, data, token),
+
+  // ─── Packages ───
+  getPackages: (token: string) =>
+    api.get<Package[]>('/packages', token),
+
+  createPackage: (data: { nameAr: string; nameEn?: string; serviceIds: string[]; packagePrice: number }, token: string) =>
+    api.post<Package>('/packages', data, token),
+
+  deletePackage: (id: string, token: string) =>
+    api.delete<void>(`/packages/${id}`, token),
 
   // ─── Shifts ───
   getShifts: (date: string, token: string) =>
