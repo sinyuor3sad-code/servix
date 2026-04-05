@@ -1,7 +1,13 @@
 import type { Metadata } from 'next';
-import { Cairo } from 'next/font/google';
+import { Inter, Cairo } from 'next/font/google';
 import { Providers } from '@/lib/providers';
 import './globals.css';
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+});
 
 const cairo = Cairo({
   subsets: ['arabic', 'latin'],
@@ -10,8 +16,8 @@ const cairo = Cairo({
 });
 
 export const metadata: Metadata = {
-  title: 'SERVIX — لوحة الإدارة',
-  description: 'لوحة إدارة منصة SERVIX',
+  title: 'SERVIX — Nexus',
+  description: 'Owner Command Environment',
 };
 
 export default function RootLayout({
@@ -21,7 +27,9 @@ export default function RootLayout({
 }>): React.ReactElement {
   return (
     <html lang="ar" dir="rtl" className="dark" suppressHydrationWarning>
-      <body className={`${cairo.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} ${cairo.variable} antialiased`}
+        style={{ fontFamily: "'Inter', 'Cairo', system-ui, -apple-system, sans-serif" }}
+      >
         <Providers>{children}</Providers>
       </body>
     </html>

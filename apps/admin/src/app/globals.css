@@ -1,429 +1,548 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
-/* ═══════════════════════════════════════════════════════════════════════
-   OBSIDIAN NEXUS v3 — Supreme Owner Command Environment
-   Design System: Command Civilization · Intelligence Surface · Empire Layer
-   ═══════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════
+   OBSIDIAN SOVEREIGNTY — Owner Command Environment
+   A design system for sovereign control, not admin panels
+   ═══════════════════════════════════════════════════════════════ */
 
-/* ── CSS Variables ─────────────────────────────────────────────────── */
 :root {
-  --nx-void: #04040a;
-  --nx-surface: #0a0a12;
-  --nx-surface-2: #0e0e18;
-  --nx-border: rgba(255,255,255,0.04);
-  --nx-border-hover: rgba(255,255,255,0.08);
-  --nx-gold: #d4a853;
-  --nx-gold-dim: rgba(212,168,83,0.15);
-  --nx-gold-glow: rgba(212,168,83,0.06);
-  --nx-signal: #6ee7b7;
-  --nx-alert: #fb923c;
-  --nx-danger: #f87171;
-  --nx-accent: #818cf8;
-  --nx-text-1: rgba(255,255,255,0.87);
-  --nx-text-2: rgba(255,255,255,0.45);
-  --nx-text-3: rgba(255,255,255,0.18);
-  --nx-text-4: rgba(255,255,255,0.08);
-  --nx-rail-w: 76px;
-  --nx-ease: cubic-bezier(0.23, 1, 0.32, 1);
-  --nx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --os-bg: #050508;
+  --os-surface-1: rgba(255,255,255, 0.022);
+  --os-surface-2: rgba(255,255,255, 0.042);
+  --os-surface-3: rgba(255,255,255, 0.065);
+  --os-gold: #C9A84C;
+  --os-gold-light: #E8C547;
+  --os-gold-glow: rgba(201,168,76, 0.15);
+  --os-indigo: #6366F1;
+  --os-emerald: #10B981;
+  --os-danger: #EF4444;
+  --os-text-1: rgba(255,255,255, 0.88);
+  --os-text-2: rgba(255,255,255, 0.40);
+  --os-text-3: rgba(255,255,255, 0.18);
+  --os-border: rgba(255,255,255, 0.04);
+  --os-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --os-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-/* ── Base Reset ────────────────────────────────────────────────────── */
+/* ── Base ─────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+
 body {
-  background: var(--nx-void);
-  color: var(--nx-text-1);
+  background: var(--os-bg);
+  color: var(--os-text-1);
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
   overflow-x: hidden;
 }
 
-/* ── Scrollbar — invisible but functional ─────────────────────────── */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.04);
-  border-radius: 99px;
-}
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.08); }
-* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.04) transparent; }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   NERVE RAIL — Icon-only navigation, cockpit instrument panel feel
-   ═══════════════════════════════════════════════════════════════════════ */
-.nx-rail {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  width: var(--nx-rail-w);
-  background: linear-gradient(180deg, rgba(6,6,12,0.98) 0%, rgba(4,4,8,1) 100%);
-  border-inline-start: 1px solid var(--nx-border);
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 1.25rem 0;
-}
-
-.nx-rail-icon {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  color: var(--nx-text-3);
-  transition: all 0.35s var(--nx-ease);
-  cursor: pointer;
-  margin-bottom: 2px;
-}
-
-.nx-rail-icon:hover {
-  color: var(--nx-text-2);
-  background: rgba(255,255,255,0.025);
-}
-
-.nx-rail-icon.active {
-  color: var(--nx-gold);
-  background: rgba(212,168,83,0.06);
-}
-
-.nx-rail-icon.active::before {
-  content: '';
-  position: absolute;
-  inset-inline-end: -1px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2.5px;
-  height: 20px;
-  border-radius: 2px;
-  background: var(--nx-gold);
-  box-shadow: 0 0 12px rgba(212,168,83,0.5);
-}
-
-/* Rail tooltip */
-.nx-rail-tooltip {
-  position: absolute;
-  inset-inline-start: calc(100% + 12px);
-  top: 50%;
-  transform: translateY(-50%) scale(0.95);
-  background: var(--nx-surface-2);
-  border: 1px solid var(--nx-border-hover);
-  border-radius: 10px;
-  padding: 6px 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--nx-text-1);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: all 0.25s var(--nx-ease);
-  z-index: 100;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-}
-
-.nx-rail-icon:hover .nx-rail-tooltip {
-  opacity: 1;
-  transform: translateY(-50%) scale(1);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   COMMAND BAR — Top bar, minimal, ambient, always-on
-   ═══════════════════════════════════════════════════════════════════════ */
-.nx-command-bar {
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 2rem;
-  border-bottom: 1px solid var(--nx-border);
-  background: rgba(4,4,10,0.8);
-  backdrop-filter: blur(40px) saturate(130%);
-  -webkit-backdrop-filter: blur(40px) saturate(130%);
-  position: sticky;
-  top: 0;
-  z-index: 30;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   GLASS SURFACE — Premium depth, dual-layer
-   ═══════════════════════════════════════════════════════════════════════ */
-.nx-glass {
-  background: linear-gradient(145deg,
-    rgba(255,255,255,0.035) 0%,
-    rgba(255,255,255,0.008) 100%
-  );
-  border: 1px solid var(--nx-border);
-  border-radius: 18px;
-  position: relative;
-  overflow: hidden;
-  transition: all 0.5s var(--nx-ease);
-}
-
-.nx-glass::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(170deg, rgba(255,255,255,0.04) 0%, transparent 35%);
-  pointer-events: none;
-}
-
-.nx-glass-hover:hover {
-  border-color: rgba(212,168,83,0.12);
-  box-shadow:
-    0 12px 48px rgba(0,0,0,0.3),
-    0 0 0 1px rgba(212,168,83,0.06),
-    inset 0 1px 0 rgba(255,255,255,0.04);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   PULSE STRIP — Unified metrics ribbon
-   ═══════════════════════════════════════════════════════════════════════ */
-.nx-pulse-strip {
-  display: flex;
-  border-radius: 20px;
-  overflow: hidden;
-  border: 1px solid var(--nx-border);
-  background: linear-gradient(135deg,
-    rgba(255,255,255,0.025) 0%,
-    rgba(255,255,255,0.005) 100%
-  );
-}
-
-.nx-pulse-cell {
-  flex: 1;
-  padding: 1.5rem 1.75rem;
-  position: relative;
-  border-inline-start: 1px solid var(--nx-border);
-  transition: background 0.4s var(--nx-ease);
-}
-
-.nx-pulse-cell:first-child { border-inline-start: none; }
-
-.nx-pulse-cell:hover {
-  background: rgba(255,255,255,0.015);
-}
-
-.nx-pulse-cell::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  inset-inline: 20%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--nx-gold-dim), transparent);
-  opacity: 0;
-  transition: opacity 0.5s;
-}
-
-.nx-pulse-cell:hover::after { opacity: 1; }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   MOMENTUM LENS — Timeline-style activity intelligence
-   ═══════════════════════════════════════════════════════════════════════ */
-.nx-momentum-item {
-  display: flex;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  border-radius: 14px;
-  transition: all 0.35s var(--nx-ease);
-  position: relative;
-}
-
-.nx-momentum-item:hover {
-  background: rgba(255,255,255,0.015);
-}
-
-.nx-momentum-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-top: 5px;
-  flex-shrink: 0;
-  position: relative;
-}
-
-.nx-momentum-dot::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 1px;
-  height: 32px;
-  background: linear-gradient(to bottom, var(--nx-border-hover), transparent);
-}
-
-.nx-momentum-item:last-child .nx-momentum-dot::after { display: none; }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   INTELLIGENCE FEED — Auto-generated insights
-   ═══════════════════════════════════════════════════════════════════════ */
-.nx-insight {
-  padding: 1rem 1.25rem;
-  border-radius: 14px;
-  border: 1px solid var(--nx-border);
-  background: rgba(255,255,255,0.012);
-  transition: all 0.4s var(--nx-ease);
-  position: relative;
-  overflow: hidden;
-}
-
-.nx-insight::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  inset-inline-start: 0;
-  width: 2px;
-  height: 100%;
-  border-radius: 2px;
-}
-
-.nx-insight-gold::before { background: var(--nx-gold); }
-.nx-insight-signal::before { background: var(--nx-signal); }
-.nx-insight-alert::before { background: var(--nx-alert); }
-.nx-insight-accent::before { background: var(--nx-accent); }
-
-.nx-insight:hover {
-  border-color: var(--nx-border-hover);
-  background: rgba(255,255,255,0.02);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════
-   EMPIRE CONSTELLATION — Tenant visual map
-   ═══════════════════════════════════════════════════════════════════════ */
-.nx-constellation {
-  position: relative;
-  min-height: 200px;
-  border-radius: 20px;
-  overflow: hidden;
-}
-
-.nx-star {
-  position: absolute;
-  border-radius: 50%;
-  transition: all 0.5s var(--nx-ease);
-  cursor: pointer;
-}
-
-.nx-star:hover {
-  transform: scale(1.8);
-  z-index: 10;
-}
-
-.nx-star-active { background: var(--nx-signal); box-shadow: 0 0 12px var(--nx-signal); }
-.nx-star-trial  { background: var(--nx-gold);   box-shadow: 0 0 8px rgba(212,168,83,0.4); }
-.nx-star-danger { background: var(--nx-danger); box-shadow: 0 0 8px rgba(248,113,113,0.4); }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   ANIMATIONS
-   ═══════════════════════════════════════════════════════════════════════ */
-@keyframes nx-enter {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes nx-pulse-soft {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.5; }
-}
-
-@keyframes nx-shimmer {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
-}
-
-@keyframes nx-glow {
-  0%, 100% { opacity: 0.4; }
-  50%      { opacity: 0.8; }
-}
-
-@keyframes nx-count {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.nx-animate-enter {
-  animation: nx-enter 0.7s var(--nx-ease) both;
-}
-
-.nx-animate-pulse {
-  animation: nx-pulse-soft 3s ease-in-out infinite;
-}
-
-.nx-animate-glow {
-  animation: nx-glow 4s ease-in-out infinite;
-}
-
-/* ── Staggered entries ──────────────────────────────────────────────── */
-.nx-stagger-1 { animation-delay: 0ms; }
-.nx-stagger-2 { animation-delay: 80ms; }
-.nx-stagger-3 { animation-delay: 160ms; }
-.nx-stagger-4 { animation-delay: 240ms; }
-.nx-stagger-5 { animation-delay: 320ms; }
-.nx-stagger-6 { animation-delay: 400ms; }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   UTILITY CLASSES
-   ═══════════════════════════════════════════════════════════════════════ */
-.nx-tn {
+/* ── Tabular numbers ──────────────────────────────────────── */
+.os-num {
   font-feature-settings: "tnum" 1;
   font-variant-numeric: tabular-nums;
 }
 
-.nx-gold-text {
-  color: var(--nx-gold);
+/* ── Selection ────────────────────────────────────────────── */
+::selection {
+  background: rgba(201,168,76, 0.25);
+  color: #fff;
 }
 
-.nx-gold-glow {
-  text-shadow: 0 0 20px rgba(212,168,83,0.3);
+/* ═══════════════════════════════════════════════════════════════
+   COMMAND BAR — Floating sovereign navigation
+   ═══════════════════════════════════════════════════════════════ */
+.os-command-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 20px;
+  background: rgba(8,8,12, 0.85);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  border: 1px solid rgba(255,255,255, 0.06);
+  box-shadow:
+    0 20px 60px rgba(0,0,0, 0.5),
+    0 0 0 0.5px rgba(255,255,255, 0.03),
+    inset 0 1px 0 rgba(255,255,255, 0.04);
 }
 
-.nx-section-label {
+.os-command-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255, 0.35);
+  transition: all 0.3s var(--os-ease);
+  cursor: pointer;
+  white-space: nowrap;
+  border: none;
+  background: transparent;
+  text-decoration: none;
+}
+
+.os-command-item:hover {
+  color: rgba(255,255,255, 0.7);
+  background: var(--os-surface-1);
+}
+
+.os-command-item.active {
+  color: var(--os-gold);
+  background: var(--os-gold-glow);
+  box-shadow: 0 0 20px rgba(201,168,76, 0.08);
+}
+
+.os-command-item.active svg {
+  filter: drop-shadow(0 0 6px rgba(201,168,76, 0.4));
+}
+
+/* Mobile command bar */
+@media (max-width: 768px) {
+  .os-command-bar {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    transform: none;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding: 4px 8px;
+    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0));
+    justify-content: space-around;
+  }
+  .os-command-item {
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 12px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SOVEREIGN HEADER
+   ═══════════════════════════════════════════════════════════════ */
+.os-sovereign-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 0 20px;
+}
+
+.os-system-pulse {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: var(--os-surface-1);
+  border: 1px solid var(--os-border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--os-text-2);
+}
+
+.os-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--os-emerald);
+  box-shadow: 0 0 8px rgba(16,185,129, 0.6);
+  animation: os-breathe 3s ease-in-out infinite;
+}
+
+@keyframes os-breathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(16,185,129, 0.6); }
+  50%      { opacity: 0.5; box-shadow: 0 0 4px rgba(16,185,129, 0.3); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   EMPIRE PULSE — Massive metrics
+   ═══════════════════════════════════════════════════════════════ */
+.os-empire-pulse {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--os-border);
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid var(--os-border);
+}
+
+@media (max-width: 768px) {
+  .os-empire-pulse { grid-template-columns: 1fr; }
+}
+
+.os-pulse-cell {
+  background: var(--os-bg);
+  padding: 40px 36px;
+  position: relative;
+  transition: background 0.5s var(--os-ease);
+}
+
+.os-pulse-cell:hover {
+  background: rgba(10,10,14, 1);
+}
+
+.os-pulse-label {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: var(--nx-text-3);
   text-transform: uppercase;
+  color: var(--os-text-3);
+  margin-bottom: 16px;
 }
 
-.nx-metric-lg {
-  font-size: 2rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+.os-pulse-value {
+  font-size: 3.5rem;
+  font-weight: 900;
   line-height: 1;
-  color: var(--nx-text-1);
+  letter-spacing: -0.03em;
+  color: var(--os-text-1);
+  font-feature-settings: "tnum" 1;
 }
 
-.nx-metric-sm {
-  font-size: 0.8125rem;
+.os-pulse-suffix {
+  font-size: 1rem;
   font-weight: 600;
-  color: var(--nx-text-2);
+  color: var(--os-text-3);
+  margin-inline-start: 8px;
 }
 
-/* ── Ambient orbs ─────────────────────────────────────────────────── */
-.nx-orb {
-  position: fixed;
+.os-pulse-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.os-pulse-delta.up {
+  background: rgba(16,185,129, 0.08);
+  color: #34d399;
+}
+
+.os-pulse-delta.down {
+  background: rgba(239,68,68, 0.08);
+  color: #f87171;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MOMENTUM RIVER — Live event stream
+   ═══════════════════════════════════════════════════════════════ */
+.os-momentum {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 4px 0 12px;
+  scroll-snap-type: x mandatory;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.os-momentum::-webkit-scrollbar { display: none; }
+
+.os-momentum-item {
+  flex-shrink: 0;
+  scroll-snap-align: start;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-radius: 16px;
+  background: var(--os-surface-1);
+  border: 1px solid var(--os-border);
+  min-width: 280px;
+  transition: all 0.3s var(--os-ease);
+  cursor: default;
+}
+
+.os-momentum-item:hover {
+  background: var(--os-surface-2);
+  border-color: rgba(255,255,255, 0.06);
+  transform: translateY(-2px);
+}
+
+.os-momentum-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  pointer-events: none;
-  filter: blur(120px);
-  will-change: transform;
-  z-index: 0;
+  flex-shrink: 0;
 }
 
-/* ── Responsive ───────────────────────────────────────────────────── */
+.os-momentum-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--os-text-2);
+  flex: 1;
+}
+
+.os-momentum-time {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--os-text-3);
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LEVERAGE MAP — Intelligence insights
+   ═══════════════════════════════════════════════════════════════ */
+.os-leverage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.os-leverage-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  border-radius: 16px;
+  background: var(--os-surface-1);
+  border: 1px solid var(--os-border);
+  transition: all 0.35s var(--os-ease);
+}
+
+.os-leverage-item:hover {
+  background: var(--os-surface-2);
+  border-color: rgba(201,168,76, 0.08);
+}
+
+.os-leverage-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.os-leverage-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--os-text-2);
+  line-height: 1.6;
+}
+
+.os-leverage-text strong {
+  color: var(--os-text-1);
+  font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TERRITORY CARDS — Monolithic navigation
+   ═══════════════════════════════════════════════════════════════ */
+.os-territories {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
 @media (max-width: 768px) {
-  :root { --nx-rail-w: 0px; }
-  .nx-rail { display: none; }
-  .nx-pulse-strip { flex-direction: column; }
-  .nx-pulse-cell { border-inline-start: none; border-top: 1px solid var(--nx-border); }
-  .nx-pulse-cell:first-child { border-top: none; }
+  .os-territories { grid-template-columns: 1fr; }
 }
 
-@media (min-width: 769px) and (max-width: 1024px) {
-  :root { --nx-rail-w: 68px; }
+@media (min-width: 1280px) {
+  .os-territories { grid-template-columns: repeat(4, 1fr); }
+}
+
+.os-territory {
+  position: relative;
+  padding: 32px 28px;
+  border-radius: 20px;
+  background: var(--os-surface-1);
+  border: 1px solid var(--os-border);
+  overflow: hidden;
+  transition: all 0.45s var(--os-ease-out);
+  cursor: pointer;
+  text-decoration: none;
+  display: block;
+}
+
+.os-territory::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201,168,76, 0.15), transparent);
+  opacity: 0;
+  transition: opacity 0.45s;
+}
+
+.os-territory:hover {
+  background: var(--os-surface-2);
+  border-color: rgba(201,168,76, 0.12);
+  transform: translateY(-4px);
+  box-shadow:
+    0 16px 48px rgba(0,0,0, 0.4),
+    0 0 0 0.5px rgba(201,168,76, 0.06);
+}
+
+.os-territory:hover::before { opacity: 1; }
+
+.os-territory-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  transition: all 0.45s var(--os-ease);
+}
+
+.os-territory:hover .os-territory-icon {
+  transform: scale(1.05);
+}
+
+.os-territory-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--os-text-1);
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.os-territory-metric {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--os-text-1);
+  line-height: 1;
+  margin-top: 16px;
+  font-feature-settings: "tnum" 1;
+}
+
+.os-territory-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--os-text-3);
+  margin-top: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LOADING — Gold line
+   ═══════════════════════════════════════════════════════════════ */
+@keyframes os-loading {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+.os-loading-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 200;
+  overflow: hidden;
+  background: transparent;
+}
+
+.os-loading-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 30%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--os-gold), transparent);
+  animation: os-loading 1.5s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SECTION DIVIDER
+   ═══════════════════════════════════════════════════════════════ */
+.os-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--os-text-3);
+  padding: 32px 0 16px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ENTRANCE ANIMATIONS
+   ═══════════════════════════════════════════════════════════════ */
+@keyframes os-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.os-enter {
+  animation: os-enter 0.7s var(--os-ease) both;
+}
+
+.os-enter-1 { animation-delay: 0ms; }
+.os-enter-2 { animation-delay: 80ms; }
+.os-enter-3 { animation-delay: 160ms; }
+.os-enter-4 { animation-delay: 240ms; }
+.os-enter-5 { animation-delay: 320ms; }
+.os-enter-6 { animation-delay: 400ms; }
+
+/* ═══════════════════════════════════════════════════════════════
+   SCROLLBAR — Nearly invisible
+   ═══════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar        { width: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.04); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.08); }
+
+/* ═══════════════════════════════════════════════════════════════
+   TERRITORY PAGE STYLES
+   ═══════════════════════════════════════════════════════════════ */
+.os-territory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 0 24px;
+}
+
+.os-territory-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--os-text-1);
+}
+
+/* Glass card for territory pages */
+.os-glass {
+  background: var(--os-surface-1);
+  border: 1px solid var(--os-border);
+  border-radius: 20px;
+  overflow: hidden;
+  transition: all 0.35s var(--os-ease);
+}
+
+.os-glass:hover {
+  background: var(--os-surface-2);
+}
+
+/* Bottom padding for command bar */
+body { padding-bottom: 100px; }
+
+@media (max-width: 768px) {
+  body { padding-bottom: 80px; }
 }
