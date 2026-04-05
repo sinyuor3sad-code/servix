@@ -90,11 +90,34 @@ export default function BrandingPage() {
           <Upload className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">الشعار</span>
         </div>
         <div className="p-5">
-          <label className="flex h-36 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border)] bg-[var(--muted)]/30 transition-colors hover:border-[var(--brand-primary)] cursor-pointer">
-            <Upload className="mb-2 h-8 w-8 text-[var(--muted-foreground)] opacity-30" />
-            <p className="text-sm font-bold text-[var(--muted-foreground)]">اضغطي لرفع الشعار</p>
+          {data?.logoUrl && (
+            <div className="mb-3 flex justify-center">
+              <img src={data.logoUrl} alt="شعار الصالون" className="h-20 w-20 object-contain rounded-xl border border-[var(--border)]" />
+            </div>
+          )}
+          <label className="flex h-28 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border)] bg-[var(--muted)]/30 transition-colors hover:border-[var(--brand-primary)] cursor-pointer">
+            <Upload className="mb-2 h-6 w-6 text-[var(--muted-foreground)] opacity-30" />
+            <p className="text-xs font-bold text-[var(--muted-foreground)]">{data?.logoUrl ? 'تغيير الشعار' : 'اضغطي لرفع الشعار'}</p>
             <p className="text-[10px] text-[var(--muted-foreground)] mt-1">PNG, JPG بحد أقصى 2MB</p>
-            <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={() => { import('sonner').then(m => m.toast.info('🚧 رفع الشعار قريباً')); }} />
+            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              if (file.size > 2 * 1024 * 1024) { toast.error('الملف أكبر من 2MB'); return; }
+              const formData = new FormData();
+              formData.append('file', file);
+              try {
+                const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+                const res = await fetch(`${API_BASE}/salon/logo`, {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${accessToken}` },
+                  body: formData,
+                });
+                if (!res.ok) throw new Error('فشل');
+                const data = await res.json();
+                toast.success(data.data?.message || '✅ تم رفع الشعار');
+                qc.invalidateQueries({ queryKey: ['branding'] });
+              } catch { toast.error('فشل رفع الشعار'); }
+            }} />
           </label>
         </div>
       </div>

@@ -65,9 +65,9 @@ export default function AccountSettingsPage() {
         </div>
         <div className="p-5">
           <p className="text-xs text-[var(--muted-foreground)] mb-4">حمّلي كل بيانات الصالون كملف ZIP: العملاء، المواعيد، الفواتير، الخدمات، الموظفات، والإعدادات.</p>
-          <Button variant="outline" onClick={() => toast.info('🚧 ميزة التصدير قريباً')} className="gap-2">
+          <Button variant="outline" onClick={() => exportMut.mutate()} disabled={exportMut.isPending} className="gap-2">
             <Download className="h-4 w-4" />
-            تصدير البيانات (قريباً)
+            {exportMut.isPending ? 'جارٍ التصدير...' : '📦 تحميل ZIP'}
           </Button>
         </div>
       </div>
