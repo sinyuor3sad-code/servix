@@ -3,7 +3,7 @@
 import { useState, type ReactElement } from 'react';
 import {
   Bell, Send, CheckCheck, Clock, AlertTriangle, Plus, Search,
-  Eye, Mail, Smartphone, X, Megaphone, BarChart3,
+  Eye, Mail, Smartphone, X, Megaphone, BarChart3, Loader2, Save,
 } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
 
@@ -38,28 +38,158 @@ const CH_CFG: Record<NChannel, { label: string; icon: typeof Mail; color: string
   whatsapp: { label: 'واتساب', icon: Send,       color: '#4ADE80' },
 };
 
+/* ── Create Notification Modal ── */
+function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreated: (n: Notif) => void }) {
+  const [form, setForm] = useState({
+    title: '',
+    body: '',
+    target: 'جميع الشركات',
+    channel: 'email' as NChannel,
+    saveAsDraft: false,
+  });
+  const [sending, setSending] = useState(false);
+
+  const handleSend = () => {
+    if (!form.title.trim() || !form.body.trim()) return;
+    setSending(true);
+    // Simulate sending (no backend endpoint yet for notifications)
+    setTimeout(() => {
+      const newNotif: Notif = {
+        id: `${Date.now()}`,
+        title: form.title,
+        body: form.body,
+        target: form.target,
+        channel: form.channel,
+        status: form.saveAsDraft ? 'draft' : 'sent',
+        sentAt: form.saveAsDraft ? null : new Date().toISOString().slice(0, 10),
+        recipients: form.saveAsDraft ? 0 : 47,
+        opened: 0,
+        delivered: form.saveAsDraft ? 0 : 47,
+      };
+      onCreated(newNotif);
+      setSending(false);
+    }, 1200);
+  };
+
+  return (
+    <div className="nx-modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="nx-modal" style={{ maxWidth: 520 }}>
+        <div className="nx-modal-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Megaphone size={18} style={{ color: '#A78BFA' }} />
+            <span>إشعار جديد</span>
+          </div>
+          <button className="nx-modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="nx-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Title */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>عنوان الإشعار *</label>
+            <input
+              className="nx-input"
+              placeholder="مثال: تحديث جديد في المنصة"
+              value={form.title}
+              onChange={(e) => setForm(prev => ({ ...prev, title: e.target.value }))}
+            />
+          </div>
+
+          {/* Body */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>نص الإشعار *</label>
+            <textarea
+              className="nx-input"
+              style={{ minHeight: 90, resize: 'vertical' }}
+              placeholder="اكتب محتوى الإشعار هنا..."
+              value={form.body}
+              onChange={(e) => setForm(prev => ({ ...prev, body: e.target.value }))}
+            />
+          </div>
+
+          {/* Target + Channel */}
+          <div className="nx-grid-2" style={{ gap: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>المستهدفون</label>
+              <select className="nx-select" value={form.target} onChange={e => setForm(prev => ({ ...prev, target: e.target.value }))}>
+                <option value="جميع الشركات">جميع الشركات</option>
+                <option value="Basic فقط">Basic فقط</option>
+                <option value="Pro فقط">Pro فقط</option>
+                <option value="Enterprise فقط">Enterprise فقط</option>
+                <option value="منتهي قريباً">اشتراك منتهي قريباً</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>قناة الإرسال</label>
+              <select className="nx-select" value={form.channel} onChange={e => setForm(prev => ({ ...prev, channel: e.target.value as NChannel }))}>
+                <option value="email">بريد إلكتروني</option>
+                <option value="sms">رسالة SMS</option>
+                <option value="push">إشعار Push</option>
+                <option value="whatsapp">واتساب</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Save as Draft toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              className={`nx-toggle ${form.saveAsDraft ? 'nx-toggle--on' : ''}`}
+              onClick={() => setForm(prev => ({ ...prev, saveAsDraft: !prev.saveAsDraft }))}
+            >
+              <span className="nx-toggle-knob" />
+            </button>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted)' }}>
+              حفظ كمسودة (بدون إرسال)
+            </span>
+          </div>
+        </div>
+
+        <div className="nx-modal-footer">
+          <button className="nx-btn" onClick={onClose}>إلغاء</button>
+          <button
+            className="nx-btn nx-btn--primary"
+            onClick={handleSend}
+            disabled={sending || !form.title.trim() || !form.body.trim()}
+          >
+            {sending ? <Loader2 size={14} className="nx-spin" /> : form.saveAsDraft ? <Save size={14} /> : <Send size={14} />}
+            {sending ? 'جاري الإرسال...' : form.saveAsDraft ? 'حفظ المسودة' : 'إرسال الآن'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Page ── */
 export default function NotificationsPage(): ReactElement {
+  const [notifications, setNotifications] = useState<Notif[]>(DATA);
   const [search, setSearch] = useState('');
   const [statusF, setStatusF] = useState<NStatus | ''>('');
   const [preview, setPreview] = useState<Notif | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
-  const filtered = DATA.filter(n => {
+  const filtered = notifications.filter(n => {
     if (search && !n.title.includes(search)) return false;
     if (statusF && n.status !== statusF) return false;
     return true;
   });
 
-  const totalSent = DATA.filter(n => n.status === 'sent').reduce((s, n) => s + n.recipients, 0);
-  const totalOpened = DATA.filter(n => n.status === 'sent').reduce((s, n) => s + n.opened, 0);
-  const totalDelivered = DATA.filter(n => n.status === 'sent').reduce((s, n) => s + n.delivered, 0);
+  const totalSent = notifications.filter(n => n.status === 'sent').reduce((s, n) => s + n.recipients, 0);
+  const totalOpened = notifications.filter(n => n.status === 'sent').reduce((s, n) => s + n.opened, 0);
+  const totalDelivered = notifications.filter(n => n.status === 'sent').reduce((s, n) => s + n.delivered, 0);
   const openRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0;
+
+  const handleCreated = (n: Notif) => {
+    setNotifications(prev => [n, ...prev]);
+    setShowCreate(false);
+    setPreview(n);
+  };
 
   return (
     <div className="nx-space-y">
       <PageTitle title="الإشعارات الجماعية" desc="إرسال إشعارات وتنبيهات لجميع الشركات أو مجموعة محددة"
         icon={<Bell size={20} style={{ color: '#A78BFA' }} strokeWidth={1.5} />}
       >
-        <button className="nx-btn nx-btn--primary">
+        <button className="nx-btn nx-btn--primary" onClick={() => setShowCreate(true)}>
           <Plus size={16} /> إشعار جديد
         </button>
       </PageTitle>
@@ -208,6 +338,14 @@ export default function NotificationsPage(): ReactElement {
           </div>
         </Glass>
       </div>
+
+      {/* Create Modal */}
+      {showCreate && (
+        <CreateNotifModal
+          onClose={() => setShowCreate(false)}
+          onCreated={handleCreated}
+        />
+      )}
     </div>
   );
 }

@@ -20,6 +20,11 @@ export interface PaginationMeta {
   totalPages: number;
 }
 
+export interface PaginatedResult<T> {
+  data: T[];
+  meta: PaginationMeta;
+}
+
 interface ApiErrorBody {
   success: false;
   message: string;
@@ -38,7 +43,7 @@ export class ApiError extends Error {
   }
 }
 
-async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
+async function apiRaw<T>(endpoint: string, options: ApiOptions = {}): Promise<ApiSuccessResponse<T>> {
   const { method = 'GET', body, headers = {}, token } = options;
 
   const requestHeaders: Record<string, string> = {
@@ -70,13 +75,34 @@ async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise
     );
   }
 
-  const json = (await response.json()) as ApiSuccessResponse<T>;
+  return (await response.json()) as ApiSuccessResponse<T>;
+}
+
+async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
+  const json = await apiRaw<T>(endpoint, options);
   return json.data;
+}
+
+/**
+ * For paginated endpoints where the ResponseTransformInterceptor extracts meta.
+ * Backend returns: { data: [...], meta: {...} }
+ * Interceptor transforms to: { success: true, data: { data: [...] }, meta: {...} }
+ * This function reassembles { data: [...], meta: {...} } for the frontend.
+ */
+async function apiPaginated<T>(endpoint: string, options: ApiOptions = {}): Promise<PaginatedResult<T>> {
+  const json = await apiRaw<{ data: T[] }>(endpoint, options);
+  return {
+    data: json.data?.data ?? [],
+    meta: json.meta ?? { page: 1, perPage: 20, total: 0, totalPages: 0 },
+  };
 }
 
 export const api = {
   get: <T>(endpoint: string, token?: string): Promise<T> =>
     apiClient<T>(endpoint, { token }),
+
+  getPaginated: <T>(endpoint: string, token?: string): Promise<PaginatedResult<T>> =>
+    apiPaginated<T>(endpoint, { token }),
 
   post: <T>(endpoint: string, body: unknown, token?: string): Promise<T> =>
     apiClient<T>(endpoint, { method: 'POST', body, token }),

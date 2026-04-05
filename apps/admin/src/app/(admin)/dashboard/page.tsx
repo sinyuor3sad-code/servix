@@ -125,7 +125,7 @@ export default function NexusPage(): ReactElement {
   }, [theme]);
 
   useEffect(() => {
-    adminService.getStats().then(setStats).catch(() => {}).finally(() => setLoading(false));
+    adminService.getStats().then(setStats).catch((e) => console.error('Stats error:', e)).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -141,7 +141,7 @@ export default function NexusPage(): ReactElement {
 
   const active = stats?.activeTenants ?? 0;
   const total = stats?.totalTenants ?? 0;
-  const rev = stats?.monthlyRevenue ?? 0;
+  const rev = stats?.revenueThisMonth ?? 0;
   const subs = stats?.totalSubscriptions ?? 0;
   const pending = stats?.pendingTenants ?? 0;
 

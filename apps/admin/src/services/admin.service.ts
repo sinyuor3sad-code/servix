@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { PaginatedResult } from '@/lib/api';
 
 export interface Tenant {
   id: string;
@@ -8,7 +9,7 @@ export interface Tenant {
   email: string;
   phone: string;
   city: string;
-  status: 'active' | 'suspended' | 'pending';
+  status: 'active' | 'suspended' | 'trial' | 'cancelled' | 'pending_deletion';
   dbName: string;
   logoUrl: string | null;
   createdAt: string;
@@ -43,12 +44,15 @@ export interface Subscription {
 export interface PlatformInvoice {
   id: string;
   invoiceNumber: string;
+  tenantId: string;
   tenantName: string;
   amount: number;
+  total: number;
   status: 'paid' | 'pending' | 'overdue' | 'cancelled';
   dueDate: string;
   paidAt: string | null;
   createdAt: string;
+  tenant?: Tenant;
 }
 
 export interface Plan {
@@ -93,30 +97,32 @@ export interface AuditLog {
   createdAt: string;
 }
 
+/**
+ * AdminStats — matches the ACTUAL backend response from admin.service.ts getStats().
+ * Backend returns: totalTenants, activeTenants, suspendedTenants, totalUsers,
+ * totalSubscriptions, activeSubscriptions, totalRevenue, revenueThisMonth,
+ * newTenantsThisMonth, pendingTenants, planDistribution, recentTenants
+ */
 export interface AdminStats {
   totalTenants: number;
   activeTenants: number;
+  suspendedTenants: number;
   pendingTenants: number;
+  totalUsers: number;
   totalSubscriptions: number;
-  monthlyRevenue: number;
+  activeSubscriptions: number;
+  totalRevenue: number;
+  revenueThisMonth: number;
   newTenantsThisMonth: number;
   planDistribution: PlanDistribution[];
   recentTenants: Tenant[];
 }
 
 export interface PlanDistribution {
-  plan: string;
+  planId: string;
+  planName: string;
+  planNameAr: string;
   count: number;
-}
-
-export interface PaginatedResponse<T> {
-  data: T[];
-  meta: {
-    page: number;
-    perPage: number;
-    total: number;
-    totalPages: number;
-  };
 }
 
 function getToken(): string | null {
@@ -135,8 +141,8 @@ export const adminService = {
   getStats: (): Promise<AdminStats> =>
     api.get<AdminStats>('/admin/stats', getToken() ?? undefined),
 
-  getTenants: (params?: string): Promise<PaginatedResponse<Tenant>> =>
-    api.get<PaginatedResponse<Tenant>>(`/admin/tenants${params ? `?${params}` : ''}`, getToken() ?? undefined),
+  getTenants: (params?: string): Promise<PaginatedResult<Tenant>> =>
+    api.getPaginated<Tenant>(`/admin/tenants${params ? `?${params}` : ''}`, getToken() ?? undefined),
 
   getTenantById: (id: string): Promise<TenantDetail> =>
     api.get<TenantDetail>(`/admin/tenants/${id}`, getToken() ?? undefined),
@@ -144,14 +150,14 @@ export const adminService = {
   updateTenantStatus: (id: string, status: string): Promise<Tenant> =>
     api.put<Tenant>(`/admin/tenants/${id}/status`, { status }, getToken() ?? undefined),
 
-  getSubscriptions: (params?: string): Promise<PaginatedResponse<Subscription>> =>
-    api.get<PaginatedResponse<Subscription>>(`/admin/subscriptions${params ? `?${params}` : ''}`, getToken() ?? undefined),
+  getSubscriptions: (params?: string): Promise<PaginatedResult<Subscription>> =>
+    api.getPaginated<Subscription>(`/admin/subscriptions${params ? `?${params}` : ''}`, getToken() ?? undefined),
 
-  getInvoices: (params?: string): Promise<PaginatedResponse<PlatformInvoice>> =>
-    api.get<PaginatedResponse<PlatformInvoice>>(`/admin/invoices${params ? `?${params}` : ''}`, getToken() ?? undefined),
+  getInvoices: (params?: string): Promise<PaginatedResult<PlatformInvoice>> =>
+    api.getPaginated<PlatformInvoice>(`/admin/invoices${params ? `?${params}` : ''}`, getToken() ?? undefined),
 
-  getAuditLogs: (params?: string): Promise<PaginatedResponse<AuditLog>> =>
-    api.get<PaginatedResponse<AuditLog>>(`/admin/audit-logs${params ? `?${params}` : ''}`, getToken() ?? undefined),
+  getAuditLogs: (params?: string): Promise<PaginatedResult<AuditLog>> =>
+    api.getPaginated<AuditLog>(`/admin/audit-logs${params ? `?${params}` : ''}`, getToken() ?? undefined),
 
   getPlans: (): Promise<Plan[]> =>
     api.get<Plan[]>('/admin/plans', getToken() ?? undefined),

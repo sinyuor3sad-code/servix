@@ -6,7 +6,7 @@ import {
   Crown, Sparkles, Shield as ShieldIcon, MapPin,
 } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
-import { adminService, type AdminStats, type Tenant } from '@/services/admin.service';
+import { adminService, type AdminStats } from '@/services/admin.service';
 
 export default function AnalyticsPage(): ReactElement {
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -15,15 +15,15 @@ export default function AnalyticsPage(): ReactElement {
   useEffect(() => {
     adminService.getStats()
       .then(setStats)
-      .catch(() => {})
+      .catch((e) => console.error('Stats fetch error:', e))
       .finally(() => setLoading(false));
   }, []);
 
   const total = stats?.totalTenants ?? 0;
   const active = stats?.activeTenants ?? 0;
   const pending = stats?.pendingTenants ?? 0;
-  const suspended = total - active - pending;
-  const revenue = stats?.monthlyRevenue ?? 0;
+  const suspended = stats?.suspendedTenants ?? 0;
+  const revenue = stats?.revenueThisMonth ?? 0;
   const newThis = stats?.newTenantsThisMonth ?? 0;
   const plans = stats?.planDistribution ?? [];
   const recent = stats?.recentTenants ?? [];
@@ -39,15 +39,16 @@ export default function AnalyticsPage(): ReactElement {
   // Status distribution
   const statuses = [
     { label: 'نشط', count: active, color: '#34D399' },
-    { label: 'بانتظار', count: pending, color: '#A78BFA' },
-    { label: 'معلّق', count: suspended > 0 ? suspended : 0, color: '#FBBF24' },
+    { label: 'تجريبي', count: pending, color: '#A78BFA' },
+    { label: 'معلّق', count: suspended, color: '#FBBF24' },
   ];
   const maxStatus = Math.max(...statuses.map(s => s.count), 1);
 
   // Plan icons
   const planIcon = (name: string) => {
-    if (name.toLowerCase().includes('enterprise') || name.toLowerCase().includes('متقدم')) return Crown;
-    if (name.toLowerCase().includes('pro') || name.toLowerCase().includes('احترافي')) return Sparkles;
+    const n = name.toLowerCase();
+    if (n.includes('enterprise') || n.includes('متقدم')) return Crown;
+    if (n.includes('pro') || n.includes('احترافي')) return Sparkles;
     return ShieldIcon;
   };
   const planTotal = plans.reduce((s, p) => s + p.count, 0) || 1;
@@ -122,16 +123,17 @@ export default function AnalyticsPage(): ReactElement {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {plans.map((p) => {
-                  const Icon = planIcon(p.plan);
+                  const displayName = p.planNameAr || p.planName || '—';
+                  const Icon = planIcon(displayName);
                   const pct = Math.round((p.count / planTotal) * 100);
                   return (
-                    <div key={p.plan} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div key={p.planId} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{ width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)', border: '1px solid var(--border)' }}>
                         <Icon size={14} style={{ color: 'var(--gold)' }} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)' }}>{p.plan}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)' }}>{displayName}</span>
                           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', ...TN }}>{p.count} ({pct}%)</span>
                         </div>
                         <div className="nx-progress" style={{ marginTop: 6 }}>
@@ -154,7 +156,7 @@ export default function AnalyticsPage(): ReactElement {
             أحدث الصالونات المسجلة
           </h3>
         </div>
-        {recent.length === 0 ? (
+        {recent.length === 0 && !loading ? (
           <div className="nx-empty" style={{ padding: '30px' }}>
             <div className="nx-empty-icon"><Building2 size={20} /></div>
             <p className="nx-empty-title">لا توجد صالونات مسجلة</p>
@@ -173,9 +175,9 @@ export default function AnalyticsPage(): ReactElement {
             <tbody>
               {recent.slice(0, 5).map((t) => {
                 const stCls = t.status === 'active' ? 'nx-badge--green'
-                  : t.status === 'pending' ? 'nx-badge--violet'
+                  : t.status === 'trial' ? 'nx-badge--violet'
                   : 'nx-badge--amber';
-                const stLabel = t.status === 'active' ? 'نشط' : t.status === 'pending' ? 'بانتظار' : 'معلّق';
+                const stLabel = t.status === 'active' ? 'نشط' : t.status === 'trial' ? 'تجريبي' : 'معلّق';
                 return (
                   <tr key={t.id}>
                     <td className="nx-td-primary">{t.nameAr || t.nameEn}</td>

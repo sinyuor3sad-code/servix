@@ -23,7 +23,7 @@ export default function InvoicesPage(): ReactElement {
     if (search) params.set('search', search);
     adminService.getInvoices(params.toString())
       .then(res => { setInvoices(res.data ?? []); setTotal(res.meta?.total ?? 0); })
-      .catch(() => setInvoices([]))
+      .catch((e) => { console.error('Invoices fetch error:', e); setInvoices([]); })
       .finally(() => setLoading(false));
   }, [search]);
 

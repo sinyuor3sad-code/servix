@@ -140,4 +140,24 @@ export class AdminController {
   ) {
     return this.adminService.getAuditLogs(dto);
   }
+
+  @Get('plans')
+  @ApiOperation({ summary: 'عرض جميع الباقات مع عدد المشتركين' })
+  @ApiResponse({ status: 200, description: 'قائمة الباقات مع المميزات' })
+  async getPlans() {
+    return this.adminService.getPlans();
+  }
+
+  @Put('plans/:id')
+  @ApiOperation({ summary: 'تعديل بيانات باقة' })
+  @ApiParam({ name: 'id', description: 'معرف الباقة (UUID)' })
+  @ApiResponse({ status: 200, description: 'تم تعديل الباقة بنجاح' })
+  @ApiResponse({ status: 404, description: 'الباقة غير موجودة' })
+  async updatePlan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: Record<string, unknown>,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.updatePlan(id, dto, userId);
+  }
 }

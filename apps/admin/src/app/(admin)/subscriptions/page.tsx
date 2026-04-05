@@ -43,7 +43,7 @@ export default function SubscriptionsPage(): ReactElement {
         setSubs(res.data ?? []);
         setTotal(res.meta?.total ?? 0);
       })
-      .catch(() => { setSubs([]); setTotal(0); })
+      .catch((e) => { console.error('Subs fetch error:', e); setSubs([]); setTotal(0); })
       .finally(() => setLoading(false));
   }, [page, search, statusFilter]);
 
@@ -141,19 +141,21 @@ export default function SubscriptionsPage(): ReactElement {
                 </tr>
               </thead>
               <tbody>
-                {subs.map((s) => {
+                {subs.map((s: any) => {
                   const st = ST[s.status] || ST.active;
-                  const plan = s.planName?.toLowerCase() || '';
-                  const pl = plan.includes('enterprise') ? PL.enterprise
-                    : plan.includes('pro') ? PL.pro : PL.basic;
+                  const planName = s.plan?.nameAr || s.plan?.name || s.planName || '';
+                  const planLower = planName.toLowerCase();
+                  const pl = planLower.includes('enterprise') ? PL.enterprise
+                    : planLower.includes('pro') ? PL.pro : PL.basic;
                   const PlIcon = pl.icon;
                   const StIcon = st.icon;
+                  const tenantName = s.tenant?.nameAr || s.tenant?.nameEn || s.tenantName || '—';
                   return (
                     <tr key={s.id}>
-                      <td className="nx-td-primary">{s.tenantName}</td>
+                      <td className="nx-td-primary">{tenantName}</td>
                       <td>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: pl.color }}>
-                          <PlIcon size={13} />{s.planName}
+                          <PlIcon size={13} />{planName}
                         </span>
                       </td>
                       <td>{s.billingCycle === 'monthly' ? 'شهري' : 'سنوي'}</td>

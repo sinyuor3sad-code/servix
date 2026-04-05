@@ -171,7 +171,7 @@ export class AdminService {
     };
   }
 
-  async getStats(): Promise<AdminStats> {
+  async getStats(): Promise<AdminStats & { pendingTenants: number; recentTenants: Tenant[] }> {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -179,6 +179,7 @@ export class AdminService {
       totalTenants,
       activeTenants,
       suspendedTenants,
+      pendingTenants,
       totalUsers,
       totalSubscriptions,
       activeSubscriptions,
@@ -186,10 +187,12 @@ export class AdminService {
       revenueThisMonthResult,
       newTenantsThisMonth,
       planDistributionRaw,
+      recentTenants,
     ] = await Promise.all([
       this.prisma.tenant.count(),
       this.prisma.tenant.count({ where: { status: 'active' } }),
       this.prisma.tenant.count({ where: { status: 'suspended' } }),
+      this.prisma.tenant.count({ where: { status: 'trial' } }),
       this.prisma.user.count(),
       this.prisma.subscription.count(),
       this.prisma.subscription.count({ where: { status: 'active' } }),
@@ -211,6 +214,10 @@ export class AdminService {
         by: ['planId'],
         _count: { id: true },
         where: { status: 'active' },
+      }),
+      this.prisma.tenant.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 5,
       }),
     ]);
 
@@ -235,6 +242,7 @@ export class AdminService {
       totalTenants,
       activeTenants,
       suspendedTenants,
+      pendingTenants,
       totalUsers,
       totalSubscriptions,
       activeSubscriptions,
@@ -242,6 +250,7 @@ export class AdminService {
       revenueThisMonth: Number(revenueThisMonthResult._sum.total ?? 0),
       newTenantsThisMonth,
       planDistribution,
+      recentTenants,
     };
   }
 
@@ -485,5 +494,78 @@ export class AdminService {
         totalPages: Math.ceil(total / perPage),
       },
     };
+  }
+
+  async getPlans() {
+    const plans = await this.prisma.plan.findMany({
+      include: {
+        planFeatures: {
+          include: { feature: true },
+        },
+        _count: {
+          select: {
+            subscriptions: {
+              where: { status: 'active' },
+            },
+          },
+        },
+      },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    return plans.map((p) => ({
+      ...p,
+      activeSubscriptions: p._count.subscriptions,
+      _count: undefined,
+    }));
+  }
+
+  async updatePlan(
+    id: string,
+    dto: Record<string, unknown>,
+    userId: string,
+  ) {
+    const plan = await this.prisma.plan.findUnique({ where: { id } });
+    if (!plan) {
+      throw new NotFoundException('الباقة غير موجودة');
+    }
+
+    // Only allow updating specific fields
+    const allowedFields = [
+      'nameAr', 'name', 'priceMonthly', 'priceYearly',
+      'maxEmployees', 'maxClients', 'maxAppointmentsMonth',
+      'descriptionAr', 'isActive', 'sortOrder',
+    ];
+
+    const updateData: Record<string, unknown> = {};
+    for (const key of allowedFields) {
+      if (key in dto) {
+        updateData[key] = dto[key];
+      }
+    }
+
+    const [updatedPlan] = await this.prisma.$transaction([
+      this.prisma.plan.update({
+        where: { id },
+        data: updateData,
+        include: {
+          planFeatures: {
+            include: { feature: true },
+          },
+        },
+      }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId,
+          action: 'update_plan',
+          entityType: 'plan',
+          entityId: id,
+          oldValues: JSON.parse(JSON.stringify(plan)),
+          newValues: JSON.parse(JSON.stringify(updateData)),
+        },
+      }),
+    ]);
+
+    return updatedPlan;
   }
 }

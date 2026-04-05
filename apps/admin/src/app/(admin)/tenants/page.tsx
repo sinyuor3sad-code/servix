@@ -9,9 +9,12 @@ import { Glass, PageTitle, TN } from '@/components/ui/glass';
 import { adminService, type Tenant as ApiTenant } from '@/services/admin.service';
 
 const ST: Record<string, { label: string; badge: string }> = {
-  active:    { label: 'نشط',    badge: 'nx-badge--green' },
-  suspended: { label: 'معلّق',  badge: 'nx-badge--amber' },
-  pending:   { label: 'بانتظار', badge: 'nx-badge--violet' },
+  active:           { label: 'نشط',      badge: 'nx-badge--green' },
+  suspended:        { label: 'معلّق',    badge: 'nx-badge--amber' },
+  trial:            { label: 'تجريبي',   badge: 'nx-badge--violet' },
+  pending:          { label: 'بانتظار',  badge: 'nx-badge--violet' },
+  cancelled:        { label: 'ملغي',     badge: 'nx-badge--red' },
+  pending_deletion: { label: 'قيد الحذف', badge: 'nx-badge--red' },
 };
 
 /* ── Create Tenant Modal ── */
@@ -166,7 +169,7 @@ export default function TenantsPage(): ReactElement {
 
     adminService.getTenants(params.toString())
       .then((res) => { setTenants(res.data ?? []); setTotal(res.meta?.total ?? 0); })
-      .catch(() => { setTenants([]); setTotal(0); })
+      .catch((e) => { console.error('Tenants fetch error:', e); setTenants([]); setTotal(0); })
       .finally(() => setLoading(false));
   };
 
@@ -182,7 +185,7 @@ export default function TenantsPage(): ReactElement {
   };
 
   const actCount = tenants.filter(t => t.status === 'active').length;
-  const pendCount = tenants.filter(t => t.status === 'pending').length;
+  const trialCount = tenants.filter(t => t.status === 'trial').length;
 
   return (
     <div className="nx-space-y">
@@ -201,7 +204,7 @@ export default function TenantsPage(): ReactElement {
         {[
           { label: 'إجمالي', value: total, color: '#6366F1' },
           { label: 'نشط', value: actCount, color: '#34D399' },
-          { label: 'بانتظار', value: pendCount, color: '#A78BFA' },
+          { label: 'تجريبي', value: trialCount, color: '#A78BFA' },
         ].map(k => (
           <Glass key={k.label} hover>
             <div className="nx-stat">
@@ -227,8 +230,8 @@ export default function TenantsPage(): ReactElement {
           <select className="nx-select" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
             <option value="">جميع الحالات</option>
             <option value="active">نشطة</option>
+            <option value="trial">تجريبية</option>
             <option value="suspended">معلّقة</option>
-            <option value="pending">بانتظار</option>
           </select>
           {(search || status) && (
             <button className="nx-btn" onClick={() => { setSearch(''); setStatus(''); setPage(1); }}>
