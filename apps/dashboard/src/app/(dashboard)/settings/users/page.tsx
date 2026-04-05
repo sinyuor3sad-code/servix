@@ -1,57 +1,33 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { UserPlus, Shield } from 'lucide-react';
-import {
-  PageHeader,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  Button,
-  Input,
-  Select,
-  Badge,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-  Skeleton,
-} from '@/components/ui';
+import { ArrowRight, UserPlus, Shield, Mail, Users } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button, Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 import type { Role } from '@/types';
 
-interface TenantUserItem {
-  id: string;
-  fullName: string;
-  email: string;
-  phone: string;
-  roleName: string;
-  roleNameAr: string;
-  status: 'active' | 'inactive';
-}
+interface TenantUser { id: string; fullName: string; email: string; phone: string; roleName: string; roleNameAr: string; status: 'active' | 'inactive'; }
+interface UsersData { users: TenantUser[]; roles: Role[]; }
 
-interface UsersData {
-  users: TenantUserItem[];
-  roles: Role[];
-}
-
-const roleVariants: Record<string, 'default' | 'secondary' | 'success' | 'warning'> = {
-  owner: 'default',
-  manager: 'success',
-  receptionist: 'warning',
-  cashier: 'secondary',
-  staff: 'secondary',
+const ROLE_COLORS: Record<string, string> = {
+  owner: 'bg-amber-50 text-amber-700 border-amber-200',
+  manager: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  receptionist: 'bg-sky-50 text-sky-700 border-sky-200',
+  cashier: 'bg-violet-50 text-violet-700 border-violet-200',
+  staff: 'bg-slate-50 text-slate-700 border-slate-200',
 };
 
-export default function UsersSettingsPage(): React.ReactElement {
+const inputClass = "w-full px-4 py-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] text-sm focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none";
+
+export default function UsersSettingsPage() {
+  const router = useRouter();
   const { accessToken } = useAuth();
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('');
 
@@ -61,129 +37,83 @@ export default function UsersSettingsPage(): React.ReactElement {
     enabled: !!accessToken,
   });
 
-  const inviteMutation = useMutation({
-    mutationFn: () =>
-      api.post(
-        '/settings/users/invite',
-        { email: inviteEmail, roleId: inviteRole },
-        accessToken!,
-      ),
-    onSuccess: () => {
-      toast.success('تم إرسال الدعوة بنجاح');
-      queryClient.invalidateQueries({ queryKey: ['settings', 'users'] });
-      setInviteEmail('');
-      setInviteRole('');
-    },
-    onError: () => {
-      toast.error('حدث خطأ أثناء إرسال الدعوة');
-    },
+  const invMut = useMutation({
+    mutationFn: () => api.post('/settings/users/invite', { email: inviteEmail, roleId: inviteRole }, accessToken!),
+    onSuccess: () => { toast.success('✅ تم إرسال الدعوة'); qc.invalidateQueries({ queryKey: ['settings', 'users'] }); setInviteEmail(''); setInviteRole(''); },
+    onError: () => toast.error('خطأ في إرسال الدعوة'),
   });
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-40 rounded-xl" />
-        <Skeleton className="h-64 rounded-xl" />
-      </div>
-    );
-  }
 
   const roles = data?.roles ?? [];
   const users = data?.users ?? [];
 
+  if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
+
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <PageHeader title="المستخدمين والصلاحيات" description="إدارة فريق العمل والأدوار" />
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center gap-3">
+        <button onClick={() => router.push('/settings')} className="p-2 rounded-xl border border-[var(--border)] hover:bg-[var(--muted)] transition"><ArrowRight className="h-4 w-4" /></button>
+        <div>
+          <h1 className="text-xl font-black">المستخدمين والصلاحيات</h1>
+          <p className="text-xs text-[var(--muted-foreground)]">إدارة فريق العمل</p>
+        </div>
+      </div>
 
-      <div className="mx-auto max-w-4xl space-y-6">
-        {/* Invite User */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5" />
-              دعوة مستخدم
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-              <Input
-                label="البريد الإلكتروني"
-                type="email"
-                placeholder="user@example.com"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                className="flex-1"
-              />
-              <Select
-                label="الدور"
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value)}
-                options={[
-                  { value: '', label: 'اختيار الدور' },
-                  ...roles.map((r) => ({ value: r.id, label: r.nameAr })),
-                ]}
-              />
-              <Button
-                onClick={() => inviteMutation.mutate()}
-                disabled={inviteMutation.isPending || !inviteEmail || !inviteRole}
-                className="shrink-0"
-              >
-                {inviteMutation.isPending ? 'جارٍ الإرسال...' : 'إرسال دعوة'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Invite */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-3 bg-gradient-to-l from-emerald-500 to-teal-600 text-white flex items-center gap-2">
+          <UserPlus className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">دعوة مستخدم جديد</span>
+        </div>
+        <div className="p-5 flex flex-col sm:flex-row gap-3 items-end">
+          <div className="flex-1 w-full">
+            <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">البريد الإلكتروني</label>
+            <input type="email" dir="ltr" placeholder="user@example.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className={inputClass} />
+          </div>
+          <div className="w-full sm:w-44">
+            <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">الدور</label>
+            <select value={inviteRole} onChange={e => setInviteRole(e.target.value)}
+              className={cn(inputClass, 'appearance-none')}>
+              <option value="">اختيار الدور</option>
+              {roles.map(r => <option key={r.id} value={r.id}>{r.nameAr}</option>)}
+            </select>
+          </div>
+          <Button onClick={() => invMut.mutate()} disabled={invMut.isPending || !inviteEmail || !inviteRole} className="shrink-0 py-3">
+            {invMut.isPending ? '...' : '📩 إرسال'}
+          </Button>
+        </div>
+      </div>
 
-        {/* Users List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              الفريق
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {users.length === 0 ? (
-              <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">
-                لا يوجد مستخدمين
-              </p>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>الاسم</TableHead>
-                      <TableHead>البريد الإلكتروني</TableHead>
-                      <TableHead>الدور</TableHead>
-                      <TableHead>الحالة</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell className="font-medium">{user.fullName}</TableCell>
-                        <TableCell dir="ltr" className="text-end">{user.email}</TableCell>
-                        <TableCell>
-                          <Badge variant={roleVariants[user.roleName] ?? 'secondary'}>
-                            {user.roleNameAr}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={user.status === 'active' ? 'success' : 'secondary'}
-                          >
-                            {user.status === 'active' ? 'نشط' : 'غير نشط'}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+      {/* Team */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-3 bg-gradient-to-l from-violet-500 to-purple-600 text-white flex items-center gap-2">
+          <Shield className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">الفريق ({users.length})</span>
+        </div>
+        {users.length === 0 ? (
+          <div className="text-center py-12">
+            <Users className="h-10 w-10 mx-auto text-[var(--muted-foreground)] opacity-20 mb-2" />
+            <p className="font-bold">لا يوجد مستخدمين</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[var(--border)]">
+            {users.map(u => (
+              <div key={u.id} className="flex items-center gap-4 px-5 py-4 hover:bg-[var(--muted)]/20 transition">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--brand-primary)]/10 to-[var(--brand-primary)]/5 flex items-center justify-center flex-shrink-0">
+                  <span className="text-sm font-black text-[var(--brand-primary)]">{u.fullName[0]}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold truncate">{u.fullName}</p>
+                  <p className="text-[10px] text-[var(--muted-foreground)]" dir="ltr">{u.email}</p>
+                </div>
+                <span className={cn('px-2.5 py-1 rounded-lg border text-[10px] font-bold', ROLE_COLORS[u.roleName] || ROLE_COLORS.staff)}>
+                  {u.roleNameAr}
+                </span>
+                <span className={cn('px-2 py-0.5 rounded-md text-[9px] font-bold',
+                  u.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-500')}>
+                  {u.status === 'active' ? 'نشط' : 'غير نشط'}
+                </span>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

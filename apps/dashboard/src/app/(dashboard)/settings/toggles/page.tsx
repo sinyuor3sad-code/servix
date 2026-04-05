@@ -1,77 +1,69 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ArrowRight, Globe, Palmtree, MessageCircle, Gift } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Switch, Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { useSettingsSocket } from '@/hooks/useSettingsSocket';
 import { settingsService } from '@/services/settings.service';
-import { PageHeader, Card, CardContent, CardHeader, CardTitle, CardDescription, Switch, Input } from '@/components/ui';
-import { Spinner } from '@/components/ui';
 import { toast } from 'sonner';
-import { ArrowRight } from 'lucide-react';
-import Link from 'next/link';
 
-const TOGGLE_GROUPS: {
-  title: string;
-  description: string;
-  keys: { key: string; label: string; description?: string; type?: 'toggle' | 'number' | 'text' | 'date' }[];
-}[] = [
+const GROUPS = [
   {
-    title: 'الحجز الإلكتروني',
-    description: 'إعدادات صفحة الحجز العامة',
+    title: 'الحجز الإلكتروني', desc: 'إعدادات صفحة الحجز العامة', icon: Globe, gradient: 'from-violet-500 to-purple-600',
     keys: [
-      { key: 'online_booking_enabled', label: 'تفعيل الحجز الإلكتروني', type: 'toggle' },
-      { key: 'auto_confirm_booking', label: 'تأكيد الحجز تلقائياً', type: 'toggle' },
-      { key: 'walk_in_enabled', label: 'تفعيل الووك إن', type: 'toggle' },
-      { key: 'booking_advance_days', label: 'أقصى أيام للحجز مسبقاً', description: '0 = غير محدود', type: 'number' },
-      { key: 'min_booking_notice_hours', label: 'الحد الأدنى لساعات الإشعار قبل الحجز', type: 'number' },
-      { key: 'cancellation_deadline_hours', label: 'ساعات قبل الموعد للإلغاء', type: 'number' },
-      { key: 'max_daily_bookings', label: 'الحد الأقصى للحجوزات اليومية', description: '0 = غير محدود', type: 'number' },
+      { key: 'online_booking_enabled', label: 'تفعيل الحجز الإلكتروني', type: 'toggle' as const },
+      { key: 'auto_confirm_booking', label: 'تأكيد الحجز تلقائياً', type: 'toggle' as const },
+      { key: 'walk_in_enabled', label: 'تفعيل الووك إن', type: 'toggle' as const },
+      { key: 'booking_advance_days', label: 'أقصى أيام للحجز مسبقاً', desc: '0 = غير محدود', type: 'number' as const },
+      { key: 'min_booking_notice_hours', label: 'ساعات الإشعار قبل الحجز', type: 'number' as const },
+      { key: 'cancellation_deadline_hours', label: 'ساعات قبل الموعد للإلغاء', type: 'number' as const },
+      { key: 'max_daily_bookings', label: 'الحد الأقصى للحجوزات اليومية', desc: '0 = غير محدود', type: 'number' as const },
     ],
   },
   {
-    title: 'وضع الإجازة',
-    description: 'عند التفعيل: لا يُقبل حجوزات جديدة',
+    title: 'وضع الإجازة', desc: 'إيقاف استقبال الحجوزات مؤقتاً', icon: Palmtree, gradient: 'from-amber-500 to-orange-600',
     keys: [
-      { key: 'vacation_mode', label: 'وضع الإجازة', type: 'toggle' },
-      { key: 'vacation_message_ar', label: 'رسالة الإجازة (عرضها للعملاء)', type: 'text' },
-      { key: 'vacation_start_date', label: 'تاريخ بداية الإجازة', type: 'date' },
-      { key: 'vacation_end_date', label: 'تاريخ نهاية الإجازة', type: 'date' },
+      { key: 'vacation_mode', label: 'تفعيل وضع الإجازة', type: 'toggle' as const },
+      { key: 'vacation_message_ar', label: 'رسالة الإجازة', type: 'text' as const },
+      { key: 'vacation_start_date', label: 'بداية الإجازة', type: 'date' as const },
+      { key: 'vacation_end_date', label: 'نهاية الإجازة', type: 'date' as const },
     ],
   },
   {
-    title: 'قنوات التواصل',
-    description: 'الرسائل التلقائية والإشعارات. ربط واتساب: أضف التوكن ورقم الهاتف من Meta Business',
+    title: 'قنوات التواصل', desc: 'الرسائل التلقائية والإشعارات', icon: MessageCircle, gradient: 'from-emerald-500 to-teal-600',
     keys: [
-      { key: 'whatsapp_enabled', label: 'تفعيل واتساب', type: 'toggle' },
-      { key: 'whatsapp_token', label: 'توكن واتساب (EAAxxxx...)', type: 'text', description: 'من Meta for Developers' },
-      { key: 'whatsapp_phone_number_id', label: 'رقم الهاتف (Phone Number ID)', type: 'text', description: 'من إعدادات واتساب Business' },
-      { key: 'sms_enabled', label: 'تفعيل الرسائل النصية', type: 'toggle' },
-      { key: 'email_enabled', label: 'تفعيل البريد الإلكتروني', type: 'toggle' },
-      { key: 'whatsapp_booking_confirm', label: 'تأكيد الحجز عبر واتساب', type: 'toggle' },
-      { key: 'whatsapp_booking_reminder', label: 'تذكير الحجز عبر واتساب', type: 'toggle' },
-      { key: 'whatsapp_invoice_send', label: 'إرسال الفاتورة عبر واتساب', type: 'toggle' },
-      { key: 'whatsapp_review_request', label: 'طلب التقييم عبر واتساب', type: 'toggle' },
+      { key: 'whatsapp_enabled', label: 'تفعيل واتساب', type: 'toggle' as const },
+      { key: 'whatsapp_token', label: 'توكن واتساب', desc: 'من Meta for Developers', type: 'text' as const },
+      { key: 'whatsapp_phone_number_id', label: 'Phone Number ID', type: 'text' as const },
+      { key: 'sms_enabled', label: 'الرسائل النصية', type: 'toggle' as const },
+      { key: 'email_enabled', label: 'البريد الإلكتروني', type: 'toggle' as const },
+      { key: 'whatsapp_booking_confirm', label: 'تأكيد الحجز واتساب', type: 'toggle' as const },
+      { key: 'whatsapp_booking_reminder', label: 'تذكير الحجز واتساب', type: 'toggle' as const },
+      { key: 'whatsapp_invoice_send', label: 'إرسال الفاتورة واتساب', type: 'toggle' as const },
+      { key: 'whatsapp_review_request', label: 'طلب التقييم واتساب', type: 'toggle' as const },
     ],
   },
   {
-    title: 'المزايا والخصومات',
-    description: 'برنامج الولاء والكوبونات',
+    title: 'المزايا والخصومات', desc: 'برنامج الولاء والكوبونات', icon: Gift, gradient: 'from-rose-500 to-pink-600',
     keys: [
-      { key: 'loyalty_enabled', label: 'تفعيل برنامج الولاء', type: 'toggle' },
-      { key: 'coupons_enabled', label: 'تفعيل الكوبونات', type: 'toggle' },
+      { key: 'loyalty_enabled', label: 'برنامج الولاء', type: 'toggle' as const },
+      { key: 'coupons_enabled', label: 'الكوبونات', type: 'toggle' as const },
     ],
   },
 ];
 
-function parseBool(value: string | undefined): boolean {
-  return value === 'true';
-}
+function parseBool(v: string | undefined): boolean { return v === 'true'; }
 
-export default function TogglesPage(): React.ReactElement {
+const inputClass = "px-3 py-2 rounded-xl border border-[var(--border)] bg-[var(--card)] text-sm focus:border-[var(--brand-primary)] outline-none transition-all";
+
+export default function TogglesPage() {
+  const router = useRouter();
   const { accessToken, currentTenant } = useAuth();
-  const queryClient = useQueryClient();
-
+  const qc = useQueryClient();
   useSettingsSocket(currentTenant?.id, !!accessToken && !!currentTenant);
 
   const { data: settings, isLoading } = useQuery({
@@ -80,114 +72,73 @@ export default function TogglesPage(): React.ReactElement {
     enabled: !!accessToken,
   });
 
-  const updateMutation = useMutation({
-    mutationFn: (updates: { key: string; value: string }[]) =>
-      settingsService.updateBatch(accessToken!, updates),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      toast.success('تم تحديث الإعدادات');
-    },
-    onError: (err: Error) => {
-      toast.error(err.message || 'فشل في تحديث الإعدادات');
-    },
+  const mut = useMutation({
+    mutationFn: (updates: { key: string; value: string }[]) => settingsService.updateBatch(accessToken!, updates),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); toast.success('✅ تم التحديث'); },
+    onError: (err: Error) => toast.error(err.message || 'فشل التحديث'),
   });
 
-  const handleToggle = (key: string, checked: boolean) => {
-    updateMutation.mutate([{ key, value: checked ? 'true' : 'false' }]);
+  const [editing, setEditing] = useState<Record<string, string>>({});
+
+  const handleToggle = (key: string, checked: boolean) => mut.mutate([{ key, value: checked ? 'true' : 'false' }]);
+  const handleSave = (key: string, value: string) => {
+    if (value !== (settings?.[key] ?? '')) mut.mutate([{ key, value }]);
+    setEditing(p => { const n = { ...p }; delete n[key]; return n; });
   };
 
-  const [editingValues, setEditingValues] = useState<Record<string, string>>({});
-
-  const handleValueChange = (key: string, value: string) => {
-    updateMutation.mutate([{ key, value }]);
-    setEditingValues((prev) => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-  };
-
-  if (isLoading || !settings) {
-    return (
-      <div className="flex min-h-[200px] items-center justify-center">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  if (isLoading || !settings) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="لوحة التحكم"
-        description="تفعيل/إيقاف ميزات الصالون"
-      />
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center gap-3">
+        <button onClick={() => router.push('/settings')} className="p-2 rounded-xl border border-[var(--border)] hover:bg-[var(--muted)] transition">
+          <ArrowRight className="h-4 w-4" />
+        </button>
+        <div>
+          <h1 className="text-xl font-black">لوحة التحكم</h1>
+          <p className="text-xs text-[var(--muted-foreground)]">تفعيل/إيقاف ميزات الصالون</p>
+        </div>
+      </div>
 
-      <div className="grid gap-6">
-        {TOGGLE_GROUPS.map((group) => (
-          <Card key={group.title}>
-            <CardHeader>
-              <CardTitle>{group.title}</CardTitle>
-              <CardDescription>{group.description}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {group.keys.map(({ key, label, description, type = 'toggle' }) => (
-                <div
-                  key={key}
-                  className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="font-medium text-[var(--foreground)]">{label}</p>
-                    {description && (
-                      <p className="text-sm text-[var(--muted-foreground)]">
-                        {description}
-                      </p>
-                    )}
+      {GROUPS.map(group => {
+        const Icon = group.icon;
+        return (
+          <div key={group.title} className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+            <div className={cn('px-5 py-4 bg-gradient-to-l text-white', group.gradient)}>
+              <div className="flex items-center gap-2">
+                <Icon className="h-5 w-5 opacity-70" />
+                <div>
+                  <h3 className="text-sm font-bold">{group.title}</h3>
+                  <p className="text-[10px] opacity-70">{group.desc}</p>
+                </div>
+              </div>
+            </div>
+            <div className="divide-y divide-[var(--border)]">
+              {group.keys.map(({ key, label, desc, type }) => (
+                <div key={key} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold truncate">{label}</p>
+                    {desc && <p className="text-[10px] text-[var(--muted-foreground)]">{desc}</p>}
                   </div>
                   {type === 'toggle' ? (
-                    <Switch
-                      checked={parseBool(settings[key])}
-                      onCheckedChange={(checked) => handleToggle(key, checked)}
-                      disabled={updateMutation.isPending}
-                    />
+                    <Switch checked={parseBool(settings[key])} onCheckedChange={c => handleToggle(key, c)} disabled={mut.isPending} />
                   ) : (
-                    <Input
+                    <input
                       type={type === 'number' ? 'number' : type === 'date' ? 'date' : 'text'}
-                      value={editingValues[key] ?? settings[key] ?? ''}
-                      onChange={(e) =>
-                        setEditingValues((prev) => ({ ...prev, [key]: e.target.value }))
-                      }
-                      onBlur={(e) => {
-                        const v = e.target.value;
-                        if (v !== (settings[key] ?? '')) handleValueChange(key, v);
-                      }}
-                      className="w-40"
-                      disabled={updateMutation.isPending}
+                      dir="ltr"
+                      value={editing[key] ?? settings[key] ?? ''}
+                      onChange={e => setEditing(p => ({ ...p, [key]: e.target.value }))}
+                      onBlur={e => handleSave(key, e.target.value)}
+                      className={cn(inputClass, 'w-36 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')}
+                      disabled={mut.isPending}
                     />
                   )}
                 </div>
               ))}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <Card className="border-dashed">
-        <CardContent className="flex items-center justify-between p-6">
-          <div>
-            <p className="font-medium">رسالة الإجازة وتواريخها</p>
-            <p className="text-sm text-[var(--muted-foreground)]">
-              تعديل النص المعروض عند تفعيل وضع الإجازة
-            </p>
+            </div>
           </div>
-          <Link
-            href="/settings/salon"
-            className="inline-flex items-center gap-2 text-sm text-[var(--brand-primary)] hover:underline"
-          >
-            إعدادات الصالون
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </CardContent>
-      </Card>
+        );
+      })}
     </div>
   );
 }
