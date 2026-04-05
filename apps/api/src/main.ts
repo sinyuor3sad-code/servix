@@ -26,7 +26,7 @@ async function bootstrap(): Promise<void> {
   const port = configService.get<number>('PORT', 4000);
 
   // API root redirect
-  app.getHttpAdapter().get('/', (_req: unknown, res: { json: (body: unknown) => void }) => {
+  app.getHttpAdapter().get('/', (_req: any, res: any) => {
     const info: Record<string, string> = {
       name: 'SERVIX API',
       version: '1.0.0',
