@@ -3,13 +3,12 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * THE FABRIC — A subtle intelligence mesh of interconnected nodes.
- * Not particles. Not decoration. A living grid that breathes
- * and reacts to the owner's presence (mouse position).
+ * LIVING CANVAS — Particles drift slowly toward center.
+ * Not random. Not decorative. Gravitational. Intentional.
+ * The system is breathing. The system is aware.
  */
-export function Fabric() {
+export function SovereignCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mouseRef = useRef({ x: -9999, y: -9999 });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -18,10 +17,34 @@ export function Fabric() {
     let w = 0, h = 0;
     let frame = 0;
 
-    // Grid configuration
-    const SPACING = 80;
-    let cols = 0, rows = 0;
-    let nodes: { x: number; y: number; baseOpacity: number }[] = [];
+    interface Mote {
+      x: number; y: number;
+      speed: number;
+      size: number;
+      opacity: number;
+      angle: number;
+    }
+
+    const MOTE_COUNT = 80;
+    let motes: Mote[] = [];
+
+    function createMote(): Mote {
+      // Spawn from edges
+      const edge = Math.random();
+      let x: number, y: number;
+      if (edge < 0.25) { x = 0; y = Math.random() * h; }
+      else if (edge < 0.5) { x = w; y = Math.random() * h; }
+      else if (edge < 0.75) { x = Math.random() * w; y = 0; }
+      else { x = Math.random() * w; y = h; }
+
+      return {
+        x, y,
+        speed: 0.15 + Math.random() * 0.25,
+        size: 0.5 + Math.random() * 1.2,
+        opacity: 0.03 + Math.random() * 0.06,
+        angle: Math.atan2(h / 2 - y, w / 2 - x) + (Math.random() - 0.5) * 0.4,
+      };
+    }
 
     function resize() {
       w = window.innerWidth;
@@ -30,29 +53,20 @@ export function Fabric() {
       canvas.height = h * window.devicePixelRatio;
       canvas.style.width = w + 'px';
       canvas.style.height = h + 'px';
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
 
-      cols = Math.ceil(w / SPACING) + 2;
-      rows = Math.ceil(h / SPACING) + 2;
-      nodes = [];
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          nodes.push({
-            x: c * SPACING,
-            y: r * SPACING,
-            baseOpacity: 0.02 + Math.random() * 0.015,
-          });
-        }
+      motes = [];
+      for (let i = 0; i < MOTE_COUNT; i++) {
+        const m = createMote();
+        // Scatter initially
+        m.x = Math.random() * w;
+        m.y = Math.random() * h;
+        motes.push(m);
       }
     }
 
     resize();
     window.addEventListener('resize', resize);
-
-    const onMouse = (e: MouseEvent) => {
-      mouseRef.current = { x: e.clientX, y: e.clientY };
-    };
-    window.addEventListener('mousemove', onMouse);
 
     let animId: number;
 
@@ -60,70 +74,53 @@ export function Fabric() {
       frame++;
       ctx.clearRect(0, 0, w, h);
 
-      const mx = mouseRef.current.x;
-      const my = mouseRef.current.y;
-      const breathe = Math.sin(frame * 0.006) * 0.5 + 0.5;
+      const cx = w / 2;
+      const cy = h / 2;
 
-      // Draw grid lines (very subtle)
-      ctx.strokeStyle = `rgba(255,255,255, ${0.012 + breathe * 0.005})`;
-      ctx.lineWidth = 0.5;
+      // Ambient center glow — breathing
+      const breathe = Math.sin(frame * 0.005) * 0.5 + 0.5;
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 300);
+      glow.addColorStop(0, `rgba(201,168,76, ${0.02 + breathe * 0.01})`);
+      glow.addColorStop(1, 'transparent');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, w, h);
 
-      for (let r = 0; r < rows; r++) {
-        ctx.beginPath();
-        ctx.moveTo(0, r * SPACING);
-        ctx.lineTo(w, r * SPACING);
-        ctx.stroke();
-      }
-      for (let c = 0; c < cols; c++) {
-        ctx.beginPath();
-        ctx.moveTo(c * SPACING, 0);
-        ctx.lineTo(c * SPACING, h);
-        ctx.stroke();
-      }
+      // Draw motes
+      for (let i = 0; i < motes.length; i++) {
+        const m = motes[i];
 
-      // Draw nodes at intersections
-      for (const node of nodes) {
-        const dx = node.x - mx;
-        const dy = node.y - my;
+        // Drift toward center
+        const dx = cx - m.x;
+        const dy = cy - m.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const proximity = Math.max(0, 1 - dist / 250);
+        const angle = Math.atan2(dy, dx);
 
-        // Base glow
-        let opacity = node.baseOpacity + breathe * 0.008;
+        m.x += Math.cos(angle) * m.speed;
+        m.y += Math.sin(angle) * m.speed;
 
-        // Mouse proximity boosts the node
-        if (proximity > 0) {
-          opacity += proximity * 0.15;
+        // Fade as approaching center
+        const fadeDist = Math.max(0, 1 - dist / (Math.min(w, h) * 0.6));
+        const alpha = m.opacity * (1 - fadeDist * 0.8);
 
-          // Draw the glow halo for nearby nodes
-          const gradient = ctx.createRadialGradient(
-            node.x, node.y, 0,
-            node.x, node.y, 20 + proximity * 30
-          );
-          gradient.addColorStop(0, `rgba(184,153,62, ${proximity * 0.06})`);
-          gradient.addColorStop(1, 'transparent');
-          ctx.fillStyle = gradient;
-          ctx.fillRect(node.x - 50, node.y - 50, 100, 100);
+        // Draw
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, m.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(201,168,76, ${alpha})`;
+        ctx.fill();
+
+        // Soft halo for larger motes
+        if (m.size > 1) {
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, m.size * 5, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(201,168,76, ${alpha * 0.15})`;
+          ctx.fill();
         }
 
-        // Draw node dot
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, 1 + proximity * 1.5, 0, Math.PI * 2);
-        ctx.fillStyle = proximity > 0.3
-          ? `rgba(184,153,62, ${opacity * 2})`
-          : `rgba(255,255,255, ${opacity})`;
-        ctx.fill();
+        // Recycle if near center
+        if (dist < 30) {
+          Object.assign(motes[i], createMote());
+        }
       }
-
-      // Central ambient glow (very subtle)
-      const cGrad = ctx.createRadialGradient(
-        w * 0.5, h * 0.5, 0,
-        w * 0.5, h * 0.5, 350
-      );
-      cGrad.addColorStop(0, `rgba(184,153,62, ${0.012 + breathe * 0.006})`);
-      cGrad.addColorStop(1, 'transparent');
-      ctx.fillStyle = cGrad;
-      ctx.fillRect(0, 0, w, h);
 
       animId = requestAnimationFrame(draw);
     }
@@ -133,9 +130,8 @@ export function Fabric() {
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', resize);
-      window.removeEventListener('mousemove', onMouse);
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="sv-fabric" aria-hidden="true" />;
+  return <canvas ref={canvasRef} className="sv-canvas" aria-hidden="true" />;
 }

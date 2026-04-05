@@ -1,23 +1,21 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
-   SOVEREIGN OS — v3
-   Not a design system. A command civilization.
-   Full-viewport. No scroll. No cards. No sections.
-   The screen IS the interface.
+   SERVIX SOVEREIGN v4 — The Final Surface
+   Three zones. No cards. No widgets. A living command chamber.
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  --void: #020204;
-  --gold: #b8993e;
-  --gold-dim: rgba(184,153,62, 0.06);
-  --gold-glow: rgba(184,153,62, 0.20);
-  --text-1: rgba(255,255,255, 0.90);
-  --text-2: rgba(255,255,255, 0.32);
-  --text-3: rgba(255,255,255, 0.10);
-  --line: rgba(255,255,255, 0.025);
+  --bg: #050508;
+  --gold: #C9A84C;
+  --gold-deep: #8A6B2A;
+  --gold-glow: rgba(201,168,76, 0.15);
+  --white: #F0EDE8;
+  --white-dim: rgba(240,237,232, 0.35);
+  --white-ghost: rgba(240,237,232, 0.08);
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-slow: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -25,20 +23,19 @@
 html, body {
   height: 100%;
   overflow: hidden;
-  background: var(--void);
-  color: var(--text-1);
+  background: var(--bg);
+  color: var(--white);
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-::selection { background: rgba(184,153,62,0.3); color: #fff; }
-
+::selection { background: rgba(201,168,76,0.3); color: #fff; }
 ::-webkit-scrollbar { display: none; }
 
 /* ════════════════════════════════════════════════════════════
-   THE FABRIC — Living intelligence mesh (canvas)
+   LIVING CANVAS — Particles that drift toward center
    ════════════════════════════════════════════════════════════ */
-.sv-fabric {
+.sv-canvas {
   position: fixed;
   inset: 0;
   z-index: 0;
@@ -46,524 +43,426 @@ html, body {
 }
 
 /* ════════════════════════════════════════════════════════════
-   THE VIEWPORT — Full-screen command environment
+   THE CHAMBER — Full viewport, three zones
    ════════════════════════════════════════════════════════════ */
-.sv-viewport {
+.sv-chamber {
   position: relative;
   z-index: 1;
   width: 100vw;
   height: 100dvh;
-  display: grid;
-  grid-template-columns: 280px 1fr 280px;
-  grid-template-rows: auto 1fr auto;
-  grid-template-areas:
-    "time   crown    status"
-    "left   core     right"
-    "intel  ground   nav";
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
-@media (max-width: 1024px) {
-  .sv-viewport {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr auto auto;
-    grid-template-areas:
-      "crown"
-      "core"
-      "intel"
-      "nav";
-    overflow-y: auto;
-  }
-}
-
 /* ════════════════════════════════════════════════════════════
-   THE CROWN — Owner identity zone (top center)
+   ZONE 1: SOVEREIGNTY (top 35%)
+   SERVIX identity + system status + breathing pulse
    ════════════════════════════════════════════════════════════ */
-.sv-crown {
-  grid-area: crown;
+.sv-sovereignty {
+  flex: 0 0 35%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
-  padding: 48px 24px 0;
-  text-align: center;
+  justify-content: center;
+  position: relative;
 }
 
-.sv-crown-name {
-  font-size: clamp(1.8rem, 4vw, 3rem);
+/* Central radial breathing pulse */
+.sv-radial-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 500px;
+  height: 500px;
+  pointer-events: none;
+}
+
+.sv-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  border: 1px solid rgba(201,168,76, 0.03);
+  transform: translate(-50%, -50%);
+}
+
+.sv-ring-1 {
+  width: 200px; height: 200px;
+  animation: sv-ring-breathe 6s ease-in-out infinite;
+}
+.sv-ring-2 {
+  width: 320px; height: 320px;
+  animation: sv-ring-breathe 6s ease-in-out infinite 1s;
+}
+.sv-ring-3 {
+  width: 440px; height: 440px;
+  animation: sv-ring-breathe 6s ease-in-out infinite 2s;
+}
+.sv-ring-4 {
+  width: 560px; height: 560px;
+  animation: sv-ring-breathe 6s ease-in-out infinite 3s;
+}
+
+@keyframes sv-ring-breathe {
+  0%, 100% { opacity: 0.3; transform: translate(-50%, -50%) scale(1); }
+  50%      { opacity: 1; transform: translate(-50%, -50%) scale(1.03); }
+}
+
+/* SERVIX reveal */
+.sv-logo {
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+}
+
+.sv-logo-text {
+  font-size: clamp(2.2rem, 5vw, 3.8rem);
   font-weight: 900;
-  letter-spacing: -0.05em;
-  line-height: 1;
-  color: var(--text-1);
-  opacity: 0;
-  animation: sv-crown-enter 2s var(--ease) 0.2s forwards;
+  letter-spacing: 0.12em;
+  color: var(--white);
+  display: flex;
+  direction: ltr;
+  gap: 2px;
 }
 
-.sv-crown-title {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.35em;
-  text-transform: uppercase;
-  color: var(--gold);
-  margin-top: 12px;
+.sv-logo-letter {
+  display: inline-block;
   opacity: 0;
-  animation: sv-crown-enter 1.5s var(--ease) 0.6s forwards;
+  transform: translateY(20px);
+  animation: sv-letter-enter 0.8s var(--ease) forwards;
 }
 
-@keyframes sv-crown-enter {
-  from { opacity: 0; transform: translateY(12px); }
+@keyframes sv-letter-enter {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ════════════════════════════════════════════════════════════
-   TIME ZONE — Top left
-   ════════════════════════════════════════════════════════════ */
-.sv-time {
-  grid-area: time;
-  padding: 36px 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  opacity: 0;
-  animation: sv-fade 1.5s var(--ease) 0.8s forwards;
-}
-
-@media (max-width: 1024px) { .sv-time { display: none; } }
-
-.sv-time-clock {
-  font-size: 32px;
-  font-weight: 300;
-  letter-spacing: -0.02em;
-  color: var(--text-2);
-  font-feature-settings: "tnum" 1;
-}
-
-.sv-time-date {
-  font-size: 11px;
+.sv-subtitle {
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-3);
-}
-
-.sv-time-greeting {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-3);
-  margin-top: 8px;
-}
-
-/* ════════════════════════════════════════════════════════════
-   STATUS ZONE — Top right (system heartbeat)
-   ════════════════════════════════════════════════════════════ */
-.sv-status {
-  grid-area: status;
-  padding: 36px 40px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 12px;
+  color: var(--gold);
+  letter-spacing: 0.08em;
+  margin-top: 12px;
+  position: relative;
+  z-index: 2;
   opacity: 0;
-  animation: sv-fade 1.5s var(--ease) 1s forwards;
+  animation: sv-fade-up 1.2s var(--ease) 0.8s forwards;
 }
 
-@media (max-width: 1024px) { .sv-status { display: none; } }
+@keyframes sv-fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
-.sv-heartbeat {
+/* Command bar */
+.sv-command-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 24px;
+  margin-top: 24px;
+  padding: 10px 28px;
+  border-radius: 100px;
+  border: 1px solid rgba(201,168,76, 0.06);
+  background: rgba(201,168,76, 0.02);
+  position: relative;
+  z-index: 2;
+  opacity: 0;
+  transform: translateY(12px);
+  animation: sv-fade-up 1s var(--ease) 1.2s forwards;
 }
 
-.sv-heartbeat-dot {
+.sv-cmd-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: #10b981;
-  box-shadow: 0 0 12px rgba(16,185,129,0.5);
-  animation: sv-pulse 3s ease-in-out infinite;
+  box-shadow: 0 0 8px rgba(16,185,129,0.5);
+  animation: sv-heartbeat 3s ease-in-out infinite;
 }
 
-@keyframes sv-pulse {
-  0%,100% { opacity: 1; }
-  50% { opacity: 0.3; }
+@keyframes sv-heartbeat {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(16,185,129,0.5); }
+  50%      { opacity: 0.3; box-shadow: 0 0 3px rgba(16,185,129,0.2); }
 }
 
-.sv-heartbeat-text {
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(16,185,129, 0.5);
-  letter-spacing: 0.05em;
-}
-
-.sv-uptime {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-3);
+.sv-cmd-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--white-dim);
   font-feature-settings: "tnum" 1;
 }
 
-@keyframes sv-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.sv-cmd-text strong {
+  color: var(--white);
+  font-weight: 700;
 }
 
-/* ════════════════════════════════════════════════════════════
-   THE CORE — Central command (metrics as environment)
-   ════════════════════════════════════════════════════════════ */
-.sv-core {
-  grid-area: core;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-.sv-core-metrics {
-  display: flex;
-  align-items: baseline;
-  gap: 0;
-  position: relative;
-}
-
-.sv-core-metric {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0 clamp(20px, 4vw, 60px);
-  position: relative;
-}
-
-.sv-core-metric + .sv-core-metric::before {
-  content: '';
-  position: absolute;
-  top: 10%;
-  bottom: 10%;
-  inset-inline-start: 0;
+.sv-cmd-divider {
   width: 1px;
-  background: linear-gradient(to bottom, transparent, var(--line), transparent);
+  height: 14px;
+  background: rgba(255,255,255, 0.06);
 }
 
-.sv-metric-num {
-  font-size: clamp(3rem, 8vw, 7rem);
-  font-weight: 900;
-  letter-spacing: -0.06em;
-  line-height: 1;
-  color: var(--text-1);
-  font-feature-settings: "tnum" 1;
-  opacity: 0;
-  animation: sv-metric-reveal 2s var(--ease) 1.2s forwards;
-}
-
-@keyframes sv-metric-reveal {
-  from { opacity: 0; transform: translateY(30px) scale(0.95); filter: blur(8px); }
-  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
-}
-
-.sv-metric-suffix {
-  font-size: clamp(0.8rem, 2vw, 1.2rem);
-  font-weight: 400;
-  color: var(--text-3);
-  margin-inline-start: 4px;
-}
-
-.sv-metric-label {
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  margin-top: 16px;
-  opacity: 0;
-  animation: sv-fade 1.5s var(--ease) 1.6s forwards;
-}
-
-/* ════════════════════════════════════════════════════════════
-   LEFT RAIL — Tertiary intelligence
-   ════════════════════════════════════════════════════════════ */
-.sv-left {
-  grid-area: left;
-  padding: 0 40px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 32px;
-  opacity: 0;
-  animation: sv-fade 1.5s var(--ease) 2s forwards;
-}
-
-@media (max-width: 1024px) { .sv-left { display: none; } }
-
-.sv-data-point {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.sv-data-value {
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--text-2);
+.sv-cmd-time {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--white-ghost);
   font-feature-settings: "tnum" 1;
 }
 
-.sv-data-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
-
 /* ════════════════════════════════════════════════════════════
-   RIGHT RAIL — Tertiary intelligence
+   ZONE 2: INTELLIGENCE (middle 40%)
+   Metric orbs + system readiness visualization
    ════════════════════════════════════════════════════════════ */
-.sv-right {
-  grid-area: right;
-  padding: 0 40px;
+.sv-intelligence {
+  flex: 0 0 40%;
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
-  align-items: flex-end;
+  position: relative;
   gap: 32px;
-  text-align: end;
+}
+
+/* Metric cluster */
+.sv-metric-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(32px, 6vw, 80px);
   opacity: 0;
-  animation: sv-fade 1.5s var(--ease) 2.2s forwards;
+  animation: sv-metrics-emerge 2s var(--ease) 1.6s forwards;
 }
 
-@media (max-width: 1024px) { .sv-right { display: none; } }
-
-/* ════════════════════════════════════════════════════════════
-   THE NERVE — Horizontal intelligence line
-   ════════════════════════════════════════════════════════════ */
-.sv-nerve {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
-  height: 1px;
-  z-index: 0;
-  pointer-events: none;
+@keyframes sv-metrics-emerge {
+  from { opacity: 0; transform: scale(0.94); filter: blur(6px); }
+  to   { opacity: 1; transform: scale(1); filter: blur(0); }
 }
 
-.sv-nerve-line {
-  width: 100%;
-  height: 1px;
-  background: var(--line);
+/* Single metric orb */
+.sv-orb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   position: relative;
 }
 
-.sv-nerve-pulse {
+.sv-orb-ring {
+  width: 140px;
+  height: 140px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sv-orb-ring svg {
   position: absolute;
   top: 0;
   left: 0;
-  height: 1px;
-  width: 120px;
-  background: linear-gradient(to right, transparent, var(--gold-glow), transparent);
-  animation: sv-nerve-travel 8s linear infinite;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
 }
 
-@keyframes sv-nerve-travel {
-  0% { left: -120px; }
-  100% { left: calc(100% + 120px); }
+.sv-orb-ring-bg {
+  fill: none;
+  stroke: rgba(255,255,255, 0.03);
+  stroke-width: 1.5;
+}
+
+.sv-orb-ring-progress {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 408;
+  stroke-dashoffset: 408;
+  opacity: 0.2;
+  animation: sv-ring-idle 4s ease-in-out infinite;
+}
+
+@keyframes sv-ring-idle {
+  0%, 100% { stroke-dashoffset: 408; opacity: 0.15; }
+  50%      { stroke-dashoffset: 400; opacity: 0.3; }
+}
+
+/* Orb inner pulse */
+.sv-orb-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201,168,76, 0.04) 0%, transparent 70%);
+  animation: sv-orb-pulse 4s ease-in-out infinite;
+}
+
+@keyframes sv-orb-pulse {
+  0%, 100% { transform: translate(-50%,-50%) scale(1); opacity: 0.5; }
+  50%      { transform: translate(-50%,-50%) scale(1.15); opacity: 1; }
+}
+
+.sv-orb-value {
+  font-size: 36px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: var(--white);
+  font-feature-settings: "tnum" 1;
+  position: relative;
+  z-index: 1;
+}
+
+.sv-orb-suffix {
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--white-ghost);
+  margin-inline-start: 2px;
+}
+
+.sv-orb-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+  margin-top: 16px;
+  text-align: center;
+}
+
+/* Waiting signal visualization */
+.sv-signal {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  opacity: 0;
+  animation: sv-fade-up 1.2s var(--ease) 2s forwards;
+}
+
+.sv-signal-line {
+  width: 120px;
+  height: 1px;
+  background: linear-gradient(to left, var(--gold-deep), transparent);
+  opacity: 0.3;
+}
+
+.sv-signal-text {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--gold-deep);
+  white-space: nowrap;
+}
+
+.sv-signal-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: sv-heartbeat 2s ease-in-out infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
-   INTEL STREAM — Bottom left
+   ZONE 3: EXPANSION (bottom 25%)
+   Dormant action triggers
    ════════════════════════════════════════════════════════════ */
-.sv-intel {
-  grid-area: intel;
-  padding: 0 40px 36px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  justify-content: flex-end;
-  opacity: 0;
-  animation: sv-fade 1.5s var(--ease) 2.4s forwards;
-}
-
-@media (max-width: 1024px) {
-  .sv-intel { padding: 24px 20px; }
-}
-
-.sv-intel-marker {
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: rgba(184,153,62, 0.25);
-  margin-bottom: 8px;
-}
-
-.sv-intel-item {
+.sv-expansion {
+  flex: 0 0 25%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-  transition: all 0.4s var(--ease);
-  cursor: default;
+  justify-content: center;
+  gap: clamp(12px, 3vw, 32px);
+  padding: 0 24px;
+  opacity: 0;
+  animation: sv-fade-up 1.4s var(--ease) 2.4s forwards;
 }
 
-.sv-intel-item:hover {
-  transform: translateX(-4px);
+.sv-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  border-radius: 100px;
+  border: 1px solid rgba(201,168,76, 0.06);
+  background: rgba(201,168,76, 0.015);
+  cursor: pointer;
+  transition: all 0.5s var(--ease);
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
 }
 
-.sv-intel-bar {
-  width: 2px;
-  height: 16px;
-  border-radius: 1px;
+.sv-trigger::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at center, var(--gold-glow), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+.sv-trigger:hover {
+  border-color: rgba(201,168,76, 0.15);
+  background: rgba(201,168,76, 0.03);
+  transform: translateY(-2px);
+}
+
+.sv-trigger:hover::before { opacity: 1; }
+
+.sv-trigger-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  opacity: 0.3;
+  animation: sv-trigger-pulse 3s ease-in-out infinite;
   flex-shrink: 0;
 }
 
-.sv-intel-text {
+@keyframes sv-trigger-pulse {
+  0%, 100% { opacity: 0.2; box-shadow: none; }
+  50%      { opacity: 0.5; box-shadow: 0 0 8px rgba(201,168,76,0.2); }
+}
+
+.sv-trigger:hover .sv-trigger-dot {
+  opacity: 1;
+  box-shadow: 0 0 12px var(--gold-glow);
+}
+
+.sv-trigger-text {
   font-size: 12px;
-  font-weight: 500;
-  color: var(--text-3);
-  line-height: 1.6;
-}
-
-.sv-intel-text strong {
-  color: var(--text-2);
-  font-weight: 700;
-}
-
-/* ════════════════════════════════════════════════════════════
-   GROUND — Territory portals (bottom center)
-   ════════════════════════════════════════════════════════════ */
-.sv-ground {
-  grid-area: ground;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 36px;
-  gap: 2px;
-  opacity: 0;
-  animation: sv-fade 1.5s var(--ease) 2.6s forwards;
-}
-
-@media (max-width: 1024px) {
-  .sv-ground { display: none; }
-}
-
-.sv-portal {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 16px 24px;
-  border-radius: 12px;
-  text-decoration: none;
-  transition: all 0.4s var(--ease);
-  cursor: pointer;
-  position: relative;
-}
-
-.sv-portal::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 20%;
-  right: 20%;
-  height: 1px;
-  background: var(--gold);
-  opacity: 0;
-  transition: opacity 0.4s;
-}
-
-.sv-portal:hover {
-  background: rgba(255,255,255, 0.015);
-}
-
-.sv-portal:hover::after { opacity: 0.3; }
-
-.sv-portal-icon {
-  color: var(--text-3);
-  transition: color 0.4s;
-}
-
-.sv-portal:hover .sv-portal-icon {
-  color: var(--gold);
-}
-
-.sv-portal-name {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--text-3);
-  transition: color 0.4s;
-}
-
-.sv-portal:hover .sv-portal-name {
-  color: var(--text-2);
-}
-
-/* ════════════════════════════════════════════════════════════
-   NAV — Bottom right (command bar minimal)
-   ════════════════════════════════════════════════════════════ */
-.sv-nav {
-  grid-area: nav;
-  padding: 0 40px 36px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 16px;
-  opacity: 0;
-  animation: sv-fade 1.5s var(--ease) 2.8s forwards;
-}
-
-@media (max-width: 1024px) {
-  .sv-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 8px 16px;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
-    justify-content: space-around;
-    background: rgba(2,2,4, 0.95);
-    backdrop-filter: blur(20px);
-    border-top: 1px solid var(--line);
-    z-index: 100;
-  }
-}
-
-.sv-nav-item {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: var(--text-3);
-  text-decoration: none;
-  padding: 8px 12px;
-  border-radius: 8px;
-  transition: all 0.3s var(--ease);
-  cursor: pointer;
-}
-
-.sv-nav-item:hover {
-  color: var(--text-2);
-}
-
-.sv-nav-item.active {
-  color: var(--gold);
-}
-
-/* ════════════════════════════════════════════════════════════
-   DORMANT POWER OVERLAY (zero-state)
-   ════════════════════════════════════════════════════════════ */
-.sv-dormant-line {
-  position: absolute;
-  bottom: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.2em;
-  color: var(--text-3);
+  color: var(--gold-deep);
+  transition: color 0.4s;
+  position: relative;
+  z-index: 1;
   white-space: nowrap;
-  opacity: 0;
-  animation: sv-fade 2s var(--ease) 3s forwards;
 }
 
-/* Mobile bottom padding */
-@media (max-width: 1024px) {
-  body { padding-bottom: 60px; overflow: auto; }
+.sv-trigger:hover .sv-trigger-text {
+  color: var(--gold);
+}
+
+/* ════════════════════════════════════════════════════════════
+   MOBILE ADAPTATION
+   ════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .sv-sovereignty { flex: 0 0 30%; }
+  .sv-intelligence { flex: 0 0 45%; }
+  .sv-expansion { flex: 0 0 25%; flex-wrap: wrap; justify-content: center; }
+
+  .sv-orb-ring { width: 100px; height: 100px; }
+  .sv-orb-value { font-size: 24px; }
+  .sv-metric-cluster { gap: 20px; }
+
+  .sv-ring-3, .sv-ring-4 { display: none; }
+
+  .sv-command-bar { gap: 12px; padding: 8px 16px; }
+
+  .sv-trigger { padding: 10px 16px; }
+  .sv-trigger-text { font-size: 11px; }
 }
