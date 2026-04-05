@@ -2,40 +2,55 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
-   SERVIX SOVEREIGN v4 — The Final Surface
-   Three zones. No cards. No widgets. A living command chamber.
+   SERVIX NEXUS v5 — THE DEFINITIVE SURFACE
+   Inspired by: SpaceX Mission Control precision,
+   Linear's ruthless clarity, Apple's composure,
+   Stripe's invisible intelligence.
+   Surpasses all: through layered depth, cinematic choreography,
+   and living spatial composition.
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  --bg: #050508;
+  --bg: #040406;
+  --surface: rgba(255,255,255, 0.018);
+  --surface-hover: rgba(255,255,255, 0.035);
   --gold: #C9A84C;
   --gold-deep: #8A6B2A;
-  --gold-glow: rgba(201,168,76, 0.15);
-  --white: #F0EDE8;
-  --white-dim: rgba(240,237,232, 0.35);
-  --white-ghost: rgba(240,237,232, 0.08);
+  --gold-glow: rgba(201,168,76, 0.12);
+  --gold-subtle: rgba(201,168,76, 0.04);
+  --emerald: #34D399;
+  --slate: rgba(255,255,255, 0.88);
+  --muted: rgba(255,255,255, 0.30);
+  --ghost: rgba(255,255,255, 0.08);
+  --border: rgba(255,255,255, 0.04);
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-slow: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.33, 1, 0.68, 1);
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body {
-  height: 100%;
-  overflow: hidden;
+html {
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+body {
   background: var(--bg);
-  color: var(--white);
+  color: var(--slate);
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  min-height: 100dvh;
 }
 
-::selection { background: rgba(201,168,76,0.3); color: #fff; }
-::-webkit-scrollbar { display: none; }
+::-webkit-scrollbar { width: 0; display: none; }
+::selection { background: rgba(201,168,76,0.25); color: #fff; }
 
 /* ════════════════════════════════════════════════════════════
-   LIVING CANVAS — Particles that drift toward center
+   LAYER 0 — THE ATMOSPHERE (canvas)
    ════════════════════════════════════════════════════════════ */
-.sv-canvas {
+.nx-atmosphere {
   position: fixed;
   inset: 0;
   z-index: 0;
@@ -43,426 +58,577 @@ html, body {
 }
 
 /* ════════════════════════════════════════════════════════════
-   THE CHAMBER — Full viewport, three zones
+   THE PAGE
    ════════════════════════════════════════════════════════════ */
-.sv-chamber {
+.nx-page {
   position: relative;
   z-index: 1;
-  width: 100vw;
-  height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  min-height: 100dvh;
 }
 
 /* ════════════════════════════════════════════════════════════
-   ZONE 1: SOVEREIGNTY (top 35%)
-   SERVIX identity + system status + breathing pulse
+   ACT I — THE OVERTURE
+   Full viewport opening. Cinematic. Authority. Presence.
    ════════════════════════════════════════════════════════════ */
-.sv-sovereignty {
-  flex: 0 0 35%;
+.nx-overture {
+  position: relative;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  position: relative;
+  overflow: hidden;
 }
 
-/* Central radial breathing pulse */
-.sv-radial-pulse {
+/* Concentric rings – architectural depth */
+.nx-rings {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 500px;
-  height: 500px;
   pointer-events: none;
 }
 
-.sv-ring {
+.nx-ring {
   position: absolute;
   top: 50%;
   left: 50%;
   border-radius: 50%;
   border: 1px solid rgba(201,168,76, 0.03);
   transform: translate(-50%, -50%);
+  animation: nx-ring-live 8s ease-in-out infinite;
 }
 
-.sv-ring-1 {
-  width: 200px; height: 200px;
-  animation: sv-ring-breathe 6s ease-in-out infinite;
-}
-.sv-ring-2 {
-  width: 320px; height: 320px;
-  animation: sv-ring-breathe 6s ease-in-out infinite 1s;
-}
-.sv-ring-3 {
-  width: 440px; height: 440px;
-  animation: sv-ring-breathe 6s ease-in-out infinite 2s;
-}
-.sv-ring-4 {
-  width: 560px; height: 560px;
-  animation: sv-ring-breathe 6s ease-in-out infinite 3s;
+.nx-ring--1 { width: 180px; height: 180px; animation-delay: 0s; }
+.nx-ring--2 { width: 340px; height: 340px; animation-delay: 1.5s; }
+.nx-ring--3 { width: 500px; height: 500px; animation-delay: 3s; }
+.nx-ring--4 { width: 660px; height: 660px; animation-delay: 4.5s; border-color: rgba(201,168,76, 0.015); }
+
+@keyframes nx-ring-live {
+  0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+  50%      { opacity: 1; transform: translate(-50%, -50%) scale(1.02); }
 }
 
-@keyframes sv-ring-breathe {
-  0%, 100% { opacity: 0.3; transform: translate(-50%, -50%) scale(1); }
-  50%      { opacity: 1; transform: translate(-50%, -50%) scale(1.03); }
-}
-
-/* SERVIX reveal */
-.sv-logo {
+/* SERVIX Identity */
+.nx-brand {
   position: relative;
-  z-index: 2;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.nx-logo {
+  display: flex;
+  direction: ltr;
+  gap: 0;
   overflow: hidden;
 }
 
-.sv-logo-text {
-  font-size: clamp(2.2rem, 5vw, 3.8rem);
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  color: var(--white);
-  display: flex;
-  direction: ltr;
-  gap: 2px;
-}
-
-.sv-logo-letter {
+.nx-logo-char {
   display: inline-block;
+  font-size: clamp(2.4rem, 5.5vw, 4.2rem);
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  color: var(--slate);
   opacity: 0;
-  transform: translateY(20px);
-  animation: sv-letter-enter 0.8s var(--ease) forwards;
+  transform: translateY(100%);
+  animation: nx-char-rise 1s var(--ease) forwards;
 }
 
-@keyframes sv-letter-enter {
+@keyframes nx-char-rise {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.sv-subtitle {
-  font-size: 12px;
+.nx-tagline {
+  font-size: 13px;
   font-weight: 600;
   color: var(--gold);
-  letter-spacing: 0.08em;
-  margin-top: 12px;
-  position: relative;
-  z-index: 2;
+  letter-spacing: 0.06em;
+  margin-top: 14px;
   opacity: 0;
-  animation: sv-fade-up 1.2s var(--ease) 0.8s forwards;
+  animation: nx-emerge 1.4s var(--ease) 1s forwards;
 }
 
-@keyframes sv-fade-up {
-  from { opacity: 0; transform: translateY(10px); }
+@keyframes nx-emerge {
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Command bar */
-.sv-command-bar {
-  display: flex;
+/* Status beacon */
+.nx-beacon {
+  display: inline-flex;
   align-items: center;
-  gap: 24px;
-  margin-top: 24px;
-  padding: 10px 28px;
+  gap: 12px;
+  margin-top: 28px;
+  padding: 10px 24px;
   border-radius: 100px;
-  border: 1px solid rgba(201,168,76, 0.06);
-  background: rgba(201,168,76, 0.02);
-  position: relative;
-  z-index: 2;
+  background: rgba(52,211,153, 0.03);
+  border: 1px solid rgba(52,211,153, 0.06);
   opacity: 0;
-  transform: translateY(12px);
-  animation: sv-fade-up 1s var(--ease) 1.2s forwards;
+  animation: nx-emerge 1.2s var(--ease) 1.4s forwards;
 }
 
-.sv-cmd-dot {
-  width: 5px;
-  height: 5px;
+.nx-beacon-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 8px rgba(16,185,129,0.5);
-  animation: sv-heartbeat 3s ease-in-out infinite;
+  background: var(--emerald);
+  box-shadow: 0 0 12px rgba(52,211,153, 0.4);
+  animation: nx-pulse 3s ease-in-out infinite;
 }
 
-@keyframes sv-heartbeat {
-  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(16,185,129,0.5); }
-  50%      { opacity: 0.3; box-shadow: 0 0 3px rgba(16,185,129,0.2); }
+@keyframes nx-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
 }
 
-.sv-cmd-text {
+.nx-beacon-text {
   font-size: 12px;
-  font-weight: 500;
-  color: var(--white-dim);
-  font-feature-settings: "tnum" 1;
-}
-
-.sv-cmd-text strong {
-  color: var(--white);
-  font-weight: 700;
-}
-
-.sv-cmd-divider {
-  width: 1px;
-  height: 14px;
-  background: rgba(255,255,255, 0.06);
-}
-
-.sv-cmd-time {
-  font-size: 11px;
   font-weight: 600;
-  color: var(--white-ghost);
+  color: rgba(52,211,153, 0.6);
+}
+
+.nx-beacon-sep {
+  width: 1px;
+  height: 12px;
+  background: rgba(255,255,255, 0.05);
+}
+
+.nx-beacon-time {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ghost);
   font-feature-settings: "tnum" 1;
+}
+
+/* Scroll cue */
+.nx-scroll-cue {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  animation: nx-emerge 1s var(--ease) 3s forwards;
+}
+
+.nx-scroll-cue span {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: var(--ghost);
+  text-transform: uppercase;
+}
+
+.nx-scroll-line {
+  width: 1px;
+  height: 28px;
+  background: linear-gradient(to bottom, var(--gold-deep), transparent);
+  animation: nx-scroll-drift 2.5s ease-in-out infinite;
+}
+
+@keyframes nx-scroll-drift {
+  0%, 100% { opacity: 0.4; transform: scaleY(1); }
+  50%      { opacity: 0.8; transform: scaleY(0.6); transform-origin: top; }
+}
+
+/* Corner time */
+.nx-corner-time {
+  position: absolute;
+  top: 32px;
+  right: 36px;
+  text-align: right;
+  opacity: 0;
+  animation: nx-emerge 1.2s var(--ease) 1.8s forwards;
+}
+
+.nx-corner-clock {
+  font-size: 28px;
+  font-weight: 200;
+  letter-spacing: -0.02em;
+  color: var(--muted);
+  font-feature-settings: "tnum" 1;
+}
+
+.nx-corner-date {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ghost);
+  margin-top: 2px;
+}
+
+/* Corner exit */
+.nx-corner-exit {
+  position: absolute;
+  top: 32px;
+  left: 36px;
+  opacity: 0;
+  animation: nx-emerge 1s var(--ease) 2s forwards;
+}
+
+.nx-exit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  color: rgba(255,255,255,0.08);
+  transition: all 0.3s var(--ease);
+}
+
+.nx-exit-btn:hover {
+  color: rgba(239,68,68, 0.5);
+  background: rgba(239,68,68, 0.04);
 }
 
 /* ════════════════════════════════════════════════════════════
-   ZONE 2: INTELLIGENCE (middle 40%)
-   Metric orbs + system readiness visualization
+   ACT II — THE COMMAND SURFACE
+   Below the fold. The operational layer.
    ════════════════════════════════════════════════════════════ */
-.sv-intelligence {
-  flex: 0 0 40%;
+.nx-command {
+  padding: 0 clamp(24px, 5vw, 120px);
+  padding-bottom: 120px;
+}
+
+/* ── Section label ── */
+.nx-section-label {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 16px;
+  padding: 80px 0 32px;
+}
+
+.nx-section-label::before {
+  content: '';
+  width: 32px;
+  height: 1px;
+  background: var(--gold-deep);
+  opacity: 0.4;
+}
+
+.nx-section-label span {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(201,168,76, 0.3);
+}
+
+/* ── Metrics row — three orbs ── */
+.nx-metrics-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+}
+
+@media (max-width: 768px) {
+  .nx-metrics-row { grid-template-columns: 1fr; }
+}
+
+.nx-orb-card {
   position: relative;
-  gap: 32px;
+  padding: 48px 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  text-align: center;
+  overflow: hidden;
+  transition: all 0.5s var(--ease);
 }
 
-/* Metric cluster */
-.sv-metric-cluster {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(32px, 6vw, 80px);
-  opacity: 0;
-  animation: sv-metrics-emerge 2s var(--ease) 1.6s forwards;
+.nx-orb-card:hover {
+  background: var(--surface-hover);
+  border-color: rgba(201,168,76, 0.06);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
 }
 
-@keyframes sv-metrics-emerge {
-  from { opacity: 0; transform: scale(0.94); filter: blur(6px); }
-  to   { opacity: 1; transform: scale(1); filter: blur(0); }
-}
-
-/* Single metric orb */
-.sv-orb {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+/* SVG ring inside orb card */
+.nx-orb-svg {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 20px;
   position: relative;
 }
 
-.sv-orb-ring {
-  width: 140px;
-  height: 140px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.sv-orb-ring svg {
-  position: absolute;
-  top: 0;
-  left: 0;
+.nx-orb-svg svg {
   width: 100%;
   height: 100%;
   transform: rotate(-90deg);
 }
 
-.sv-orb-ring-bg {
+.nx-orb-svg-bg {
   fill: none;
   stroke: rgba(255,255,255, 0.03);
   stroke-width: 1.5;
 }
 
-.sv-orb-ring-progress {
+.nx-orb-svg-ring {
   fill: none;
-  stroke: var(--gold);
   stroke-width: 1.5;
   stroke-linecap: round;
-  stroke-dasharray: 408;
-  stroke-dashoffset: 408;
-  opacity: 0.2;
-  animation: sv-ring-idle 4s ease-in-out infinite;
+  transition: stroke-dashoffset 2s var(--ease);
 }
 
-@keyframes sv-ring-idle {
-  0%, 100% { stroke-dashoffset: 408; opacity: 0.15; }
-  50%      { stroke-dashoffset: 400; opacity: 0.3; }
-}
-
-/* Orb inner pulse */
-.sv-orb-glow {
+.nx-orb-svg-glow {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 80px;
-  height: 80px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(201,168,76, 0.04) 0%, transparent 70%);
-  animation: sv-orb-pulse 4s ease-in-out infinite;
+  animation: nx-orb-breathe 5s ease-in-out infinite;
 }
 
-@keyframes sv-orb-pulse {
-  0%, 100% { transform: translate(-50%,-50%) scale(1); opacity: 0.5; }
-  50%      { transform: translate(-50%,-50%) scale(1.15); opacity: 1; }
+@keyframes nx-orb-breathe {
+  0%, 100% { opacity: 0.3; transform: translate(-50%,-50%) scale(1); }
+  50%      { opacity: 0.7; transform: translate(-50%,-50%) scale(1.1); }
 }
 
-.sv-orb-value {
-  font-size: 36px;
+.nx-orb-num {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 32px;
   font-weight: 900;
   letter-spacing: -0.04em;
-  color: var(--white);
+  color: var(--slate);
   font-feature-settings: "tnum" 1;
-  position: relative;
-  z-index: 1;
 }
 
-.sv-orb-suffix {
-  font-size: 14px;
+.nx-orb-suffix {
+  font-size: 12px;
   font-weight: 300;
-  color: var(--white-ghost);
+  color: var(--muted);
   margin-inline-start: 2px;
 }
 
-.sv-orb-label {
-  font-size: 10px;
+.nx-orb-label {
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--gold-deep);
-  margin-top: 16px;
-  text-align: center;
+  text-transform: uppercase;
 }
 
-/* Waiting signal visualization */
-.sv-signal {
+.nx-orb-sub {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ghost);
+  margin-top: 6px;
+}
+
+/* ── Intelligence rows ── */
+.nx-intel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nx-intel-line {
   display: flex;
   align-items: center;
   gap: 16px;
-  opacity: 0;
-  animation: sv-fade-up 1.2s var(--ease) 2s forwards;
+  padding: 18px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  transition: all 0.4s var(--ease);
+  cursor: default;
 }
 
-.sv-signal-line {
-  width: 120px;
-  height: 1px;
-  background: linear-gradient(to left, var(--gold-deep), transparent);
-  opacity: 0.3;
+.nx-intel-line:hover {
+  background: var(--surface-hover);
+  transform: translateX(-4px);
 }
 
-.sv-signal-text {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--gold-deep);
-  white-space: nowrap;
+.nx-intel-bar {
+  width: 3px;
+  height: 20px;
+  border-radius: 2px;
+  flex-shrink: 0;
 }
 
-.sv-signal-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--gold);
-  animation: sv-heartbeat 2s ease-in-out infinite;
+.nx-intel-msg {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.7;
 }
 
-/* ════════════════════════════════════════════════════════════
-   ZONE 3: EXPANSION (bottom 25%)
-   Dormant action triggers
-   ════════════════════════════════════════════════════════════ */
-.sv-expansion {
-  flex: 0 0 25%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(12px, 3vw, 32px);
-  padding: 0 24px;
-  opacity: 0;
-  animation: sv-fade-up 1.4s var(--ease) 2.4s forwards;
+.nx-intel-msg strong {
+  color: var(--slate);
+  font-weight: 700;
 }
 
-.sv-trigger {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 24px;
-  border-radius: 100px;
-  border: 1px solid rgba(201,168,76, 0.06);
-  background: rgba(201,168,76, 0.015);
-  cursor: pointer;
-  transition: all 0.5s var(--ease);
+/* ── Territory portals ── */
+.nx-portals {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+}
+
+@media (max-width: 768px) {
+  .nx-portals { grid-template-columns: 1fr; }
+}
+
+.nx-portal {
   position: relative;
+  padding: 40px 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 24px;
   overflow: hidden;
+  transition: all 0.5s var(--ease);
+  cursor: pointer;
   text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.sv-trigger::before {
+.nx-portal::before {
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(circle at center, var(--gold-glow), transparent 70%);
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 10%, var(--portal-accent, var(--gold-subtle)), transparent 90%);
   opacity: 0;
   transition: opacity 0.5s;
 }
 
-.sv-trigger:hover {
-  border-color: rgba(201,168,76, 0.15);
-  background: rgba(201,168,76, 0.03);
-  transform: translateY(-2px);
+.nx-portal:hover {
+  background: var(--surface-hover);
+  transform: translateY(-6px);
+  box-shadow: 0 30px 80px rgba(0,0,0, 0.35);
 }
 
-.sv-trigger:hover::before { opacity: 1; }
+.nx-portal:hover::before { opacity: 1; }
 
-.sv-trigger-dot {
-  width: 6px;
-  height: 6px;
+.nx-portal-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.4s var(--ease);
+}
+
+.nx-portal:hover .nx-portal-icon {
+  transform: scale(1.08);
+}
+
+.nx-portal-title {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--slate);
+}
+
+.nx-portal-desc {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ghost);
+}
+
+.nx-portal-stat {
+  margin-top: 12px;
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: var(--slate);
+  font-feature-settings: "tnum" 1;
+}
+
+.nx-portal-stat-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ghost);
+}
+
+/* ── Expansion triggers ── */
+.nx-triggers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  padding-top: 60px;
+}
+
+.nx-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  border-radius: 100px;
+  border: 1px solid rgba(201,168,76, 0.06);
+  background: var(--gold-subtle);
+  cursor: pointer;
+  transition: all 0.4s var(--ease);
+  text-decoration: none;
+}
+
+.nx-trigger:hover {
+  border-color: rgba(201,168,76, 0.18);
+  background: rgba(201,168,76, 0.06);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(201,168,76, 0.08);
+}
+
+.nx-trigger-dot {
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--gold);
   opacity: 0.3;
-  animation: sv-trigger-pulse 3s ease-in-out infinite;
-  flex-shrink: 0;
+  animation: nx-pulse 3s ease-in-out infinite;
 }
 
-@keyframes sv-trigger-pulse {
-  0%, 100% { opacity: 0.2; box-shadow: none; }
-  50%      { opacity: 0.5; box-shadow: 0 0 8px rgba(201,168,76,0.2); }
-}
-
-.sv-trigger:hover .sv-trigger-dot {
+.nx-trigger:hover .nx-trigger-dot {
   opacity: 1;
-  box-shadow: 0 0 12px var(--gold-glow);
+  box-shadow: 0 0 10px var(--gold-glow);
 }
 
-.sv-trigger-text {
-  font-size: 12px;
+.nx-trigger-text {
+  font-size: 13px;
   font-weight: 600;
   color: var(--gold-deep);
-  transition: color 0.4s;
-  position: relative;
-  z-index: 1;
-  white-space: nowrap;
+  transition: color 0.3s;
 }
 
-.sv-trigger:hover .sv-trigger-text {
+.nx-trigger:hover .nx-trigger-text {
   color: var(--gold);
 }
 
-/* ════════════════════════════════════════════════════════════
-   MOBILE ADAPTATION
-   ════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════
+   SCROLL REVEALS
+   ═══════════════════════════════ */
+.nx-reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 0.9s var(--ease-out), transform 0.9s var(--ease-out);
+}
+
+.nx-reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════
+   MOBILE
+   ═══════════════════════════════ */
 @media (max-width: 768px) {
-  .sv-sovereignty { flex: 0 0 30%; }
-  .sv-intelligence { flex: 0 0 45%; }
-  .sv-expansion { flex: 0 0 25%; flex-wrap: wrap; justify-content: center; }
-
-  .sv-orb-ring { width: 100px; height: 100px; }
-  .sv-orb-value { font-size: 24px; }
-  .sv-metric-cluster { gap: 20px; }
-
-  .sv-ring-3, .sv-ring-4 { display: none; }
-
-  .sv-command-bar { gap: 12px; padding: 8px 16px; }
-
-  .sv-trigger { padding: 10px 16px; }
-  .sv-trigger-text { font-size: 11px; }
+  .nx-corner-time, .nx-corner-exit { display: none; }
+  .nx-overture { height: auto; min-height: 100dvh; padding: 60px 20px; }
 }
