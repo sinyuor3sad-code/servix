@@ -81,7 +81,7 @@ export default function ServicesPage() {
   });
 
   const catOf = (id: string) => cats?.find(c => c.id === id);
-  const gradOf = (id: string) => { const i = cats?.findIndex(c => c.id === id) ?? 0; return GRADIENTS[i % GRADIENTS.length]; };
+  const gradOf = (id: string) => { const i = cats?.findIndex(c => c.id === id) ?? -1; return GRADIENTS[i < 0 ? 0 : i % GRADIENTS.length]; };
 
   if (cL || sL) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
