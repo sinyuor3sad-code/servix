@@ -39,21 +39,42 @@ export default function SystemPage(): ReactElement {
   const checkHealth = async () => {
     setServices(prev => prev.map(s => ({ ...s, status: 'checking' as Health })));
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
-    const checks = [
-      { name: 'NestJS API', url: `${apiUrl}/health`, icon: Server },
-      { name: 'الداشبورد', url: 'https://app.servi-x.com', icon: Database },
-      { name: 'صفحة الحجز', url: 'https://booking.servi-x.com', icon: Zap },
-      { name: 'صفحة الهبوط', url: 'https://servi-x.com', icon: Activity },
-    ];
-    const results = await Promise.all(checks.map(async (c) => {
+
+    // API health check — uses actual health endpoint with CORS
+    const checkApi = async (): Promise<Health> => {
       try {
-        await fetch(c.url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(5000) });
-        return { name: c.name, status: 'healthy' as Health, icon: c.icon };
+        const res = await fetch(`${apiUrl}/health`, { signal: AbortSignal.timeout(5000) });
+        if (!res.ok) return 'warning';
+        const data = await res.json();
+        return data?.data?.status === 'healthy' || data?.status === 'healthy' ? 'healthy' : 'warning';
       } catch {
-        return { name: c.name, status: 'offline' as Health, icon: c.icon };
+        return 'offline';
       }
-    }));
-    setServices(results);
+    };
+
+    // External services — use no-cors HEAD (opaque response = reachable)
+    const checkExternal = async (url: string): Promise<Health> => {
+      try {
+        await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(5000) });
+        return 'healthy';
+      } catch {
+        return 'offline';
+      }
+    };
+
+    const [apiStatus, dashStatus, bookingStatus, landingStatus] = await Promise.all([
+      checkApi(),
+      checkExternal('https://app.servi-x.com'),
+      checkExternal('https://booking.servi-x.com'),
+      checkExternal('https://servi-x.com'),
+    ]);
+
+    setServices([
+      { name: 'NestJS API', status: apiStatus, icon: Server },
+      { name: 'الداشبورد', status: dashStatus, icon: Database },
+      { name: 'صفحة الحجز', status: bookingStatus, icon: Zap },
+      { name: 'صفحة الهبوط', status: landingStatus, icon: Activity },
+    ]);
     setLastCheck(new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
   };
 

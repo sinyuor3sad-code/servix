@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, type ReactElement } from 'react';
+import { useState, useEffect, type ReactElement } from 'react';
 import {
   HardDrive, CheckCircle, XCircle, Clock, AlertTriangle,
   Download, RefreshCw, Search, Shield,
 } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
+import { adminService, type Tenant } from '@/services/admin.service';
 
 type BackupStatus = 'success' | 'failed' | 'pending' | 'never';
 
@@ -26,21 +27,30 @@ interface BackupRecord {
   autoBackup: boolean;
 }
 
-// Demo data - will be replaced with real API
-const DEMO: BackupRecord[] = [
-  { id: '1', salonName: 'صالون الأناقة الملكية', lastBackup: '2026-04-05T08:00:00', status: 'success', size: '42 MB', initiator: 'تلقائي', autoBackup: true },
-  { id: '2', salonName: 'عيادة لؤلؤة الجمال', lastBackup: '2026-04-04T03:00:00', status: 'success', size: '28 MB', initiator: 'تلقائي', autoBackup: true },
-  { id: '3', salonName: 'صالون بلوم', lastBackup: '2026-03-28T15:30:00', status: 'failed', size: '—', initiator: 'يدوي', autoBackup: false },
-  { id: '4', salonName: 'صالون فيرا', lastBackup: '2026-04-05T03:00:00', status: 'success', size: '156 MB', initiator: 'تلقائي', autoBackup: true },
-  { id: '5', salonName: 'استوديو ريماس', lastBackup: null, status: 'never', size: '—', initiator: '—', autoBackup: false },
-  { id: '6', salonName: 'مركز أوبال', lastBackup: '2026-04-03T03:00:00', status: 'success', size: '18 MB', initiator: 'تلقائي', autoBackup: true },
-  { id: '7', salonName: 'صالون غلام', lastBackup: '2026-04-01T12:00:00', status: 'success', size: '35 MB', initiator: 'يدوي', autoBackup: true },
-];
-
 export default function BackupsPage(): ReactElement {
   const [search, setSearch] = useState('');
-  const [backups, setBackups] = useState(DEMO);
+  const [backups, setBackups] = useState<BackupRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [backing, setBacking] = useState<string | null>(null);
+
+  // Fetch real tenants and map to backup records
+  useEffect(() => {
+    adminService.getTenants('page=1&perPage=100')
+      .then(res => {
+        const records: BackupRecord[] = (res.data ?? []).map((t: Tenant) => ({
+          id: t.id,
+          salonName: t.nameAr || t.nameEn || t.slug,
+          lastBackup: null,
+          status: 'never' as BackupStatus,
+          size: '—',
+          initiator: '—',
+          autoBackup: false,
+        }));
+        setBackups(records);
+      })
+      .catch(() => setBackups([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = backups.filter(b => !search || b.salonName.includes(search));
 
@@ -51,7 +61,7 @@ export default function BackupsPage(): ReactElement {
 
   const triggerBackup = async (id: string) => {
     setBacking(id);
-    // Simulate backup
+    // TODO: Connect to real backup API when available
     await new Promise(r => setTimeout(r, 2000));
     setBackups(prev => prev.map(b =>
       b.id === id ? { ...b, status: 'success' as BackupStatus, lastBackup: new Date().toISOString(), initiator: 'يدوي (المدير)', size: Math.floor(Math.random() * 100 + 10) + ' MB' } : b
@@ -69,12 +79,11 @@ export default function BackupsPage(): ReactElement {
     <div className="nx-space-y">
       <PageTitle
         title="النسخ الاحتياطي"
-        desc="مراقبة وإدارة النسخ الاحتياطي لجميع الصالونات"
+        desc={`مراقبة وإدارة النسخ الاحتياطي لـ ${backups.length} صالون`}
         icon={<HardDrive size={20} style={{ color: '#6366F1' }} strokeWidth={1.5} />}
       >
         <button className="nx-btn nx-btn--primary" onClick={() => {
-          // Trigger backup for all
-          DEMO.forEach(b => triggerBackup(b.id));
+          backups.forEach(b => triggerBackup(b.id));
         }}>
           <RefreshCw size={14} /> نسخ احتياطي شامل
         </button>
@@ -86,7 +95,7 @@ export default function BackupsPage(): ReactElement {
           { label: 'ناجح', value: successCount, color: '#34D399', icon: CheckCircle },
           { label: 'فشل', value: failCount, color: '#F87171', icon: XCircle },
           { label: 'لم يتم أبداً', value: neverCount, color: '#A78BFA', icon: AlertTriangle },
-          { label: 'الحجم الإجمالي', value: `${totalSize} MB`, color: '#C9A84C', icon: HardDrive },
+          { label: 'الحجم الإجمالي', value: totalSize > 0 ? `${totalSize} MB` : '—', color: '#C9A84C', icon: HardDrive },
         ].map(k => {
           const Icon = k.icon;
           return (
@@ -117,75 +126,88 @@ export default function BackupsPage(): ReactElement {
 
       {/* Table */}
       <Glass>
-        <div className="nx-table-mobile-wrap">
-          <table className="nx-table">
-            <thead>
-              <tr>
-                <th>الصالون</th>
-                <th>آخر نسخة</th>
-                <th>منذ</th>
-                <th>الحجم</th>
-                <th>المنفّذ</th>
-                <th>تلقائي</th>
-                <th>الحالة</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((b) => {
-                const st = ST[b.status];
-                const days = daysSince(b.lastBackup);
-                const isOld = days !== null && days > 3;
-                return (
-                  <tr key={b.id}>
-                    <td className="nx-td-primary">{b.salonName}</td>
-                    <td style={TN}>
-                      {b.lastBackup
-                        ? new Date(b.lastBackup).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                        : <span style={{ color: 'var(--ghost)' }}>—</span>
-                      }
-                    </td>
-                    <td>
-                      {days !== null ? (
-                        <span style={{ fontSize: 12, fontWeight: 700, color: isOld ? '#FBBF24' : '#34D399', ...TN }}>
-                          {days === 0 ? 'اليوم' : `${days} يوم`}
-                        </span>
-                      ) : (
-                        <span style={{ color: '#F87171', fontSize: 12, fontWeight: 600 }}>لم يتم</span>
-                      )}
-                    </td>
-                    <td style={TN}>{b.size}</td>
-                    <td style={{ fontSize: 12 }}>{b.initiator}</td>
-                    <td>
-                      {b.autoBackup ? (
-                        <span className="nx-badge nx-badge--green"><CheckCircle size={11} /> مفعّل</span>
-                      ) : (
-                        <span className="nx-badge nx-badge--red"><XCircle size={11} /> معطّل</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={`nx-badge ${st.badge}`}><st.icon size={11} />{st.label}</span>
-                    </td>
-                    <td>
-                      <button
-                        className="nx-btn"
-                        style={{ padding: '6px 10px', fontSize: 11 }}
-                        onClick={() => triggerBackup(b.id)}
-                        disabled={backing === b.id}
-                      >
-                        {backing === b.id ? (
-                          <span style={{ width: 14, height: 14, border: '2px solid var(--gold)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', display: 'inline-block' }} />
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center' }}>
+            <div style={{ width: 24, height: 24, border: '2px solid var(--gold, #C9A84C)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 12px' }} />
+            <p style={{ fontSize: 13, color: 'var(--ghost)' }}>جاري تحميل الصالونات...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center' }}>
+            <HardDrive size={32} style={{ color: 'var(--ghost)', margin: '0 auto 12px', display: 'block' }} />
+            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--muted)' }}>لا توجد صالونات</p>
+            <p style={{ fontSize: 12, color: 'var(--ghost)', marginTop: 4 }}>سيظهر هنا عند تسجيل أول صالون</p>
+          </div>
+        ) : (
+          <div className="nx-table-mobile-wrap">
+            <table className="nx-table">
+              <thead>
+                <tr>
+                  <th>الصالون</th>
+                  <th>آخر نسخة</th>
+                  <th>منذ</th>
+                  <th>الحجم</th>
+                  <th>المنفّذ</th>
+                  <th>تلقائي</th>
+                  <th>الحالة</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((b) => {
+                  const st = ST[b.status];
+                  const days = daysSince(b.lastBackup);
+                  const isOld = days !== null && days > 3;
+                  return (
+                    <tr key={b.id}>
+                      <td className="nx-td-primary">{b.salonName}</td>
+                      <td style={TN}>
+                        {b.lastBackup
+                          ? new Date(b.lastBackup).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : <span style={{ color: 'var(--ghost)' }}>—</span>
+                        }
+                      </td>
+                      <td>
+                        {days !== null ? (
+                          <span style={{ fontSize: 12, fontWeight: 700, color: isOld ? '#FBBF24' : '#34D399', ...TN }}>
+                            {days === 0 ? 'اليوم' : `${days} يوم`}
+                          </span>
                         ) : (
-                          <><Download size={12} /> نسخ</>
+                          <span style={{ color: '#F87171', fontSize: 12, fontWeight: 600 }}>لم يتم</span>
                         )}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                      <td style={TN}>{b.size}</td>
+                      <td style={{ fontSize: 12 }}>{b.initiator}</td>
+                      <td>
+                        {b.autoBackup ? (
+                          <span className="nx-badge nx-badge--green"><CheckCircle size={11} /> مفعّل</span>
+                        ) : (
+                          <span className="nx-badge nx-badge--red"><XCircle size={11} /> معطّل</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`nx-badge ${st.badge}`}><st.icon size={11} />{st.label}</span>
+                      </td>
+                      <td>
+                        <button
+                          className="nx-btn"
+                          style={{ padding: '6px 10px', fontSize: 11 }}
+                          onClick={() => triggerBackup(b.id)}
+                          disabled={backing === b.id}
+                        >
+                          {backing === b.id ? (
+                            <span style={{ width: 14, height: 14, border: '2px solid var(--gold)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', display: 'inline-block' }} />
+                          ) : (
+                            <><Download size={12} /> نسخ</>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Glass>
 
       {/* Warning for overdue backups */}
