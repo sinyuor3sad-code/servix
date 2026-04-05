@@ -13,6 +13,8 @@ import { resolveTheme } from '@/lib/themes';
 import { ThemeProvider } from '@/components/theme-provider';
 import SeasonalParticles from '@/components/seasonal-particles';
 import SeasonalDecorations from '@/components/seasonal-decorations';
+import PWAInstall from '@/components/pwa-install';
+import IOSInstallGuide from '@/components/ios-install-guide';
 
 interface SalonLayoutProps {
   params: Promise<{ slug: string }>;
@@ -56,6 +58,10 @@ export default async function SalonLayout({ params, children }: SalonLayoutProps
         <SeasonalParticles enabled={resolved.seasonal?.particles ?? false} />
 
         {children}
+
+        {/* PWA Install Prompt */}
+        <PWAInstall />
+        <IOSInstallGuide />
       </div>
     </ThemeProvider>
   );
