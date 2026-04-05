@@ -165,6 +165,33 @@ export const adminService = {
   updateFeature: (id: string, data: Partial<Feature>): Promise<Feature> =>
     api.put<Feature>(`/admin/features/${id}`, data, getToken() ?? undefined),
 
+  createTenant: (data: {
+    nameAr: string;
+    nameEn: string;
+    email: string;
+    phone: string;
+    city: string;
+    planId?: string;
+    ownerName: string;
+    ownerPassword: string;
+  }): Promise<Tenant> => {
+    // Auto-generate slug from nameEn
+    const slug = (data.nameEn || data.nameAr)
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .slice(0, 50) || `salon-${Date.now()}`;
+    return api.post<Tenant>('/admin/tenants', {
+      nameAr: data.nameAr,
+      nameEn: data.nameEn,
+      slug,
+      email: data.email,
+      phone: data.phone,
+      city: data.city,
+    }, getToken() ?? undefined);
+  },
+
   login: (email: string, password: string): Promise<{ user: { id: string; email: string; fullName: string; role: string }; accessToken: string; refreshToken: string }> =>
     api.post('/admin/auth/login', { email, password }),
 };

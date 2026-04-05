@@ -9,28 +9,25 @@ interface GlassProps {
 export function Glass({ children, className = '', hover = false }: GlassProps) {
   return (
     <div
-      className={`
-        relative overflow-hidden rounded-2xl border border-white/[0.07]
-        shadow-[0_4px_30px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.05)]
-        ${hover ? 'transition-all duration-400 hover:border-amber-500/15 hover:shadow-[0_8px_40px_rgba(234,179,8,0.06)]' : ''}
-        ${className}
-      `}
-      style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.015) 100%)', backdropFilter: 'blur(40px) saturate(130%)' }}
+      className={`nx-glass ${hover ? 'nx-glass--hover' : ''} ${className}`}
     >
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.04] via-transparent to-transparent" />
+      <div className="nx-glass-sheen" />
       <div className="relative">{children}</div>
     </div>
   );
 }
 
-export function PageTitle({ title, desc, children }: { title: string; desc: string; children?: ReactNode }) {
+export function PageTitle({ title, desc, icon, children }: { title: string; desc: string; icon?: ReactNode; children?: ReactNode }) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-white">{title}</h1>
-        <p className="mt-1 text-[13px] text-white/30">{desc}</p>
+    <div className="nx-page-title">
+      <div className="nx-page-title-text">
+        {icon && <div className="nx-page-title-icon">{icon}</div>}
+        <div>
+          <h1 className="nx-h1">{title}</h1>
+          <p className="nx-subtitle">{desc}</p>
+        </div>
       </div>
-      {children}
+      {children && <div className="nx-page-title-actions">{children}</div>}
     </div>
   );
 }

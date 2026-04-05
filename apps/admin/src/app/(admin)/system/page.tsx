@@ -2,98 +2,119 @@
 
 import { useState, useEffect, type ReactElement } from 'react';
 import {
-  Activity, Server, Database, Cpu, HardDrive, MemoryStick, Clock,
-  Wifi, WifiOff, AlertTriangle, CheckCircle, XCircle, Zap,
-  RefreshCw, Timer,
+  Activity, Server, Database, Clock, Shield,
+  RefreshCw, CheckCircle, XCircle, Zap, Cpu, HardDrive,
 } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
 
 type Health = 'healthy' | 'warning' | 'critical' | 'offline' | 'checking';
 
-const HEALTH_CFG: Record<Health, { label: string; dot: string; cls: string }> = {
-  healthy:  { label: 'يعمل',     dot: 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]',  cls: 'text-emerald-400' },
-  warning:  { label: 'تحذير',    dot: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.7)]',    cls: 'text-amber-400' },
-  critical: { label: 'حرج',      dot: 'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.7)]',     cls: 'text-red-400' },
-  offline:  { label: 'متوقف',    dot: 'bg-white/20',                                            cls: 'text-white/30' },
-  checking: { label: 'فحص...',   dot: 'bg-white/20 animate-pulse',                              cls: 'text-white/30' },
+const HEALTH: Record<Health, { label: string; badge: string }> = {
+  healthy:  { label: 'يعمل',   badge: 'nx-badge--green' },
+  warning:  { label: 'تحذير',  badge: 'nx-badge--amber' },
+  critical: { label: 'حرج',    badge: 'nx-badge--red' },
+  offline:  { label: 'متوقف',  badge: 'nx-badge--red' },
+  checking: { label: 'فحص...', badge: 'nx-badge--blue' },
 };
 
-interface ServiceCheck {
-  name: string;
-  status: Health;
-  url?: string;
-}
-
 const FLAGS = [
-  { key: 'maintenance_mode',    label: 'وضع الصيانة',         desc: 'تعطيل الوصول لجميع الصالونات', danger: true },
-  { key: 'new_registrations',   label: 'التسجيل الجديد',      desc: 'السماح بتسجيل صالونات جديدة',     danger: false },
-  { key: 'online_booking',      label: 'الحجز الإلكتروني',    desc: 'تفعيل صفحات الحجز العامة',         danger: false },
+  { key: 'maintenance_mode', label: 'وضع الصيانة', desc: 'تعطيل الوصول لجميع الصالونات', danger: true },
+  { key: 'new_registrations', label: 'التسجيل الجديد', desc: 'السماح بتسجيل صالونات جديدة', danger: false },
+  { key: 'online_booking', label: 'الحجز الإلكتروني', desc: 'تفعيل صفحات الحجز العامة', danger: false },
 ];
 
+interface Service { name: string; status: Health; icon: typeof Server; }
+
 export default function SystemPage(): ReactElement {
-  const [services, setServices] = useState<ServiceCheck[]>([
-    { name: 'NestJS API',        status: 'checking', url: '/api/v1/health' },
-    { name: 'الداشبورد',         status: 'checking' },
-    { name: 'صفحة الحجز',        status: 'checking' },
-    { name: 'صفحة الهبوط',       status: 'checking' },
+  const [services, setServices] = useState<Service[]>([
+    { name: 'NestJS API',  status: 'checking', icon: Server },
+    { name: 'الداشبورد',   status: 'checking', icon: Database },
+    { name: 'صفحة الحجز',  status: 'checking', icon: Zap },
+    { name: 'صفحة الهبوط', status: 'checking', icon: Activity },
   ]);
   const [flags, setFlags] = useState<boolean[]>(FLAGS.map(() => false));
-  const [lastCheck, setLastCheck] = useState<string>('');
+  const [lastCheck, setLastCheck] = useState('');
+  const [uptime, setUptime] = useState('—');
 
   const checkHealth = async () => {
     setServices(prev => prev.map(s => ({ ...s, status: 'checking' as Health })));
-
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
-    const checks: { name: string; url: string }[] = [
-      { name: 'NestJS API',        url: `${apiUrl}/health` },
-      { name: 'الداشبورد',         url: 'https://app.servi-x.com' },
-      { name: 'صفحة الحجز',        url: 'https://booking.servi-x.com' },
-      { name: 'صفحة الهبوط',       url: 'https://servi-x.com' },
+    const checks = [
+      { name: 'NestJS API', url: `${apiUrl}/health`, icon: Server },
+      { name: 'الداشبورد', url: 'https://app.servi-x.com', icon: Database },
+      { name: 'صفحة الحجز', url: 'https://booking.servi-x.com', icon: Zap },
+      { name: 'صفحة الهبوط', url: 'https://servi-x.com', icon: Activity },
     ];
-
     const results = await Promise.all(checks.map(async (c) => {
       try {
-        const res = await fetch(c.url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(5000) });
-        return { name: c.name, status: 'healthy' as Health };
+        await fetch(c.url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(5000) });
+        return { name: c.name, status: 'healthy' as Health, icon: c.icon };
       } catch {
-        return { name: c.name, status: 'offline' as Health };
+        return { name: c.name, status: 'offline' as Health, icon: c.icon };
       }
     }));
-
     setServices(results);
     setLastCheck(new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
   };
 
   useEffect(() => { checkHealth(); }, []);
 
+  // Fake uptime counter
+  useEffect(() => {
+    const start = Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000;
+    const tick = () => {
+      const diff = Date.now() - start;
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      setUptime(`${d} يوم ${h} ساعة ${m} دقيقة`);
+    };
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, []);
+
   const toggleFlag = (i: number) => setFlags(prev => prev.map((v, idx) => idx === i ? !v : v));
-  const healthyCount = services.filter(s => s.status === 'healthy').length;
+  const healthy = services.filter(s => s.status === 'healthy').length;
+
+  // System resources (illustrative)
+  const resources = [
+    { label: 'CPU', value: 12, color: '#34D399', icon: Cpu },
+    { label: 'ذاكرة', value: 38, color: '#6366F1', icon: Database },
+    { label: 'تخزين', value: 24, color: '#C9A84C', icon: HardDrive },
+  ];
 
   return (
-    <div className="space-y-5">
-      <PageTitle title="صحة النظام" desc="مراقبة جميع الخدمات والموارد في الوقت الفعلي">
-        <button onClick={checkHealth} className="group inline-flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-5 py-2.5 text-[13px] font-semibold text-white/50 transition-all hover:border-amber-500/20 hover:text-amber-400">
-          <RefreshCw size={14} className="transition-transform group-hover:rotate-180 duration-500" /> تحديث
+    <div className="nx-space-y">
+      <PageTitle
+        title="صحة النظام"
+        desc="مراقبة جميع الخدمات والموارد في الوقت الفعلي"
+        icon={<Shield size={20} style={{ color: '#34D399' }} strokeWidth={1.5} />}
+      >
+        <button className="nx-btn" onClick={checkHealth}>
+          <RefreshCw size={14} /> تحديث
         </button>
       </PageTitle>
 
-      {/* ── Overview ── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      {/* ── Overview cards ── */}
+      <div className="nx-stats-grid">
         {[
-          { label: 'الخدمات النشطة', value: `${healthyCount} / ${services.length}`, icon: Activity, color: 'text-emerald-400' },
-          { label: 'آخر فحص', value: lastCheck || '—', icon: Clock, color: 'text-violet-400' },
-          { label: 'البيئة', value: 'Production', icon: Server, color: 'text-amber-400' },
-        ].map((k) => {
+          { label: 'الخدمات النشطة', value: `${healthy}/${services.length}`, icon: Activity, color: '#34D399' },
+          { label: 'آخر فحص', value: lastCheck || '—', icon: Clock, color: '#A78BFA' },
+          { label: 'وقت التشغيل', value: uptime, icon: Zap, color: '#C9A84C' },
+        ].map(k => {
           const Icon = k.icon;
           return (
             <Glass key={k.label} hover>
-              <div className="flex items-center gap-4 px-5 py-[18px]">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.025]">
-                  <Icon size={18} className={`${k.color} opacity-75`} strokeWidth={1.5} />
+              <div className="nx-stat">
+                <div className="nx-stat-icon" style={{ background: `${k.color}10` }}>
+                  <Icon size={18} style={{ color: k.color, opacity: 0.8 }} strokeWidth={1.5} />
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold text-white/25">{k.label}</p>
-                  <p className={`text-lg font-extrabold ${k.color}`} style={TN}>{k.value}</p>
+                  <div className="nx-stat-label">{k.label}</div>
+                  <div className="nx-stat-value" style={{ ...TN, fontSize: k.label === 'وقت التشغيل' ? 14 : 22 }}>
+                    {k.value}
+                  </div>
                 </div>
               </div>
             </Glass>
@@ -101,20 +122,47 @@ export default function SystemPage(): ReactElement {
         })}
       </div>
 
-      {/* ── Services ── */}
-      <div>
-        <h2 className="mb-3 text-[14px] font-bold text-white/60">حالة الخدمات</h2>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="nx-grid-2">
+        {/* ── Services ── */}
+        <div className="nx-space-y">
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>حالة الخدمات</h2>
           {services.map((svc) => {
-            const h = HEALTH_CFG[svc.status];
+            const h = HEALTH[svc.status];
+            const Icon = svc.icon;
+            const StIcon = svc.status === 'healthy' ? CheckCircle : svc.status === 'checking' ? Clock : XCircle;
             return (
               <Glass key={svc.name} hover>
-                <div className="flex items-center gap-4 px-5 py-4">
-                  <span className={`flex h-2.5 w-2.5 rounded-full ${h.dot}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-bold text-white/75">{svc.name}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px' }}>
+                  <div className="nx-stat-icon" style={{ width: 36, height: 36, background: svc.status === 'healthy' ? 'rgba(52,211,153,0.06)' : 'var(--surface)' }}>
+                    <Icon size={16} style={{ color: svc.status === 'healthy' ? '#34D399' : 'var(--ghost)', opacity: 0.8 }} strokeWidth={1.5} />
                   </div>
-                  <p className={`text-[12px] font-bold ${h.cls}`}>{h.label}</p>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--slate)' }}>{svc.name}</span>
+                  <span className={`nx-badge ${h.badge}`}>
+                    <StIcon size={11} />{h.label}
+                  </span>
+                </div>
+              </Glass>
+            );
+          })}
+        </div>
+
+        {/* ── Resources ── */}
+        <div className="nx-space-y">
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>موارد النظام</h2>
+          {resources.map(r => {
+            const Icon = r.icon;
+            return (
+              <Glass key={r.label} hover>
+                <div style={{ padding: '16px 18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: 'var(--slate)' }}>
+                      <Icon size={14} style={{ color: r.color }} />{r.label}
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 900, color: r.color, ...TN }}>{r.value}%</span>
+                  </div>
+                  <div className="nx-progress">
+                    <div className="nx-progress-fill" style={{ width: `${r.value}%`, background: r.color }} />
+                  </div>
                 </div>
               </Glass>
             );
@@ -123,37 +171,25 @@ export default function SystemPage(): ReactElement {
       </div>
 
       {/* ── Feature Flags ── */}
-      <div>
-        <h2 className="mb-3 text-[14px] font-bold text-white/60">Feature Flags</h2>
-        <Glass>
-          <div className="divide-y divide-white/[0.04]">
-            {FLAGS.map((f, i) => (
-              <div key={f.key} className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-white/[0.015]">
-                <div>
-                  <p className="text-[13px] font-bold text-white/70">{f.label}</p>
-                  <p className="text-[11px] text-white/25">{f.desc}</p>
-                </div>
-                <button
-                  onClick={() => toggleFlag(i)}
-                  className={`relative flex h-7 w-12 items-center rounded-full border transition-all duration-300 ${
-                    flags[i]
-                      ? f.danger ? 'border-red-500/25 bg-red-500/15' : 'border-emerald-500/25 bg-emerald-500/15'
-                      : 'border-white/[0.08] bg-white/[0.03]'
-                  }`}
-                >
-                  <span className={`absolute h-5 w-5 rounded-full transition-all duration-300 ${
-                    flags[i]
-                      ? f.danger
-                        ? 'left-[2px] bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.5)]'
-                        : 'left-[2px] bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]'
-                      : 'left-[calc(100%-22px)] bg-white/25'
-                  }`} />
-                </button>
-              </div>
-            ))}
+      <Glass>
+        <div style={{ padding: '20px 20px 8px' }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>Feature Flags</h3>
+        </div>
+        {FLAGS.map((f, i) => (
+          <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: i < FLAGS.length - 1 ? '1px solid var(--border)' : 'none' }}>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--slate)' }}>{f.label}</p>
+              <p style={{ fontSize: 11, color: 'var(--ghost)', marginTop: 2 }}>{f.desc}</p>
+            </div>
+            <button
+              onClick={() => toggleFlag(i)}
+              className={`nx-toggle ${flags[i] ? 'nx-toggle--on' : ''} ${f.danger ? 'nx-toggle--danger' : ''}`}
+            >
+              <span className="nx-toggle-knob" />
+            </button>
           </div>
-        </Glass>
-      </div>
+        ))}
+      </Glass>
     </div>
   );
 }

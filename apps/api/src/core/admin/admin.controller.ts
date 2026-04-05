@@ -22,6 +22,8 @@ import { AdminService } from './admin.service';
 import { RolesGuard } from '../../shared/guards';
 import { Roles, CurrentUser, Public } from '../../shared/decorators';
 import { RateLimit } from '../../shared/guards/rate-limit.guard';
+import { TenantsService } from '../tenants/tenants.service';
+import { CreateTenantDto } from '../tenants/dto/create-tenant.dto';
 import {
   GetTenantsDto,
   UpdateTenantStatusDto,
@@ -37,7 +39,10 @@ import {
 @Roles('super_admin')
 @Controller({ path: 'admin', version: '1' })
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly tenantsService: TenantsService,
+  ) {}
 
   @Post('auth/login')
   @Public()
@@ -62,6 +67,17 @@ export class AdminController {
   @ApiResponse({ status: 200, description: 'تم جلب الإحصائيات بنجاح' })
   async getStats() {
     return this.adminService.getStats();
+  }
+
+  @Post('tenants')
+  @ApiOperation({ summary: 'إنشاء منشأة جديدة من لوحة الإدارة' })
+  @ApiResponse({ status: 201, description: 'تم إنشاء المنشأة بنجاح' })
+  @ApiResponse({ status: 409, description: 'المعرف الفريد مستخدم بالفعل' })
+  async createTenant(
+    @Body() dto: CreateTenantDto,
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.tenantsService.create(dto, adminId);
   }
 
   @Get('tenants')

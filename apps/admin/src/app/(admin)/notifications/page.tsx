@@ -3,7 +3,7 @@
 import { useState, type ReactElement } from 'react';
 import {
   Bell, Send, CheckCheck, Clock, AlertTriangle, Plus, Search,
-  Users, Eye, Mail, Smartphone, Filter, BarChart3, X, Megaphone,
+  Eye, Mail, Smartphone, X, Megaphone, BarChart3,
 } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
 
@@ -17,25 +17,25 @@ interface Notif {
 }
 
 const DATA: Notif[] = [
-  { id: '1', title: 'تحديث شروط الاستخدام',     body: 'تم تحديث سياسة الخصوصية والشروط — يرجى المراجعة.',             target: 'جميع الشركات', channel: 'email',    status: 'sent',      sentAt: '2026-03-20', recipients: 47, opened: 38, delivered: 47 },
-  { id: '2', title: 'عرض رمضان — خصم 30%',     body: 'استخدم كود RAMADAN30 للحصول على خصم 30% على أي باقة.',       target: 'Basic فقط',   channel: 'sms',      status: 'sent',      sentAt: '2026-03-15', recipients: 12, opened: 9,  delivered: 12 },
-  { id: '3', title: 'تذكير بتجديد الاشتراك',    body: 'اشتراكك ينتهي خلال 3 أيام — جدّد الآن للاستمرار.',           target: 'منتهي قريباً', channel: 'whatsapp', status: 'scheduled', sentAt: '2026-03-28', recipients: 3,  opened: 0,  delivered: 0 },
-  { id: '4', title: 'إطلاق ميزة واتساب بزنس',  body: 'الآن يمكنك ربط واتساب بزنس من الإعدادات — مجاناً لباقة Enterprise.', target: 'Enterprise', channel: 'push',     status: 'sent',      sentAt: '2026-03-10', recipients: 7,  opened: 7,  delivered: 7 },
-  { id: '5', title: 'صيانة مجدولة — 2 أبريل',   body: 'ستتم صيانة الخوادم يوم 2 أبريل من 2-4 صباحاً. قد يتأثر الأداء.', target: 'جميع الشركات', channel: 'email',    status: 'draft',     sentAt: null,         recipients: 0,  opened: 0,  delivered: 0 },
-  { id: '6', title: 'ميزة جديدة: التسعير الذكي', body: 'أصبح التسعير الديناميكي متاحاً لباقة Pro و Enterprise.',       target: 'Pro + Enterprise', channel: 'push', status: 'sent',      sentAt: '2026-03-05', recipients: 35, opened: 28, delivered: 34 },
+  { id: '1', title: 'تحديث شروط الاستخدام', body: 'تم تحديث سياسة الخصوصية والشروط — يرجى المراجعة.', target: 'جميع الشركات', channel: 'email', status: 'sent', sentAt: '2026-03-20', recipients: 47, opened: 38, delivered: 47 },
+  { id: '2', title: 'عرض رمضان — خصم 30%', body: 'استخدم كود RAMADAN30 للحصول على خصم 30% على أي باقة.', target: 'Basic فقط', channel: 'sms', status: 'sent', sentAt: '2026-03-15', recipients: 12, opened: 9, delivered: 12 },
+  { id: '3', title: 'تذكير بتجديد الاشتراك', body: 'اشتراكك ينتهي خلال 3 أيام — جدّد الآن للاستمرار.', target: 'منتهي قريباً', channel: 'whatsapp', status: 'scheduled', sentAt: '2026-03-28', recipients: 3, opened: 0, delivered: 0 },
+  { id: '4', title: 'إطلاق ميزة واتساب بزنس', body: 'الآن يمكنك ربط واتساب بزنس من الإعدادات — مجاناً لباقة Enterprise.', target: 'Enterprise', channel: 'push', status: 'sent', sentAt: '2026-03-10', recipients: 7, opened: 7, delivered: 7 },
+  { id: '5', title: 'صيانة مجدولة — 2 أبريل', body: 'ستتم صيانة الخوادم يوم 2 أبريل من 2-4 صباحاً. قد يتأثر الأداء.', target: 'جميع الشركات', channel: 'email', status: 'draft', sentAt: null, recipients: 0, opened: 0, delivered: 0 },
+  { id: '6', title: 'ميزة جديدة: التسعير الذكي', body: 'أصبح التسعير الديناميكي متاحاً لباقة Pro و Enterprise.', target: 'Pro + Enterprise', channel: 'push', status: 'sent', sentAt: '2026-03-05', recipients: 35, opened: 28, delivered: 34 },
 ];
 
-const ST_CFG: Record<NStatus, { label: string; icon: React.ElementType; cls: string }> = {
-  sent:      { label: 'مُرسل',  icon: CheckCheck,   cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  scheduled: { label: 'مجدول',  icon: Clock,        cls: 'bg-amber-500/10 text-amber-400 border-amber-500/18' },
-  draft:     { label: 'مسودة',  icon: AlertTriangle, cls: 'bg-white/[0.03] text-white/30 border-white/[0.06]' },
+const ST_CFG: Record<NStatus, { label: string; badge: string; icon: typeof CheckCheck }> = {
+  sent:      { label: 'مُرسل', badge: 'nx-badge--green', icon: CheckCheck },
+  scheduled: { label: 'مجدول', badge: 'nx-badge--amber', icon: Clock },
+  draft:     { label: 'مسودة', badge: 'nx-badge--violet', icon: AlertTriangle },
 };
 
-const CH_CFG: Record<NChannel, { label: string; icon: React.ElementType; cls: string }> = {
-  email:    { label: 'بريد',   icon: Mail,        cls: 'text-sky-400' },
-  sms:      { label: 'SMS',    icon: Smartphone,  cls: 'text-emerald-400' },
-  push:     { label: 'Push',   icon: Bell,        cls: 'text-violet-400' },
-  whatsapp: { label: 'واتساب', icon: Send,        cls: 'text-green-400' },
+const CH_CFG: Record<NChannel, { label: string; icon: typeof Mail; color: string }> = {
+  email:    { label: 'بريد',   icon: Mail,       color: '#60A5FA' },
+  sms:      { label: 'SMS',    icon: Smartphone, color: '#34D399' },
+  push:     { label: 'Push',   icon: Bell,       color: '#A78BFA' },
+  whatsapp: { label: 'واتساب', icon: Send,       color: '#4ADE80' },
 };
 
 export default function NotificationsPage(): ReactElement {
@@ -49,37 +49,39 @@ export default function NotificationsPage(): ReactElement {
     return true;
   });
 
-  const totalSent      = DATA.filter(n => n.status === 'sent').reduce((s, n) => s + n.recipients, 0);
-  const totalOpened    = DATA.filter(n => n.status === 'sent').reduce((s, n) => s + n.opened, 0);
+  const totalSent = DATA.filter(n => n.status === 'sent').reduce((s, n) => s + n.recipients, 0);
+  const totalOpened = DATA.filter(n => n.status === 'sent').reduce((s, n) => s + n.opened, 0);
   const totalDelivered = DATA.filter(n => n.status === 'sent').reduce((s, n) => s + n.delivered, 0);
-  const openRate       = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0;
+  const openRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0;
 
   return (
-    <div className="space-y-5">
-      <PageTitle title="الإشعارات الجماعية" desc="إرسال إشعارات وتنبيهات لجميع الشركات أو مجموعة محددة">
-        <button className="group inline-flex items-center gap-2.5 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 px-6 py-3 text-[14px] font-bold text-black shadow-lg shadow-amber-500/20 transition-all hover:shadow-xl active:scale-[0.97]">
-          <Plus size={17} strokeWidth={2.5} className="transition-transform group-hover:rotate-90 duration-300" /> إشعار جديد
+    <div className="nx-space-y">
+      <PageTitle title="الإشعارات الجماعية" desc="إرسال إشعارات وتنبيهات لجميع الشركات أو مجموعة محددة"
+        icon={<Bell size={20} style={{ color: '#A78BFA' }} strokeWidth={1.5} />}
+      >
+        <button className="nx-btn nx-btn--primary">
+          <Plus size={16} /> إشعار جديد
         </button>
       </PageTitle>
 
-      {/* ── Stats ── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Stats */}
+      <div className="nx-stats-grid">
         {[
-          { label: 'إجمالي المُرسل', value: totalSent.toString(), icon: Send, color: 'text-emerald-400' },
-          { label: 'تم التوصيل',     value: totalDelivered.toString(), icon: CheckCheck, color: 'text-sky-400' },
-          { label: 'تم الفتح',       value: totalOpened.toString(), icon: Eye, color: 'text-violet-400' },
-          { label: 'معدل الفتح',     value: `${openRate}%`, icon: BarChart3, color: 'text-amber-400' },
-        ].map((k) => {
+          { label: 'إجمالي المُرسل', value: totalSent, icon: Send, color: '#34D399' },
+          { label: 'تم التوصيل', value: totalDelivered, icon: CheckCheck, color: '#60A5FA' },
+          { label: 'تم الفتح', value: totalOpened, icon: Eye, color: '#A78BFA' },
+          { label: 'معدل الفتح', value: `${openRate}%`, icon: BarChart3, color: '#C9A84C' },
+        ].map(k => {
           const Icon = k.icon;
           return (
             <Glass key={k.label} hover>
-              <div className="flex items-center gap-4 px-5 py-[18px]">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.025]">
-                  <Icon size={18} className={`${k.color} opacity-75`} strokeWidth={1.5} />
+              <div className="nx-stat">
+                <div className="nx-stat-icon" style={{ background: `${k.color}10` }}>
+                  <Icon size={18} style={{ color: k.color, opacity: 0.8 }} strokeWidth={1.5} />
                 </div>
                 <div>
-                  <p className="text-[11px] font-semibold text-white/25">{k.label}</p>
-                  <p className={`text-lg font-extrabold ${k.color}`} style={TN}>{k.value}</p>
+                  <div className="nx-stat-label">{k.label}</div>
+                  <div className="nx-stat-value" style={TN}>{k.value}</div>
                 </div>
               </div>
             </Glass>
@@ -87,102 +89,120 @@ export default function NotificationsPage(): ReactElement {
         })}
       </div>
 
-      {/* ── Filters ── */}
+      {/* Filters */}
       <Glass>
-        <div className="flex flex-wrap items-center gap-3 p-4">
-          <div className="relative min-w-[220px] flex-1">
-            <Search size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/15" />
-            <input value={search} onChange={e => { setSearch(e.target.value); }}
-              placeholder="بحث بعنوان الإشعار..."
-              className="h-10 w-full rounded-xl border border-white/[0.07] bg-white/[0.03] pr-10 pl-4 text-[13px] text-white/80 placeholder:text-white/15 outline-none focus:border-amber-500/25" />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: 14 }}>
+          <div className="nx-input-icon" style={{ flex: 1, minWidth: 200 }}>
+            <Search size={16} />
+            <input className="nx-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث بعنوان الإشعار..." />
           </div>
-          <select value={statusF} onChange={e => setStatusF(e.target.value as NStatus | '')}
-            className="h-10 appearance-none rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 text-[13px] text-white/55 outline-none focus:border-amber-500/25 hover:border-white/[0.14]">
+          <select className="nx-select" value={statusF} onChange={e => setStatusF(e.target.value as NStatus | '')}>
             <option value="">جميع الحالات</option>
             <option value="sent">مُرسل</option>
             <option value="scheduled">مجدول</option>
             <option value="draft">مسودة</option>
           </select>
           {(search || statusF) && (
-            <button onClick={() => { setSearch(''); setStatusF(''); }} className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/15 bg-amber-500/8 px-3.5 py-2.5 text-[11px] font-bold text-amber-400 hover:bg-amber-500/15">
-              <X size={12} /> مسح
+            <button className="nx-btn" onClick={() => { setSearch(''); setStatusF(''); }}>
+              <X size={14} /> مسح
             </button>
           )}
         </div>
       </Glass>
 
-      {/* ── Table + Preview ── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <Glass className="overflow-hidden lg:col-span-8">
-          <table className="w-full text-[13px]">
-            <thead><tr className="border-b border-white/[0.05]">
-              {['العنوان', 'القناة', 'المستهدفون', 'المستلمين', 'الفتح', 'التاريخ', 'الحالة'].map((h, i) => (
-                <th key={i} className="px-4 py-3.5 text-start text-[11px] font-bold tracking-widest text-white/20">{h}</th>
-              ))}
-            </tr></thead>
+      {/* Table + Preview */}
+      <div className="nx-grid-2" style={{ gridTemplateColumns: '1fr 360px' }}>
+        <Glass>
+          <div className="nx-table-mobile-wrap"><table className="nx-table">
+            <thead>
+              <tr>
+                <th>العنوان</th>
+                <th>القناة</th>
+                <th>المستهدفون</th>
+                <th>المستلمين</th>
+                <th>الفتح</th>
+                <th>التاريخ</th>
+                <th>الحالة</th>
+              </tr>
+            </thead>
             <tbody>
-              {filtered.map((n, i) => {
-                const st = ST_CFG[n.status]; const StI = st.icon;
-                const ch = CH_CFG[n.channel]; const ChI = ch.icon;
+              {filtered.map((n) => {
+                const st = ST_CFG[n.status];
+                const ch = CH_CFG[n.channel];
+                const ChI = ch.icon;
                 const selected = preview?.id === n.id;
                 return (
-                  <tr key={n.id}
-                    onClick={() => setPreview(n)}
-                    className={`cursor-pointer transition-colors ${selected ? 'bg-amber-500/[0.04]' : 'hover:bg-white/[0.015]'} ${i < filtered.length - 1 ? 'border-b border-white/[0.03]' : ''}`}>
-                    <td className="px-4 py-3 font-bold text-white/75">{n.title}</td>
-                    <td className="px-4 py-3"><span className={`inline-flex items-center gap-1 text-[11px] font-bold ${ch.cls}`}><ChI size={12} />{ch.label}</span></td>
-                    <td className="px-4 py-3 text-white/35 text-[12px]">{n.target}</td>
-                    <td className="px-4 py-3 font-bold text-white/50" style={TN}>{n.recipients || '—'}</td>
-                    <td className="px-4 py-3" style={TN}>
+                  <tr key={n.id} onClick={() => setPreview(n)} style={{ cursor: 'pointer', background: selected ? 'var(--gold-subtle)' : undefined }}>
+                    <td className="nx-td-primary">{n.title}</td>
+                    <td>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: ch.color }}>
+                        <ChI size={12} />{ch.label}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12 }}>{n.target}</td>
+                    <td style={TN}>{n.recipients || '—'}</td>
+                    <td style={TN}>
                       {n.recipients > 0
-                        ? <span className="text-[12px] font-bold text-violet-400/60">{Math.round((n.opened / n.recipients) * 100)}%</span>
-                        : <span className="text-white/15">—</span>
+                        ? <span style={{ fontSize: 12, fontWeight: 700, color: '#A78BFA' }}>{Math.round((n.opened / n.recipients) * 100)}%</span>
+                        : <span style={{ color: 'var(--ghost)' }}>—</span>
                       }
                     </td>
-                    <td className="px-4 py-3 text-white/25" style={TN}>{n.sentAt ? new Date(n.sentAt).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' }) : '—'}</td>
-                    <td className="px-4 py-3"><span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-bold ${st.cls}`}><StI size={11} />{st.label}</span></td>
+                    <td style={TN}>{n.sentAt ? new Date(n.sentAt).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' }) : '—'}</td>
+                    <td><span className={`nx-badge ${st.badge}`}><st.icon size={11} />{st.label}</span></td>
                   </tr>
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         </Glass>
 
-        {/* Preview panel */}
-        <Glass className="lg:col-span-4">
-          <div className="p-6">
-            <h3 className="mb-4 flex items-center gap-2 text-[14px] font-bold text-white/60"><Eye size={16} className="text-white/25" />معاينة الإشعار</h3>
+        {/* Preview */}
+        <Glass>
+          <div style={{ padding: 24 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--slate)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Eye size={16} style={{ color: 'var(--ghost)' }} />معاينة الإشعار
+            </h3>
             {preview ? (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <p className="text-[15px] font-bold text-white/85">{preview.title}</p>
-                  <p className="mt-2 text-[13px] leading-relaxed text-white/45">{preview.body}</p>
+              <div className="nx-space-y">
+                <div style={{ padding: 16, borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>{preview.title}</p>
+                  <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--muted)', marginTop: 8 }}>{preview.body}</p>
                 </div>
-                <div className="space-y-2 text-[12px]">
-                  <div className="flex justify-between"><span className="text-white/25">المستهدفون</span><span className="font-semibold text-white/55">{preview.target}</span></div>
-                  <div className="flex justify-between"><span className="text-white/25">القناة</span><span className={`font-bold ${CH_CFG[preview.channel].cls}`}>{CH_CFG[preview.channel].label}</span></div>
-                  <div className="flex justify-between"><span className="text-white/25">المستلمين</span><span className="font-bold text-white/55" style={TN}>{preview.recipients}</span></div>
-                  <div className="flex justify-between"><span className="text-white/25">تم التوصيل</span><span className="font-bold text-sky-400/70" style={TN}>{preview.delivered}</span></div>
-                  <div className="flex justify-between"><span className="text-white/25">تم الفتح</span><span className="font-bold text-violet-400/70" style={TN}>{preview.opened}</span></div>
-                  {preview.recipients > 0 && (
-                    <div className="mt-3">
-                      <div className="mb-1 flex justify-between text-[11px]"><span className="text-white/20">معدل الفتح</span><span className="font-bold text-amber-400">{Math.round((preview.opened / preview.recipients) * 100)}%</span></div>
-                      <div className="h-2 overflow-hidden rounded-full bg-white/[0.04]">
-                        <div className="h-full rounded-full bg-gradient-to-l from-amber-400/50 to-amber-500/20" style={{ width: `${(preview.opened / preview.recipients) * 100}%` }} />
-                      </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+                  {[
+                    ['المستهدفون', preview.target],
+                    ['القناة', CH_CFG[preview.channel].label],
+                    ['المستلمين', preview.recipients],
+                    ['تم التوصيل', preview.delivered],
+                    ['تم الفتح', preview.opened],
+                  ].map(([k, v]) => (
+                    <div key={k as string} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--ghost)' }}>{k}</span>
+                      <span style={{ fontWeight: 700, color: 'var(--muted)', ...TN }}>{v}</span>
                     </div>
-                  )}
+                  ))}
                 </div>
+                {preview.recipients > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 6 }}>
+                      <span style={{ color: 'var(--ghost)' }}>معدل الفتح</span>
+                      <span style={{ fontWeight: 700, color: 'var(--gold)' }}>{Math.round((preview.opened / preview.recipients) * 100)}%</span>
+                    </div>
+                    <div className="nx-progress">
+                      <div className="nx-progress-fill" style={{ width: `${(preview.opened / preview.recipients) * 100}%`, background: 'var(--gold)' }} />
+                    </div>
+                  </div>
+                )}
                 {preview.status === 'draft' && (
-                  <button className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 py-2.5 text-[13px] font-bold text-black">
+                  <button className="nx-btn nx-btn--primary" style={{ width: '100%', justifyContent: 'center', marginTop: 12 }}>
                     <Send size={14} /> إرسال الآن
                   </button>
                 )}
               </div>
             ) : (
-              <div className="flex flex-col items-center py-10 text-center">
-                <Megaphone size={32} className="mb-3 text-white/8" />
-                <p className="text-[13px] text-white/25">اختر إشعاراً لعرض تفاصيله</p>
+              <div className="nx-empty" style={{ padding: '30px 0' }}>
+                <div className="nx-empty-icon"><Megaphone size={20} /></div>
+                <p className="nx-empty-desc">اختر إشعاراً لعرض تفاصيله</p>
               </div>
             )}
           </div>
