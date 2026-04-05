@@ -74,7 +74,15 @@
       "Bash(xargs basename:*)",
       "Bash(find /c/Users/Admin/projects/servix -name \"package.json\" -path \"*/apps/api/*\" -exec cat {})",
       "Bash(pnpm exec:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(pnpm run:*)",
+      "Bash(findstr :3002)",
+      "Bash(tasklist /FI \"PID eq 30328\")",
+      "Bash(taskkill /PID 30328 /F)",
+      "Bash(cmd.exe /c \"taskkill /PID 30328 /F\")",
+      "Bash(powershell -Command \"Stop-Process -Id 30328 -Force\")",
+      "Bash(find /c/Users/Admin/projects/servix/apps/api/src -type f -name *admin*)",
+      "Bash(grep -r \"Get\\\\|Post\\\\|Put\\\\|Delete\" /c/Users/Admin/projects/servix/apps/api/src/core/health/*.ts)"
     ]
   }
 }
