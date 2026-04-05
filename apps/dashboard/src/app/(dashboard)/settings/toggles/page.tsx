@@ -124,12 +124,15 @@ export default function TogglesPage() {
                     <Switch checked={parseBool(settings[item.key])} onCheckedChange={c => handleToggle(item.key, c)} disabled={mut.isPending} />
                   ) : (
                     <input
-                      type={item.type === 'number' ? 'number' : item.type === 'date' ? 'date' : 'text'}
+                      type={item.type === 'number' ? 'text' : item.type === 'date' ? 'date' : 'text'}
                       dir="ltr"
+                      lang="en"
+                      inputMode={item.type === 'number' ? 'numeric' : undefined}
+                      pattern={item.type === 'number' ? '[0-9]*' : undefined}
                       value={editing[item.key] ?? settings[item.key] ?? ''}
                       onChange={e => setEditing(p => ({ ...p, [item.key]: e.target.value }))}
                       onBlur={e => handleSave(item.key, e.target.value)}
-                      className={cn(inputClass, 'w-36 text-center tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')}
+                      className={cn(inputClass, 'w-36 text-center tabular-nums')}
                       disabled={mut.isPending}
                     />
                   )}
