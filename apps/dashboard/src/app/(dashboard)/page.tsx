@@ -15,7 +15,7 @@ import type { DashboardStats } from '@/types';
 const TN: React.CSSProperties = { fontFeatureSettings: '"tnum" 1', fontVariantNumeric: 'tabular-nums' };
 
 function formatCurrency(value: number): string {
-  return `${value.toLocaleString('ar-SA')} ر.س`;
+  return value.toLocaleString('en');
 }
 
 function formatTime(time: string): string {
@@ -211,9 +211,11 @@ export default function DashboardPage(): React.ReactElement {
 
   const todayApts = stats?.todayAppointments ?? 0;
   const todayRev  = stats?.todayRevenue ?? 0;
+  const monthRev  = stats?.monthlyRevenue ?? 0;
   const totalEmp  = stats?.totalEmployees ?? 0;
   const totalCli  = stats?.totalClients ?? 0;
   const recentApts = stats?.recentAppointments ?? [];
+  const monthApts = stats?.monthlyAppointments ?? 0;
 
   const fade = (d: number): React.CSSProperties => ({
     opacity: ready ? 1 : 0,
@@ -248,10 +250,10 @@ export default function DashboardPage(): React.ReactElement {
 
       {/* ── KPIs ── */}
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4" style={fade(80)}>
-        <KpiCard label="مواعيد اليوم"   value={todayApts.toString()} icon={Calendar}   change="3" up={true} />
-        <KpiCard label="إيرادات اليوم"  value={formatCurrency(todayRev)} icon={DollarSign} change="18%" up={true} />
-        <KpiCard label="الموظفات" value={totalEmp.toString()} icon={UserCheck} />
-        <KpiCard label="العملاء الجدد"  value={totalCli.toString()} icon={Heart} change="1" up={true} />
+        <KpiCard label="مواعيد اليوم"   value={todayApts.toLocaleString('en')} icon={Calendar} />
+        <KpiCard label="إيرادات اليوم"  value={formatCurrency(todayRev)} suffix="SAR" icon={DollarSign} />
+        <KpiCard label="إيرادات الشهر"  value={formatCurrency(monthRev)} suffix="SAR" icon={TrendingUp} />
+        <KpiCard label="الموظفات / العملاء" value={`${totalEmp.toLocaleString('en')} / ${totalCli.toLocaleString('en')}`} icon={Users} />
       </section>
 
       {/* ── ALERTS ── */}
