@@ -12,6 +12,9 @@ import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { CacheService } from '../../shared/cache/cache.service';
 import { MailService } from '../../shared/mail/mail.service';
 import { SmsService } from '../../shared/sms/sms.service';
+import { TwoFactorService } from './two-factor.service';
+import { GoogleAuthService } from './google-auth.service';
+import { TenantDatabaseService } from '../../shared/database/tenant-database.service';
 
 jest.mock('bcryptjs', () => ({
   hash: jest.fn().mockResolvedValue('hashed_password'),
@@ -83,6 +86,9 @@ const mockCacheService = {
 
 const mockMailService = { send: jest.fn().mockResolvedValue(undefined) };
 const mockSmsService = { send: jest.fn().mockResolvedValue(undefined) };
+const mockTenantDatabaseService = { createTenantDatabase: jest.fn().mockResolvedValue(undefined) };
+const mockTwoFactorService = { generateSecret: jest.fn(), generateOtpAuthUrl: jest.fn(), verifyToken: jest.fn(), generateBackupCodes: jest.fn() };
+const mockGoogleAuthService = { verifyIdToken: jest.fn(), isEnabled: jest.fn().mockReturnValue(false) };
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -97,6 +103,9 @@ describe('AuthService', () => {
         { provide: CacheService, useValue: mockCacheService },
         { provide: MailService, useValue: mockMailService },
         { provide: SmsService, useValue: mockSmsService },
+        { provide: TenantDatabaseService, useValue: mockTenantDatabaseService },
+        { provide: TwoFactorService, useValue: mockTwoFactorService },
+        { provide: GoogleAuthService, useValue: mockGoogleAuthService },
       ],
     }).compile();
 
@@ -246,7 +255,7 @@ describe('AuthService', () => {
       const result = await service.login(loginDto, '127.0.0.1');
 
       expect(result.user.email).toBe(loginDto.emailOrPhone);
-      expect(result.tokens.accessToken).toBe('mock-token');
+      expect(result.tokens!.accessToken).toBe('mock-token');
       expect(result.tenants).toHaveLength(1);
       expect(result.tenants[0].isOwner).toBe(true);
     });

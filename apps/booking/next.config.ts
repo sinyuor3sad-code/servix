@@ -39,8 +39,8 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // Cache static assets aggressively
-        source: '/(.*)\\.(?:ico|png|jpg|jpeg|svg|webp|woff2?|css|js)$',
+        // Cache Next.js static assets aggressively
+        source: '/_next/static/:path*',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
