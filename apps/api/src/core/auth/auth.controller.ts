@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -19,6 +20,8 @@ import { JwtPayload, JwtTokens } from '../../shared/types';
 import { CurrentUser, Public } from '../../shared/decorators';
 import { RateLimit } from '../../shared/guards/rate-limit.guard';
 import { AuthService } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
+import { GoogleAuthService } from './google-auth.service';
 import {
   RegisterDto,
   LoginDto,
@@ -32,7 +35,11 @@ import {
 @ApiTags('Auth')
 @Controller({ path: 'auth', version: '1' })
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly twoFactorService: TwoFactorService,
+    private readonly googleAuthService: GoogleAuthService,
+  ) {}
 
   @Post('register')
   @Public()
@@ -79,10 +86,27 @@ export class AuthController {
       tenant: { id: string; nameAr: string; nameEn: string; slug: string };
       role: { id: string; name: string; nameAr: string };
     }>;
-    tokens: JwtTokens;
+    tokens: JwtTokens | null;
+    requires2FA: boolean;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
     return this.authService.login(dto, ip);
+  }
+
+  @Post('2fa/verify-login')
+  @Public()
+  @RateLimit(10, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'التحقق الثنائي بعد تسجيل الدخول' })
+  async verify2FALogin(
+    @Body() body: { emailOrPhone: string; password: string; code: string },
+    @Req() req: Request,
+  ): Promise<{
+    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    tokens: JwtTokens;
+  }> {
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    return this.authService.verify2FALogin(body.emailOrPhone, body.password, body.code, ip);
   }
 
   @Post('refresh')
@@ -204,5 +228,67 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ): Promise<{ message: string }> {
     return this.authService.changePassword(userId, dto);
+  }
+
+  // ════════════ 2FA Endpoints ════════════
+
+  @Post('2fa/setup')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'تفعيل التحقق الثنائي — يُعيد secret + QR URL' })
+  async setup2FA(
+    @CurrentUser('sub') userId: string,
+  ): Promise<{ secret: string; otpAuthUrl: string; backupCodes: string[] }> {
+    return this.authService.setup2FA(userId);
+  }
+
+  @Post('2fa/verify')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'تأكيد تفعيل التحقق الثنائي بالرمز' })
+  async verify2FA(
+    @CurrentUser('sub') userId: string,
+    @Body() body: { code: string },
+  ): Promise<{ message: string }> {
+    return this.authService.verify2FA(userId, body.code);
+  }
+
+  @Delete('2fa')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'إلغاء التحقق الثنائي' })
+  async disable2FA(
+    @CurrentUser('sub') userId: string,
+    @Body() body: { password: string },
+  ): Promise<{ message: string }> {
+    return this.authService.disable2FA(userId, body.password);
+  }
+
+  @Get('2fa/status')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'حالة التحقق الثنائي' })
+  async get2FAStatus(
+    @CurrentUser('sub') userId: string,
+  ): Promise<{ enabled: boolean }> {
+    return this.authService.get2FAStatus(userId);
+  }
+
+  // ════════════ Google OAuth ════════════
+
+  @Post('google')
+  @Public()
+  @RateLimit(10, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'تسجيل الدخول بحساب Google' })
+  async googleLogin(
+    @Body() body: { idToken: string },
+  ) {
+    return this.authService.googleLogin(body.idToken);
+  }
+
+  @Get('google/status')
+  @Public()
+  @ApiOperation({ summary: 'هل Google OAuth مُفعّل؟' })
+  googleStatus(): { enabled: boolean } {
+    return { enabled: this.googleAuthService.isEnabled() };
   }
 }

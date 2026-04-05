@@ -20,4 +20,7 @@ export const AppConfigValidationSchema = Joi.object({
 
   // Sentry — optional; error tracking disabled when empty
   SENTRY_DSN: Joi.string().uri().allow('').default(''),
+
+  // Google OAuth — optional; disabled when empty
+  GOOGLE_CLIENT_ID: Joi.string().allow('').default(''),
 });

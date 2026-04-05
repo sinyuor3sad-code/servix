@@ -22,6 +22,8 @@ import { LoginDto } from './dto/login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { TwoFactorService } from './two-factor.service';
+import { GoogleAuthService } from './google-auth.service';
 
 interface UserResponse {
   id: string;
@@ -63,7 +65,8 @@ interface RegisterResult {
 interface LoginResult {
   user: UserResponse;
   tenants: TenantWithRole[];
-  tokens: JwtTokens;
+  tokens: JwtTokens | null;
+  requires2FA: boolean;
 }
 
 interface MeResult {
@@ -89,6 +92,8 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly smsService: SmsService,
     private readonly tenantDatabaseService: TenantDatabaseService,
+    private readonly twoFactorService: TwoFactorService,
+    private readonly googleAuthService: GoogleAuthService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResult> {
@@ -310,6 +315,23 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
+    // Check if 2FA is enabled — return challenge instead of tokens
+    if (user.twoFactorEnabled && user.twoFactorSecret) {
+      return {
+        user: this.mapUserResponse(user),
+        tenants: tenantUsers.map((tu) => ({
+          id: tu.id,
+          tenantId: tu.tenantId,
+          roleId: tu.roleId,
+          isOwner: tu.isOwner,
+          tenant: tu.tenant,
+          role: tu.role,
+        })),
+        tokens: null,
+        requires2FA: true,
+      };
+    }
+
     const firstTenantUser = tenantUsers[0];
     const tokens = await this.generateTokens({
       sub: user.id,
@@ -329,6 +351,7 @@ export class AuthService {
         role: tu.role,
       })),
       tokens,
+      requires2FA: false,
     };
   }
 
@@ -584,6 +607,189 @@ export class AuthService {
     ]);
 
     return { accessToken, refreshToken };
+  }
+
+  // ══════════════ 2FA Login Verification ══════════════
+
+  async verify2FALogin(
+    emailOrPhone: string,
+    password: string,
+    code: string,
+    ip: string,
+  ): Promise<{ user: any; tokens: JwtTokens }> {
+    // Re-authenticate
+    const user = await this.prisma.user.findFirst({
+      where: { OR: [{ email: emailOrPhone }, { phone: emailOrPhone }] },
+    });
+    if (!user) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+
+    const isPasswordValid = await compare(password, user.passwordHash);
+    if (!isPasswordValid) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+      throw new BadRequestException('التحقق الثنائي غير مفعل');
+    }
+
+    const isCodeValid = this.twoFactorService.verifyToken(user.twoFactorSecret, code);
+    if (!isCodeValid) throw new BadRequestException('رمز التحقق غير صحيح');
+
+    const tenantUsers = await this.prisma.tenantUser.findMany({
+      where: { userId: user.id, status: 'active' },
+      include: {
+        tenant: { select: { id: true, nameAr: true, nameEn: true, slug: true } },
+        role: { select: { id: true, name: true, nameAr: true } },
+      },
+    });
+
+    const firstTenantUser = tenantUsers[0];
+    const tokens = await this.generateTokens({
+      sub: user.id,
+      email: user.email,
+      tenantId: firstTenantUser?.tenantId ?? '',
+      roleId: firstTenantUser?.roleId ?? '',
+    });
+
+    return {
+      user: this.mapUserResponse(user),
+      tokens,
+    };
+  }
+
+  // ══════════════ 2FA Methods ══════════════
+
+  async setup2FA(userId: string): Promise<{ secret: string; otpAuthUrl: string; backupCodes: string[] }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    const secret = this.twoFactorService.generateSecret();
+    const otpAuthUrl = this.twoFactorService.generateOtpAuthUrl(user.email, secret);
+    const backupCodes = this.twoFactorService.generateBackupCodes();
+
+    // Store the secret temporarily (not enabled yet until verified)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorSecret: secret },
+    });
+
+    return { secret, otpAuthUrl, backupCodes };
+  }
+
+  async verify2FA(userId: string, code: string): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    if (!user.twoFactorSecret) throw new BadRequestException('لم يتم إعداد التحقق الثنائي');
+
+    const isValid = this.twoFactorService.verifyToken(user.twoFactorSecret, code);
+    if (!isValid) throw new BadRequestException('رمز التحقق غير صحيح');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: true },
+    });
+
+    return { message: 'تم تفعيل التحقق الثنائي بنجاح' };
+  }
+
+  async disable2FA(userId: string, password: string): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    const isPasswordValid = await compare(password, user.passwordHash);
+    if (!isPasswordValid) throw new BadRequestException('كلمة المرور غير صحيحة');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: false, twoFactorSecret: null },
+    });
+
+    return { message: 'تم إلغاء التحقق الثنائي' };
+  }
+
+  async get2FAStatus(userId: string): Promise<{ enabled: boolean }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { twoFactorEnabled: true },
+    });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return { enabled: user.twoFactorEnabled };
+  }
+
+  // ══════════════ Google OAuth ══════════════
+
+  async googleLogin(idToken: string) {
+    const googleUser = await this.googleAuthService.verifyIdToken(idToken);
+
+    // Check if user already exists by googleId or email
+    let user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { googleId: googleUser.sub },
+          { email: googleUser.email },
+        ],
+      },
+    });
+
+    if (user) {
+      // Link Google account if not already linked
+      if (!user.googleId) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { googleId: googleUser.sub, authProvider: 'google' },
+        });
+      }
+    } else {
+      // Auto-register new user from Google
+      user = await this.prisma.user.create({
+        data: {
+          fullName: googleUser.name,
+          email: googleUser.email,
+          phone: `g-${googleUser.sub.slice(0, 10)}`, // placeholder phone
+          passwordHash: await hash(v4(), BCRYPT_ROUNDS), // random password
+          avatarUrl: googleUser.picture || null,
+          googleId: googleUser.sub,
+          authProvider: 'google',
+          isEmailVerified: googleUser.email_verified,
+        },
+      });
+    }
+
+    // Get tenant associations
+    const tenantUsers = await this.prisma.tenantUser.findMany({
+      where: { userId: user.id, status: 'active' },
+      include: {
+        tenant: { select: { id: true, nameAr: true, nameEn: true, slug: true } },
+        role: { select: { id: true, name: true, nameAr: true } },
+      },
+    });
+
+    const firstTenantUser = tenantUsers[0];
+    const tokens = firstTenantUser
+      ? await this.generateTokens({
+          sub: user.id,
+          email: user.email,
+          tenantId: firstTenantUser.tenantId,
+          roleId: firstTenantUser.roleId,
+        })
+      : await this.generateTokens({
+          sub: user.id,
+          email: user.email,
+          tenantId: '',
+          roleId: '',
+        });
+
+    return {
+      user: this.mapUserResponse(user),
+      tenants: tenantUsers.map((tu) => ({
+        id: tu.id,
+        tenantId: tu.tenantId,
+        roleId: tu.roleId,
+        isOwner: tu.isOwner,
+        tenant: tu.tenant,
+        role: tu.role,
+      })),
+      tokens,
+      isNewUser: tenantUsers.length === 0,
+    };
   }
 
   private generateSlug(text: string): string {

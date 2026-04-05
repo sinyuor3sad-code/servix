@@ -102,6 +102,12 @@ model User {
   avatarUrl       String?   @map("avatar_url") @db.VarChar(500)
   isEmailVerified Boolean   @default(false) @map("is_email_verified")
   isPhoneVerified Boolean   @default(false) @map("is_phone_verified")
+  // 2FA
+  twoFactorEnabled Boolean  @default(false) @map("two_factor_enabled")
+  twoFactorSecret  String?  @map("two_factor_secret") @db.VarChar(255)
+  // OAuth
+  googleId         String?  @unique @map("google_id") @db.VarChar(255)
+  authProvider     String   @default("local") @map("auth_provider") @db.VarChar(20)
   lastLoginAt     DateTime? @map("last_login_at") @db.Timestamptz()
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz()

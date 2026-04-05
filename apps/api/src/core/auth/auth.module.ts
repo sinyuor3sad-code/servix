@@ -6,6 +6,8 @@ import jwtConfig from '../../shared/config/jwt.config';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { AuthService } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
+import { GoogleAuthService } from './google-auth.service';
 import { AuthController } from './auth.controller';
 import { MailModule } from '../../shared/mail/mail.module';
 import { SmsModule } from '../../shared/sms/sms.module';
@@ -28,7 +30,7 @@ import { SmsModule } from '../../shared/sms/sms.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtRefreshStrategy],
-  exports: [AuthService],
+  providers: [AuthService, TwoFactorService, GoogleAuthService, JwtStrategy, JwtRefreshStrategy],
+  exports: [AuthService, TwoFactorService, GoogleAuthService],
 })
 export class AuthModule {}
