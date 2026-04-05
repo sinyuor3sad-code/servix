@@ -2,6 +2,7 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
+  Logger,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
@@ -62,6 +63,8 @@ function isTenantRequiredPath(path: string): boolean {
 
 @Injectable()
 export class TenantMiddleware implements CanActivate {
+  private readonly logger = new Logger('TenantMiddleware');
+
   constructor(
     private readonly reflector: Reflector,
     private readonly platformPrisma: PlatformPrismaClient,
@@ -87,13 +90,13 @@ export class TenantMiddleware implements CanActivate {
 
     if (isTenantRequiredPath(path)) {
       if (!tenantId) {
-        console.warn(`[TenantMiddleware] BLOCKED: No tenantId in JWT for tenant-required path=${path}, userId=${user?.sub}`);
+        this.logger.warn(`[TenantMiddleware] BLOCKED: No tenantId in JWT for tenant-required path=${path}, userId=${user?.sub}`);
         throw new ForbiddenException(
           'يجب أن تكون مرتبطاً بحساب صالون للوصول إلى هذا المورد',
         );
       }
 
-      console.log(`[TenantMiddleware] Loading tenant context for tenantId=${tenantId}, path=${path}`);
+      this.logger.debug(`[TenantMiddleware] Loading tenant context for tenantId=${tenantId}, path=${path}`);
       const ctx = await this.loadTenantContext(tenantId, path);
       request.tenant = ctx.tenant;
       request.tenantDb = ctx.tenantDb;
@@ -172,12 +175,12 @@ export class TenantMiddleware implements CanActivate {
     });
 
     if (!subscription) {
-      console.error(`[TenantMiddleware] BLOCKED: No subscription found for tenantId=${tenantId}, path=${path}`);
+      this.logger.error(`[TenantMiddleware] BLOCKED: No subscription found for tenantId=${tenantId}, path=${path}`);
       throw new ForbiddenException(
         'لا يوجد اشتراك. يرجى الاشتراك للوصول',
       );
     }
-    console.log(`[TenantMiddleware] Subscription found: id=${subscription.id}, status=${subscription.status}, endsAt=${subscription.currentPeriodEnd.toISOString()}`);
+    this.logger.debug(`[TenantMiddleware] Subscription found: id=${subscription.id}, status=${subscription.status}, endsAt=${subscription.currentPeriodEnd.toISOString()}`);
 
     const subStatus = computeSubscriptionStatus(
       subscription.currentPeriodEnd,

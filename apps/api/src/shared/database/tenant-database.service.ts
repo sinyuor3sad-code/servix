@@ -166,11 +166,13 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
 
     const safeName = databaseName.replace(/[^a-zA-Z0-9_]/g, '');
 
-    // Terminate existing connections
-    await this.platformPrisma.$executeRawUnsafe(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${safeName}' AND pid <> pg_backend_pid()`,
+    // Terminate existing connections (parameterized query to prevent SQL injection)
+    await this.platformPrisma.$queryRawUnsafe(
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+      safeName,
     );
 
+    // DROP DATABASE cannot use parameterized queries, but safeName is sanitized above (alphanumeric + underscore only)
     await this.platformPrisma.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${safeName}"`);
     this.logger.log(`Database ${databaseName} dropped successfully`);
   }

@@ -14,8 +14,8 @@ interface AuthResponse {
   tenants: TenantUser[];
 }
 
-/* ── Dev-mode mock logins (no API needed) ── */
-const DEV_PASS = 'adsf1324';
+/* ── Dev-mode mock logins (localhost only, credentials from env) ── */
+const DEV_PASS = process.env.NEXT_PUBLIC_DEV_PASS || '';
 
 const DEV_TENANT = {
   id: 'dev-tenant-001',
@@ -90,7 +90,7 @@ function buildDevResponse(email: string): AuthResponse {
 
 function getDevAccount(credentials: LoginCredentials): AuthResponse | null {
   if (typeof window === 'undefined' || window.location.hostname !== 'localhost') return null;
-  if (credentials.password !== DEV_PASS) return null;
+  if (!DEV_PASS || credentials.password !== DEV_PASS) return null;
   if (!DEV_ACCOUNTS[credentials.emailOrPhone]) return null;
   return buildDevResponse(credentials.emailOrPhone);
 }

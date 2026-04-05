@@ -16,8 +16,22 @@ interface Server {
 }
 import { Logger } from '@nestjs/common';
 
+const nodeEnv = process.env.NODE_ENV || 'development';
+const corsOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 @WebSocketGateway({
-  cors: { origin: '*' },
+  cors: {
+    origin:
+      nodeEnv === 'production'
+        ? corsOrigins.length > 0
+          ? corsOrigins
+          : false
+        : '*',
+    credentials: true,
+  },
   namespace: '/ws',
 })
 export class EventsGateway

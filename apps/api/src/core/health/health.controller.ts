@@ -10,25 +10,17 @@ export class HealthController {
 
   @Public()
   @Get()
-  @ApiOperation({ summary: 'Full health check with system info' })
+  @ApiOperation({ summary: 'Full health check' })
   async check() {
     const start = Date.now();
     const dbHealthy = await this.checkDatabase();
-    const memory = process.memoryUsage();
 
     return {
       status: dbHealthy ? 'healthy' : 'degraded',
       timestamp: new Date().toISOString(),
-      uptime: Math.round(process.uptime()),
-      version: process.env.npm_package_version || '1.0.0',
       checks: {
         database: dbHealthy ? 'ok' : 'error',
         responseTime: `${Date.now() - start}ms`,
-      },
-      memory: {
-        heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)}MB`,
-        heapTotal: `${Math.round(memory.heapTotal / 1024 / 1024)}MB`,
-        rss: `${Math.round(memory.rss / 1024 / 1024)}MB`,
       },
     };
   }
@@ -48,7 +40,7 @@ export class HealthController {
   @Get('live')
   @ApiOperation({ summary: 'Liveness check — is the process alive (for Docker/K8s)' })
   live() {
-    return { status: 'alive', uptime: Math.round(process.uptime()) };
+    return { status: 'alive' };
   }
 
   private async checkDatabase(): Promise<boolean> {

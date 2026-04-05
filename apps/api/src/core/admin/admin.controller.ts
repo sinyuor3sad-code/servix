@@ -21,6 +21,7 @@ import {
 import { AdminService } from './admin.service';
 import { RolesGuard } from '../../shared/guards';
 import { Roles, CurrentUser, Public } from '../../shared/decorators';
+import { RateLimit } from '../../shared/guards/rate-limit.guard';
 import {
   GetTenantsDto,
   UpdateTenantStatusDto,
@@ -41,6 +42,7 @@ export class AdminController {
   @Post('auth/login')
   @Public()
   @Roles()
+  @RateLimit(5, 300)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'تسجيل دخول مدير المنصة' })
   @ApiResponse({ status: 200, description: 'تم تسجيل الدخول بنجاح' })

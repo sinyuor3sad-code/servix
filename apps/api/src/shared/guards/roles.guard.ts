@@ -2,6 +2,7 @@ import {
   Injectable,
   CanActivate,
   ExecutionContext,
+  Logger,
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -18,6 +19,8 @@ interface JwtPayload {
 
 @Injectable()
 export class RolesGuard implements CanActivate {
+  private readonly logger = new Logger(RolesGuard.name);
+
   constructor(
     private readonly reflector: Reflector,
     private readonly platformPrisma: PlatformPrismaClient,
@@ -37,7 +40,7 @@ export class RolesGuard implements CanActivate {
     const user = request.user as JwtPayload | undefined;
 
     if (!user?.roleId) {
-      console.warn(`[RolesGuard] BLOCKED: No roleId in JWT, required=[${requiredRoles.join(',')}], path=${request.path}`);
+      this.logger.warn(`[RolesGuard] BLOCKED: No roleId in JWT, required=[${requiredRoles.join(',')}], path=${request.path}`);
       throw new ForbiddenException('ليس لديك صلاحية للقيام بهذا الإجراء');
     }
 
@@ -46,7 +49,7 @@ export class RolesGuard implements CanActivate {
     });
 
     if (!role || !requiredRoles.includes(role.name)) {
-      console.warn(`[RolesGuard] BLOCKED: userRole=${role?.name ?? 'null'}, required=[${requiredRoles.join(',')}], path=${request.path}`);
+      this.logger.warn(`[RolesGuard] BLOCKED: userRole=${role?.name ?? 'null'}, required=[${requiredRoles.join(',')}], path=${request.path}`);
       throw new ForbiddenException('ليس لديك صلاحية للقيام بهذا الإجراء');
     }
 

@@ -26,6 +26,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generate Prisma Clients
         run: pnpm --filter @servix/api db:generate
+      - name: Lint
+        run: pnpm lint
       - name: Type Check API
         run: pnpm --filter @servix/api type-check
       - name: Type Check Dashboard

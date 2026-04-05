@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   InternalServerErrorException,
   NotFoundException,
   UnauthorizedException,
@@ -84,6 +85,8 @@ const RESET_TOKEN_EXPIRY_HOURS = 1;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PlatformPrismaClient,
     private readonly jwtService: JwtService,
@@ -97,7 +100,7 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResult> {
-    console.log(`[AuthService.register] Starting registration for email=${dto.email}`);
+    this.logger.log(`[AuthService.register] Starting registration for email=${dto.email}`);
 
     const existingEmail = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -136,7 +139,7 @@ export class AuthService {
       where: { name: 'Basic', isActive: true },
     });
     if (!basicPlan) {
-      console.error('[AuthService.register] Basic plan not found — cannot create trial subscription');
+      this.logger.error('[AuthService.register] Basic plan not found — cannot create trial subscription');
       throw new InternalServerErrorException(
         'خطأ في النظام: لم يتم العثور على خطة الاشتراك الأساسية',
       );
@@ -153,7 +156,7 @@ export class AuthService {
           passwordHash,
         },
       });
-      console.log(`[AuthService.register] Created user id=${user.id}`);
+      this.logger.log(`[AuthService.register] Created user id=${user.id}`);
 
       const trialEnd = new Date();
       trialEnd.setDate(trialEnd.getDate() + TRIAL_DAYS);
@@ -168,7 +171,7 @@ export class AuthService {
           trialEndsAt: trialEnd,
         },
       });
-      console.log(`[AuthService.register] Created tenant id=${tenant.id}, slug=${slug}`);
+      this.logger.log(`[AuthService.register] Created tenant id=${tenant.id}, slug=${slug}`);
 
       const tenantUser = await tx.tenantUser.create({
         data: {
@@ -178,7 +181,7 @@ export class AuthService {
           isOwner: true,
         },
       });
-      console.log(`[AuthService.register] Created tenantUser id=${tenantUser.id}, roleId=${ownerRole.id}`);
+      this.logger.log(`[AuthService.register] Created tenantUser id=${tenantUser.id}, roleId=${ownerRole.id}`);
 
       // Create trial subscription so TenantMiddleware allows access
       const subscription = await tx.subscription.create({
@@ -191,7 +194,7 @@ export class AuthService {
           currentPeriodEnd: trialEnd,
         },
       });
-      console.log(`[AuthService.register] Created trial subscription id=${subscription.id}, ends=${trialEnd.toISOString()}`);
+      this.logger.log(`[AuthService.register] Created trial subscription id=${subscription.id}, ends=${trialEnd.toISOString()}`);
 
       return { user, tenant };
     });
@@ -202,7 +205,7 @@ export class AuthService {
     } catch (error: unknown) {
       // Log but don't fail registration — database can be retried
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to create tenant database ${databaseName}: ${errMsg}`);
+      this.logger.error(`Failed to create tenant database ${databaseName}: ${errMsg}`);
     }
 
     const tokens = await this.generateTokens({
