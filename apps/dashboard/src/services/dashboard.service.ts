@@ -254,4 +254,11 @@ export const dashboardService = {
 
   getZatcaQr: (invoiceId: string, token: string) =>
     api.get<string>(`/zatca/invoices/${invoiceId}/qr`, token),
+
+  // ─── Settings ───
+  getSettings: (token: string) =>
+    api.get<Array<{ key: string; value: string }>>('/settings', token),
+
+  updateSetting: (key: string, value: string, token: string) =>
+    api.put<void>(`/settings/${key}`, { value }, token),
 };

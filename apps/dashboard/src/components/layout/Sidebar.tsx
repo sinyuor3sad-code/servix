@@ -26,6 +26,8 @@ import {
   Megaphone,
   TrendingUp,
   Receipt,
+  MessageCircle,
+  PackageOpen,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -57,10 +59,12 @@ const navItems: NavItem[] = [
   { label: 'الولاء', href: '/dashboard/loyalty', icon: Heart, roles: ['owner', 'manager'] },
   { label: 'المصروفات', href: '/dashboard/expenses', icon: Wallet, roles: ['owner', 'manager'] },
   { label: 'الإعدادات', href: '/dashboard/settings', icon: Settings, roles: ['owner', 'manager'] },
+  { label: 'الباقات', href: '/dashboard/packages', icon: PackageOpen, roles: ['owner', 'manager'] },
   { label: 'الورديات', href: '/dashboard/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
-  { label: 'المخزون', href: '/dashboard/inventory', icon: Package, comingSoon: true, roles: ['owner', 'manager'] },
-  { label: 'التسويق', href: '/dashboard/marketing', icon: Megaphone, comingSoon: true, roles: ['owner', 'manager'] },
-  { label: 'التسعير', href: '/dashboard/pricing', icon: TrendingUp, comingSoon: true, roles: ['owner', 'manager'] },
+  { label: 'المخزون', href: '/dashboard/inventory', icon: Package, roles: ['owner', 'manager'] },
+  { label: 'التسويق', href: '/dashboard/marketing', icon: Megaphone, roles: ['owner', 'manager'] },
+  { label: 'التسعير', href: '/dashboard/pricing', icon: TrendingUp, roles: ['owner', 'manager'] },
+  { label: 'واتساب', href: '/dashboard/settings/whatsapp', icon: MessageCircle, roles: ['owner', 'manager'] },
   { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt, comingSoon: true, roles: ['owner', 'manager'] },
 ];
 
