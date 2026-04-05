@@ -17,6 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtPayload, JwtTokens } from '../../shared/types';
 import { CurrentUser, Public } from '../../shared/decorators';
+import { RateLimit } from '../../shared/guards/rate-limit.guard';
 import { AuthService } from './auth.service';
 import {
   RegisterDto,
@@ -35,6 +36,7 @@ export class AuthController {
 
   @Post('register')
   @Public()
+  @RateLimit(5, 60)
   @ApiOperation({ summary: 'تسجيل مستخدم جديد وإنشاء صالون' })
   @ApiResponse({ status: 201, description: 'تم التسجيل بنجاح' })
   @ApiResponse({ status: 409, description: 'البريد الإلكتروني أو رقم الجوال مسجل مسبقاً' })
@@ -58,6 +60,7 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @RateLimit(10, 60)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'تسجيل الدخول بالبريد الإلكتروني أو رقم الجوال' })
   @ApiResponse({ status: 200, description: 'تم تسجيل الدخول بنجاح' })
@@ -84,6 +87,7 @@ export class AuthController {
 
   @Post('refresh')
   @Public()
+  @RateLimit(20, 60)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'تحديث رمز الوصول باستخدام رمز التحديث' })
   @ApiResponse({ status: 200, description: 'تم تحديث الرمز بنجاح' })
@@ -103,6 +107,7 @@ export class AuthController {
 
   @Post('forgot-password')
   @Public()
+  @RateLimit(5, 60)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'طلب إعادة تعيين كلمة المرور' })
   @ApiResponse({ status: 200, description: 'تم إرسال رابط إعادة التعيين إذا كان البريد مسجلاً' })
@@ -114,6 +119,7 @@ export class AuthController {
 
   @Post('reset-password')
   @Public()
+  @RateLimit(5, 60)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'إعادة تعيين كلمة المرور باستخدام رمز التعيين' })
   @ApiResponse({ status: 200, description: 'تم إعادة تعيين كلمة المرور بنجاح' })
