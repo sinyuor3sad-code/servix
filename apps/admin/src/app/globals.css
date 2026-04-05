@@ -1,92 +1,167 @@
 @import "tailwindcss";
 
-/* ═══════════════════════════════════════════════════════════════
-   OBSIDIAN NEXUS v2 — Super Admin Design System
-   Stronger glass · Brighter gold · Perfect contrast · Sidebar
-   ═══════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════
+   OBSIDIAN NEXUS v3 — Supreme Owner Command Environment
+   Design System: Command Civilization · Intelligence Surface · Empire Layer
+   ═══════════════════════════════════════════════════════════════════════ */
 
-/* ── Base ─────────────────────────────────────────────────── */
+/* ── CSS Variables ─────────────────────────────────────────────────── */
+:root {
+  --nx-void: #04040a;
+  --nx-surface: #0a0a12;
+  --nx-surface-2: #0e0e18;
+  --nx-border: rgba(255,255,255,0.04);
+  --nx-border-hover: rgba(255,255,255,0.08);
+  --nx-gold: #d4a853;
+  --nx-gold-dim: rgba(212,168,83,0.15);
+  --nx-gold-glow: rgba(212,168,83,0.06);
+  --nx-signal: #6ee7b7;
+  --nx-alert: #fb923c;
+  --nx-danger: #f87171;
+  --nx-accent: #818cf8;
+  --nx-text-1: rgba(255,255,255,0.87);
+  --nx-text-2: rgba(255,255,255,0.45);
+  --nx-text-3: rgba(255,255,255,0.18);
+  --nx-text-4: rgba(255,255,255,0.08);
+  --nx-rail-w: 76px;
+  --nx-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --nx-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Base Reset ────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body {
-  background: #06060a;
-  color: #eee8d5;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--nx-void);
+  color: var(--nx-text-1);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
 }
 
-/* ── Dot grid on main area ────────────────────────────────── */
-.nx-dots {
-  background-image:
-    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.035) 1px, transparent 0);
-  background-size: 32px 32px;
+/* ── Scrollbar — invisible but functional ─────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.04);
+  border-radius: 99px;
 }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.08); }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.04) transparent; }
 
-/* ── Ambient orbs ─────────────────────────────────────────── */
-.nx-orb {
+/* ═══════════════════════════════════════════════════════════════════════
+   NERVE RAIL — Icon-only navigation, cockpit instrument panel feel
+   ═══════════════════════════════════════════════════════════════════════ */
+.nx-rail {
   position: fixed;
-  border-radius: 50%;
-  pointer-events: none;
-  filter: blur(100px);
-  will-change: transform;
+  top: 0;
+  bottom: 0;
+  width: var(--nx-rail-w);
+  background: linear-gradient(180deg, rgba(6,6,12,0.98) 0%, rgba(4,4,8,1) 100%);
+  border-inline-start: 1px solid var(--nx-border);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.25rem 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   SIDEBAR
-   ═══════════════════════════════════════════════════════════════ */
-.nx-sidebar {
-  width: 260px;
-  min-height: 100dvh;
-  background:
-    linear-gradient(180deg, rgba(12,12,16,0.97) 0%, rgba(8,8,12,0.99) 100%);
-  border-inline-end: 1px solid rgba(255,255,255,0.06);
-  backdrop-filter: blur(30px) saturate(120%);
-  -webkit-backdrop-filter: blur(30px) saturate(120%);
-}
-
-.nx-nav-item {
+.nx-rail-icon {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.7rem 1rem;
-  border-radius: 12px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: rgba(255,255,255,0.45);
-  transition: all 0.25s ease;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  color: var(--nx-text-3);
+  transition: all 0.35s var(--nx-ease);
+  cursor: pointer;
+  margin-bottom: 2px;
 }
 
-.nx-nav-item:hover {
-  color: rgba(255,255,255,0.8);
-  background: rgba(255,255,255,0.04);
+.nx-rail-icon:hover {
+  color: var(--nx-text-2);
+  background: rgba(255,255,255,0.025);
 }
 
-.nx-nav-item.active {
-  color: #fbbf24;
-  background: rgba(234,179,8,0.08);
-  border: 1px solid rgba(234,179,8,0.12);
+.nx-rail-icon.active {
+  color: var(--nx-gold);
+  background: rgba(212,168,83,0.06);
+}
+
+.nx-rail-icon.active::before {
+  content: '';
+  position: absolute;
+  inset-inline-end: -1px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2.5px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--nx-gold);
+  box-shadow: 0 0 12px rgba(212,168,83,0.5);
+}
+
+/* Rail tooltip */
+.nx-rail-tooltip {
+  position: absolute;
+  inset-inline-start: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.95);
+  background: var(--nx-surface-2);
+  border: 1px solid var(--nx-border-hover);
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-size: 12px;
   font-weight: 600;
+  color: var(--nx-text-1);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.25s var(--nx-ease);
+  z-index: 100;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
 }
 
-.nx-nav-item.active svg {
-  color: #fbbf24;
+.nx-rail-icon:hover .nx-rail-tooltip {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   GLASS CARDS — Enhanced depth + visible layers
-   ═══════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════
+   COMMAND BAR — Top bar, minimal, ambient, always-on
+   ═══════════════════════════════════════════════════════════════════════ */
+.nx-command-bar {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  border-bottom: 1px solid var(--nx-border);
+  background: rgba(4,4,10,0.8);
+  backdrop-filter: blur(40px) saturate(130%);
+  -webkit-backdrop-filter: blur(40px) saturate(130%);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GLASS SURFACE — Premium depth, dual-layer
+   ═══════════════════════════════════════════════════════════════════════ */
 .nx-glass {
-  background:
-    linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 100%);
-  backdrop-filter: blur(40px) saturate(140%);
-  -webkit-backdrop-filter: blur(40px) saturate(140%);
-  border: 1px solid rgba(255,255,255,0.09);
-  border-radius: 20px;
+  background: linear-gradient(145deg,
+    rgba(255,255,255,0.035) 0%,
+    rgba(255,255,255,0.008) 100%
+  );
+  border: 1px solid var(--nx-border);
+  border-radius: 18px;
   position: relative;
   overflow: hidden;
-  box-shadow:
-    0 4px 24px rgba(0,0,0,0.4),
-    inset 0 1px 0 rgba(255,255,255,0.06);
-  transition:
-    all 0.45s cubic-bezier(0.23, 1, 0.32, 1);
+  transition: all 0.5s var(--nx-ease);
 }
 
 .nx-glass::before {
@@ -94,105 +169,261 @@ body {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(165deg, rgba(255,255,255,0.06) 0%, transparent 40%);
+  background: linear-gradient(170deg, rgba(255,255,255,0.04) 0%, transparent 35%);
   pointer-events: none;
 }
 
-.nx-glass:hover {
-  background:
-    linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%);
-  border-color: rgba(234,179,8,0.30);
-  transform: translateY(-3px);
+.nx-glass-hover:hover {
+  border-color: rgba(212,168,83,0.12);
   box-shadow:
-    0 12px 48px rgba(0,0,0,0.5),
-    0 0 0 1px rgba(234,179,8,0.10),
-    0 0 80px -20px rgba(234,179,8,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.08);
+    0 12px 48px rgba(0,0,0,0.3),
+    0 0 0 1px rgba(212,168,83,0.06),
+    inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
-/* ── Stat card shimmer ────────────────────────────────────── */
-@keyframes nx-shimmer {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(300%); }
+/* ═══════════════════════════════════════════════════════════════════════
+   PULSE STRIP — Unified metrics ribbon
+   ═══════════════════════════════════════════════════════════════════════ */
+.nx-pulse-strip {
+  display: flex;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--nx-border);
+  background: linear-gradient(135deg,
+    rgba(255,255,255,0.025) 0%,
+    rgba(255,255,255,0.005) 100%
+  );
 }
 
-.nx-stat::after {
+.nx-pulse-cell {
+  flex: 1;
+  padding: 1.5rem 1.75rem;
+  position: relative;
+  border-inline-start: 1px solid var(--nx-border);
+  transition: background 0.4s var(--nx-ease);
+}
+
+.nx-pulse-cell:first-child { border-inline-start: none; }
+
+.nx-pulse-cell:hover {
+  background: rgba(255,255,255,0.015);
+}
+
+.nx-pulse-cell::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  inset-inline: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--nx-gold-dim), transparent);
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+.nx-pulse-cell:hover::after { opacity: 1; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOMENTUM LENS — Timeline-style activity intelligence
+   ═══════════════════════════════════════════════════════════════════════ */
+.nx-momentum-item {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+  transition: all 0.35s var(--nx-ease);
+  position: relative;
+}
+
+.nx-momentum-item:hover {
+  background: rgba(255,255,255,0.015);
+}
+
+.nx-momentum-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.nx-momentum-dot::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  height: 32px;
+  background: linear-gradient(to bottom, var(--nx-border-hover), transparent);
+}
+
+.nx-momentum-item:last-child .nx-momentum-dot::after { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INTELLIGENCE FEED — Auto-generated insights
+   ═══════════════════════════════════════════════════════════════════════ */
+.nx-insight {
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+  border: 1px solid var(--nx-border);
+  background: rgba(255,255,255,0.012);
+  transition: all 0.4s var(--nx-ease);
+  position: relative;
+  overflow: hidden;
+}
+
+.nx-insight::before {
   content: '';
   position: absolute;
   top: 0;
   inset-inline-start: 0;
-  width: 40%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(234,179,8,0.35), transparent);
-  animation: nx-shimmer 5s ease-in-out infinite;
-}
-
-.nx-stat:hover::after {
-  background: linear-gradient(90deg, transparent, rgba(234,179,8,0.6), transparent);
-}
-
-/* Gold bottom accent on hover */
-.nx-stat .nx-glow-bar {
-  position: absolute;
-  bottom: 0;
-  inset-inline: 20%;
-  height: 2px;
+  width: 2px;
+  height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, transparent, #eab308, transparent);
-  opacity: 0;
-  transition: opacity 0.45s;
 }
 
-.nx-stat:hover .nx-glow-bar {
-  opacity: 0.6;
+.nx-insight-gold::before { background: var(--nx-gold); }
+.nx-insight-signal::before { background: var(--nx-signal); }
+.nx-insight-alert::before { background: var(--nx-alert); }
+.nx-insight-accent::before { background: var(--nx-accent); }
+
+.nx-insight:hover {
+  border-color: var(--nx-border-hover);
+  background: rgba(255,255,255,0.02);
 }
 
-/* ── Neon glow text ───────────────────────────────────────── */
-.nx-neon {
-  text-shadow:
-    0 0 15px rgba(251,191,36,0.5),
-    0 0 50px rgba(234,179,8,0.15);
+/* ═══════════════════════════════════════════════════════════════════════
+   EMPIRE CONSTELLATION — Tenant visual map
+   ═══════════════════════════════════════════════════════════════════════ */
+.nx-constellation {
+  position: relative;
+  min-height: 200px;
+  border-radius: 20px;
+  overflow: hidden;
 }
 
-/* ── Tabular numbers ──────────────────────────────────────── */
-.nx-tab {
+.nx-star {
+  position: absolute;
+  border-radius: 50%;
+  transition: all 0.5s var(--nx-ease);
+  cursor: pointer;
+}
+
+.nx-star:hover {
+  transform: scale(1.8);
+  z-index: 10;
+}
+
+.nx-star-active { background: var(--nx-signal); box-shadow: 0 0 12px var(--nx-signal); }
+.nx-star-trial  { background: var(--nx-gold);   box-shadow: 0 0 8px rgba(212,168,83,0.4); }
+.nx-star-danger { background: var(--nx-danger); box-shadow: 0 0 8px rgba(248,113,113,0.4); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════════ */
+@keyframes nx-enter {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes nx-pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+@keyframes nx-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@keyframes nx-glow {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 0.8; }
+}
+
+@keyframes nx-count {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.nx-animate-enter {
+  animation: nx-enter 0.7s var(--nx-ease) both;
+}
+
+.nx-animate-pulse {
+  animation: nx-pulse-soft 3s ease-in-out infinite;
+}
+
+.nx-animate-glow {
+  animation: nx-glow 4s ease-in-out infinite;
+}
+
+/* ── Staggered entries ──────────────────────────────────────────────── */
+.nx-stagger-1 { animation-delay: 0ms; }
+.nx-stagger-2 { animation-delay: 80ms; }
+.nx-stagger-3 { animation-delay: 160ms; }
+.nx-stagger-4 { animation-delay: 240ms; }
+.nx-stagger-5 { animation-delay: 320ms; }
+.nx-stagger-6 { animation-delay: 400ms; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   UTILITY CLASSES
+   ═══════════════════════════════════════════════════════════════════════ */
+.nx-tn {
   font-feature-settings: "tnum" 1;
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Active pill ──────────────────────────────────────────── */
-.nx-pill-on {
-  background: linear-gradient(135deg, #eab308, #f59e0b);
-  color: #000;
+.nx-gold-text {
+  color: var(--nx-gold);
+}
+
+.nx-gold-glow {
+  text-shadow: 0 0 20px rgba(212,168,83,0.3);
+}
+
+.nx-section-label {
+  font-size: 11px;
   font-weight: 700;
-  box-shadow:
-    0 4px 20px rgba(234,179,8,0.40),
-    inset 0 1px 0 rgba(255,255,255,0.25);
+  letter-spacing: 0.12em;
+  color: var(--nx-text-3);
+  text-transform: uppercase;
 }
 
-/* ── Live pulse ───────────────────────────────────────────── */
-@keyframes nx-live {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.4; transform: scale(0.8); }
-}
-.nx-live {
-  animation: nx-live 2s ease-in-out infinite;
-}
-
-/* ── Badge ────────────────────────────────────────────────── */
-.nx-badge-up {
-  background: rgba(16,185,129,0.12);
-  color: #34d399;
-  border: 1px solid rgba(16,185,129,0.15);
-}
-.nx-badge-down {
-  background: rgba(239,68,68,0.10);
-  color: #f87171;
-  border: 1px solid rgba(239,68,68,0.12);
+.nx-metric-lg {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--nx-text-1);
 }
 
-/* ── Scrollbar ────────────────────────────────────────────── */
-::-webkit-scrollbar        { width: 5px; }
-::-webkit-scrollbar-track  { background: transparent; }
-::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.06); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.12); }
+.nx-metric-sm {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--nx-text-2);
+}
+
+/* ── Ambient orbs ─────────────────────────────────────────────────── */
+.nx-orb {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(120px);
+  will-change: transform;
+  z-index: 0;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  :root { --nx-rail-w: 0px; }
+  .nx-rail { display: none; }
+  .nx-pulse-strip { flex-direction: column; }
+  .nx-pulse-cell { border-inline-start: none; border-top: 1px solid var(--nx-border); }
+  .nx-pulse-cell:first-child { border-top: none; }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root { --nx-rail-w: 68px; }
+}
