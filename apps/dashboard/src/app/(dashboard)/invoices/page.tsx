@@ -42,7 +42,7 @@ export default function InvoicesPage() {
   const filtered = statusFilter ? invoices.filter(inv => inv.status === statusFilter) : invoices;
 
   // Stats
-  const totalRevenue = invoices.reduce((s, inv) => inv.status === 'paid' ? s + inv.total : s, 0);
+  const totalRevenue = invoices.reduce((s, inv) => inv.status === 'paid' ? s + Number(inv.total) : s, 0);
   const paidCount = invoices.filter(inv => inv.status === 'paid').length;
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
