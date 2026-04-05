@@ -165,7 +165,7 @@ export default function TenantsPage(): ReactElement {
     if (status) params.set('status', status);
 
     adminService.getTenants(params.toString())
-      .then((res) => { setTenants(res.items ?? []); setTotal(res.meta?.total ?? 0); })
+      .then((res) => { setTenants(res.data ?? []); setTotal(res.meta?.total ?? 0); })
       .catch(() => { setTenants([]); setTotal(0); })
       .finally(() => setLoading(false));
   };

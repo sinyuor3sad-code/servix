@@ -110,7 +110,7 @@ export interface PlanDistribution {
 }
 
 export interface PaginatedResponse<T> {
-  items: T[];
+  data: T[];
   meta: {
     page: number;
     perPage: number;

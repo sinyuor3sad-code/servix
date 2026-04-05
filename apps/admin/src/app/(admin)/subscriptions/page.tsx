@@ -40,7 +40,7 @@ export default function SubscriptionsPage(): ReactElement {
 
     adminService.getSubscriptions(params.toString())
       .then((res) => {
-        setSubs(res.items ?? []);
+        setSubs(res.data ?? []);
         setTotal(res.meta?.total ?? 0);
       })
       .catch(() => { setSubs([]); setTotal(0); })

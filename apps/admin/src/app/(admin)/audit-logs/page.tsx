@@ -23,7 +23,7 @@ export default function AuditLogsPage(): ReactElement {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     adminService.getAuditLogs(params.toString())
-      .then(res => { setLogs(res.items ?? []); setTotal(res.meta?.total ?? 0); })
+      .then(res => { setLogs(res.data ?? []); setTotal(res.meta?.total ?? 0); })
       .catch(() => setLogs([]))
       .finally(() => setLoading(false));
   }, [search]);
