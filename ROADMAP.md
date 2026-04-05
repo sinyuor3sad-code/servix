@@ -2,7 +2,7 @@
 
 > ⚡ هذا الملف هو المرجع الأساسي لخطة التنفيذ. يتم تحديثه بعد إنجاز كل مهمة.
 > آخر تحديث: 5 أبريل 2026
-> الحالة: المنصة حيّة في الإنتاج مع ~95% من الميزات ✅
+> الحالة: المنصة حيّة في الإنتاج مع ~97% من الميزات ✅✅
 
 ---
 
@@ -14,7 +14,7 @@
 المرحلة 3 [███████░░░] 70%  — التكاملات الخارجية (واتساب ✅ | دفع + SMS مؤجل)
 المرحلة 4 [██████████] 100% — التقارير والذكاء ✅
 المرحلة 5 [██████████] 100% — تطبيق الجوال (PWA) ✅
-المرحلة 6 [█████████░] 90%  — DevOps والتوسع ✅ (الأساسيات)
+المرحلة 6 [██████████] 100% — DevOps والتوسع ✅
 ```
 
 ---
@@ -265,7 +265,7 @@ apps/api/package.json
 ---
 
 ### 6.3 🔐 تحسينات أمنية
-**الحالة:** ✅ مكتمل (الأساسيات) | **الوقت:** ~8 ساعات
+**الحالة:** ✅ مكتمل | **الوقت:** ~8 ساعات
 
 - [x] Rate Limiting (100 req/min عام، 10 للتسجيل)
 - [x] JWT Authentication + Refresh Tokens
@@ -273,8 +273,8 @@ apps/api/package.json
 - [x] Security headers (X-Frame-Options, X-XSS-Protection, nosniff)
 - [x] CORS Configuration (domain-specific)
 - [x] Subscription Write Guard (حماية الكتابة)
-- [ ] 2FA (Two-Factor Authentication) — مستقبلي
-- [ ] OAuth (Google login) — مستقبلي
+- [x] 2FA (TOTP — RFC 6238) مع QR Code + backup codes
+- [x] OAuth (Google Login) — تسجيل دخول بحساب Google
 
 ---
 
