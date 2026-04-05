@@ -5,16 +5,16 @@ WORKDIR /app
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/admin/package.json apps/admin/
-RUN pnpm install --frozen-lockfile --filter @servix/admin...
+RUN echo "node-linker=hoisted" > .npmrc && \
+    pnpm install --filter @servix/admin...
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/admin/node_modules ./apps/admin/node_modules
 COPY . .
 WORKDIR /app/apps/admin
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_URL=https://api.servi-x.com/api/v1
-RUN mkdir -p public && pnpm build
+RUN mkdir -p public && node /app/node_modules/next/dist/bin/next build
 
 FROM node:22-alpine AS runner
 WORKDIR /app

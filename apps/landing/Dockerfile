@@ -5,17 +5,17 @@ WORKDIR /app
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/landing/package.json apps/landing/
-RUN pnpm install --frozen-lockfile --filter @servix/landing...
+RUN echo "node-linker=hoisted" > .npmrc && \
+    pnpm install --filter @servix/landing...
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/landing/node_modules ./apps/landing/node_modules
 COPY . .
 WORKDIR /app/apps/landing
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_DASHBOARD_URL=https://app.servi-x.com
 ENV NEXT_PUBLIC_API_URL=https://api.servi-x.com/api/v1
-RUN mkdir -p public && pnpm build
+RUN mkdir -p public && node /app/node_modules/next/dist/bin/next build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
