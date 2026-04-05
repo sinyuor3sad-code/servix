@@ -8,23 +8,14 @@ import {
   DollarSign,
   BarChart3,
   Settings,
-  Search,
-  User,
 } from 'lucide-react';
 
-interface CommandItem {
-  id: string;
-  label: string;
-  href: string;
-  icon: React.ElementType;
-}
-
-const COMMANDS: CommandItem[] = [
-  { id: 'nexus',         label: 'القيادة',    href: '/dashboard',        icon: Compass },
-  { id: 'tenants',       label: 'الأقاليم',   href: '/tenants',          icon: Building2 },
-  { id: 'revenue',       label: 'الإيرادات',  href: '/subscriptions',    icon: DollarSign },
-  { id: 'intelligence',  label: 'الاستخبارات', href: '/analytics',        icon: BarChart3 },
-  { id: 'codex',         label: 'النظام',     href: '/system',           icon: Settings },
+const COMMANDS = [
+  { id: 'nexus',    label: 'القيادة',     href: '/dashboard',     icon: Compass },
+  { id: 'tenants',  label: 'الأقاليم',    href: '/tenants',       icon: Building2 },
+  { id: 'revenue',  label: 'الإيرادات',   href: '/subscriptions', icon: DollarSign },
+  { id: 'intel',    label: 'الاستخبارات', href: '/analytics',     icon: BarChart3 },
+  { id: 'codex',    label: 'النظام',      href: '/system',        icon: Settings },
 ];
 
 function isActive(pathname: string, href: string): boolean {
@@ -36,7 +27,7 @@ export function CommandBar() {
   const pathname = usePathname();
 
   return (
-    <nav className="os-command-bar" role="navigation" aria-label="Command navigation">
+    <nav className="nx-cmdbar" role="navigation">
       {COMMANDS.map((cmd) => {
         const Icon = cmd.icon;
         const active = isActive(pathname, cmd.href);
@@ -44,9 +35,9 @@ export function CommandBar() {
           <Link
             key={cmd.id}
             href={cmd.href}
-            className={`os-command-item ${active ? 'active' : ''}`}
+            className={`nx-cmdbar-item ${active ? 'active' : ''}`}
           >
-            <Icon size={18} strokeWidth={active ? 2 : 1.5} />
+            <Icon size={17} strokeWidth={active ? 2 : 1.4} />
             <span>{cmd.label}</span>
           </Link>
         );
