@@ -13,9 +13,14 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
 
   /**
    * On app startup, sync tenant schema to all existing tenant databases.
+   * Only runs when SYNC_TENANT_SCHEMAS=true env var is set.
    * Runs in background so it doesn't block the API from starting.
    */
   async onApplicationBootstrap(): Promise<void> {
+    if (process.env.SYNC_TENANT_SCHEMAS !== 'true') {
+      this.logger.log('Tenant schema sync skipped (set SYNC_TENANT_SCHEMAS=true to enable)');
+      return;
+    }
     // Run in background - don't block API startup
     this.syncAllTenantSchemas().catch((err) => {
       this.logger.error(`Tenant schema sync failed: ${err.message}`);
