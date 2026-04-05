@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowRight, Send, Ban, CreditCard, Receipt, User, Calendar, Hash, CheckCircle2, Clock, XCircle, AlertCircle, Banknote, CreditCard as CardIcon, Building, Wallet } from 'lucide-react';
+import { ArrowRight, Send, Ban, CreditCard, Receipt, User, Calendar, Hash, CheckCircle2, Clock, XCircle, AlertCircle, Banknote, CreditCard as CardIcon, Building, Wallet, Printer, Download, FileText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button, Spinner, Input, Select, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui';
@@ -36,10 +36,12 @@ export default function InvoiceDetailPage() {
   const router = useRouter();
   const { accessToken } = useAuth();
   const qc = useQueryClient();
+  const printRef = useRef<HTMLDivElement>(null);
 
   const [showPay, setShowPay] = useState(false);
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState<PaymentMethod>('cash');
+  const [downloading, setDownloading] = useState(false);
 
   const { data: inv, isLoading } = useQuery({
     queryKey: ['invoice', id],
@@ -64,6 +66,66 @@ export default function InvoiceDetailPage() {
     onSuccess: () => toast.success('تم الإرسال'),
     onError: () => toast.error('خطأ في الإرسال'),
   });
+
+  // 🖨️ Print receipt
+  const handlePrint = () => {
+    if (!printRef.current) return;
+    const printContent = printRef.current.innerHTML;
+    const printWindow = window.open('', '_blank', 'width=350,height=600');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="utf-8" />
+        <title>فاتورة ${inv?.invoiceNumber}</title>
+        <style>
+          @page { size: 80mm auto; margin: 0; }
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: 'Segoe UI', Tahoma, sans-serif; width: 80mm; padding: 4mm; font-size: 11px; color: #000; direction: rtl; }
+          .center { text-align: center; }
+          .salon-name { font-size: 16px; font-weight: 900; margin-bottom: 4px; }
+          .divider { border-top: 1px dashed #999; margin: 6px 0; }
+          .row { display: flex; justify-content: space-between; padding: 2px 0; }
+          .bold { font-weight: 700; }
+          .total-row { font-size: 14px; font-weight: 900; border-top: 2px solid #000; padding-top: 4px; margin-top: 4px; }
+          .footer { font-size: 10px; color: #666; margin-top: 10px; text-align: center; }
+          .qr-placeholder { width: 80px; height: 80px; margin: 8px auto; border: 1px dashed #ccc; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #999; }
+        </style>
+      </head>
+      <body>
+        ${printContent}
+        <script>window.onload = function() { window.print(); window.close(); }</script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // 📄 Download PDF
+  const handleDownloadPdf = async () => {
+    if (!accessToken || !id) return;
+    setDownloading(true);
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+      const res = await fetch(`${apiBase}/invoices/${id}/pdf`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new Error('Failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoice-${inv?.invoiceNumber || id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('تم تحميل الفاتورة');
+    } catch {
+      toast.error('فشل تحميل الفاتورة');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
   if (!inv) return (
@@ -98,7 +160,14 @@ export default function InvoiceDetailPage() {
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{fmtDate(inv.createdAt)} · {fmtTime(inv.createdAt)}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* 🖨️ Print & 📄 PDF Buttons */}
+          <Button size="sm" variant="outline" onClick={handlePrint}>
+            <Printer className="h-3.5 w-3.5" /> طباعة
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleDownloadPdf} disabled={downloading}>
+            <Download className="h-3.5 w-3.5" /> {downloading ? '...' : 'PDF'}
+          </Button>
           {canPay && <Button size="sm" onClick={() => setShowPay(true)}><CreditCard className="h-3.5 w-3.5" /> دفع</Button>}
           {inv.status !== 'void' && <Button size="sm" variant="outline" onClick={() => sendMut.mutate()} disabled={sendMut.isPending}><Send className="h-3.5 w-3.5" /> إرسال</Button>}
           {canVoid && <Button size="sm" variant="destructive" onClick={() => voidMut.mutate()} disabled={voidMut.isPending}><Ban className="h-3.5 w-3.5" /> إلغاء</Button>}
@@ -193,6 +262,40 @@ export default function InvoiceDetailPage() {
         )}
       </div>
 
+      {/* 🖨️ Hidden Print Receipt Template */}
+      <div className="hidden">
+        <div ref={printRef}>
+          <div className="center salon-name">✨ فاتورة ✨</div>
+          <div className="divider"></div>
+          <div className="row"><span>رقم الفاتورة:</span><span className="bold">{inv.invoiceNumber}</span></div>
+          <div className="row"><span>التاريخ:</span><span>{fmtDate(inv.createdAt)}</span></div>
+          <div className="row"><span>الوقت:</span><span>{fmtTime(inv.createdAt)}</span></div>
+          {inv.client && <div className="row"><span>العميل:</span><span>{inv.client.fullName}</span></div>}
+          <div className="divider"></div>
+          {inv.items?.map((item, i) => (
+            <div key={i} className="row">
+              <span>{item.description}</span>
+              <span className="bold">{Number(item.totalPrice).toLocaleString('en')} SAR</span>
+            </div>
+          ))}
+          <div className="divider"></div>
+          <div className="row"><span>المجموع الفرعي</span><span>{Number(inv.subtotal).toLocaleString('en')} SAR</span></div>
+          {inv.discountAmount > 0 && <div className="row"><span>الخصم</span><span>-{Number(inv.discountAmount).toLocaleString('en')} SAR</span></div>}
+          {inv.taxAmount > 0 && <div className="row"><span>الضريبة (15%)</span><span>{Number(inv.taxAmount).toLocaleString('en')} SAR</span></div>}
+          <div className="row total-row"><span>الإجمالي</span><span>{Number(inv.total).toLocaleString('en')} SAR</span></div>
+          {inv.payments && inv.payments.length > 0 && (
+            <>
+              <div className="divider"></div>
+              <div className="row"><span>طريقة الدفع:</span><span>{METHOD_ICONS[inv.payments[0].method]?.label || inv.payments[0].method}</span></div>
+              <div className="row"><span>الحالة:</span><span className="bold">{STATUS[inv.status]?.label}</span></div>
+            </>
+          )}
+          <div className="divider"></div>
+          <div className="footer">شكراً لزيارتكم 💖</div>
+          <div className="footer" style={{ marginTop: '4px' }}>Powered by SERVIX</div>
+        </div>
+      </div>
+
       {/* Payment Dialog */}
       <Dialog open={showPay} onOpenChange={setShowPay}>
         <DialogContent>
@@ -232,3 +335,4 @@ export default function InvoiceDetailPage() {
     </div>
   );
 }
+
