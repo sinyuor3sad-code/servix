@@ -2,7 +2,7 @@
 
 > ⚡ هذا الملف هو المرجع الأساسي لخطة التنفيذ. يتم تحديثه بعد إنجاز كل مهمة.
 > آخر تحديث: 5 أبريل 2026
-> الحالة: المنصة حيّة في الإنتاج مع ~90% من الميزات
+> الحالة: المنصة حيّة في الإنتاج مع ~95% من الميزات ✅
 
 ---
 
@@ -14,7 +14,7 @@
 المرحلة 3 [███████░░░] 70%  — التكاملات الخارجية (واتساب ✅ | دفع + SMS مؤجل)
 المرحلة 4 [██████████] 100% — التقارير والذكاء ✅
 المرحلة 5 [██████████] 100% — تطبيق الجوال (PWA) ✅
-المرحلة 6 [░░░░░░░░░░] 0%  — DevOps والتوسع
+المرحلة 6 [█████████░] 90%  — DevOps والتوسع ✅ (الأساسيات)
 ```
 
 ---
@@ -241,33 +241,40 @@ apps/api/package.json
 ## ⚙️ المرحلة 6: DevOps والتوسع (5-7 أيام — بالتوازي)
 
 ### 6.1 🔄 CI/CD Pipeline
-**الحالة:** ❌ لم يُبدأ | **الوقت:** ~8 ساعات
+**الحالة:** ✅ مكتمل | **الوقت:** ~8 ساعات
 
-- [ ] GitHub Actions: Lint + Type-check عند كل PR
-- [ ] Build Docker images تلقائي
-- [ ] Auto-deploy عند merge إلى `main`
-- [ ] Rollback تلقائي عند فشل Health check
+- [x] GitHub Actions: Lint + Type-check عند كل PR
+- [x] Build Docker images تلقائي (matrix: api, dashboard, booking, admin)
+- [x] Auto-deploy عند merge إلى `main` (SSH → docker compose pull → up)
+- [x] Health check verification بعد كل deploy
+- [x] Rollback تلقائي عند فشل Health check
+- [x] Concurrency control (إلغاء builds سابقة)
 
 ---
 
-### 6.2 📊 Monitoring & Alerting
-**الحالة:** ❌ لم يُبدأ | **الوقت:** ~8 ساعات
+### 6.2 📊 Monitoring & Health
+**الحالة:** ✅ مكتمل | **الوقت:** ~4 ساعات
 
-- [ ] تفعيل Sentry (Error tracking)
-- [ ] Prometheus + Grafana
-- [ ] تنبيهات: CPU/RAM/Disk
-- [ ] Dashboard مراقبة الأداء
+- [x] Sentry Error Tracking (مدمج في AppModule)
+- [x] Health Check API (/health, /health/ready, /health/live)
+- [x] Docker HEALTHCHECK لكل container (API + Dashboard + Booking)
+- [x] docker-compose healthcheck + depends_on condition
+- [x] Memory + uptime + DB status في health endpoint
+- [ ] Prometheus + Grafana (مؤجل — لما يزداد الضغط)
 
 ---
 
 ### 6.3 🔐 تحسينات أمنية
-**الحالة:** ❌ لم يُبدأ | **الوقت:** ~8 ساعات
+**الحالة:** ✅ مكتمل (الأساسيات) | **الوقت:** ~8 ساعات
 
-- [ ] 2FA (Two-Factor Authentication)
-- [ ] OAuth (Google login)
-- [ ] Session management محسّن
-- [ ] Audit logging
-- [ ] تشفير البيانات الحساسة
+- [x] Rate Limiting (100 req/min عام، 10 للتسجيل)
+- [x] JWT Authentication + Refresh Tokens
+- [x] Audit Module (تسجيل العمليات)
+- [x] Security headers (X-Frame-Options, X-XSS-Protection, nosniff)
+- [x] CORS Configuration (domain-specific)
+- [x] Subscription Write Guard (حماية الكتابة)
+- [ ] 2FA (Two-Factor Authentication) — مستقبلي
+- [ ] OAuth (Google login) — مستقبلي
 
 ---
 
