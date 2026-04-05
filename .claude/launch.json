@@ -7,6 +7,13 @@
       "runtimeArgs": ["--filter", "dashboard", "dev"],
       "port": 3000,
       "autoPort": false
+    },
+    {
+      "name": "admin",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@servix/admin", "dev"],
+      "port": 3002,
+      "autoPort": false
     }
   ]
 }

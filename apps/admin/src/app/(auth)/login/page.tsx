@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent, type ReactElement } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/auth.store';
 import { adminService } from '@/services/admin.service';
@@ -15,6 +15,8 @@ export default function AdminLoginPage(): ReactElement {
   const [showPass, setShowPass] = useState(false);
   const { login } = useAuthStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/dashboard';
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -28,7 +30,7 @@ export default function AdminLoginPage(): ReactElement {
       const result = await adminService.login(email, password);
       login(result.user, result.accessToken, result.refreshToken);
       toast.success('تم تسجيل الدخول بنجاح');
-      router.push('/dashboard');
+      router.push(redirectTo);
     } catch (error) {
       if (error instanceof ApiError) {
         toast.error(error.message);

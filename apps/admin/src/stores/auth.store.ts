@@ -21,6 +21,8 @@ interface AuthActions {
   setTokens: (accessToken: string, refreshToken: string) => void;
   login: (user: AdminUser, accessToken: string, refreshToken: string) => void;
   logout: () => void;
+  _hasHydrated: boolean;
+  _setHasHydrated: (v: boolean) => void;
 }
 
 const initialState: AuthState = {
@@ -44,6 +46,9 @@ export const useAuthStore = create<AuthState & AuthActions>()(
   persist(
     (set) => ({
       ...initialState,
+
+      _hasHydrated: false,
+      _setHasHydrated: (v: boolean) => set({ _hasHydrated: v }),
 
       setUser: (user) => set((s) => {
         const next = { ...s, user };
@@ -75,6 +80,9 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?._setHasHydrated(true);
+      },
     },
   ),
 );

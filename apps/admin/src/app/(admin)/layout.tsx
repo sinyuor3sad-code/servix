@@ -12,18 +12,22 @@ export default function AdminLayout({ children }: { children: ReactNode }): Reac
   const isDashboard = pathname === '/dashboard';
   const user = useAuthStore((s) => s.user);
   const accessToken = useAuthStore((s) => s.accessToken);
+  const hasHydrated = useAuthStore((s) => s._hasHydrated);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
+    // Wait for Zustand to hydrate from localStorage before checking auth
+    if (!hasHydrated) return;
+
     // Client-side auth guard — redirect to login if not authenticated
     if (!user || !accessToken) {
       router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
     } else {
       setChecked(true);
     }
-  }, [user, accessToken, router, pathname]);
+  }, [user, accessToken, hasHydrated, router, pathname]);
 
-  // Show nothing while checking auth
+  // Show nothing while checking auth (or waiting for hydration)
   if (!checked) {
     return (
       <div style={{ height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
