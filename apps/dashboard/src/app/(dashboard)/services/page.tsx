@@ -61,8 +61,16 @@ export default function ServicesPage() {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => dashboardService.deleteService(id, accessToken!),
-    onSuccess: () => { toast.success('🗑️ تم الحذف'); qc.invalidateQueries({ queryKey: ['services'] }); setDeleteId(null); },
-    onError: (e: any) => toast.error(e?.message || 'لا يمكن حذف خدمة مرتبطة بفواتير أو مواعيد'),
+    onSuccess: (res: any) => {
+      if (res?.deleted) {
+        toast.success('🗑️ تم حذف الخدمة نهائياً');
+      } else {
+        toast.info(res?.message || 'تم تعطيل الخدمة');
+      }
+      qc.invalidateQueries({ queryKey: ['services'] });
+      setDeleteId(null);
+    },
+    onError: (e: any) => toast.error(e?.message || 'خطأ في حذف الخدمة'),
   });
 
   const allSvcs = svcsData?.items ?? [];

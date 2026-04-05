@@ -133,6 +133,27 @@ export class ServicesService {
     return this.mapServicePrice(service);
   }
 
+  async hardDelete(
+    db: TenantPrismaClient,
+    id: string,
+  ): Promise<{ deleted: boolean; message: string }> {
+    const existing = await db.service.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException('الخدمة غير موجودة');
+    }
+
+    try {
+      // Try real delete first
+      await db.service.delete({ where: { id } });
+      return { deleted: true, message: 'تم حذف الخدمة نهائياً' };
+    } catch (e: any) {
+      // Foreign key constraint — service used in invoices/appointments
+      // Fall back to soft delete
+      await db.service.update({ where: { id }, data: { isActive: false } });
+      return { deleted: false, message: 'تم تعطيل الخدمة (مرتبطة بفواتير أو مواعيد)' };
+    }
+  }
+
   async reorder(
     db: TenantPrismaClient,
     dto: ReorderServicesDto,

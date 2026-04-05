@@ -165,14 +165,14 @@ export class ServicesController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'حذف خدمة (تعطيل)' })
+  @ApiOperation({ summary: 'حذف خدمة' })
   @ApiResponse({ status: 200, description: 'تم حذف الخدمة بنجاح' })
   @ApiResponse({ status: 404, description: 'الخدمة غير موجودة' })
-  async softDelete(
+  async hardDelete(
     @Req() req: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<Record<string, unknown>> {
-    return this.servicesService.softDelete(
+  ): Promise<{ deleted: boolean; message: string }> {
+    return this.servicesService.hardDelete(
       req.tenantDb!,
       id,
     );
