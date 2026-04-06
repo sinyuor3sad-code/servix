@@ -25,7 +25,11 @@ function Spinner({
       {...props}
     >
       <Loader2
-        className={cn('animate-spin text-[var(--brand-primary)]', sizeClasses[size])}
+        className={cn(
+          'animate-spin text-[var(--brand-primary)] drop-shadow-[0_0_8px_var(--brand-primary)]',
+          sizeClasses[size]
+        )}
+        style={{ filter: `drop-shadow(0 0 6px color-mix(in srgb, var(--brand-primary) 30%, transparent))` }}
       />
       <span className="sr-only">جارٍ التحميل</span>
     </div>

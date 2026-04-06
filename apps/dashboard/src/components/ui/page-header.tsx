@@ -22,18 +22,18 @@ function PageHeader({
       )}
       {...props}
     >
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-[var(--foreground)]">
           {title}
         </h1>
         {description && (
-          <p className="text-sm text-[var(--muted-foreground)]">
+          <p className="text-sm text-[var(--muted-foreground)] leading-relaxed">
             {description}
           </p>
         )}
       </div>
       {actions && (
-        <div className="flex shrink-0 items-center gap-2">{actions}</div>
+        <div className="flex shrink-0 items-center gap-2.5">{actions}</div>
       )}
     </div>
   );

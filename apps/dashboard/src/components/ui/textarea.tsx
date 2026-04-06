@@ -25,11 +25,14 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         <textarea
           id={textareaId}
           className={cn(
-            'flex min-h-[80px] w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-colors',
-            'focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-transparent',
+            'flex min-h-[80px] w-full rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-elevated)] px-3.5 py-2.5 text-sm text-[var(--foreground)]',
+            'placeholder:text-[var(--muted-foreground)]/60',
+            'transition-all duration-[var(--duration-normal)] ease-[var(--ease-out-expo)]',
+            'focus:outline-none focus:ring-2 focus:ring-[var(--ring)]/40 focus:border-[var(--brand-primary)] focus:shadow-[var(--glow-primary)]',
+            'hover:border-[var(--muted-foreground)]/30',
             'disabled:cursor-not-allowed disabled:opacity-50',
             'resize-y',
-            error && 'border-red-500 focus:ring-red-500',
+            error && 'border-red-500 focus:ring-red-500/40',
             className
           )}
           ref={ref}
@@ -40,7 +43,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         {error && (
           <p
             id={`${textareaId}-error`}
-            className="text-xs text-red-500"
+            className="text-xs text-red-500 font-medium"
             role="alert"
           >
             {error}

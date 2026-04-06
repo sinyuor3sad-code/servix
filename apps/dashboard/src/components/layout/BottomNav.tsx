@@ -89,29 +89,33 @@ export function BottomNav(): React.ReactElement {
       {/* "More" Overlay */}
       {showMore && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden animate-fade-in"
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[6px] md:hidden animate-fade-in"
           onClick={closeMore}
           aria-hidden="true"
         />
       )}
 
-      {/* "More" Panel — glass morphism */}
+      {/* "More" Panel — premium glass */}
       {showMore && (
-        <div className="fixed inset-x-0 bottom-[calc(4rem+var(--safe-bottom,0px))] z-50 mx-3 rounded-2xl glass shadow-lg md:hidden animate-scale-in">
-          <div className="mb-2 flex items-center justify-between p-4 pb-0">
-            <span className="text-sm font-bold text-[var(--foreground)]">
+        <div className={cn(
+          'fixed inset-x-0 bottom-[calc(4rem+var(--safe-bottom,0px))] z-50 mx-3',
+          'rounded-[var(--radius-xl)] glass-heavy shadow-[var(--shadow-xl)]',
+          'md:hidden animate-cinematic'
+        )}>
+          <div className="mb-1 flex items-center justify-between p-4 pb-0">
+            <span className="text-sm font-bold text-[var(--foreground)] tracking-tight">
               المزيد
             </span>
             <button
               type="button"
               onClick={closeMore}
-              className="rounded-full p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
+              className="rounded-full p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors duration-[var(--duration-fast)]"
               aria-label="إغلاق"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
-          <div className="grid grid-cols-4 gap-1 p-3 pt-0 animate-stagger">
+          <div className="grid grid-cols-4 gap-1 p-3 pt-1 animate-stagger">
             {visibleMoreItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(pathname, item.href);
@@ -121,7 +125,8 @@ export function BottomNav(): React.ReactElement {
                   href={item.href}
                   onClick={closeMore}
                   className={cn(
-                    'flex flex-col items-center gap-1.5 rounded-xl p-2.5 text-[11px] font-medium transition-all',
+                    'flex flex-col items-center gap-1.5 rounded-[var(--radius-lg)] p-2.5 text-[11px] font-medium',
+                    'transition-all duration-[var(--duration-fast)]',
                     active
                       ? 'bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]'
                       : 'text-[var(--muted-foreground)] active:bg-[var(--muted)]'
@@ -136,9 +141,13 @@ export function BottomNav(): React.ReactElement {
         </div>
       )}
 
-      {/* Bottom Navigation Bar — glass effect */}
+      {/* Bottom Navigation Bar — premium glass */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 glass border-t border-[var(--border)] md:hidden"
+        className={cn(
+          'fixed inset-x-0 bottom-0 z-30 md:hidden',
+          'glass-heavy border-t border-[var(--border)]/60',
+          'shadow-[0_-4px_20px_rgba(0,0,0,0.05)]'
+        )}
         style={{ paddingBottom: 'var(--safe-bottom, 0px)' }}
       >
         <div className="flex items-center justify-around py-1.5 px-2">
@@ -150,17 +159,26 @@ export function BottomNav(): React.ReactElement {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'relative flex flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 text-[10px] font-semibold transition-all',
+                  'relative flex flex-col items-center gap-0.5 rounded-[var(--radius-lg)] px-3 py-1.5 text-[10px] font-semibold',
+                  'transition-all duration-[var(--duration-fast)]',
                   active
                     ? 'text-[var(--brand-primary)]'
                     : 'text-[var(--muted-foreground)]'
                 )}
               >
-                {/* Active indicator dot */}
+                {/* Active indicator — gradient pill */}
                 {active && (
-                  <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 h-1 w-5 rounded-full bg-[var(--brand-primary)] animate-scale-in" />
+                  <span className={cn(
+                    'absolute -top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-6 rounded-full',
+                    'bg-gradient-to-r from-[var(--brand-primary)] to-[var(--brand-primary-light)]',
+                    'shadow-[0_0_8px_color-mix(in_srgb,var(--brand-primary)_40%,transparent)]',
+                    'animate-scale-in'
+                  )} />
                 )}
-                <Icon className={cn('h-5 w-5 transition-transform', active && 'stroke-[2.5] scale-110')} />
+                <Icon className={cn(
+                  'h-5 w-5 transition-all duration-[var(--duration-fast)]',
+                  active && 'stroke-[2.5] scale-110'
+                )} />
                 <span>{item.label}</span>
               </Link>
             );
@@ -170,7 +188,8 @@ export function BottomNav(): React.ReactElement {
               type="button"
               onClick={toggleMore}
               className={cn(
-                'flex flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 text-[10px] font-semibold transition-all',
+                'flex flex-col items-center gap-0.5 rounded-[var(--radius-lg)] px-3 py-1.5 text-[10px] font-semibold',
+                'transition-all duration-[var(--duration-fast)]',
                 showMore
                   ? 'text-[var(--brand-primary)]'
                   : 'text-[var(--muted-foreground)]'

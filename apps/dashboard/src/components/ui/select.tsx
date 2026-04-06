@@ -37,10 +37,12 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             id={selectId}
             ref={ref}
             className={cn(
-              'flex h-10 w-full appearance-none rounded-lg border border-[var(--border)] bg-[var(--background)] pe-10 ps-3 py-2 text-sm text-[var(--foreground)] transition-colors',
-              'focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-transparent',
+              'flex h-10 w-full appearance-none rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-elevated)] pe-10 ps-3.5 py-2 text-sm text-[var(--foreground)]',
+              'transition-all duration-[var(--duration-normal)] ease-[var(--ease-out-expo)]',
+              'focus:outline-none focus:ring-2 focus:ring-[var(--ring)]/40 focus:border-[var(--brand-primary)] focus:shadow-[var(--glow-primary)]',
+              'hover:border-[var(--muted-foreground)]/30',
               'disabled:cursor-not-allowed disabled:opacity-50',
-              error && 'border-red-500 focus:ring-red-500',
+              error && 'border-red-500 focus:ring-red-500/40',
               className
             )}
             aria-invalid={error ? 'true' : undefined}
@@ -67,7 +69,7 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         {error && (
           <p
             id={`${selectId}-error`}
-            className="text-xs text-red-500"
+            className="text-xs text-red-500 font-medium"
             role="alert"
           >
             {error}

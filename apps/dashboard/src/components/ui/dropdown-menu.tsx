@@ -83,7 +83,10 @@ function DropdownMenuContent({
   return (
     <div
       className={cn(
-        'absolute top-full z-50 mt-1 min-w-[8rem] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--background)] p-1 shadow-lg animate-in fade-in zoom-in-95',
+        'absolute top-full z-50 mt-2 min-w-[10rem] overflow-hidden',
+        'rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-1.5',
+        'shadow-[var(--shadow-xl)]',
+        'animate-scale-in',
         align === 'end' && 'end-0',
         align === 'start' && 'start-0',
         align === 'center' && 'start-1/2 -translate-x-1/2',
@@ -112,10 +115,11 @@ function DropdownMenuItem({
     <button
       type="button"
       className={cn(
-        'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+        'flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-sm',
+        'transition-colors duration-[var(--duration-fast)]',
         'hover:bg-[var(--muted)] focus:bg-[var(--muted)] focus:outline-none',
         destructive
-          ? 'text-red-600 hover:text-red-700'
+          ? 'text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30'
           : 'text-[var(--foreground)]',
         className
       )}
@@ -136,7 +140,7 @@ function DropdownMenuSeparator({
 }): React.ReactElement {
   return (
     <div
-      className={cn('my-1 h-px bg-[var(--border)]', className)}
+      className={cn('my-1.5 h-px bg-[var(--border)]', className)}
       role="separator"
     />
   );
@@ -149,7 +153,7 @@ function DropdownMenuLabel({
   return (
     <div
       className={cn(
-        'px-3 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]',
+        'px-3 py-2 text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider',
         className
       )}
       {...props}

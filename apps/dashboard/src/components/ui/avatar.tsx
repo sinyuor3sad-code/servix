@@ -39,7 +39,9 @@ function Avatar({
   return (
     <div
       className={cn(
-        'relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--muted)]',
+        'relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full',
+        'bg-[var(--muted)] ring-2 ring-[var(--border)] ring-offset-1 ring-offset-[var(--background)]',
+        'transition-all duration-[var(--duration-fast)]',
         sizeClasses[size],
         className
       )}
@@ -55,7 +57,7 @@ function Avatar({
           onError={() => setImgError(true)}
         />
       ) : (
-        <span className="font-medium text-[var(--muted-foreground)]">
+        <span className="font-semibold text-[var(--muted-foreground)]">
           {fallback ? getInitials(fallback) : '?'}
         </span>
       )}

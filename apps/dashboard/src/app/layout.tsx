@@ -7,8 +7,8 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: dark)',  color: '#0B0A1F' },
-    { media: '(prefers-color-scheme: light)', color: '#0B0A1F' },
+    { media: '(prefers-color-scheme: dark)',  color: '#0c0816' },
+    { media: '(prefers-color-scheme: light)', color: '#faf8fc' },
   ],
 };
 
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     'mobile-web-app-capable': 'yes',
     'apple-mobile-web-app-capable': 'yes',
     'apple-mobile-web-app-status-bar-style': 'black-translucent',
-    'msapplication-TileColor': '#0B0A1F',
+    'msapplication-TileColor': '#0c0816',
   },
 };
 import { Cairo, Tajawal, Amiri } from 'next/font/google';

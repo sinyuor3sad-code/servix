@@ -37,11 +37,11 @@ function Dialog({ open, onOpenChange, children }: DialogProps): React.ReactEleme
       aria-modal="true"
     >
       <div
-        className="fixed inset-0 bg-black/50 animate-in fade-in"
+        className="fixed inset-0 bg-black/60 backdrop-blur-[6px] animate-fade-in"
         onClick={() => onOpenChange(false)}
         aria-hidden="true"
       />
-      <div className="relative z-50 w-full max-w-lg animate-in zoom-in-95 fade-in">
+      <div className="relative z-50 w-full max-w-lg animate-cinematic">
         {children}
       </div>
     </div>
@@ -56,7 +56,8 @@ function DialogContent({
   return (
     <div
       className={cn(
-        'mx-4 rounded-xl border border-[var(--border)] bg-[var(--background)] p-6 shadow-xl',
+        'mx-4 rounded-[var(--radius-xl)] border border-[var(--glass-border)] bg-[var(--card)] p-6 shadow-[var(--shadow-2xl)]',
+        'backdrop-blur-sm',
         className
       )}
       {...props}
@@ -76,7 +77,10 @@ function DialogClose({ onClose, className }: DialogCloseProps): React.ReactEleme
     <button
       onClick={onClose}
       className={cn(
-        'absolute top-4 end-4 rounded-md p-1 text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]',
+        'absolute top-4 end-4 rounded-[var(--radius-sm)] p-1.5 text-[var(--muted-foreground)]',
+        'transition-all duration-[var(--duration-fast)]',
+        'hover:text-[var(--foreground)] hover:bg-[var(--muted)]',
+        'focus:outline-none focus:ring-2 focus:ring-[var(--ring)]',
         className
       )}
       aria-label="إغلاق"
@@ -92,7 +96,7 @@ function DialogHeader({
 }: React.HTMLAttributes<HTMLDivElement>): React.ReactElement {
   return (
     <div
-      className={cn('mb-4 flex flex-col gap-1.5', className)}
+      className={cn('mb-5 flex flex-col gap-1.5', className)}
       {...props}
     />
   );
@@ -105,7 +109,7 @@ function DialogTitle({
   return (
     <h2
       className={cn(
-        'text-lg font-semibold text-[var(--foreground)]',
+        'text-lg font-bold text-[var(--foreground)] tracking-tight',
         className
       )}
       {...props}
@@ -119,7 +123,7 @@ function DialogDescription({
 }: React.HTMLAttributes<HTMLParagraphElement>): React.ReactElement {
   return (
     <p
-      className={cn('text-sm text-[var(--muted-foreground)]', className)}
+      className={cn('text-sm text-[var(--muted-foreground)] leading-relaxed', className)}
       {...props}
     />
   );
@@ -131,7 +135,7 @@ function DialogFooter({
 }: React.HTMLAttributes<HTMLDivElement>): React.ReactElement {
   return (
     <div
-      className={cn('mt-6 flex justify-end gap-2', className)}
+      className={cn('mt-6 flex justify-end gap-2.5', className)}
       {...props}
     />
   );

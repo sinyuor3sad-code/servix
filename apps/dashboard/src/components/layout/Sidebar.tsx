@@ -116,14 +116,21 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
 
   const sidebarContent = (
     <div className="flex h-full flex-col">
-      {/* Logo */}
-      <div className="flex h-[var(--header-height)] items-center justify-between border-b border-[var(--border)] px-4">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-primary)] text-white font-bold text-lg">
+      {/* Logo area — premium with subtle brand glow */}
+      <div className="flex h-[var(--header-height)] items-center justify-between border-b border-[var(--border)]/60 px-4">
+        <Link href="/dashboard" className="flex items-center gap-3 group">
+          <div className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] font-bold text-lg text-white',
+            'bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-dark)]',
+            'shadow-[0_2px_8px_color-mix(in_srgb,var(--brand-primary)_30%,transparent)]',
+            'transition-all duration-[var(--duration-normal)]',
+            'group-hover:shadow-[0_4px_16px_color-mix(in_srgb,var(--brand-primary)_40%,transparent)]',
+            'group-hover:scale-105'
+          )}>
             {currentTenant?.nameAr?.charAt(0) || 'S'}
           </div>
           {!collapsed && (
-            <span className="text-xl font-bold text-[var(--foreground)] truncate max-w-[180px]">
+            <span className="text-lg font-bold text-[var(--foreground)] truncate max-w-[180px] tracking-tight">
               {currentTenant?.nameAr || 'SERVIX'}
             </span>
           )}
@@ -131,7 +138,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
         <button
           type="button"
           onClick={onMobileClose}
-          className="rounded-lg p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)] md:hidden"
+          className="rounded-[var(--radius)] p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors md:hidden"
           aria-label="إغلاق القائمة"
         >
           <X className="h-5 w-5" />
@@ -139,8 +146,8 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-3">
-        <ul className="space-y-1">
+      <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
+        <ul className="space-y-0.5">
           {visibleItems.map((item) => {
             const active = isActiveRoute(pathname, item.href);
             const Icon = item.icon;
@@ -150,17 +157,17 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
                 <li key={item.href}>
                   <span
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium cursor-default opacity-50',
+                      'flex items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm font-medium cursor-default opacity-40',
                       'text-[var(--muted-foreground)]',
                       collapsed && 'justify-center px-0'
                     )}
                     title={collapsed ? `${item.label} — قريباً` : undefined}
                   >
-                    <Icon className="h-5 w-5 shrink-0" />
+                    <Icon className="h-[18px] w-[18px] shrink-0" />
                     {!collapsed && (
                       <>
                         <span>{item.label}</span>
-                        <span className="ms-auto rounded-full bg-[var(--muted)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted-foreground)]">
+                        <span className="ms-auto rounded-full bg-[var(--muted)] px-2 py-0.5 text-[9px] font-bold text-[var(--muted-foreground)] uppercase tracking-wider">
                           قريباً
                         </span>
                       </>
@@ -176,15 +183,22 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
                   href={item.href}
                   onClick={onMobileClose}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    'relative flex items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-sm font-medium',
+                    'transition-all duration-[var(--duration-fast)] ease-[var(--ease-out-expo)]',
                     active
-                      ? 'bg-[var(--brand-primary)] text-white shadow-sm'
-                      : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
+                      ? [
+                          'bg-[var(--brand-primary)] text-white',
+                          'shadow-[0_2px_12px_color-mix(in_srgb,var(--brand-primary)_35%,transparent)]',
+                        ].join(' ')
+                      : [
+                          'text-[var(--muted-foreground)]',
+                          'hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
+                        ].join(' '),
                     collapsed && 'justify-center px-0'
                   )}
                   title={collapsed ? item.label : undefined}
                 >
-                  <Icon className="h-5 w-5 shrink-0" />
+                  <Icon className={cn('h-[18px] w-[18px] shrink-0', active && 'drop-shadow-sm')} />
                   {!collapsed && <span>{item.label}</span>}
                 </Link>
               </li>
@@ -194,11 +208,15 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
       </nav>
 
       {/* Collapse Toggle (desktop only) */}
-      <div className="hidden border-t border-[var(--border)] p-3 md:block">
+      <div className="hidden border-t border-[var(--border)]/60 p-3 md:block">
         <button
           type="button"
           onClick={toggleCollapse}
-          className="flex w-full items-center justify-center rounded-lg p-2 text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+          className={cn(
+            'flex w-full items-center justify-center rounded-[var(--radius)] p-2',
+            'text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]',
+            'transition-all duration-[var(--duration-fast)]'
+          )}
           aria-label={collapsed ? 'توسيع القائمة' : 'طي القائمة'}
         >
           {collapsed ? (
@@ -213,10 +231,12 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
 
   return (
     <>
-      {/* Desktop Sidebar */}
+      {/* Desktop Sidebar — glass panel */}
       <aside
         className={cn(
-          'hidden md:flex md:flex-col md:fixed md:inset-y-0 md:start-0 md:z-30 border-e border-[var(--border)] bg-[var(--background)] transition-[width] duration-300',
+          'hidden md:flex md:flex-col md:fixed md:inset-y-0 md:start-0 md:z-30',
+          'border-e border-[var(--border)]/60 glass-panel',
+          'transition-[width] duration-300 ease-[var(--ease-out-expo)]',
           collapsed
             ? 'md:w-[var(--sidebar-collapsed-width)]'
             : 'md:w-[var(--sidebar-width)]'
@@ -225,10 +245,10 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
         {sidebarContent}
       </aside>
 
-      {/* Mobile Overlay — blur backdrop */}
+      {/* Mobile Overlay — cinematic blur backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden animate-fade-in"
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[6px] md:hidden animate-fade-in"
           onClick={onMobileClose}
           aria-hidden="true"
         />
@@ -237,7 +257,10 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
       {/* Mobile Sidebar — slides in from the right (RTL start) */}
       <aside
         className={cn(
-          'fixed inset-y-0 end-0 z-50 w-[280px] max-w-[85vw] border-s border-[var(--border)] bg-[var(--background)] shadow-2xl transition-transform duration-300 ease-out md:hidden',
+          'fixed inset-y-0 end-0 z-50 w-[280px] max-w-[85vw]',
+          'border-s border-[var(--border)]/60 glass-panel',
+          'shadow-[var(--shadow-2xl)]',
+          'transition-transform duration-300 ease-[var(--ease-out-expo)] md:hidden',
           mobileOpen ? 'translate-x-0' : 'translate-x-full rtl:-translate-x-full'
         )}
       >
@@ -247,7 +270,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
       {/* Spacer to push main content */}
       <div
         className={cn(
-          'hidden md:block shrink-0 transition-[width] duration-300',
+          'hidden md:block shrink-0 transition-[width] duration-300 ease-[var(--ease-out-expo)]',
           collapsed
             ? 'md:w-[var(--sidebar-collapsed-width)]'
             : 'md:w-[var(--sidebar-width)]'

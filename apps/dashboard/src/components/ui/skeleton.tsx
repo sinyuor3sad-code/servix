@@ -14,12 +14,13 @@ function Skeleton({
     <div
       className={cn(
         'relative overflow-hidden bg-[var(--muted)]',
-        'before:absolute before:inset-0 before:translate-x-[-100%] before:animate-[shimmer_1.8s_ease-in-out_infinite]',
-        'before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent',
-        variant === 'rectangular' && 'rounded-lg',
+        'before:absolute before:inset-0 before:translate-x-[-100%]',
+        'before:animate-[shimmer_2s_ease-in-out_infinite]',
+        'before:bg-gradient-to-r before:from-transparent before:via-[var(--surface-elevated)]/40 before:to-transparent',
+        variant === 'rectangular' && 'rounded-[var(--radius)]',
         variant === 'circular' && 'rounded-full',
         variant === 'text' && 'h-4 w-full rounded',
-        variant === 'card' && 'rounded-xl',
+        variant === 'card' && 'rounded-[var(--radius-xl)]',
         className
       )}
       aria-hidden="true"

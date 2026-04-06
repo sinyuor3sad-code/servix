@@ -65,19 +65,25 @@ function DataTable<T>({
     <div className={cn('w-full space-y-4', className)}>
       {searchable && (
         <div className="relative">
-          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
+          <Search className="pointer-events-none absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
           <input
             type="text"
             value={searchQuery}
             onChange={handleSearch}
             placeholder={searchPlaceholder}
-            className="flex h-11 w-full sm:max-w-sm rounded-xl border border-[var(--border)] bg-[var(--background)] ps-10 pe-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+            className={cn(
+              'flex h-11 w-full sm:max-w-sm rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-elevated)] ps-10 pe-4 py-2 text-sm text-[var(--foreground)]',
+              'placeholder:text-[var(--muted-foreground)]/60',
+              'transition-all duration-[var(--duration-normal)] ease-[var(--ease-out-expo)]',
+              'focus:outline-none focus:ring-2 focus:ring-[var(--ring)]/40 focus:border-[var(--brand-primary)] focus:shadow-[var(--glow-primary)]',
+              'hover:border-[var(--muted-foreground)]/30'
+            )}
           />
         </div>
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-16">
+        <div className="flex items-center justify-center py-20">
           <Spinner size="lg" />
         </div>
       ) : data.length === 0 ? (
@@ -85,7 +91,7 @@ function DataTable<T>({
       ) : (
         <>
           {/* ── Desktop: Table View ── */}
-          <div className="hidden sm:block rounded-xl border border-[var(--border)] overflow-hidden">
+          <div className="hidden sm:block rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] overflow-hidden shadow-[var(--shadow)]">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -113,16 +119,16 @@ function DataTable<T>({
           </div>
 
           {/* ── Mobile: Card View ── */}
-          <div className="sm:hidden space-y-2 animate-stagger">
+          <div className="sm:hidden space-y-2.5 animate-stagger">
             {data.map((row) => (
               <div
                 key={keyExtractor(row)}
-                className="mobile-card rounded-xl border border-[var(--border)] bg-[var(--card)] p-3.5 shadow-sm"
+                className="mobile-card rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]"
               >
                 {mobileCard ? (
                   mobileCard(row)
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {columns
                       .filter((col) => !col.hideMobile)
                       .map((col) => {
@@ -141,7 +147,7 @@ function DataTable<T>({
                         // Actions column — render as full-width
                         if (col.key === 'actions') {
                           return (
-                            <div key={col.key} className="pt-1 border-t border-[var(--border)]">
+                            <div key={col.key} className="pt-2 border-t border-[var(--border)]">
                               {value}
                             </div>
                           );
@@ -163,11 +169,11 @@ function DataTable<T>({
       )}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-1">
-          <p className="text-xs sm:text-sm text-[var(--muted-foreground)]">
+        <div className="flex items-center justify-between px-1 pt-2">
+          <p className="text-xs sm:text-sm text-[var(--muted-foreground)] font-medium">
             صفحة {page} من {totalPages}
           </p>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
               size="icon"
