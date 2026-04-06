@@ -273,7 +273,7 @@ export const adminService = {
     api.put<PlatformCoupon>(`/admin/coupons/${id}`, data),
 
   deleteCoupon: (id: string): Promise<{ deleted: boolean }> =>
-    api.delete<{ deleted: boolean }>(`/admin/coupons/${id}`),
+    api.post<{ deleted: boolean }>(`/admin/coupons/${id}/delete`, {}),
 
   // ── Payments ──
   getPayments: (params?: string): Promise<PaginatedResult<PaymentRecord>> =>
