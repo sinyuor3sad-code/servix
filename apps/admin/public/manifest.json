@@ -1,9 +1,9 @@
 {
-  "id": "/dashboard",
+  "id": "/",
   "name": "SERVIX — نظام القيادة",
   "short_name": "SERVIX",
   "description": "نظام القيادة السيادي لإدارة المنصة",
-  "start_url": "/dashboard",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone"],
