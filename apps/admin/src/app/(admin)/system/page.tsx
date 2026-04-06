@@ -127,7 +127,15 @@ export default function SystemPage(): ReactElement {
     }
   }, []);
 
-  useEffect(() => { checkHealth(); loadFlags(); }, [checkHealth, loadFlags]);
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    checkHealth();
+    loadFlags();
+    const interval = setInterval(() => {
+      checkHealth();
+    }, 30000); // 30 seconds
+    return () => clearInterval(interval);
+  }, [checkHealth, loadFlags]);
 
   const toggleFlag = async (key: string) => {
     const newValue = !flags[key];
