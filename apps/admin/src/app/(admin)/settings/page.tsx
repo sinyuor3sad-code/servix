@@ -231,8 +231,14 @@ export default function SettingsPage(): ReactElement {
                 <Field label="مدة الحظر (دقيقة)" settingKey="lockout_duration" settings={settings} onChange={handleChange} />
               </div>
               <div className="nx-space-y" style={{ marginTop: 16 }}>
-                <Field label="التوثيق الثنائي (2FA)" settingKey="two_factor_enabled" settings={settings} onChange={handleChange} type="toggle" />
-                <Field label="إجبار تغيير كلمة المرور كل 90 يوم" settingKey="force_password_change" settings={settings} onChange={handleChange} type="toggle" />
+                <div style={{ position: 'relative', opacity: 0.5 }}>
+                  <Field label="التوثيق الثنائي (2FA)" settingKey="two_factor_enabled" settings={{ two_factor_enabled: 'false' }} onChange={() => {}} type="toggle" />
+                  <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 700, color: 'var(--gold)', background: 'rgba(201,168,76,0.12)', padding: '2px 8px', borderRadius: 6 }}>قريباً</span>
+                </div>
+                <div style={{ position: 'relative', opacity: 0.5 }}>
+                  <Field label="إجبار تغيير كلمة المرور كل 90 يوم" settingKey="force_password_change" settings={{ force_password_change: 'false' }} onChange={() => {}} type="toggle" />
+                  <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 700, color: 'var(--gold)', background: 'rgba(201,168,76,0.12)', padding: '2px 8px', borderRadius: 6 }}>قريباً</span>
+                </div>
               </div>
             </Section>
             <Section icon={Key} title="API Keys" desc="مفاتيح الوصول للتكاملات">
@@ -316,13 +322,16 @@ export default function SettingsPage(): ReactElement {
               </div>
             </Section>
             <Section icon={Database} title="النسخ الاحتياطي" desc="جدولة وإدارة النسخ الاحتياطية">
-              <div className="nx-grid-3">
-                <Field label="التكرار" settingKey="backup_frequency" settings={settings} onChange={handleChange} type="select" />
-                <Field label="آخر نسخة ناجحة" settingKey="last_backup" settings={settings} onChange={handleChange} />
-                <Field label="مدة الاحتفاظ" settingKey="backup_retention" settings={settings} onChange={handleChange} type="select" />
-              </div>
-              <div style={{ marginTop: 12 }}>
-                <Field label="النسخ الاحتياطي التلقائي" settingKey="auto_backup" settings={settings} onChange={handleChange} type="toggle" />
+              <div style={{ opacity: 0.5, pointerEvents: 'none', position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 8, left: 8, fontSize: 10, fontWeight: 700, color: 'var(--gold)', background: 'rgba(201,168,76,0.12)', padding: '2px 8px', borderRadius: 6, zIndex: 2 }}>قريباً — يتطلب إصلاح حاوية النسخ الاحتياطي</div>
+                <div className="nx-grid-3">
+                  <Field label="التكرار" settingKey="backup_frequency" settings={settings} onChange={() => {}} type="select" />
+                  <Field label="آخر نسخة ناجحة" settingKey="last_backup" settings={settings} onChange={() => {}} />
+                  <Field label="مدة الاحتفاظ" settingKey="backup_retention" settings={settings} onChange={() => {}} type="select" />
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <Field label="النسخ الاحتياطي التلقائي" settingKey="auto_backup" settings={settings} onChange={() => {}} type="toggle" />
+                </div>
               </div>
             </Section>
           </>

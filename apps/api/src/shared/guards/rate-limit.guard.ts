@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CacheService } from '../cache/cache.service';
+import { PlatformSettingsService } from '../database/platform-settings.service';
 
 const RATE_LIMIT_PREFIX = 'servix:rate:';
 
@@ -38,6 +39,7 @@ export class RateLimitGuard implements CanActivate {
   constructor(
     private readonly cacheService: CacheService,
     private readonly reflector: Reflector,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -56,7 +58,7 @@ export class RateLimitGuard implements CanActivate {
       handler,
     );
 
-    const limit = customLimit?.limit ?? 100;
+    const limit = customLimit?.limit ?? await this.platformSettings.getNumber('rate_limit_rpm', 100);
     const windowSeconds = customLimit?.windowSeconds ?? 60;
 
     // Extract IP from request

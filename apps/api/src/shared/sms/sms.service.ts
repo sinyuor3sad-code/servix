@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PlatformSettingsService } from '../database/platform-settings.service';
 
 interface SendSmsOptions {
   to: string;
@@ -10,11 +11,61 @@ interface SendSmsOptions {
 export class SmsService {
   private logger = new Logger(SmsService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly platformSettings: PlatformSettingsService,
+  ) {}
 
+  /**
+   * Send SMS using credentials from platform_settings table.
+   * Currently supports Unifonic provider.
+   * Falls back to logging if credentials aren't configured.
+   */
   async send(options: SendSmsOptions): Promise<void> {
-    // TODO: Integrate with Unifonic (Saudi SMS provider) or Twilio in production
-    this.logger.log(`SMS to: ${options.to}`);
-    this.logger.log(`  Message: ${options.message.substring(0, 100)}...`);
+    const provider = await this.platformSettings.get('sms_provider', '');
+    const appId = await this.platformSettings.get('sms_app_id', '');
+    const senderId = await this.platformSettings.get('sms_sender_id', 'SERVIX');
+
+    if (!provider || !appId) {
+      this.logger.warn(`[SmsService] SMS not configured — message logged only`);
+      this.logger.log(`  To: ${options.to}`);
+      this.logger.log(`  Message: ${options.message.substring(0, 100)}...`);
+      return;
+    }
+
+    try {
+      if (provider.toLowerCase() === 'unifonic') {
+        await this.sendViaUnionic(options, appId, senderId);
+      } else {
+        this.logger.warn(`[SmsService] Unknown SMS provider: ${provider} — message logged only`);
+        this.logger.log(`  To: ${options.to}, Message: ${options.message.substring(0, 100)}...`);
+      }
+    } catch (err) {
+      this.logger.error(`Failed to send SMS to ${options.to}: ${(err as Error).message}`);
+      throw err;
+    }
+  }
+
+  private async sendViaUnionic(options: SendSmsOptions, appId: string, senderId: string): Promise<void> {
+    const url = 'https://el.cloud.unifonic.com/rest/SMS/messages';
+    const body = new URLSearchParams({
+      AppSid: appId,
+      SenderID: senderId,
+      Body: options.message,
+      Recipient: options.to.replace(/^\+/, ''),
+    });
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Unifonic API error: ${response.status} ${text}`);
+    }
+
+    this.logger.log(`SMS sent via Unifonic to: ${options.to}`);
   }
 }

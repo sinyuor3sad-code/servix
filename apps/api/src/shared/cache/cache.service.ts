@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 
 const TENANT_CACHE_PREFIX = 'servix:tenant:';
 const SETTINGS_CACHE_PREFIX = 'servix:settings:';
+const PLATFORM_SETTINGS_CACHE_KEY = 'servix:platform_settings';
 const FORGOT_PASSWORD_PREFIX = 'servix:forgot_pwd:';
 const LOGIN_FAIL_IP_PREFIX = 'servix:login_fail_ip:';
 const LOGIN_FAIL_ACCOUNT_PREFIX = 'servix:login_fail_account:';
@@ -160,6 +161,37 @@ export class CacheService implements OnModuleDestroy {
 
     try {
       await this.redis.del(`${SETTINGS_CACHE_PREFIX}${tenantId}`);
+    } catch {
+      // ignore
+    }
+  }
+
+  // ─── Platform-wide Settings Cache ───
+
+  async getPlatformSettings(): Promise<Record<string, string> | null> {
+    if (!this.enabled || !this.redis) return null;
+    try {
+      const data = await this.redis.get(PLATFORM_SETTINGS_CACHE_KEY);
+      if (!data) return null;
+      return JSON.parse(data) as Record<string, string>;
+    } catch {
+      return null;
+    }
+  }
+
+  async setPlatformSettings(settings: Record<string, string>): Promise<void> {
+    if (!this.enabled || !this.redis) return;
+    try {
+      await this.redis.setex(PLATFORM_SETTINGS_CACHE_KEY, SETTINGS_CACHE_TTL_SECONDS, JSON.stringify(settings));
+    } catch (err) {
+      this.logger.warn(`Failed to cache platform settings: ${(err as Error).message}`);
+    }
+  }
+
+  async invalidatePlatformSettings(): Promise<void> {
+    if (!this.enabled || !this.redis) return;
+    try {
+      await this.redis.del(PLATFORM_SETTINGS_CACHE_KEY);
     } catch {
       // ignore
     }

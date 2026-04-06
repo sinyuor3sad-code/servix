@@ -5,12 +5,15 @@ import {
   Logger,
   NotFoundException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { PlatformPrismaClient } from '../database/platform.client';
 import { TenantClientFactory } from '../database/tenant-client.factory';
 import { CacheService } from '../cache/cache.service';
+import { PlatformSettingsService } from '../database/platform-settings.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { computeSubscriptionStatus } from '../../core/subscriptions/subscription-status.service';
 import type { Tenant } from '../database';
@@ -70,6 +73,7 @@ export class TenantMiddleware implements CanActivate {
     private readonly platformPrisma: PlatformPrismaClient,
     private readonly tenantClientFactory: TenantClientFactory,
     private readonly cacheService: CacheService,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -83,6 +87,27 @@ export class TenantMiddleware implements CanActivate {
 
     if (isPublic || isPublicPath(path)) {
       return true;
+    }
+
+    // ── Maintenance Mode Check ──
+    // Block all non-admin, non-health requests when maintenance is enabled
+    const maintenanceMode = await this.platformSettings.getBoolean('maintenance_mode', false);
+    if (maintenanceMode) {
+      const maintenanceMessage = await this.platformSettings.get(
+        'maintenance_message',
+        'المنصة تحت الصيانة — نعود قريباً',
+      );
+      this.logger.warn(`[MaintenanceMode] BLOCKED: path=${path}`);
+      throw new HttpException(
+        {
+          success: false,
+          error: {
+            code: 'MAINTENANCE_MODE',
+            message: maintenanceMessage,
+          },
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
 
     const user = request.user;

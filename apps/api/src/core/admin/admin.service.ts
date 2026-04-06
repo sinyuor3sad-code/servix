@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { compare } from 'bcryptjs';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
+import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
 import type {
   Tenant,
   Subscription,
@@ -103,6 +104,7 @@ export class AdminService {
     private readonly prisma: PlatformPrismaClient,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   async login(email: string, password: string): Promise<AdminLoginResult> {
@@ -150,10 +152,14 @@ export class AdminService {
     const accessSecret = this.configService.get<string>('jwt.accessSecret', '');
     const refreshSecret = this.configService.get<string>('jwt.refreshSecret', '');
 
+    // Read session_duration from admin settings (minutes), default 1440 (1 day)
+    const sessionMinutes = await this.platformSettings.getNumber('session_duration', 1440);
+    const accessExpirySeconds = sessionMinutes * 60;
+
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(tokenPayload, {
         secret: accessSecret,
-        expiresIn: '1d',
+        expiresIn: accessExpirySeconds,
       }),
       this.jwtService.signAsync(tokenPayload, {
         secret: refreshSecret,
@@ -611,6 +617,9 @@ export class AdminService {
         newValues: settings,
       },
     });
+
+    // Invalidate cached settings so all runtime consumers see new values immediately
+    await this.platformSettings.invalidateCache();
 
     return this.getSettings();
   }
