@@ -68,18 +68,21 @@ export default function RootLayout({
         <Providers>{children}</Providers>
         <script dangerouslySetInnerHTML={{ __html: `
           if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-              for (var i = 0; i < registrations.length; i++) {
-                registrations[i].unregister();
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              if (regs.length > 0) {
+                Promise.all(regs.map(function(r) { return r.unregister(); })).then(function() {
+                  if ('caches' in window) {
+                    caches.keys().then(function(names) {
+                      Promise.all(names.map(function(n) { return caches.delete(n); })).then(function() {
+                        window.location.reload();
+                      });
+                    });
+                  } else {
+                    window.location.reload();
+                  }
+                });
               }
             });
-            if ('caches' in window) {
-              caches.keys().then(function(names) {
-                for (var i = 0; i < names.length; i++) {
-                  caches.delete(names[i]);
-                }
-              });
-            }
           }
         ` }} />
       </body>
