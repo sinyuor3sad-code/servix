@@ -24,11 +24,11 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /app/apps/admin/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/admin/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/admin/.next/static ./apps/admin/.next/static
-COPY --from=builder /app/apps/admin/server.js ./apps/admin/custom-server.js
 USER nextjs
 EXPOSE 3002
 ENV PORT=3002
 ENV HOSTNAME="0.0.0.0"
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3002/login || exit 1
-CMD ["node", "apps/admin/custom-server.js"]
+CMD ["node", "apps/admin/server.js"]
+
