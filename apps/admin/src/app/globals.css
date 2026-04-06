@@ -98,8 +98,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
   height: 100dvh;
+  max-width: 100vw;
   transition: background 0.8s ease, color 0.5s ease;
   letter-spacing: -0.01em;
+}
+
+html {
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 ::-webkit-scrollbar { display: none; }
@@ -1073,8 +1079,9 @@ body {
    ═══════════════════════════════════════════════════════════ */
 
 @media (max-width: 768px) {
-  .nx-sidebar { display: none; }
-  .nx-mobile-header { display: flex; }
+  .nx-sidebar { display: none !important; }
+  .nx-mobile-header { display: flex !important; }
+  .nx-shell { flex-direction: column; }
   .nx-grid-2 { grid-template-columns: 1fr; }
   .nx-grid-3 { grid-template-columns: 1fr; }
   .nx-grid-4 { grid-template-columns: 1fr 1fr; }
@@ -1084,9 +1091,11 @@ body {
     padding: 18px 14px;
     max-height: none;
     overflow-y: visible;
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 
-  body { overflow: auto; height: auto; }
+  body { overflow: auto; overflow-x: hidden; height: auto; max-width: 100vw; }
 
   .nx-h1 { font-size: 19px; }
   .nx-subtitle { font-size: 11px; }
@@ -1100,15 +1109,49 @@ body {
 
   .nx-glass { border-radius: var(--radius-md); }
 
-  .nx-table { min-width: 600px; }
-  .nx-table th { padding: 12px 14px; font-size: 9px; }
-  .nx-table td { padding: 12px 14px; font-size: 12px; }
+  /* Tables → stacked mobile card layout */
+  .nx-table { min-width: 0; font-size: 12px; }
+  .nx-table thead { display: none; }
+  .nx-table tbody tr {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .nx-table tbody tr:last-child { border-bottom: none; }
+  .nx-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    font-size: 13px;
+  }
+  .nx-table td::before {
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ghost);
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+    margin-inline-end: 12px;
+  }
+  .nx-table td.nx-td-primary {
+    font-size: 14px;
+    font-weight: 800;
+    order: -1;
+    padding-bottom: 6px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .nx-table td.nx-td-primary::before { display: none; }
+  .nx-table-mobile-wrap { overflow-x: hidden; }
 
   .nx-pagination { flex-direction: column; gap: 10px; align-items: center; }
 
-  .nx-input { height: 40px; font-size: 14px; }
-  .nx-select { height: 40px; font-size: 14px; }
-  .nx-btn { padding: 9px 16px; font-size: 12px; }
+  .nx-input { height: 44px; font-size: 16px; }
+  .nx-select { height: 44px; font-size: 16px; }
+  .nx-btn { padding: 12px 16px; font-size: 13px; min-height: 44px; }
 
   .nx-toggle { width: 50px; height: 28px; }
   .nx-toggle-knob { width: 22px; height: 22px; }
@@ -1129,7 +1172,7 @@ body {
 
   .nx-content { padding: 14px 12px; }
   .nx-stat { gap: 12px; }
-  .nx-content { padding-bottom: env(safe-area-inset-bottom, 16px); }
+  .nx-content { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
 }
 
 /* ── PWA Standalone Shell ── */

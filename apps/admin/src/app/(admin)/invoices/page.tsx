@@ -79,18 +79,18 @@ export default function InvoicesPage(): ReactElement {
                   const st = ST[inv.status] || ST.pending;
                   return (
                     <tr key={inv.id}>
-                      <td style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#A78BFA' }}>
+                      <td data-label="رقم الفاتورة" style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#A78BFA' }}>
                         {inv.invoiceNumber || inv.id?.slice(0, 8)}
                       </td>
                       <td className="nx-td-primary">{inv.tenant?.nameAr || inv.tenantId?.slice(0, 8) || '—'}</td>
-                      <td style={{ color: 'var(--gold)', fontWeight: 700, ...TN }}>
+                      <td data-label="المبلغ" style={{ color: 'var(--gold)', fontWeight: 700, ...TN }}>
                         {(inv.amount ?? 0).toLocaleString()} <span style={{ fontSize: 10, color: 'var(--ghost)' }}>ر.س</span>
                       </td>
-                      <td style={TN}>
+                      <td data-label="التاريخ" style={TN}>
                         {inv.createdAt ? new Date(inv.createdAt).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' }) : '—'}
                       </td>
-                      <td><span className={`nx-badge ${st.badge}`}><span className="nx-badge-dot" />{st.label}</span></td>
-                      <td>
+                      <td data-label="الحالة"><span className={`nx-badge ${st.badge}`}><span className="nx-badge-dot" />{st.label}</span></td>
+                      <td data-label="">
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button className="nx-btn" style={{ padding: 6, border: 'none', background: 'none' }}><Eye size={15} /></button>
                           <button className="nx-btn" style={{ padding: 6, border: 'none', background: 'none' }}><Download size={15} /></button>

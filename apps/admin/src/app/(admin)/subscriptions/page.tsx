@@ -174,18 +174,18 @@ export default function SubscriptionsPage(): ReactElement {
                   return (
                     <tr key={s.id}>
                       <td className="nx-td-primary">{tenantName}</td>
-                      <td>
+                      <td data-label="الباقة">
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: pl.color }}>
                           <PlIcon size={13} />{planName}
                         </span>
                       </td>
-                      <td>{s.billingCycle === 'monthly' ? 'شهري' : 'سنوي'}</td>
-                      <td style={{ color: 'var(--gold)', fontWeight: 700, ...EN }}>
+                      <td data-label="الدورة">{s.billingCycle === 'monthly' ? 'شهري' : 'سنوي'}</td>
+                      <td data-label="المبلغ" style={{ color: 'var(--gold)', fontWeight: 700, ...EN }}>
                         {fmt(price)} <span style={{ fontSize: 10, color: 'var(--ghost)' }}>SAR</span>
                       </td>
-                      <td style={EN}>{fmtDate(startDate)}</td>
-                      <td style={EN}>{fmtDate(endDate)}</td>
-                      <td>
+                      <td data-label="البداية" style={EN}>{fmtDate(startDate)}</td>
+                      <td data-label="الانتهاء" style={EN}>{fmtDate(endDate)}</td>
+                      <td data-label="الحالة">
                         <span className={`nx-badge ${st.badge}`}>
                           <StIcon size={12} />{st.label}
                         </span>

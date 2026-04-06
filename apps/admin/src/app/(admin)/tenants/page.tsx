@@ -275,11 +275,11 @@ export default function TenantsPage(): ReactElement {
                             </div>
                           </div>
                         </td>
-                        <td><span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><MapPin size={12} style={{ color: 'var(--ghost)' }} />{t.city || '—'}</span></td>
-                        <td style={TN}>{t.phone || '—'}</td>
-                        <td><span className={`nx-badge ${st.badge}`}><span className="nx-badge-dot" />{st.label}</span></td>
-                        <td style={TN}>{new Date(t.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
-                        <td><Actions t={t} onStatus={handleStatus} /></td>
+                        <td data-label="المدينة"><span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><MapPin size={12} style={{ color: 'var(--ghost)' }} />{t.city || '—'}</span></td>
+                        <td data-label="الهاتف" style={TN}>{t.phone || '—'}</td>
+                        <td data-label="الحالة"><span className={`nx-badge ${st.badge}`}><span className="nx-badge-dot" />{st.label}</span></td>
+                        <td data-label="التسجيل" style={TN}>{new Date(t.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
+                        <td data-label=""><Actions t={t} onStatus={handleStatus} /></td>
                       </tr>
                     );
                   })}
