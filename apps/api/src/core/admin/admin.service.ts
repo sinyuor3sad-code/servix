@@ -427,13 +427,21 @@ export class AdminService {
   }
 
   async getInvoices(dto: GetInvoicesDto): Promise<PaginatedResult<InvoiceWithRelations>> {
-    const { page = 1, perPage = 20, status } = dto;
+    const { page = 1, perPage = 20, status, search } = dto;
     const skip = (page - 1) * perPage;
 
     const where: Record<string, unknown> = {};
 
     if (status) {
       where.status = status;
+    }
+
+    if (search) {
+      where.OR = [
+        { invoiceNumber: { contains: search, mode: 'insensitive' } },
+        { tenant: { nameAr: { contains: search, mode: 'insensitive' } } },
+        { tenant: { nameEn: { contains: search, mode: 'insensitive' } } },
+      ];
     }
 
     const [data, total] = await Promise.all([

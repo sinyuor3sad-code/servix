@@ -201,7 +201,7 @@ export const adminService = {
 
   createTenant: (data: {
     nameAr: string; nameEn: string; email: string; phone: string; city: string;
-    planId?: string; ownerName: string; ownerPassword: string;
+    planId?: string;
   }): Promise<Tenant> => {
     const slug = (data.nameEn || data.nameAr)
       .toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').slice(0, 50) || `salon-${Date.now()}`;

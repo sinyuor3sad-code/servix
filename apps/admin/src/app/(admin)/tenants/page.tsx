@@ -21,7 +21,6 @@ const ST: Record<string, { label: string; badge: string }> = {
 function CreateTenantModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({
     nameAr: '', nameEn: '', email: '', phone: '', city: '',
-    ownerName: '', ownerPassword: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -29,7 +28,7 @@ function CreateTenantModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const set = (k: string, v: string) => setForm(prev => ({ ...prev, [k]: v }));
 
   const submit = async () => {
-    if (!form.nameAr || !form.email || !form.phone || !form.ownerName || !form.ownerPassword) {
+    if (!form.nameAr || !form.email || !form.phone) {
       setError('يرجى تعبئة جميع الحقول المطلوبة');
       return;
     }
@@ -94,18 +93,10 @@ function CreateTenantModal({ onClose, onCreated }: { onClose: () => void; onCrea
           </select>
         </div>
 
-        <div style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--surface)', border: '1px solid var(--border)', marginBottom: 16 }}>
-          <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--slate)', marginBottom: 12 }}>حساب مالك الصالون</h4>
-          <div className="nx-form-row">
-            <div className="nx-form-group" style={{ marginBottom: 0 }}>
-              <label className="nx-form-label">الاسم الكامل *</label>
-              <input className="nx-form-input" value={form.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="محمد أحمد" />
-            </div>
-            <div className="nx-form-group" style={{ marginBottom: 0 }}>
-              <label className="nx-form-label">كلمة المرور *</label>
-              <input className="nx-form-input" type="password" value={form.ownerPassword} onChange={e => set('ownerPassword', e.target.value)} placeholder="••••••••" dir="ltr" />
-            </div>
-          </div>
+        <div style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(201,168,76,0.04)', border: '1px solid rgba(201,168,76,0.12)', marginBottom: 16 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--gold)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            ℹ️ سيتم تعيين حسابك كمالك للصالون تلقائياً. يبدأ الصالون بفترة تجريبية 14 يوم.
+          </p>
         </div>
 
         <div className="nx-form-actions">

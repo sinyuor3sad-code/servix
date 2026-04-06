@@ -140,6 +140,11 @@ export class GetInvoicesDto {
     message: 'حالة الفاتورة يجب أن تكون: paid, pending, overdue, أو cancelled',
   })
   status?: InvoiceStatusFilter;
+
+  @ApiPropertyOptional({ description: 'بحث برقم الفاتورة أو اسم الصالون', example: 'صالون' })
+  @IsOptional()
+  @IsString({ message: 'نص البحث يجب أن يكون نصاً' })
+  search?: string;
 }
 
 // ─── Refresh Token ───
