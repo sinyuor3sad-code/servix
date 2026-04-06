@@ -98,7 +98,7 @@ export class EmployeesService {
         fullName: dto.fullName,
         phone: dto.phone,
         email: dto.email,
-        role: dto.role as 'stylist' | 'cashier' | 'makeup' | 'nails' | 'skincare',
+        role: dto.role as any,
         commissionType: dto.commissionType as
           | 'percentage'
           | 'fixed'

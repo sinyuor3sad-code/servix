@@ -6,7 +6,17 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
-import { SentryExceptionCaptured } from '@sentry/nestjs';
+
+// Sentry decorator — optional, only if @sentry/nestjs is installed
+let SentryExceptionCaptured: () => MethodDecorator;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const sentry = require('@sentry/nestjs');
+  SentryExceptionCaptured = sentry.SentryExceptionCaptured;
+} catch {
+  // Sentry not installed — use a no-op decorator
+  SentryExceptionCaptured = () => (_target: any, _key: string | symbol, descriptor: PropertyDescriptor) => descriptor;
+}
 
 interface ErrorResponse {
   success: false;
