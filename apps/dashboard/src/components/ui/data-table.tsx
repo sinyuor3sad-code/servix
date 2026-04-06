@@ -61,6 +61,13 @@ function DataTable<T>({
     onSearch?.(query);
   }
 
+  // Separate columns into primary, visible, and actions for mobile
+  const primaryCol = columns.find((c) => c.primary);
+  const actionCol = columns.find((c) => c.key === 'actions');
+  const mobileVisibleCols = columns.filter(
+    (c) => !c.primary && !c.hideMobile && c.key !== 'actions'
+  );
+
   return (
     <div className={cn('w-full space-y-4', className)}>
       {searchable && (
@@ -72,11 +79,12 @@ function DataTable<T>({
             onChange={handleSearch}
             placeholder={searchPlaceholder}
             className={cn(
-              'flex h-11 w-full sm:max-w-sm rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-elevated)] ps-10 pe-4 py-2 text-sm text-[var(--foreground)]',
+              'flex h-12 w-full rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-elevated)] ps-10 pe-4 py-2 text-sm text-[var(--foreground)]',
               'placeholder:text-[var(--muted-foreground)]/60',
               'transition-all duration-[var(--duration-normal)] ease-[var(--ease-out-expo)]',
               'focus:outline-none focus:ring-2 focus:ring-[var(--ring)]/40 focus:border-[var(--brand-primary)] focus:shadow-[var(--glow-primary)]',
-              'hover:border-[var(--muted-foreground)]/30'
+              'hover:border-[var(--muted-foreground)]/30',
+              'sm:max-w-sm sm:h-11'
             )}
           />
         </div>
@@ -118,48 +126,58 @@ function DataTable<T>({
             </Table>
           </div>
 
-          {/* ── Mobile: Card View ── */}
-          <div className="sm:hidden space-y-2.5 animate-stagger">
+          {/* ── Mobile: Premium Card View ── */}
+          <div className="sm:hidden space-y-3">
             {data.map((row) => (
               <div
                 key={keyExtractor(row)}
-                className="mobile-card rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]"
+                className="mobile-card rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)] active:shadow-[var(--shadow-md)] transition-all"
               >
                 {mobileCard ? (
                   mobileCard(row)
                 ) : (
-                  <div className="space-y-2.5">
-                    {columns
-                      .filter((col) => !col.hideMobile)
-                      .map((col) => {
-                        const value = col.render
-                          ? col.render(row)
-                          : String((row as Record<string, unknown>)[col.key] ?? '');
+                  <div className="space-y-3">
+                    {/* Primary row — name/title prominently */}
+                    {primaryCol && (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-bold text-[var(--foreground)] min-w-0 flex-1 truncate">
+                          {primaryCol.render
+                            ? primaryCol.render(row)
+                            : String((row as Record<string, unknown>)[primaryCol.key] ?? '')}
+                        </div>
+                      </div>
+                    )}
 
-                        if (col.primary) {
+                    {/* Secondary info — stacked key-value pairs */}
+                    {mobileVisibleCols.length > 0 && (
+                      <div className="space-y-2 py-1">
+                        {mobileVisibleCols.map((col) => {
+                          const value = col.render
+                            ? col.render(row)
+                            : String((row as Record<string, unknown>)[col.key] ?? '');
+
                           return (
-                            <div key={col.key} className="flex items-center justify-between">
-                              <div className="text-sm font-bold text-[var(--foreground)]">{value}</div>
+                            <div key={col.key} className="flex items-center justify-between gap-3">
+                              <span className="text-xs font-semibold text-[var(--muted-foreground)] shrink-0">
+                                {col.header}
+                              </span>
+                              <div className="text-[13px] text-[var(--foreground)] text-end truncate">
+                                {value}
+                              </div>
                             </div>
                           );
-                        }
+                        })}
+                      </div>
+                    )}
 
-                        // Actions column — render as full-width
-                        if (col.key === 'actions') {
-                          return (
-                            <div key={col.key} className="pt-2 border-t border-[var(--border)]">
-                              {value}
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div key={col.key} className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-semibold text-[var(--muted-foreground)]">{col.header}</span>
-                            <div className="text-[13px] text-[var(--foreground)]">{value}</div>
-                          </div>
-                        );
-                      })}
+                    {/* Actions footer */}
+                    {actionCol && (
+                      <div className="pt-2 border-t border-[var(--border)] flex items-center justify-end gap-2">
+                        {actionCol.render
+                          ? actionCol.render(row)
+                          : null}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

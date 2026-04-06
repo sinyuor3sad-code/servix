@@ -772,20 +772,45 @@ body, .card, [class*="bg-"] {
   }
 }
 
-/* --- Larger touch targets on mobile --- */
+/* --- Global overflow prevention --- */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* --- Larger touch targets on mobile (smart targeting) --- */
 @media (max-width: 767px) {
-  button, a, [role="button"], select, input[type="checkbox"], input[type="radio"] {
-    min-height: 44px;
-    min-width: 44px;
+  /* Main CTA buttons and standalone nav links — enforce 44px touch */
+  button:not(.inline-action):not([class*="rounded-full"]):not([class*="text-["]),
+  [role="button"]:not(.inline-action) {
+    min-height: 40px;
   }
 
+  /* Prevent forced min-width from ruining inline layouts */
+  /* Only standalone nav links get min-width */
+  nav a {
+    min-height: 40px;
+  }
+
+  /* Inputs — prevent iOS zoom */
   input, select, textarea {
-    font-size: 16px !important; /* Prevent iOS zoom on focus */
+    font-size: 16px !important;
   }
 
   /* Better mobile typography */
   h1 { font-size: 1.5rem !important; }
   h2 { font-size: 1.25rem !important; }
+
+  /* Force full width on all content containers */
+  .max-w-5xl, .max-w-6xl, .max-w-3xl {
+    max-width: 100% !important;
+  }
+
+  /* Prevent any child from overflowing viewport */
+  main, main > * {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
 }
 
 /* --- Active press effect for touchscreens --- */

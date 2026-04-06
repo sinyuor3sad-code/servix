@@ -87,10 +87,10 @@ export default function InvoicesPage() {
             onChange={e => { setSearch(e.target.value); setPage(1); }}
             className="w-full pr-10 pl-4 py-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] text-sm focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition-all shadow-sm" />
         </div>
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
           {STATUS_FILTERS.map(f => (
             <button key={f.key} onClick={() => setStatusFilter(f.key)}
-              className={cn('px-3 py-2.5 rounded-xl text-[11px] font-bold border-2 transition-all whitespace-nowrap',
+              className={cn('px-3 py-2.5 rounded-xl text-[11px] font-bold border-2 transition-all whitespace-nowrap shrink-0',
                 statusFilter === f.key ? 'bg-[var(--foreground)] text-[var(--background)] border-[var(--foreground)]' : 'border-[var(--border)] hover:border-[var(--foreground)]/30')}>
               {f.emoji} {f.label}
             </button>

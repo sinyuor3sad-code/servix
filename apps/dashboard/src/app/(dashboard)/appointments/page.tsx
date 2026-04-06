@@ -61,11 +61,13 @@ export default function AppointmentsPage() {
     {
       key: 'client',
       header: 'العميل',
+      primary: true,
       render: (row) => row.client?.fullName ?? '—',
     },
     {
       key: 'employee',
       header: 'الموظفة',
+      hideMobile: true,
       render: (row) => row.employee?.fullName ?? '—',
     },
     {
@@ -83,6 +85,7 @@ export default function AppointmentsPage() {
     {
       key: 'services',
       header: 'الخدمات',
+      hideMobile: true,
       render: (row) =>
         row.appointmentServices
           ?.map((s) => s.service?.nameAr)

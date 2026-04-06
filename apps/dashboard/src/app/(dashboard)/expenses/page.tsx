@@ -203,14 +203,14 @@ export default function ExpensesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-2xl bg-[var(--muted)]/40 w-fit border border-[var(--border)]">
+      <div className="flex gap-1 p-1 rounded-2xl bg-[var(--muted)]/40 w-full sm:w-fit border border-[var(--border)] overflow-x-auto no-scrollbar">
         {([
           { key: 'expenses' as Tab, label: '💰 المصروفات', count: expenses.length },
           { key: 'emp_debts' as Tab, label: '👩‍💼 ديون الموظفات', count: debtSummary?.employeeDebtCount ?? 0 },
           { key: 'client_debts' as Tab, label: '👤 ديون العملاء', count: debtSummary?.clientDebtCount ?? 0 },
         ]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={cn('px-4 py-2.5 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap flex items-center gap-1.5',
+            className={cn('px-4 py-2.5 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap flex items-center gap-1.5 shrink-0',
               tab === t.key ? 'bg-[var(--card)] shadow-md text-[var(--foreground)]' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]')}>
             {t.label}
             {t.count > 0 && <span className={cn('min-w-[18px] h-[18px] rounded-full text-[9px] font-black flex items-center justify-center',
@@ -222,22 +222,22 @@ export default function ExpensesPage() {
       {/* ─── Expenses Tab ─── */}
       {tab === 'expenses' && (
         <>
-          <div className="flex flex-wrap gap-2 items-center">
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
               {[{ k: '', l: 'الكل' }, ...Object.entries(CAT).map(([k, v]) => ({ k, l: v.label }))].map(f => (
                 <button key={f.k} onClick={() => { setCategory(f.k); setPage(1); }}
-                  className={cn('px-3 py-2 rounded-xl text-[10px] font-bold border-2 transition-all whitespace-nowrap',
+                  className={cn('px-3 py-2 rounded-xl text-[10px] font-bold border-2 transition-all whitespace-nowrap shrink-0',
                     category === f.k ? 'bg-[var(--foreground)] text-[var(--background)] border-[var(--foreground)]' : 'border-[var(--border)] hover:border-[var(--foreground)]/30')}>
                   {f.l}
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-1.5 mr-auto text-[11px]">
+            <div className="flex items-center gap-1.5 text-[11px]">
               <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }} dir="ltr"
-                className="px-2.5 py-2 rounded-xl border border-[var(--border)] text-[11px] bg-[var(--card)] outline-none focus:border-[var(--brand-primary)]" />
-              <span className="text-[var(--muted-foreground)]">→</span>
+                className="flex-1 min-w-0 px-2.5 py-2 rounded-xl border border-[var(--border)] text-[11px] bg-[var(--card)] outline-none focus:border-[var(--brand-primary)]" />
+              <span className="text-[var(--muted-foreground)] shrink-0">→</span>
               <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }} dir="ltr"
-                className="px-2.5 py-2 rounded-xl border border-[var(--border)] text-[11px] bg-[var(--card)] outline-none focus:border-[var(--brand-primary)]" />
+                className="flex-1 min-w-0 px-2.5 py-2 rounded-xl border border-[var(--border)] text-[11px] bg-[var(--card)] outline-none focus:border-[var(--brand-primary)]" />
             </div>
           </div>
 

@@ -32,6 +32,7 @@ export default function ClientsPage() {
     {
       key: 'fullName',
       header: 'الاسم',
+      primary: true,
       render: (row) => (
         <button
           onClick={() => router.push(`/clients/${row.id}`)}
@@ -52,11 +53,13 @@ export default function ClientsPage() {
     {
       key: 'totalSpent',
       header: 'إجمالي الإنفاق',
+      hideMobile: true,
       render: (row) => `${row.totalSpent.toLocaleString('ar-SA')} ر.س`,
     },
     {
       key: 'lastVisitAt',
       header: 'آخر زيارة',
+      hideMobile: true,
       render: (row) =>
         row.lastVisitAt
           ? new Intl.DateTimeFormat('ar-SA', { dateStyle: 'medium' }).format(

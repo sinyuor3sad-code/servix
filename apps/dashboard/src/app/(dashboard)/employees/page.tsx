@@ -68,22 +68,22 @@ export default function EmployeesPage() {
       />
 
       {/* ── Filter Bar ── */}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="mt-4 flex flex-col gap-3">
+        <div className="relative w-full">
           <input
             type="text"
             placeholder="🔍 بحث بالاسم..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-xl border border-[var(--border)] bg-[var(--background)] text-sm placeholder:text-[var(--muted-foreground)] focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition-all"
+            className="w-full px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--background)] text-sm placeholder:text-[var(--muted-foreground)] focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition-all"
           />
         </div>
 
-        <div className="flex gap-1.5 overflow-x-auto">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
           <button
             onClick={() => setFilterRole('')}
             className={cn(
-              'px-3 py-2 rounded-lg text-xs font-medium border transition-all whitespace-nowrap',
+              'px-3 py-2 rounded-lg text-xs font-medium border transition-all whitespace-nowrap shrink-0',
               !filterRole
                 ? 'bg-[var(--brand-primary)] text-white border-[var(--brand-primary)]'
                 : 'border-[var(--border)] hover:border-[var(--brand-primary)]/50',
@@ -96,7 +96,7 @@ export default function EmployeesPage() {
               key={key}
               onClick={() => setFilterRole(filterRole === key ? '' : key)}
               className={cn(
-                'px-3 py-2 rounded-lg text-xs font-medium border transition-all whitespace-nowrap',
+                'px-3 py-2 rounded-lg text-xs font-medium border transition-all whitespace-nowrap shrink-0',
                 filterRole === key
                   ? 'bg-[var(--brand-primary)] text-white border-[var(--brand-primary)]'
                   : 'border-[var(--border)] hover:border-[var(--brand-primary)]/50',
@@ -125,7 +125,7 @@ export default function EmployeesPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mt-6">
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mt-6">
           {employees.map((emp) => {
             const roleConfig = ROLE_CONFIG[emp.role as EmployeeRole] || ROLE_CONFIG.stylist;
             const initials = emp.fullName

@@ -60,7 +60,7 @@ function KpiCard({ label, value, suffix, icon: Icon, change, up, accentClass }: 
           </div>
         </div>
         <div className="mb-3">
-          <span className="text-[2.25rem] font-extrabold leading-none tracking-tight text-[var(--foreground)]" style={TN}>{value}</span>
+          <span className="text-2xl sm:text-[2.25rem] font-extrabold leading-none tracking-tight text-[var(--foreground)]" style={TN}>{value}</span>
           {suffix && <span className="mr-1.5 text-xs font-semibold text-[var(--muted-foreground)]">{suffix}</span>}
         </div>
         {change && (
@@ -249,7 +249,7 @@ export default function DashboardPage(): React.ReactElement {
       </header>
 
       {/* ── KPIs ── */}
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4" style={fade(80)}>
+      <section className="grid grid-cols-1 gap-3 xs:grid-cols-2 xl:grid-cols-4" style={fade(80)}>
         <KpiCard label="مواعيد اليوم"   value={todayApts.toLocaleString('en')} icon={Calendar} />
         <KpiCard label="إيرادات اليوم"  value={formatCurrency(todayRev)} suffix="SAR" icon={DollarSign} />
         <KpiCard label="إيرادات الشهر"  value={formatCurrency(monthRev)} suffix="SAR" icon={TrendingUp} />
@@ -270,7 +270,7 @@ export default function DashboardPage(): React.ReactElement {
       {/* ── QUICK NAV ── */}
       <section style={fade(280)}>
         <h2 className="mb-3 text-[14px] font-bold text-[var(--foreground)]">وصول سريع</h2>
-        <div className="grid grid-cols-4 gap-2 lg:grid-cols-8">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
           {QUICK_LINKS.map((q) => {
             const Icon = q.icon;
             return (

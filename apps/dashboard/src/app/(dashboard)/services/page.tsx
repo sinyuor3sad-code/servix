@@ -104,10 +104,10 @@ export default function ServicesPage() {
       </div>
 
       {/* ── Tabs ── */}
-      <div className="flex gap-1 p-1 rounded-2xl bg-[var(--muted)]/40 w-fit border border-[var(--border)]">
+      <div className="flex gap-1 p-1 rounded-2xl bg-[var(--muted)]/40 w-full sm:w-fit border border-[var(--border)] overflow-x-auto no-scrollbar">
         {(['services', 'packages'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={cn('px-5 py-2.5 rounded-xl text-xs font-bold transition-all',
+            className={cn('px-5 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0',
               tab === t ? 'bg-[var(--card)] shadow-md text-[var(--foreground)]' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]')}>
             {t === 'services' ? '✂️ الخدمات' : '📦 الباقات'}
           </button>
@@ -123,7 +123,7 @@ export default function ServicesPage() {
               <input type="text" dir="rtl" placeholder="بحث عن خدمة..." value={search} onChange={e => setSearch(e.target.value)}
                 className="w-full pr-10 pl-4 py-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] text-sm focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition-all shadow-sm" />
             </div>
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
               <button onClick={() => setFilterCat('')}
                 className={cn('px-4 py-2.5 rounded-xl text-[11px] font-bold border-2 transition-all whitespace-nowrap',
                   !filterCat ? 'bg-[var(--foreground)] text-[var(--background)] border-[var(--foreground)]' : 'border-[var(--border)] hover:border-[var(--foreground)]/30')}>
@@ -154,7 +154,7 @@ export default function ServicesPage() {
               <Link href="/services/new"><Button className="mt-4"><Plus className="h-4 w-4" /> إضافة خدمة</Button></Link>
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map(svc => {
                 const g = gradOf(svc.categoryId);
                 const catName = catOf(svc.categoryId)?.nameAr || '';
