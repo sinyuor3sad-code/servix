@@ -935,7 +935,8 @@ export class AdminService {
     const allowedFields = [
       'nameAr', 'name', 'priceMonthly', 'priceYearly',
       'maxEmployees', 'maxClients', 'maxAppointmentsMonth',
-      'descriptionAr', 'isActive', 'sortOrder',
+      'revenueSharePercent', 'perAppointmentFee', 'includedAppointments',
+      'descriptionAr', 'trialDays', 'isActive', 'sortOrder',
     ];
 
     const updateData: Record<string, unknown> = {};
