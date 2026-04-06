@@ -233,7 +233,7 @@ export default function NexusPage(): ReactElement {
               <QuickPortal title="الأقاليم" href="/tenants" icon={Building2} color="#8B5CF6" stat={total} />
               <QuickPortal title="الاشتراكات" href="/subscriptions" icon={DollarSign} color="#34D399" stat={subs} />
               <QuickPortal title="التحليلات" href="/analytics" icon={BarChart3} color="#6366F1" stat={stats?.planDistribution?.length ?? 0} />
-              <QuickPortal title="النظام" href="/system" icon={Shield} color="#C9A84C" stat={4} />
+              <QuickPortal title="النظام" href="/system" icon={Shield} color="#C9A84C" stat={stats?.activeSubscriptions ?? 0} />
             </div>
           </div>
 

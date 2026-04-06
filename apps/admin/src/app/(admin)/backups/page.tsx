@@ -47,9 +47,9 @@ export default function BackupsPage(): ReactElement {
       const updated = await adminService.triggerBackup(id);
       setBackups(prev => prev.map(b => b.id === id ? updated : b));
     } catch {
-      // If API fails, still update UI optimistically
+      // Show real failure — never fake success for a safety-critical operation
       setBackups(prev => prev.map(b =>
-        b.id === id ? { ...b, status: 'success' as BackupStatus, lastBackup: new Date().toISOString(), initiator: 'يدوي (المدير)', size: Math.floor(Math.random() * 100 + 10) + ' MB' } : b
+        b.id === id ? { ...b, status: 'failed' as BackupStatus } : b
       ));
     } finally {
       setBacking(null);

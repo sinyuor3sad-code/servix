@@ -1,8 +1,7 @@
 /// <reference lib="webworker" />
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = 'servix-admin-' + CACHE_VERSION;
-const STATIC_CACHE = 'servix-admin-static-' + CACHE_VERSION;
 const API_CACHE = 'servix-admin-api-' + CACHE_VERSION;
 
 // Critical pages to precache
@@ -11,10 +10,10 @@ const PRECACHE_URLS = [
   '/offline',
 ];
 
-// ── Install ──
+// ── Install — Force activate immediately ──
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
+    caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(PRECACHE_URLS).catch(() => {
         console.log('[SW] Some precache URLs failed, continuing...');
       });
@@ -23,14 +22,17 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// ── Activate — clean old caches ──
+// ── Activate — Delete ALL old caches ──
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys
           .filter((key) => !key.includes(CACHE_VERSION))
-          .map((key) => caches.delete(key))
+          .map((key) => {
+            console.log('[SW] Deleting old cache:', key);
+            return caches.delete(key);
+          })
       );
     })
   );
@@ -45,35 +47,47 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (!url.protocol.startsWith('http')) return;
 
-  // API calls — Network first, cache fallback
+  // API calls — Network only. Never cache API responses.
+  // Admin panel must always show real-time data.
   if (url.pathname.startsWith('/api/') || url.hostname.includes('api.')) {
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response.ok && response.status === 200) {
-            const clone = response.clone();
-            caches.open(API_CACHE).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match(event.request))
+      fetch(event.request).catch(() => {
+        return new Response(JSON.stringify({ success: false, message: 'Offline' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      })
     );
     return;
   }
 
-  // Static assets — Cache first
-  if (
-    url.pathname.startsWith('/_next/static/') ||
-    url.pathname.startsWith('/icons/') ||
-    url.pathname.match(/\.(css|js|woff2?|png|jpg|jpeg|svg|webp|ico|avif)$/)
-  ) {
+  // Next.js static assets (/_next/static/) — Network first.
+  // These files are content-hashed, so new builds produce new filenames.
+  // We MUST fetch from network first to pick up new chunks after deployment.
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((c) => c || new Response('', { status: 503 })))
+    );
+    return;
+  }
+
+  // Other static assets (icons, fonts, images) — Cache first (safe, rarely change)
+  if (url.pathname.match(/\.(woff2?|png|jpg|jpeg|svg|webp|ico|avif)$/)) {
     event.respondWith(
       caches.match(event.request).then((cached) => {
         if (cached) return cached;
         return fetch(event.request).then((response) => {
           if (response.ok) {
             const clone = response.clone();
-            caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, clone));
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
           return response;
         });
@@ -105,11 +119,6 @@ self.addEventListener('fetch', (event) => {
         });
       })
   );
-});
-
-// ── Background Sync (future use) ──
-self.addEventListener('sync', (event) => {
-  console.log('[SW] Background sync:', event.tag);
 });
 
 // ── Push Notifications ──
