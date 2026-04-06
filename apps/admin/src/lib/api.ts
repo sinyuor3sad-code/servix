@@ -5,6 +5,7 @@ interface ApiOptions {
   body?: unknown;
   headers?: Record<string, string>;
   token?: string;
+  skipAuth?: boolean;
 }
 
 interface ApiSuccessResponse<T> {
@@ -43,23 +44,117 @@ export class ApiError extends Error {
   }
 }
 
+// ── Token helpers ──
+
+function getStoredAuth(): { accessToken?: string; refreshToken?: string } {
+  if (typeof window === 'undefined') return {};
+  try {
+    const stored = localStorage.getItem('servix-admin-auth');
+    if (!stored) return {};
+    const parsed = JSON.parse(stored) as { state?: { accessToken?: string; refreshToken?: string } };
+    return {
+      accessToken: parsed.state?.accessToken ?? undefined,
+      refreshToken: parsed.state?.refreshToken ?? undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  const { refreshToken } = getStoredAuth();
+  if (!refreshToken) return null;
+
+  try {
+    const response = await fetch(`${API_BASE}/admin/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!response.ok) return null;
+
+    const json = (await response.json()) as ApiSuccessResponse<{ accessToken: string; refreshToken: string }>;
+    const { accessToken: newAccess, refreshToken: newRefresh } = json.data;
+
+    // Update Zustand store in localStorage
+    const stored = localStorage.getItem('servix-admin-auth');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      parsed.state.accessToken = newAccess;
+      parsed.state.refreshToken = newRefresh;
+      localStorage.setItem('servix-admin-auth', JSON.stringify(parsed));
+    }
+
+    // Update cookie for middleware
+    const cookieValue = JSON.stringify({ state: { accessToken: newAccess, user: JSON.parse(stored || '{}')?.state?.user } });
+    document.cookie = `servix-admin-auth=${encodeURIComponent(cookieValue)}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+
+    return newAccess;
+  } catch {
+    return null;
+  }
+}
+
+async function getValidToken(): Promise<string | null> {
+  const { accessToken } = getStoredAuth();
+  return accessToken ?? null;
+}
+
+function forceLogout() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('servix-admin-auth');
+  document.cookie = 'servix-admin-auth=; path=/; max-age=0';
+  window.location.href = '/login';
+}
+
+// ── Core fetch ──
+
 async function apiRaw<T>(endpoint: string, options: ApiOptions = {}): Promise<ApiSuccessResponse<T>> {
-  const { method = 'GET', body, headers = {}, token } = options;
+  const { method = 'GET', body, headers = {}, token, skipAuth } = options;
 
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...headers,
   };
 
-  if (token) {
-    requestHeaders['Authorization'] = `Bearer ${token}`;
+  const authToken = token ?? (skipAuth ? undefined : await getValidToken());
+  if (authToken) {
+    requestHeaders['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  let response = await fetch(`${API_BASE}${endpoint}`, {
     method,
     headers: requestHeaders,
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  // Auto-refresh on 401
+  if (response.status === 401 && !skipAuth && !endpoint.includes('/auth/')) {
+    if (!isRefreshing) {
+      isRefreshing = true;
+      refreshPromise = refreshAccessToken();
+    }
+
+    const newToken = await refreshPromise;
+    isRefreshing = false;
+    refreshPromise = null;
+
+    if (newToken) {
+      requestHeaders['Authorization'] = `Bearer ${newToken}`;
+      response = await fetch(`${API_BASE}${endpoint}`, {
+        method,
+        headers: requestHeaders,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } else {
+      forceLogout();
+      throw new ApiError('انتهت صلاحية الجلسة — سجّل دخولك مرة أخرى', 401);
+    }
+  }
 
   if (!response.ok) {
     let errorBody: ApiErrorBody | undefined;
@@ -83,12 +178,6 @@ async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise
   return json.data;
 }
 
-/**
- * For paginated endpoints where the ResponseTransformInterceptor extracts meta.
- * Backend returns: { data: [...], meta: {...} }
- * Interceptor transforms to: { success: true, data: { data: [...] }, meta: {...} }
- * This function reassembles { data: [...], meta: {...} } for the frontend.
- */
 async function apiPaginated<T>(endpoint: string, options: ApiOptions = {}): Promise<PaginatedResult<T>> {
   const json = await apiRaw<{ data: T[] }>(endpoint, options);
   return {
@@ -106,6 +195,9 @@ export const api = {
 
   post: <T>(endpoint: string, body: unknown, token?: string): Promise<T> =>
     apiClient<T>(endpoint, { method: 'POST', body, token }),
+
+  postPublic: <T>(endpoint: string, body: unknown): Promise<T> =>
+    apiClient<T>(endpoint, { method: 'POST', body, skipAuth: true }),
 
   put: <T>(endpoint: string, body: unknown, token?: string): Promise<T> =>
     apiClient<T>(endpoint, { method: 'PUT', body, token }),

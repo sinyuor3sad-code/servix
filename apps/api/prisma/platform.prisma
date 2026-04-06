@@ -87,6 +87,7 @@ model Tenant {
   usageLogs        TenantUsageLog[]
   referralsMade    Referral[]       @relation("referrer")
   referralsReceived Referral[]      @relation("referred")
+  backups          PlatformBackup[]
 
   @@map("tenants")
 }
@@ -112,9 +113,10 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
-  tenantUsers   TenantUser[]
-  auditLogs     PlatformAuditLog[]
-  passwordResets PasswordReset[]
+  tenantUsers            TenantUser[]
+  auditLogs              PlatformAuditLog[]
+  passwordResets         PasswordReset[]
+  platformNotifications  PlatformNotification[]
 
   @@map("users")
 }
@@ -356,6 +358,99 @@ model TenantUsageLog {
   @@unique([tenantId, month])
   @@index([month])
   @@map("tenant_usage_logs")
+}
+
+// ─────────────────── Platform Settings (key-value) ───────────────────
+
+model PlatformSetting {
+  key       String   @id @db.VarChar(100)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@map("platform_settings")
+}
+
+// ─────────────────── Platform Backups ───────────────────
+
+enum BackupStatus {
+  success
+  failed
+  pending
+}
+
+model PlatformBackup {
+  id         String       @id @default(uuid()) @db.Uuid
+  tenantId   String       @map("tenant_id") @db.Uuid
+  status     BackupStatus @default(pending)
+  sizeBytes  BigInt?      @map("size_bytes")
+  filePath   String?      @map("file_path") @db.VarChar(500)
+  initiator  String       @db.VarChar(50) // 'auto' | 'manual'
+  error      String?      @db.Text
+  startedAt  DateTime     @default(now()) @map("started_at") @db.Timestamptz()
+  finishedAt DateTime?    @map("finished_at") @db.Timestamptz()
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("platform_backups")
+}
+
+// ─────────────────── Platform Notifications (admin broadcasts) ───────────────────
+
+enum PlatformNotifStatus {
+  draft
+  sent
+  scheduled
+}
+
+model PlatformNotification {
+  id         String              @id @default(uuid()) @db.Uuid
+  title      String              @db.VarChar(200)
+  body       String              @db.Text
+  channel    String              @db.VarChar(20) // email | sms | push | whatsapp
+  target     String              @db.VarChar(50) // all | basic | pro | enterprise | expiring | trial
+  status     PlatformNotifStatus @default(draft)
+  recipients Int                 @default(0)
+  delivered  Int                 @default(0)
+  opened     Int                 @default(0)
+  sentAt     DateTime?           @map("sent_at") @db.Timestamptz()
+  createdBy  String              @map("created_by") @db.Uuid
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime            @updatedAt @map("updated_at") @db.Timestamptz()
+
+  creator User @relation(fields: [createdBy], references: [id])
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("platform_notifications")
+}
+
+// ─────────────────── Platform Coupons ───────────────────
+
+enum CouponType {
+  percentage
+  fixed
+  free
+}
+
+model PlatformCoupon {
+  id         String     @id @default(uuid()) @db.Uuid
+  code       String     @unique @db.VarChar(30)
+  type       CouponType @default(percentage)
+  value      Decimal    @db.Decimal(10, 2)
+  usageLimit Int        @default(0) @map("usage_limit") // 0 = unlimited
+  usedCount  Int        @default(0) @map("used_count")
+  validFrom  DateTime   @default(now()) @map("valid_from") @db.Timestamptz()
+  validUntil DateTime   @map("valid_until") @db.Timestamptz()
+  isActive   Boolean    @default(true) @map("is_active")
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([code])
+  @@index([isActive])
+  @@map("platform_coupons")
 }
 
 // ─────────────────── Platform Audit Logs (immutable) ───────────────────

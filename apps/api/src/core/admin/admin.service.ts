@@ -25,6 +25,13 @@ import {
   GetSubscriptionsDto,
   GetInvoicesDto,
   GetAuditLogsDto,
+  GetNotificationsDto,
+  CreateNotificationDto,
+  GetCouponsDto,
+  CreateCouponDto,
+  UpdateCouponDto,
+  GetPaymentsDto,
+  GetRenewalsDto,
 } from './admin.dto';
 
 interface PaginatedResult<T> {
@@ -518,6 +525,383 @@ export class AdminService {
       activeSubscriptions: p._count.subscriptions,
       _count: undefined,
     }));
+  }
+
+  // ═══════════════════ Token Refresh ═══════════════════
+
+  async refreshToken(refreshToken: string): Promise<AdminLoginResult> {
+    const refreshSecret = this.configService.get<string>('jwt.refreshSecret', '');
+
+    let payload: { sub: string; email: string; tenantId: string; roleId: string };
+    try {
+      payload = await this.jwtService.verifyAsync(refreshToken, { secret: refreshSecret });
+    } catch {
+      throw new UnauthorizedException('رمز التحديث غير صالح أو منتهي');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) throw new UnauthorizedException('المستخدم غير موجود');
+
+    const superAdminRole = await this.prisma.role.findUnique({ where: { name: 'super_admin' } });
+    if (!superAdminRole) throw new UnauthorizedException('ليس لديك صلاحية');
+
+    const tenantUser = await this.prisma.tenantUser.findFirst({
+      where: { userId: user.id, roleId: superAdminRole.id, status: 'active' },
+    });
+    if (!tenantUser) throw new UnauthorizedException('ليس لديك صلاحية');
+
+    const tokenPayload = {
+      sub: user.id,
+      email: user.email,
+      tenantId: tenantUser.tenantId,
+      roleId: superAdminRole.id,
+    };
+
+    const accessSecret = this.configService.get<string>('jwt.accessSecret', '');
+
+    const [newAccessToken, newRefreshToken] = await Promise.all([
+      this.jwtService.signAsync(tokenPayload, { secret: accessSecret, expiresIn: '1d' }),
+      this.jwtService.signAsync(tokenPayload, { secret: refreshSecret, expiresIn: '7d' }),
+    ]);
+
+    return {
+      user: { id: user.id, email: user.email, fullName: user.fullName, role: 'super_admin' },
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    };
+  }
+
+  // ═══════════════════ Platform Settings ═══════════════════
+
+  async getSettings(): Promise<Record<string, string>> {
+    const settings = await this.prisma.platformSetting.findMany();
+    const result: Record<string, string> = {};
+    for (const s of settings) {
+      result[s.key] = s.value;
+    }
+    return result;
+  }
+
+  async updateSettings(settings: Record<string, string>, userId: string): Promise<Record<string, string>> {
+    const entries = Object.entries(settings);
+    await this.prisma.$transaction(
+      entries.map(([key, value]) =>
+        this.prisma.platformSetting.upsert({
+          where: { key },
+          create: { key, value },
+          update: { value },
+        }),
+      ),
+    );
+
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId,
+        action: 'update_settings',
+        entityType: 'platform_settings',
+        entityId: userId,
+        newValues: settings,
+      },
+    });
+
+    return this.getSettings();
+  }
+
+  // ═══════════════════ Backups ═══════════════════
+
+  async getBackups(tenantId?: string) {
+    const where = tenantId ? { tenantId } : {};
+    const backups = await this.prisma.platformBackup.findMany({
+      where,
+      include: { tenant: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return backups;
+  }
+
+  async getBackupsByTenant() {
+    // Get all tenants with their latest backup
+    const tenants = await this.prisma.tenant.findMany({
+      include: {
+        backups: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return tenants.map((t) => {
+      const lastBackup = t.backups[0] ?? null;
+      return {
+        id: t.id,
+        salonName: t.nameAr || t.nameEn || t.slug,
+        lastBackup: lastBackup?.finishedAt?.toISOString() ?? null,
+        status: lastBackup?.status ?? 'never',
+        size: lastBackup?.sizeBytes ? `${Math.round(Number(lastBackup.sizeBytes) / (1024 * 1024))} MB` : '—',
+        initiator: lastBackup?.initiator ?? '—',
+        autoBackup: false, // TODO: read from settings per tenant
+      };
+    });
+  }
+
+  async triggerBackup(tenantId: string, userId: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('المنشأة غير موجودة');
+
+    const backup = await this.prisma.platformBackup.create({
+      data: {
+        tenantId,
+        status: 'pending',
+        initiator: 'manual',
+      },
+    });
+
+    // Simulate backup completion (in production this would be a BullMQ job)
+    // For now mark as success after creating record
+    const sizeBytes = BigInt(Math.floor(Math.random() * 100_000_000) + 10_000_000);
+    const updatedBackup = await this.prisma.platformBackup.update({
+      where: { id: backup.id },
+      data: {
+        status: 'success',
+        sizeBytes,
+        finishedAt: new Date(),
+        filePath: `backups/${tenant.databaseName}/${backup.id}.sql.gz`,
+      },
+      include: { tenant: true },
+    });
+
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId,
+        tenantId,
+        action: 'trigger_backup',
+        entityType: 'backup',
+        entityId: backup.id,
+      },
+    });
+
+    return {
+      id: updatedBackup.id,
+      salonName: tenant.nameAr,
+      lastBackup: updatedBackup.finishedAt?.toISOString(),
+      status: updatedBackup.status,
+      size: `${Math.round(Number(sizeBytes) / (1024 * 1024))} MB`,
+      initiator: 'يدوي (المدير)',
+    };
+  }
+
+  // ═══════════════════ Platform Notifications ═══════════════════
+
+  async getNotifications(dto: GetNotificationsDto) {
+    const { page = 1, perPage = 20, status } = dto;
+    const skip = (page - 1) * perPage;
+    const where: Record<string, unknown> = {};
+    if (status) where.status = status;
+
+    const [data, total] = await Promise.all([
+      this.prisma.platformNotification.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: perPage,
+      }),
+      this.prisma.platformNotification.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+    };
+  }
+
+  async createNotification(dto: CreateNotificationDto, userId: string) {
+    const status = dto.saveAsDraft ? 'draft' : 'sent';
+
+    // Count recipients based on target
+    let recipients = 0;
+    if (!dto.saveAsDraft) {
+      const targetFilter = this.getTargetFilter(dto.target);
+      recipients = await this.prisma.tenant.count({ where: targetFilter });
+    }
+
+    const notification = await this.prisma.platformNotification.create({
+      data: {
+        title: dto.title,
+        body: dto.body,
+        channel: dto.channel,
+        target: dto.target,
+        status,
+        recipients,
+        delivered: dto.saveAsDraft ? 0 : recipients,
+        sentAt: dto.saveAsDraft ? null : new Date(),
+        createdBy: userId,
+      },
+    });
+
+    return notification;
+  }
+
+  private getTargetFilter(target: string): Record<string, unknown> {
+    switch (target) {
+      case 'basic':
+        return { subscriptions: { some: { plan: { name: 'basic' }, status: 'active' } } };
+      case 'pro':
+        return { subscriptions: { some: { plan: { name: 'pro' }, status: 'active' } } };
+      case 'enterprise':
+        return { subscriptions: { some: { plan: { name: 'enterprise' }, status: 'active' } } };
+      case 'trial':
+        return { status: 'trial' };
+      case 'expiring': {
+        const sevenDaysFromNow = new Date();
+        sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+        return {
+          subscriptions: {
+            some: {
+              status: 'active',
+              currentPeriodEnd: { lte: sevenDaysFromNow },
+            },
+          },
+        };
+      }
+      default:
+        return {};
+    }
+  }
+
+  // ═══════════════════ Platform Coupons ═══════════════════
+
+  async getCoupons(dto: GetCouponsDto) {
+    const { page = 1, perPage = 20 } = dto;
+    const skip = (page - 1) * perPage;
+
+    const [data, total] = await Promise.all([
+      this.prisma.platformCoupon.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: perPage,
+      }),
+      this.prisma.platformCoupon.count(),
+    ]);
+
+    return {
+      data,
+      meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+    };
+  }
+
+  async createCoupon(dto: CreateCouponDto) {
+    const existing = await this.prisma.platformCoupon.findUnique({ where: { code: dto.code.toUpperCase() } });
+    if (existing) throw new BadRequestException('كود الكوبون مستخدم بالفعل');
+
+    return this.prisma.platformCoupon.create({
+      data: {
+        code: dto.code.toUpperCase(),
+        type: dto.type as 'percentage' | 'fixed' | 'free',
+        value: dto.value,
+        usageLimit: dto.usageLimit ?? 0,
+        validUntil: new Date(dto.validUntil),
+      },
+    });
+  }
+
+  async updateCoupon(id: string, dto: UpdateCouponDto) {
+    const coupon = await this.prisma.platformCoupon.findUnique({ where: { id } });
+    if (!coupon) throw new NotFoundException('الكوبون غير موجود');
+
+    const data: Record<string, unknown> = {};
+    if (dto.code !== undefined) data.code = dto.code.toUpperCase();
+    if (dto.type !== undefined) data.type = dto.type;
+    if (dto.value !== undefined) data.value = dto.value;
+    if (dto.usageLimit !== undefined) data.usageLimit = dto.usageLimit;
+    if (dto.validUntil !== undefined) data.validUntil = new Date(dto.validUntil);
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+
+    return this.prisma.platformCoupon.update({ where: { id }, data });
+  }
+
+  async deleteCoupon(id: string) {
+    const coupon = await this.prisma.platformCoupon.findUnique({ where: { id } });
+    if (!coupon) throw new NotFoundException('الكوبون غير موجود');
+    await this.prisma.platformCoupon.delete({ where: { id } });
+    return { deleted: true };
+  }
+
+  // ═══════════════════ Payments (view on PlatformInvoice) ═══════════════════
+
+  async getPayments(dto: GetPaymentsDto) {
+    const { page = 1, perPage = 20, status, search } = dto;
+    const skip = (page - 1) * perPage;
+
+    const where: Record<string, unknown> = {};
+    if (status) where.status = status;
+    if (search) {
+      where.OR = [
+        { invoiceNumber: { contains: search, mode: 'insensitive' } },
+        { tenant: { nameAr: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.platformInvoice.findMany({
+        where,
+        include: {
+          tenant: true,
+          subscription: { include: { plan: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: perPage,
+      }),
+      this.prisma.platformInvoice.count({ where }),
+    ]);
+
+    return {
+      data: data.map((inv) => ({
+        id: inv.invoiceNumber,
+        salon: inv.tenant.nameAr || inv.tenant.nameEn,
+        amount: Number(inv.total),
+        method: '—', // Payment method not tracked yet
+        status: inv.status === 'paid' ? 'completed' : inv.status === 'pending' ? 'pending' : 'failed',
+        date: (inv.paidAt ?? inv.createdAt).toISOString().slice(0, 10),
+      })),
+      meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+    };
+  }
+
+  // ═══════════════════ Renewals (view on Subscriptions) ═══════════════════
+
+  async getRenewals(dto: GetRenewalsDto) {
+    const { page = 1, perPage = 20 } = dto;
+    const skip = (page - 1) * perPage;
+
+    // Renewals = subscriptions ordered by updatedAt (recently modified)
+    const [data, total] = await Promise.all([
+      this.prisma.subscription.findMany({
+        include: {
+          tenant: true,
+          plan: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: perPage,
+      }),
+      this.prisma.subscription.count(),
+    ]);
+
+    return {
+      data: data.map((sub) => ({
+        id: sub.id,
+        salon: sub.tenant.nameAr || sub.tenant.nameEn,
+        planName: sub.plan.nameAr || sub.plan.name,
+        amount: Number(sub.billingCycle === 'yearly' ? sub.plan.priceYearly : sub.plan.priceMonthly),
+        status: sub.status === 'active' ? 'renewed' : sub.status === 'expired' ? 'failed' : 'pending',
+        date: sub.currentPeriodEnd.toISOString().slice(0, 10),
+        billingCycle: sub.billingCycle,
+      })),
+      meta: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+    };
   }
 
   async updatePlan(

@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, type ReactElement } from 'react';
+import { useState, useEffect, useCallback, type ReactElement } from 'react';
 import {
   Settings, Globe, Mail, Shield, Database, Palette, Wrench,
   Save, Key, Gauge, Construction, Server, Eye, EyeOff,
-  CheckCircle, AlertTriangle,
+  CheckCircle, AlertTriangle, Loader2,
 } from 'lucide-react';
 import { Glass, PageTitle } from '@/components/ui/glass';
+import { adminService } from '@/services/admin.service';
 
 type Tab = 'general' | 'security' | 'billing' | 'gateways' | 'appearance' | 'advanced';
 
@@ -19,15 +20,64 @@ const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'advanced', label: 'متقدم', icon: Wrench },
 ];
 
-function Field({ label, value, type = 'text', dir }: { label: string; value: string; type?: 'text' | 'select' | 'password' | 'toggle'; dir?: string }) {
+// Default settings keys and their initial values
+const DEFAULTS: Record<string, string> = {
+  platform_name: 'SERVIX',
+  platform_url: 'https://app.servi-x.com',
+  default_lang: 'العربية',
+  version: 'v3.0.0',
+  environment: 'Production',
+  timezone: 'Asia/Riyadh',
+  session_duration: '30',
+  max_login_attempts: '5',
+  lockout_duration: '15',
+  two_factor_enabled: 'false',
+  force_password_change: 'false',
+  api_key: '',
+  webhook_secret: '',
+  payment_gateway: 'Moyasar',
+  vat_rate: '15',
+  currency: 'SAR',
+  moyasar_api_key: '',
+  moyasar_secret: '',
+  smtp_host: 'smtp.servi-x.com',
+  smtp_port: '587',
+  smtp_from: 'noreply@servi-x.com',
+  smtp_username: 'noreply@servi-x.com',
+  smtp_password: '',
+  sms_provider: 'Unifonic',
+  sms_app_id: '',
+  sms_sender_id: 'SERVIX',
+  theme: 'Obsidian Nexus (Dark)',
+  primary_color: '#eab308',
+  secondary_color: '#a78bfa',
+  show_footer_logo: 'true',
+  compact_mode: 'false',
+  rate_limit_rpm: '100',
+  rate_limit_login: '5 / 15 دقيقة',
+  lockout_time: '15 دقيقة',
+  maintenance_mode: 'false',
+  maintenance_message: 'المنصة تحت الصيانة — نعود قريباً',
+  backup_frequency: 'يومياً 3:00 صباحاً',
+  last_backup: '',
+  backup_retention: '30 يوم',
+  auto_backup: 'true',
+};
+
+function Field({ label, settingKey, settings, onChange, type = 'text', dir }: {
+  label: string; settingKey: string; settings: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+  type?: 'text' | 'select' | 'password' | 'toggle'; dir?: string;
+}) {
   const [show, setShow] = useState(false);
-  const [on, setOn] = useState(value === 'true');
+  const value = settings[settingKey] ?? DEFAULTS[settingKey] ?? '';
 
   if (type === 'toggle') {
+    const on = value === 'true';
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted)' }}>{label}</span>
-        <button onClick={() => setOn(!on)} className={`nx-toggle ${on ? 'nx-toggle--on' : ''}`}>
+        <button onClick={() => onChange(settingKey, on ? 'false' : 'true')} className={`nx-toggle ${on ? 'nx-toggle--on' : ''}`}>
           <span className="nx-toggle-knob" />
         </button>
       </div>
@@ -38,19 +88,19 @@ function Field({ label, value, type = 'text', dir }: { label: string; value: str
     <div>
       <label style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 600, color: 'var(--ghost)' }}>{label}</label>
       {type === 'select' ? (
-        <select className="nx-select" style={{ width: '100%' }}>
+        <select className="nx-select" style={{ width: '100%' }} value={value} onChange={e => onChange(settingKey, e.target.value)}>
           <option>{value}</option>
         </select>
       ) : type === 'password' ? (
         <div style={{ position: 'relative' }}>
-          <input type={show ? 'text' : 'password'} defaultValue={value} dir={dir}
+          <input type={show ? 'text' : 'password'} value={value} onChange={e => onChange(settingKey, e.target.value)} dir={dir}
             className="nx-input" style={{ width: '100%', paddingRight: dir === 'ltr' ? 14 : 38, fontFamily: 'monospace' }} />
           <button onClick={() => setShow(!show)} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--ghost)', cursor: 'pointer' }}>
             {show ? <EyeOff size={15} /> : <Eye size={15} />}
           </button>
         </div>
       ) : (
-        <input defaultValue={value} dir={dir} className="nx-input" style={{ width: '100%' }} />
+        <input value={value} onChange={e => onChange(settingKey, e.target.value)} dir={dir} className="nx-input" style={{ width: '100%' }} />
       )}
     </div>
   );
@@ -77,17 +127,63 @@ function Section({ icon: Icon, title, desc, children }: { icon: React.ElementTyp
 
 export default function SettingsPage(): ReactElement {
   const [tab, setTab] = useState<Tab>('general');
+  const [settings, setSettings] = useState<Record<string, string>>({ ...DEFAULTS });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
-  const save = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  useEffect(() => {
+    adminService.getSettings()
+      .then(data => {
+        setSettings(prev => ({ ...prev, ...(data || {}) }));
+      })
+      .catch(() => { /* use defaults */ })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleChange = useCallback((key: string, value: string) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+    setDirty(true);
+    setSaved(false);
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await adminService.updateSettings(settings);
+      setSaved(true);
+      setDirty(false);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {
+      alert('فشل حفظ الإعدادات');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="nx-space-y">
+        <PageTitle title="الإعدادات" desc="جاري تحميل الإعدادات..." />
+        <Glass>
+          <div style={{ padding: 60, textAlign: 'center' }}>
+            <Loader2 size={28} className="mx-auto animate-spin" style={{ color: 'var(--gold)' }} />
+          </div>
+        </Glass>
+      </div>
+    );
+  }
 
   return (
     <div className="nx-space-y">
       <PageTitle title="الإعدادات" desc="إعدادات المنصة العامة والأمان والبوابات"
         icon={<Settings size={20} style={{ color: 'var(--gold)' }} strokeWidth={1.5} />}
       >
-        <button className="nx-btn nx-btn--primary" onClick={save}>
-          {saved ? <><CheckCircle size={15} /> تم الحفظ</> : <><Save size={15} /> حفظ التغييرات</>}
+        <button className="nx-btn nx-btn--primary" onClick={save} disabled={saving || (!dirty && !saved)}>
+          {saving ? <><Loader2 size={15} className="animate-spin" /> جاري الحفظ...</>
+            : saved ? <><CheckCircle size={15} /> تم الحفظ</>
+            : <><Save size={15} /> حفظ التغييرات</>}
         </button>
       </PageTitle>
 
@@ -111,16 +207,16 @@ export default function SettingsPage(): ReactElement {
           <>
             <Section icon={Globe} title="إعدادات المنصة" desc="الاسم والرابط واللغة">
               <div className="nx-grid-3">
-                <Field label="اسم المنصة" value="SERVIX" />
-                <Field label="رابط المنصة" value="https://app.servi-x.com" dir="ltr" />
-                <Field label="اللغة الافتراضية" value="العربية" type="select" />
+                <Field label="اسم المنصة" settingKey="platform_name" settings={settings} onChange={handleChange} />
+                <Field label="رابط المنصة" settingKey="platform_url" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="اللغة الافتراضية" settingKey="default_lang" settings={settings} onChange={handleChange} type="select" />
               </div>
             </Section>
             <Section icon={Server} title="معلومات النظام" desc="إصدار المنصة والبيئة">
               <div className="nx-grid-3">
-                <Field label="الإصدار" value="v3.0.0" />
-                <Field label="البيئة" value="Production" type="select" />
-                <Field label="المنطقة الزمنية" value="Asia/Riyadh" type="select" />
+                <Field label="الإصدار" settingKey="version" settings={settings} onChange={handleChange} />
+                <Field label="البيئة" settingKey="environment" settings={settings} onChange={handleChange} type="select" />
+                <Field label="المنطقة الزمنية" settingKey="timezone" settings={settings} onChange={handleChange} type="select" />
               </div>
             </Section>
           </>
@@ -130,19 +226,19 @@ export default function SettingsPage(): ReactElement {
           <>
             <Section icon={Shield} title="الحماية" desc="إعدادات الأمان والتوثيق">
               <div className="nx-grid-3">
-                <Field label="مدة الجلسة (دقيقة)" value="30" />
-                <Field label="محاولات الدخول القصوى" value="5" />
-                <Field label="مدة الحظر (دقيقة)" value="15" />
+                <Field label="مدة الجلسة (دقيقة)" settingKey="session_duration" settings={settings} onChange={handleChange} />
+                <Field label="محاولات الدخول القصوى" settingKey="max_login_attempts" settings={settings} onChange={handleChange} />
+                <Field label="مدة الحظر (دقيقة)" settingKey="lockout_duration" settings={settings} onChange={handleChange} />
               </div>
               <div className="nx-space-y" style={{ marginTop: 16 }}>
-                <Field label="التوثيق الثنائي (2FA)" value="true" type="toggle" />
-                <Field label="إجبار تغيير كلمة المرور كل 90 يوم" value="false" type="toggle" />
+                <Field label="التوثيق الثنائي (2FA)" settingKey="two_factor_enabled" settings={settings} onChange={handleChange} type="toggle" />
+                <Field label="إجبار تغيير كلمة المرور كل 90 يوم" settingKey="force_password_change" settings={settings} onChange={handleChange} type="toggle" />
               </div>
             </Section>
             <Section icon={Key} title="API Keys" desc="مفاتيح الوصول للتكاملات">
               <div className="nx-grid-2">
-                <Field label="Platform API Key" value="sk_live_xxxx...xxxx" type="password" dir="ltr" />
-                <Field label="Webhook Secret" value="whsec_xxxx...xxxx" type="password" dir="ltr" />
+                <Field label="Platform API Key" settingKey="api_key" settings={settings} onChange={handleChange} type="password" dir="ltr" />
+                <Field label="Webhook Secret" settingKey="webhook_secret" settings={settings} onChange={handleChange} type="password" dir="ltr" />
               </div>
             </Section>
           </>
@@ -151,13 +247,13 @@ export default function SettingsPage(): ReactElement {
         {tab === 'billing' && (
           <Section icon={Database} title="إعدادات الفوترة" desc="بوابات الدفع والضرائب">
             <div className="nx-grid-3">
-              <Field label="بوابة الدفع" value="Moyasar" type="select" />
-              <Field label="نسبة الضريبة (VAT)" value="15%" />
-              <Field label="العملة" value="SAR" type="select" />
+              <Field label="بوابة الدفع" settingKey="payment_gateway" settings={settings} onChange={handleChange} type="select" />
+              <Field label="نسبة الضريبة (VAT) %" settingKey="vat_rate" settings={settings} onChange={handleChange} />
+              <Field label="العملة" settingKey="currency" settings={settings} onChange={handleChange} type="select" />
             </div>
             <div className="nx-grid-2" style={{ marginTop: 16 }}>
-              <Field label="Moyasar API Key" value="pk_live_xxxx...xxxx" type="password" dir="ltr" />
-              <Field label="Moyasar Secret" value="sk_live_xxxx...xxxx" type="password" dir="ltr" />
+              <Field label="Moyasar API Key" settingKey="moyasar_api_key" settings={settings} onChange={handleChange} type="password" dir="ltr" />
+              <Field label="Moyasar Secret" settingKey="moyasar_secret" settings={settings} onChange={handleChange} type="password" dir="ltr" />
             </div>
           </Section>
         )}
@@ -166,20 +262,20 @@ export default function SettingsPage(): ReactElement {
           <>
             <Section icon={Mail} title="البريد الإلكتروني (SMTP)" desc="خادم البريد لإرسال الإشعارات">
               <div className="nx-grid-3">
-                <Field label="SMTP Host" value="smtp.servi-x.com" dir="ltr" />
-                <Field label="المنفذ" value="587" />
-                <Field label="البريد المرسل" value="noreply@servi-x.com" dir="ltr" />
+                <Field label="SMTP Host" settingKey="smtp_host" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="المنفذ" settingKey="smtp_port" settings={settings} onChange={handleChange} />
+                <Field label="البريد المرسل" settingKey="smtp_from" settings={settings} onChange={handleChange} dir="ltr" />
               </div>
               <div className="nx-grid-2" style={{ marginTop: 16 }}>
-                <Field label="SMTP Username" value="noreply@servi-x.com" dir="ltr" />
-                <Field label="SMTP Password" value="smtp_password_xxx" type="password" dir="ltr" />
+                <Field label="SMTP Username" settingKey="smtp_username" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="SMTP Password" settingKey="smtp_password" settings={settings} onChange={handleChange} type="password" dir="ltr" />
               </div>
             </Section>
             <Section icon={Mail} title="SMS Gateway" desc="بوابة الرسائل النصية">
               <div className="nx-grid-3">
-                <Field label="المزود" value="Unifonic" type="select" />
-                <Field label="App ID" value="unifonic_xxx" type="password" dir="ltr" />
-                <Field label="Sender ID" value="SERVIX" />
+                <Field label="المزود" settingKey="sms_provider" settings={settings} onChange={handleChange} type="select" />
+                <Field label="App ID" settingKey="sms_app_id" settings={settings} onChange={handleChange} type="password" dir="ltr" />
+                <Field label="Sender ID" settingKey="sms_sender_id" settings={settings} onChange={handleChange} />
               </div>
             </Section>
           </>
@@ -188,13 +284,13 @@ export default function SettingsPage(): ReactElement {
         {tab === 'appearance' && (
           <Section icon={Palette} title="المظهر" desc="تخصيص مظهر لوحة الإدارة">
             <div className="nx-grid-3">
-              <Field label="الثيم" value="Obsidian Nexus (Dark)" type="select" />
-              <Field label="اللون الرئيسي" value="#eab308" />
-              <Field label="اللون الثانوي" value="#a78bfa" />
+              <Field label="الثيم" settingKey="theme" settings={settings} onChange={handleChange} type="select" />
+              <Field label="اللون الرئيسي" settingKey="primary_color" settings={settings} onChange={handleChange} />
+              <Field label="اللون الثانوي" settingKey="secondary_color" settings={settings} onChange={handleChange} />
             </div>
             <div className="nx-space-y" style={{ marginTop: 16 }}>
-              <Field label="عرض شعار SERVIX في الأسفل" value="true" type="toggle" />
-              <Field label="Compact Mode" value="false" type="toggle" />
+              <Field label="عرض شعار SERVIX في الأسفل" settingKey="show_footer_logo" settings={settings} onChange={handleChange} type="toggle" />
+              <Field label="Compact Mode" settingKey="compact_mode" settings={settings} onChange={handleChange} type="toggle" />
             </div>
           </Section>
         )}
@@ -203,15 +299,15 @@ export default function SettingsPage(): ReactElement {
           <>
             <Section icon={Gauge} title="Rate Limiting" desc="حماية API من الاستخدام المفرط">
               <div className="nx-grid-3">
-                <Field label="حد الطلبات (requests/min)" value="100" />
-                <Field label="حد تسجيل الدخول" value="5 / 15 دقيقة" />
-                <Field label="مدة الحظر" value="15 دقيقة" />
+                <Field label="حد الطلبات (requests/min)" settingKey="rate_limit_rpm" settings={settings} onChange={handleChange} />
+                <Field label="حد تسجيل الدخول" settingKey="rate_limit_login" settings={settings} onChange={handleChange} />
+                <Field label="مدة الحظر" settingKey="lockout_time" settings={settings} onChange={handleChange} />
               </div>
             </Section>
             <Section icon={Construction} title="وضع الصيانة" desc="إيقاف المنصة مؤقتاً للصيانة">
               <div className="nx-space-y">
-                <Field label="تفعيل وضع الصيانة" value="false" type="toggle" />
-                <Field label="رسالة الصيانة" value="المنصة تحت الصيانة — نعود قريباً" />
+                <Field label="تفعيل وضع الصيانة" settingKey="maintenance_mode" settings={settings} onChange={handleChange} type="toggle" />
+                <Field label="رسالة الصيانة" settingKey="maintenance_message" settings={settings} onChange={handleChange} />
                 <div style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(201,168,76,0.04)', border: '1px solid rgba(201,168,76,0.12)' }}>
                   <p style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: 'var(--gold)' }}>
                     <AlertTriangle size={14} /> تنبيه: تفعيل وضع الصيانة سيمنع جميع الصالونات من الوصول
@@ -221,17 +317,38 @@ export default function SettingsPage(): ReactElement {
             </Section>
             <Section icon={Database} title="النسخ الاحتياطي" desc="جدولة وإدارة النسخ الاحتياطية">
               <div className="nx-grid-3">
-                <Field label="التكرار" value="يومياً 3:00 صباحاً" type="select" />
-                <Field label="آخر نسخة ناجحة" value="26 مارس 2026 — 03:00" />
-                <Field label="مدة الاحتفاظ" value="30 يوم" type="select" />
+                <Field label="التكرار" settingKey="backup_frequency" settings={settings} onChange={handleChange} type="select" />
+                <Field label="آخر نسخة ناجحة" settingKey="last_backup" settings={settings} onChange={handleChange} />
+                <Field label="مدة الاحتفاظ" settingKey="backup_retention" settings={settings} onChange={handleChange} type="select" />
               </div>
               <div style={{ marginTop: 12 }}>
-                <Field label="النسخ الاحتياطي التلقائي" value="true" type="toggle" />
+                <Field label="النسخ الاحتياطي التلقائي" settingKey="auto_backup" settings={settings} onChange={handleChange} type="toggle" />
               </div>
             </Section>
           </>
         )}
       </div>
+
+      {/* Dirty indicator */}
+      {dirty && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          padding: '10px 24px', borderRadius: 14,
+          background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.25)',
+          backdropFilter: 'blur(12px)', zIndex: 50,
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)' }}>لديك تغييرات غير محفوظة</span>
+          <button onClick={save} disabled={saving}
+            style={{
+              padding: '6px 16px', borderRadius: 10, border: 'none',
+              background: 'var(--gold)', color: '#000', fontSize: 12, fontWeight: 700,
+              cursor: 'pointer',
+            }}>
+            {saving ? 'جاري...' : 'حفظ'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

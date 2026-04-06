@@ -69,6 +69,16 @@ export const useAuthStore = create<AuthState & AuthActions>()(
       },
 
       logout: () => {
+        // Clear React Query cache
+        if (typeof window !== 'undefined') {
+          try {
+            const { QueryClient } = require('@tanstack/react-query');
+            const queryClient = new QueryClient();
+            queryClient.clear();
+          } catch {
+            // React Query not available
+          }
+        }
         syncToCookie(initialState);
         set({ ...initialState });
       },

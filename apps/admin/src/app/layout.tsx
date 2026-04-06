@@ -34,8 +34,16 @@ export const metadata: Metadata = {
     title: 'SERVIX',
   },
   icons: {
-    apple: '/icon-192.png',
-    icon: '/icon-192.png',
+    apple: [
+      { url: '/icons/icon-192.png', sizes: '192x192' },
+      { url: '/icons/icon-152.png', sizes: '152x152' },
+      { url: '/icons/icon-144.png', sizes: '144x144' },
+      { url: '/icons/icon-128.png', sizes: '128x128' },
+    ],
+    icon: [
+      { url: '/icons/icon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
   },
 };
 
@@ -49,7 +57,10 @@ export default function RootLayout({
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png" />
+        <link rel="apple-touch-icon" sizes="144x144" href="/icons/icon-144.png" />
+        <link rel="apple-touch-icon" sizes="128x128" href="/icons/icon-128.png" />
       </head>
       <body className={`${inter.variable} ${cairo.variable} antialiased`}
         style={{ fontFamily: "'Inter', 'Cairo', system-ui, -apple-system, sans-serif" }}

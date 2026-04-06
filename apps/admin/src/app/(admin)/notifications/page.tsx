@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, type ReactElement, type CSSProperties } from 'react';
+import { useState, useEffect, type ReactElement, type CSSProperties } from 'react';
 import {
   Bell, Send, CheckCheck, Clock, AlertTriangle, Plus, Search,
   Eye, Mail, Smartphone, X, Megaphone, BarChart3, Loader2,
-  Save, Users, Zap, MessageSquare, Hash, FileText,
+  Save, Users, Zap, MessageSquare, FileText,
 } from 'lucide-react';
 import { Glass, PageTitle } from '@/components/ui/glass';
+import { adminService, type PlatformNotification } from '@/services/admin.service';
 
 const EN: CSSProperties = {
   fontFeatureSettings: '"tnum" 1', fontVariantNumeric: 'tabular-nums',
@@ -15,15 +16,6 @@ const EN: CSSProperties = {
 
 type NStatus = 'sent' | 'scheduled' | 'draft';
 type NChannel = 'sms' | 'email' | 'push' | 'whatsapp';
-
-interface Notif {
-  id: string; title: string; body: string; target: string;
-  channel: NChannel; status: NStatus; sentAt: string | null;
-  recipients: number; opened: number; delivered: number;
-}
-
-// Note: Notifications are client-side only until backend notification system is built
-const INITIAL_DATA: Notif[] = [];
 
 const ST_CFG: Record<NStatus, { label: string; badge: string; icon: typeof CheckCheck }> = {
   sent:      { label: 'مُرسل', badge: 'nx-badge--green', icon: CheckCheck },
@@ -48,17 +40,13 @@ const TARGETS = [
 ];
 
 /* ═══════════════════════════════════════════════════ */
-/*  CREATE NOTIFICATION MODAL — Premium Design        */
+/*  CREATE NOTIFICATION MODAL                         */
 /* ═══════════════════════════════════════════════════ */
 
-function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreated: (n: Notif) => void }) {
-  const [step, setStep] = useState(1); // 1: compose, 2: target, 3: preview
+function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreated: (n: PlatformNotification) => void }) {
+  const [step, setStep] = useState(1);
   const [form, setForm] = useState({
-    title: '',
-    body: '',
-    target: 'all',
-    channel: 'email' as NChannel,
-    saveAsDraft: false,
+    title: '', body: '', target: 'all', channel: 'email' as NChannel, saveAsDraft: false,
   });
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -67,29 +55,24 @@ function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const channelInfo = CH_CFG[form.channel];
   const ChIcon = channelInfo.icon;
 
-  const canProceed = step === 1
-    ? form.title.trim().length > 0 && form.body.trim().length > 0
-    : true;
+  const canProceed = step === 1 ? form.title.trim().length > 0 && form.body.trim().length > 0 : true;
 
-  const handleSend = () => {
+  const handleSend = async () => {
     setSending(true);
-    setTimeout(() => {
-      const newNotif: Notif = {
-        id: `${Date.now()}`,
+    try {
+      const created = await adminService.createNotification({
         title: form.title,
         body: form.body,
-        target: targetInfo.label,
         channel: form.channel,
-        status: form.saveAsDraft ? 'draft' : 'sent',
-        sentAt: form.saveAsDraft ? null : new Date().toISOString().slice(0, 10),
-        recipients: form.saveAsDraft ? 0 : 0,
-        opened: 0,
-        delivered: 0,
-      };
-      setSending(false);
+        target: form.target,
+        saveAsDraft: form.saveAsDraft,
+      });
       setSent(true);
-      setTimeout(() => onCreated(newNotif), 800);
-    }, 1500);
+      setTimeout(() => onCreated(created), 800);
+    } catch {
+      alert('فشل إرسال الإشعار');
+      setSending(false);
+    }
   };
 
   const stepIndicator = (
@@ -97,8 +80,7 @@ function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreat
       {[1, 2, 3].map(s => (
         <div key={s} style={{
           width: s === step ? 28 : 8, height: 4, borderRadius: 2,
-          background: s <= step ? '#A78BFA' : 'var(--border)',
-          transition: 'all 0.3s',
+          background: s <= step ? '#A78BFA' : 'var(--border)', transition: 'all 0.3s',
         }} />
       ))}
     </div>
@@ -199,7 +181,6 @@ function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreat
           {/* Step 2: Target & Channel */}
           {step === 2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24, flex: 1 }}>
-              {/* Target Selection */}
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#A78BFA', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Users size={13} /> المستهدفون
@@ -220,7 +201,6 @@ function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreat
                 </div>
               </div>
 
-              {/* Channel Selection */}
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#A78BFA', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Zap size={13} /> قناة الإرسال
@@ -252,7 +232,6 @@ function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreat
                 </div>
               </div>
 
-              {/* Draft Toggle */}
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '14px 18px', borderRadius: 14,
@@ -300,7 +279,6 @@ function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreat
                 </div>
               ) : (
                 <>
-                  {/* Preview Card */}
                   <div style={{
                     padding: 20, borderRadius: 16, background: 'var(--surface)',
                     border: '1px solid var(--border)',
@@ -321,7 +299,6 @@ function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreat
                     <p style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--muted)', margin: 0 }}>{form.body}</p>
                   </div>
 
-                  {/* Details */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <div style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--border)' }}>
                       <p style={{ fontSize: 10, color: 'var(--ghost)', margin: '0 0 4px', fontWeight: 700 }}>المستهدفون</p>
@@ -393,24 +370,32 @@ function CreateNotifModal({ onClose, onCreated }: { onClose: () => void; onCreat
 /* ═══════════════════════════════════════════════════ */
 
 export default function NotificationsPage(): ReactElement {
-  const [notifications, setNotifications] = useState<Notif[]>(INITIAL_DATA);
+  const [notifications, setNotifications] = useState<PlatformNotification[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusF, setStatusF] = useState<NStatus | ''>('');
-  const [preview, setPreview] = useState<Notif | null>(null);
+  const [preview, setPreview] = useState<PlatformNotification | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  const filtered = notifications.filter(n => {
-    if (search && !n.title.includes(search)) return false;
-    if (statusF && n.status !== statusF) return false;
-    return true;
-  });
+  const fetchNotifications = () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (statusF) params.set('status', statusF);
+    adminService.getNotifications(params.toString() || undefined)
+      .then(res => setNotifications(res.data ?? []))
+      .catch(() => setNotifications([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchNotifications(); }, [search, statusF]);
 
   const totalSent = notifications.filter(n => n.status === 'sent').reduce((s, n) => s + n.recipients, 0);
   const totalOpened = notifications.filter(n => n.status === 'sent').reduce((s, n) => s + n.opened, 0);
   const totalDelivered = notifications.filter(n => n.status === 'sent').reduce((s, n) => s + n.delivered, 0);
   const openRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0;
 
-  const handleCreated = (n: Notif) => {
+  const handleCreated = (n: PlatformNotification) => {
     setNotifications(prev => [n, ...prev]);
     setShowCreate(false);
     setPreview(n);
@@ -443,7 +428,7 @@ export default function NotificationsPage(): ReactElement {
                 </div>
                 <div>
                   <div className="nx-stat-label">{k.label}</div>
-                  <div className="nx-stat-value" style={EN}>{k.value}</div>
+                  <div className="nx-stat-value" style={EN}>{loading ? '—' : k.value}</div>
                 </div>
               </div>
             </Glass>
@@ -452,12 +437,19 @@ export default function NotificationsPage(): ReactElement {
       </div>
 
       {/* Content */}
-      {notifications.length === 0 ? (
+      {loading ? (
+        <Glass>
+          <div style={{ padding: 60, textAlign: 'center' }}>
+            <Loader2 size={28} className="mx-auto animate-spin" style={{ color: '#A78BFA' }} />
+            <p style={{ fontSize: 13, color: 'var(--ghost)', marginTop: 12 }}>جاري تحميل الإشعارات...</p>
+          </div>
+        </Glass>
+      ) : notifications.length === 0 && !search && !statusF ? (
         <Glass>
           <div className="nx-empty" style={{ padding: '60px 20px' }}>
             <div className="nx-empty-icon"><Megaphone size={24} /></div>
             <p className="nx-empty-title">لا توجد إشعارات</p>
-            <p className="nx-empty-desc">اضغط "إشعار جديد" لإرسال أول إشعار للمشتركين</p>
+            <p className="nx-empty-desc">اضغط &quot;إشعار جديد&quot; لإرسال أول إشعار للمشتركين</p>
             <button className="nx-btn nx-btn--primary" onClick={() => setShowCreate(true)} style={{ marginTop: 16 }}>
               <Plus size={14} /> إنشاء إشعار
             </button>
@@ -499,9 +491,11 @@ export default function NotificationsPage(): ReactElement {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((n) => {
-                    const st = ST_CFG[n.status];
-                    const ch = CH_CFG[n.channel];
+                  {notifications.map((n) => {
+                    const status = (n.status || 'draft') as NStatus;
+                    const st = ST_CFG[status] || ST_CFG.draft;
+                    const channel = (n.channel || 'email') as NChannel;
+                    const ch = CH_CFG[channel] || CH_CFG.email;
                     const ChI = ch.icon;
                     const selected = preview?.id === n.id;
                     return (
@@ -517,6 +511,9 @@ export default function NotificationsPage(): ReactElement {
                       </tr>
                     );
                   })}
+                  {notifications.length === 0 && (
+                    <tr><td colSpan={4} style={{ textAlign: 'center', padding: 30, color: 'var(--ghost)' }}>لا توجد نتائج</td></tr>
+                  )}
                 </tbody>
               </table></div>
             </Glass>
@@ -532,6 +529,25 @@ export default function NotificationsPage(): ReactElement {
                     <div style={{ padding: 16, borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--border)' }}>
                       <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>{preview.title}</p>
                       <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--muted)', marginTop: 8 }}>{preview.body}</p>
+                    </div>
+                    {preview.sentAt && (
+                      <p style={{ fontSize: 11, color: 'var(--ghost)', ...EN }}>
+                        تم الإرسال: {new Date(preview.sentAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </p>
+                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                      <div style={{ padding: 10, borderRadius: 10, background: 'var(--surface)', border: '1px solid var(--border)', textAlign: 'center' }}>
+                        <p style={{ fontSize: 10, color: 'var(--ghost)', margin: 0 }}>المستلمين</p>
+                        <p style={{ fontSize: 16, fontWeight: 800, color: '#34D399', margin: 0, ...EN }}>{preview.recipients}</p>
+                      </div>
+                      <div style={{ padding: 10, borderRadius: 10, background: 'var(--surface)', border: '1px solid var(--border)', textAlign: 'center' }}>
+                        <p style={{ fontSize: 10, color: 'var(--ghost)', margin: 0 }}>تم التوصيل</p>
+                        <p style={{ fontSize: 16, fontWeight: 800, color: '#60A5FA', margin: 0, ...EN }}>{preview.delivered}</p>
+                      </div>
+                      <div style={{ padding: 10, borderRadius: 10, background: 'var(--surface)', border: '1px solid var(--border)', textAlign: 'center' }}>
+                        <p style={{ fontSize: 10, color: 'var(--ghost)', margin: 0 }}>تم الفتح</p>
+                        <p style={{ fontSize: 16, fontWeight: 800, color: '#A78BFA', margin: 0, ...EN }}>{preview.opened}</p>
+                      </div>
                     </div>
                   </div>
                 ) : (

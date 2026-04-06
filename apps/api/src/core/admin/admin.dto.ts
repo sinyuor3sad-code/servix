@@ -142,6 +142,198 @@ export class GetInvoicesDto {
   status?: InvoiceStatusFilter;
 }
 
+// ─── Refresh Token ───
+export class AdminRefreshDto {
+  @ApiProperty({ description: 'رمز التحديث' })
+  @IsString({ message: 'رمز التحديث يجب أن يكون نصاً' })
+  @IsNotEmpty({ message: 'رمز التحديث مطلوب' })
+  refreshToken: string;
+}
+
+// ─── Settings ───
+export class UpdateSettingsDto {
+  @ApiProperty({ description: 'الإعدادات كمفتاح-قيمة', example: { platform_name: 'SERVIX' } })
+  settings: Record<string, string>;
+}
+
+// ─── Backups ───
+export class TriggerBackupDto {
+  @ApiProperty({ description: 'معرف المنشأة' })
+  @IsUUID('4', { message: 'معرف المنشأة يجب أن يكون UUID صالح' })
+  tenantId: string;
+}
+
+// ─── Notifications ───
+export class CreateNotificationDto {
+  @ApiProperty({ description: 'عنوان الإشعار' })
+  @IsString()
+  @IsNotEmpty({ message: 'عنوان الإشعار مطلوب' })
+  title: string;
+
+  @ApiProperty({ description: 'نص الإشعار' })
+  @IsString()
+  @IsNotEmpty({ message: 'نص الإشعار مطلوب' })
+  body: string;
+
+  @ApiProperty({ description: 'قناة الإرسال', enum: ['email', 'sms', 'push', 'whatsapp'] })
+  @IsIn(['email', 'sms', 'push', 'whatsapp'], { message: 'القناة يجب أن تكون email, sms, push, أو whatsapp' })
+  channel: string;
+
+  @ApiProperty({ description: 'الفئة المستهدفة', enum: ['all', 'basic', 'pro', 'enterprise', 'expiring', 'trial'] })
+  @IsIn(['all', 'basic', 'pro', 'enterprise', 'expiring', 'trial'], { message: 'الفئة المستهدفة غير صالحة' })
+  target: string;
+
+  @ApiPropertyOptional({ description: 'حفظ كمسودة', default: false })
+  @IsOptional()
+  saveAsDraft?: boolean;
+}
+
+export class GetNotificationsDto {
+  @ApiPropertyOptional({ description: 'رقم الصفحة', default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ description: 'عدد العناصر', default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  perPage?: number = 20;
+
+  @ApiPropertyOptional({ description: 'تصفية حسب الحالة', enum: ['draft', 'sent', 'scheduled'] })
+  @IsOptional()
+  @IsIn(['draft', 'sent', 'scheduled'])
+  status?: string;
+}
+
+// ─── Coupons ───
+export class CreateCouponDto {
+  @ApiProperty({ description: 'كود الكوبون', example: 'RAMADAN30' })
+  @IsString()
+  @IsNotEmpty({ message: 'كود الكوبون مطلوب' })
+  code: string;
+
+  @ApiProperty({ description: 'نوع الخصم', enum: ['percentage', 'fixed', 'free'] })
+  @IsIn(['percentage', 'fixed', 'free'], { message: 'نوع الخصم غير صالح' })
+  type: string;
+
+  @ApiProperty({ description: 'قيمة الخصم', example: 30 })
+  @Type(() => Number)
+  value: number;
+
+  @ApiPropertyOptional({ description: 'حد الاستخدام (0 = غير محدود)', default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  usageLimit?: number;
+
+  @ApiProperty({ description: 'صالح حتى', example: '2026-12-31' })
+  @IsString()
+  @IsNotEmpty({ message: 'تاريخ الانتهاء مطلوب' })
+  validUntil: string;
+}
+
+export class UpdateCouponDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsIn(['percentage', 'fixed', 'free'])
+  type?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  value?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  usageLimit?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  validUntil?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  isActive?: boolean;
+}
+
+export class GetCouponsDto {
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  perPage?: number = 20;
+}
+
+// ─── Payments (uses existing invoices) ───
+export class GetPaymentsDto {
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  perPage?: number = 20;
+
+  @ApiPropertyOptional({ enum: ['paid', 'pending', 'overdue', 'cancelled'] })
+  @IsOptional()
+  @IsIn(['paid', 'pending', 'overdue', 'cancelled'])
+  status?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+}
+
+// ─── Renewals (uses existing subscriptions) ───
+export class GetRenewalsDto {
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  perPage?: number = 20;
+}
+
 export class GetAuditLogsDto {
   @ApiPropertyOptional({ description: 'رقم الصفحة', example: 1, default: 1 })
   @IsOptional()

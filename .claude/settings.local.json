@@ -82,7 +82,16 @@
       "Bash(cmd.exe /c \"taskkill /PID 30328 /F\")",
       "Bash(powershell -Command \"Stop-Process -Id 30328 -Force\")",
       "Bash(find /c/Users/Admin/projects/servix/apps/api/src -type f -name *admin*)",
-      "Bash(grep -r \"Get\\\\|Post\\\\|Put\\\\|Delete\" /c/Users/Admin/projects/servix/apps/api/src/core/health/*.ts)"
+      "Bash(grep -r \"Get\\\\|Post\\\\|Put\\\\|Delete\" /c/Users/Admin/projects/servix/apps/api/src/core/health/*.ts)",
+      "Bash(mkdir -p /c/Users/Admin/projects/servix/apps/admin/public/icons)",
+      "Bash(cp /c/Users/Admin/projects/servix/apps/dashboard/public/icons/* /c/Users/Admin/projects/servix/apps/admin/public/icons/)",
+      "Bash(rm /c/Users/Admin/projects/servix/apps/admin/public/icon-192.png /c/Users/Admin/projects/servix/apps/admin/public/icon-512.png)",
+      "Bash(find /c/Users/Admin/projects/servix/apps/admin -maxdepth 1 -name .env*)",
+      "Bash(grep -r \"path: ''admin''\" /c/Users/Admin/projects/servix/apps/api/src --include=\"*.ts\")",
+      "Bash(grep -r \"mock\\\\|fake\\\\|hardcoded\" /c/Users/Admin/projects/servix/apps/admin/src --include=*.tsx --include=*.ts -i)",
+      "Bash(grep -r /admin/ /c/Users/Admin/projects/servix/apps/admin/src --include=*.ts --include=*.tsx -h)",
+      "Bash(find /c/Users/Admin/projects/servix -type f -name *backup* -o -name *setting* -o -name *coupon*)",
+      "Bash(find /c/Users/Admin/projects/servix -name schema.prisma -o -name *.prisma)"
     ]
   }
 }

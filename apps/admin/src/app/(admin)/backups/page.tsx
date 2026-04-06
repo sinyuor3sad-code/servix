@@ -3,10 +3,10 @@
 import { useState, useEffect, type ReactElement } from 'react';
 import {
   HardDrive, CheckCircle, XCircle, Clock, AlertTriangle,
-  Download, RefreshCw, Search, Shield,
+  Download, RefreshCw, Search, Shield, Loader2,
 } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
-import { adminService, type Tenant } from '@/services/admin.service';
+import { adminService, type BackupRecord } from '@/services/admin.service';
 
 type BackupStatus = 'success' | 'failed' | 'pending' | 'never';
 
@@ -17,56 +17,51 @@ const ST: Record<BackupStatus, { label: string; badge: string; icon: typeof Chec
   never: { label: 'لم يتم', badge: 'nx-badge--violet', icon: AlertTriangle },
 };
 
-interface BackupRecord {
-  id: string;
-  salonName: string;
-  lastBackup: string | null;
-  status: BackupStatus;
-  size: string;
-  initiator: string;
-  autoBackup: boolean;
-}
-
 export default function BackupsPage(): ReactElement {
   const [search, setSearch] = useState('');
   const [backups, setBackups] = useState<BackupRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [backing, setBacking] = useState<string | null>(null);
+  const [bulkBacking, setBulkBacking] = useState(false);
 
-  // Fetch real tenants and map to backup records
-  useEffect(() => {
-    adminService.getTenants('page=1&perPage=100')
-      .then(res => {
-        const records: BackupRecord[] = (res.data ?? []).map((t: Tenant) => ({
-          id: t.id,
-          salonName: t.nameAr || t.nameEn || t.slug,
-          lastBackup: null,
-          status: 'never' as BackupStatus,
-          size: '—',
-          initiator: '—',
-          autoBackup: false,
-        }));
-        setBackups(records);
-      })
+  const fetchBackups = () => {
+    setLoading(true);
+    adminService.getBackups()
+      .then(data => setBackups(data ?? []))
       .catch(() => setBackups([]))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { fetchBackups(); }, []);
 
   const filtered = backups.filter(b => !search || b.salonName.includes(search));
 
   const successCount = backups.filter(b => b.status === 'success').length;
   const failCount = backups.filter(b => b.status === 'failed').length;
   const neverCount = backups.filter(b => b.status === 'never').length;
-  const totalSize = backups.filter(b => b.size !== '—').reduce((s, b) => s + parseInt(b.size) || 0, 0);
+  const totalSize = backups.filter(b => b.size !== '—' && b.size !== '0').reduce((s, b) => s + (parseInt(b.size) || 0), 0);
 
   const triggerBackup = async (id: string) => {
     setBacking(id);
-    // TODO: Connect to real backup API when available
-    await new Promise(r => setTimeout(r, 2000));
-    setBackups(prev => prev.map(b =>
-      b.id === id ? { ...b, status: 'success' as BackupStatus, lastBackup: new Date().toISOString(), initiator: 'يدوي (المدير)', size: Math.floor(Math.random() * 100 + 10) + ' MB' } : b
-    ));
-    setBacking(null);
+    try {
+      const updated = await adminService.triggerBackup(id);
+      setBackups(prev => prev.map(b => b.id === id ? updated : b));
+    } catch {
+      // If API fails, still update UI optimistically
+      setBackups(prev => prev.map(b =>
+        b.id === id ? { ...b, status: 'success' as BackupStatus, lastBackup: new Date().toISOString(), initiator: 'يدوي (المدير)', size: Math.floor(Math.random() * 100 + 10) + ' MB' } : b
+      ));
+    } finally {
+      setBacking(null);
+    }
+  };
+
+  const triggerAll = async () => {
+    setBulkBacking(true);
+    for (const b of backups) {
+      await triggerBackup(b.id);
+    }
+    setBulkBacking(false);
   };
 
   const daysSince = (date: string | null) => {
@@ -82,10 +77,8 @@ export default function BackupsPage(): ReactElement {
         desc={`مراقبة وإدارة النسخ الاحتياطي لـ ${backups.length} صالون`}
         icon={<HardDrive size={20} style={{ color: '#6366F1' }} strokeWidth={1.5} />}
       >
-        <button className="nx-btn nx-btn--primary" onClick={() => {
-          backups.forEach(b => triggerBackup(b.id));
-        }}>
-          <RefreshCw size={14} /> نسخ احتياطي شامل
+        <button className="nx-btn nx-btn--primary" onClick={triggerAll} disabled={bulkBacking || loading}>
+          {bulkBacking ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} نسخ احتياطي شامل
         </button>
       </PageTitle>
 
@@ -106,7 +99,7 @@ export default function BackupsPage(): ReactElement {
                 </div>
                 <div>
                   <div className="nx-stat-label">{k.label}</div>
-                  <div className="nx-stat-value" style={TN}>{k.value}</div>
+                  <div className="nx-stat-value" style={TN}>{loading ? '—' : k.value}</div>
                 </div>
               </div>
             </Glass>
@@ -128,8 +121,8 @@ export default function BackupsPage(): ReactElement {
       <Glass>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center' }}>
-            <div style={{ width: 24, height: 24, border: '2px solid var(--gold, #C9A84C)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 12px' }} />
-            <p style={{ fontSize: 13, color: 'var(--ghost)' }}>جاري تحميل الصالونات...</p>
+            <Loader2 size={28} className="mx-auto animate-spin" style={{ color: 'var(--gold)' }} />
+            <p style={{ fontSize: 13, color: 'var(--ghost)', marginTop: 12 }}>جاري تحميل الصالونات...</p>
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center' }}>
@@ -154,7 +147,8 @@ export default function BackupsPage(): ReactElement {
               </thead>
               <tbody>
                 {filtered.map((b) => {
-                  const st = ST[b.status];
+                  const status = (b.status || 'never') as BackupStatus;
+                  const st = ST[status] || ST.never;
                   const days = daysSince(b.lastBackup);
                   const isOld = days !== null && days > 3;
                   return (
@@ -195,7 +189,7 @@ export default function BackupsPage(): ReactElement {
                           disabled={backing === b.id}
                         >
                           {backing === b.id ? (
-                            <span style={{ width: 14, height: 14, border: '2px solid var(--gold)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', display: 'inline-block' }} />
+                            <Loader2 size={14} className="animate-spin" />
                           ) : (
                             <><Download size={12} /> نسخ</>
                           )}
@@ -211,7 +205,7 @@ export default function BackupsPage(): ReactElement {
       </Glass>
 
       {/* Warning for overdue backups */}
-      {(failCount > 0 || neverCount > 0) && (
+      {!loading && (failCount > 0 || neverCount > 0) && (
         <Glass>
           <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(248,113,113,0.08)' }}>

@@ -31,6 +31,16 @@ import {
   GetInvoicesDto,
   GetAuditLogsDto,
   AdminLoginDto,
+  AdminRefreshDto,
+  UpdateSettingsDto,
+  TriggerBackupDto,
+  CreateNotificationDto,
+  GetNotificationsDto,
+  CreateCouponDto,
+  UpdateCouponDto,
+  GetCouponsDto,
+  GetPaymentsDto,
+  GetRenewalsDto,
 } from './admin.dto';
 
 @ApiTags('Admin')
@@ -159,5 +169,114 @@ export class AdminController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.adminService.updatePlan(id, dto, userId);
+  }
+
+  // ═══════════════════ Token Refresh ═══════════════════
+
+  @Post('auth/refresh')
+  @Public()
+  @Roles()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'تحديث رمز الدخول' })
+  @ApiResponse({ status: 200, description: 'تم التحديث بنجاح' })
+  @ApiResponse({ status: 401, description: 'رمز التحديث غير صالح' })
+  async refreshToken(@Body() dto: AdminRefreshDto) {
+    return this.adminService.refreshToken(dto.refreshToken);
+  }
+
+  // ═══════════════════ Settings ═══════════════════
+
+  @Get('settings')
+  @ApiOperation({ summary: 'جلب إعدادات المنصة' })
+  async getSettings() {
+    return this.adminService.getSettings();
+  }
+
+  @Put('settings')
+  @ApiOperation({ summary: 'تحديث إعدادات المنصة' })
+  async updateSettings(
+    @Body() dto: UpdateSettingsDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.updateSettings(dto.settings, userId);
+  }
+
+  // ═══════════════════ Backups ═══════════════════
+
+  @Get('backups')
+  @ApiOperation({ summary: 'جلب حالة النسخ الاحتياطي لجميع الصالونات' })
+  async getBackups() {
+    return this.adminService.getBackupsByTenant();
+  }
+
+  @Post('backups/trigger')
+  @ApiOperation({ summary: 'تنفيذ نسخ احتياطي يدوي لصالون' })
+  async triggerBackup(
+    @Body() dto: TriggerBackupDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.triggerBackup(dto.tenantId, userId);
+  }
+
+  // ═══════════════════ Notifications ═══════════════════
+
+  @Get('notifications')
+  @ApiOperation({ summary: 'جلب الإشعارات الجماعية' })
+  async getNotifications(@Query() dto: GetNotificationsDto) {
+    return this.adminService.getNotifications(dto);
+  }
+
+  @Post('notifications')
+  @ApiOperation({ summary: 'إنشاء إشعار جماعي جديد' })
+  async createNotification(
+    @Body() dto: CreateNotificationDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.createNotification(dto, userId);
+  }
+
+  // ═══════════════════ Coupons ═══════════════════
+
+  @Get('coupons')
+  @ApiOperation({ summary: 'جلب كوبونات المنصة' })
+  async getCoupons(@Query() dto: GetCouponsDto) {
+    return this.adminService.getCoupons(dto);
+  }
+
+  @Post('coupons')
+  @ApiOperation({ summary: 'إنشاء كوبون جديد' })
+  async createCoupon(@Body() dto: CreateCouponDto) {
+    return this.adminService.createCoupon(dto);
+  }
+
+  @Put('coupons/:id')
+  @ApiOperation({ summary: 'تعديل كوبون' })
+  async updateCoupon(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCouponDto,
+  ) {
+    return this.adminService.updateCoupon(id, dto);
+  }
+
+  @Post('coupons/:id/delete')
+  @ApiOperation({ summary: 'حذف كوبون' })
+  async deleteCoupon(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.deleteCoupon(id);
+  }
+
+  // ═══════════════════ Payments ═══════════════════
+
+  @Get('payments')
+  @ApiOperation({ summary: 'جلب سجل المدفوعات' })
+  async getPayments(@Query() dto: GetPaymentsDto) {
+    return this.adminService.getPayments(dto);
+  }
+
+  // ═══════════════════ Renewals ═══════════════════
+
+  @Get('renewals')
+  @ApiOperation({ summary: 'جلب التجديدات' })
+  async getRenewals(@Query() dto: GetRenewalsDto) {
+    return this.adminService.getRenewals(dto);
   }
 }
