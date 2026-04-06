@@ -115,6 +115,49 @@ export class GetSubscriptionsDto {
   planId?: string;
 }
 
+// ─── Subscription Management ───
+
+export class UpdateSubscriptionDto {
+  @ApiPropertyOptional({ description: 'حالة الاشتراك الجديدة', enum: SUBSCRIPTION_STATUSES })
+  @IsOptional()
+  @IsIn([...SUBSCRIPTION_STATUSES], { message: 'حالة الاشتراك غير صالحة' })
+  status?: SubscriptionStatusFilter;
+
+  @ApiPropertyOptional({ description: 'معرف الباقة الجديدة' })
+  @IsOptional()
+  @IsUUID('4', { message: 'معرف الباقة يجب أن يكون UUID صالح' })
+  planId?: string;
+
+  @ApiPropertyOptional({ description: 'دورة الفوترة', enum: ['monthly', 'yearly'] })
+  @IsOptional()
+  @IsIn(['monthly', 'yearly'], { message: 'دورة الفوترة يجب أن تكون monthly أو yearly' })
+  billingCycle?: 'monthly' | 'yearly';
+
+  @ApiPropertyOptional({ description: 'تاريخ نهاية الفترة الجديدة' })
+  @IsOptional()
+  @IsString()
+  currentPeriodEnd?: string;
+
+  @ApiPropertyOptional({ description: 'سبب التعديل' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class ExtendTrialDto {
+  @ApiProperty({ description: 'عدد أيام التمديد', example: 7 })
+  @Type(() => Number)
+  @IsInt({ message: 'عدد الأيام يجب أن يكون عدداً صحيحاً' })
+  @Min(1, { message: 'عدد الأيام يجب أن يكون 1 على الأقل' })
+  @Max(365, { message: 'عدد الأيام يجب ألا يتجاوز 365' })
+  days: number;
+
+  @ApiPropertyOptional({ description: 'سبب التمديد' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
 export class GetInvoicesDto {
   @ApiPropertyOptional({ description: 'رقم الصفحة', example: 1, default: 1 })
   @IsOptional()

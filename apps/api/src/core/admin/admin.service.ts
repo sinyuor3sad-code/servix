@@ -33,6 +33,8 @@ import {
   UpdateCouponDto,
   GetPaymentsDto,
   GetRenewalsDto,
+  UpdateSubscriptionDto,
+  ExtendTrialDto,
 } from './admin.dto';
 
 interface PaginatedResult<T> {
@@ -969,5 +971,199 @@ export class AdminService {
     ]);
 
     return updatedPlan;
+  }
+
+  // ═══════════════════ Subscription Management ═══════════════════
+
+  async getSubscriptionById(id: string) {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { id },
+      include: {
+        tenant: true,
+        plan: {
+          include: {
+            planFeatures: { include: { feature: true } },
+          },
+        },
+        platformInvoices: {
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        },
+      },
+    });
+
+    if (!sub) {
+      throw new NotFoundException('الاشتراك غير موجود');
+    }
+
+    // Fetch audit logs for this subscription
+    const auditLogs = await this.prisma.platformAuditLog.findMany({
+      where: {
+        entityType: 'subscription',
+        entityId: id,
+      },
+      include: { user: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    // Also get all plans for plan-change UI
+    const allPlans = await this.prisma.plan.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    return { ...sub, auditLogs, allPlans };
+  }
+
+  async updateSubscription(
+    id: string,
+    dto: UpdateSubscriptionDto,
+    userId: string,
+  ) {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { id },
+      include: { plan: true, tenant: true },
+    });
+
+    if (!sub) {
+      throw new NotFoundException('الاشتراك غير موجود');
+    }
+
+    const oldValues: Record<string, unknown> = {
+      status: sub.status,
+      planId: sub.planId,
+      billingCycle: sub.billingCycle,
+      currentPeriodEnd: sub.currentPeriodEnd,
+    };
+
+    const updateData: Record<string, unknown> = {};
+
+    if (dto.status && dto.status !== sub.status) {
+      updateData.status = dto.status;
+      if (dto.status === 'cancelled') {
+        updateData.cancelledAt = new Date();
+      }
+      if (dto.status === 'active' && sub.status === 'cancelled') {
+        updateData.cancelledAt = null;
+      }
+    }
+
+    if (dto.planId && dto.planId !== sub.planId) {
+      // Verify the new plan exists
+      const newPlan = await this.prisma.plan.findUnique({ where: { id: dto.planId } });
+      if (!newPlan) throw new NotFoundException('الباقة الجديدة غير موجودة');
+      updateData.planId = dto.planId;
+    }
+
+    if (dto.billingCycle && dto.billingCycle !== sub.billingCycle) {
+      updateData.billingCycle = dto.billingCycle;
+    }
+
+    if (dto.currentPeriodEnd) {
+      updateData.currentPeriodEnd = new Date(dto.currentPeriodEnd);
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      throw new BadRequestException('لم يتم تقديم أي تعديلات');
+    }
+
+    const newValues: Record<string, unknown> = { ...updateData };
+    if (dto.reason) {
+      newValues.reason = dto.reason;
+    }
+
+    const [updatedSub] = await this.prisma.$transaction([
+      this.prisma.subscription.update({
+        where: { id },
+        data: updateData,
+        include: { tenant: true, plan: true },
+      }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId,
+          tenantId: sub.tenantId,
+          action: 'update_subscription',
+          entityType: 'subscription',
+          entityId: id,
+          oldValues: JSON.parse(JSON.stringify(oldValues)),
+          newValues: JSON.parse(JSON.stringify(newValues)),
+        },
+      }),
+    ]);
+
+    // If subscription was suspended/cancelled, optionally update tenant status too
+    if (dto.status === 'cancelled' || dto.status === 'expired') {
+      await this.prisma.tenant.update({
+        where: { id: sub.tenantId },
+        data: { status: 'suspended' },
+      });
+    } else if (dto.status === 'active' && sub.tenant.status === 'suspended') {
+      await this.prisma.tenant.update({
+        where: { id: sub.tenantId },
+        data: { status: 'active' },
+      });
+    }
+
+    return updatedSub;
+  }
+
+  async extendTrial(
+    id: string,
+    dto: ExtendTrialDto,
+    userId: string,
+  ) {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { id },
+      include: { tenant: true, plan: true },
+    });
+
+    if (!sub) {
+      throw new NotFoundException('الاشتراك غير موجود');
+    }
+
+    const oldEnd = sub.currentPeriodEnd;
+    const newEnd = new Date(sub.currentPeriodEnd);
+    newEnd.setDate(newEnd.getDate() + dto.days);
+
+    const [updatedSub] = await this.prisma.$transaction([
+      this.prisma.subscription.update({
+        where: { id },
+        data: {
+          currentPeriodEnd: newEnd,
+          // If it was expired, reactivate as trial
+          ...(sub.status === 'expired' ? { status: 'trial' } : {}),
+        },
+        include: { tenant: true, plan: true },
+      }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId,
+          tenantId: sub.tenantId,
+          action: 'extend_trial',
+          entityType: 'subscription',
+          entityId: id,
+          oldValues: { currentPeriodEnd: oldEnd, status: sub.status },
+          newValues: {
+            currentPeriodEnd: newEnd,
+            days: dto.days,
+            reason: dto.reason || null,
+          },
+        },
+      }),
+    ]);
+
+    // Also update tenant trialEndsAt if tenant is in trial
+    if (sub.tenant.status === 'trial' || sub.status === 'trial') {
+      await this.prisma.tenant.update({
+        where: { id: sub.tenantId },
+        data: {
+          trialEndsAt: newEnd,
+          status: 'trial',
+        },
+      });
+    }
+
+    return updatedSub;
   }
 }

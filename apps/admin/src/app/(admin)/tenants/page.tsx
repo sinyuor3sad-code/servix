@@ -6,6 +6,7 @@ import {
   Building2, MapPin, Eye, Ban, MoreHorizontal, Plus,
 } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
+import { DropdownMenu } from '@/components/ui/DropdownMenu';
 import { adminService, type Tenant as ApiTenant } from '@/services/admin.service';
 
 const ST: Record<string, { label: string; badge: string }> = {
@@ -114,31 +115,7 @@ function CreateTenantModal({ onClose, onCreated }: { onClose: () => void; onCrea
   );
 }
 
-/* ── Action dropdown ── */
-function Actions({ t, onStatus }: { t: ApiTenant; onStatus: (id: string, status: string) => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div style={{ position: 'relative' }}>
-      <button className="nx-btn" style={{ padding: 6, border: 'none', background: 'none' }} onClick={() => setOpen(!open)}>
-        <MoreHorizontal size={16} />
-      </button>
-      {open && (
-        <>
-          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setOpen(false)} />
-          <div style={{ position: 'absolute', left: 0, top: '100%', zIndex: 50, marginTop: 4, width: 160, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 6, boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}>
-            <button
-              onClick={() => { onStatus(t.id, t.status === 'active' ? 'suspended' : 'active'); setOpen(false); }}
-              style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: 'none', background: 'none', color: t.status === 'active' ? '#FBBF24' : '#34D399', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-            >
-              {t.status === 'active' ? <Ban size={14} /> : <Eye size={14} />}
-              {t.status === 'active' ? 'تعليق' : 'تفعيل'}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+
 
 export default function TenantsPage(): ReactElement {
   const [tenants, setTenants] = useState<ApiTenant[]>([]);
@@ -279,7 +256,16 @@ export default function TenantsPage(): ReactElement {
                         <td data-label="الهاتف" style={TN}>{t.phone || '—'}</td>
                         <td data-label="الحالة"><span className={`nx-badge ${st.badge}`}><span className="nx-badge-dot" />{st.label}</span></td>
                         <td data-label="التسجيل" style={TN}>{new Date(t.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
-                        <td data-label=""><Actions t={t} onStatus={handleStatus} /></td>
+                        <td data-label="">
+                          <DropdownMenu items={[
+                            {
+                              label: t.status === 'active' ? 'تعليق' : 'تفعيل',
+                              icon: t.status === 'active' ? <Ban size={14} /> : <Eye size={14} />,
+                              color: t.status === 'active' ? '#FBBF24' : '#34D399',
+                              onClick: () => handleStatus(t.id, t.status === 'active' ? 'suspended' : 'active'),
+                            },
+                          ]} />
+                        </td>
                       </tr>
                     );
                   })}

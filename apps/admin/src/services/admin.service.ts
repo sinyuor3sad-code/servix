@@ -215,6 +215,18 @@ export const adminService = {
   getSubscriptions: (params?: string): Promise<PaginatedResult<Subscription>> =>
     api.getPaginated<Subscription>(`/admin/subscriptions${params ? `?${params}` : ''}`),
 
+  getSubscriptionById: (id: string): Promise<any> =>
+    api.get<any>(`/admin/subscriptions/${id}`),
+
+  updateSubscription: (id: string, data: {
+    status?: string; planId?: string; billingCycle?: string;
+    currentPeriodEnd?: string; reason?: string;
+  }): Promise<any> =>
+    api.put<any>(`/admin/subscriptions/${id}`, data),
+
+  extendTrial: (id: string, days: number, reason?: string): Promise<any> =>
+    api.post<any>(`/admin/subscriptions/${id}/extend-trial`, { days, reason }),
+
   // ── Invoices ──
   getInvoices: (params?: string): Promise<PaginatedResult<PlatformInvoice>> =>
     api.getPaginated<PlatformInvoice>(`/admin/invoices${params ? `?${params}` : ''}`),

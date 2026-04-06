@@ -41,6 +41,8 @@ import {
   GetCouponsDto,
   GetPaymentsDto,
   GetRenewalsDto,
+  UpdateSubscriptionDto,
+  ExtendTrialDto,
 } from './admin.dto';
 
 @ApiTags('Admin')
@@ -131,6 +133,43 @@ export class AdminController {
     @Query() dto: GetSubscriptionsDto,
   ) {
     return this.adminService.getSubscriptions(dto);
+  }
+
+  @Get('subscriptions/:id')
+  @ApiOperation({ summary: 'عرض تفاصيل اشتراك محدد' })
+  @ApiParam({ name: 'id', description: 'معرف الاشتراك (UUID)' })
+  @ApiResponse({ status: 200, description: 'تفاصيل الاشتراك الكاملة' })
+  @ApiResponse({ status: 404, description: 'الاشتراك غير موجود' })
+  async getSubscriptionById(
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.adminService.getSubscriptionById(id);
+  }
+
+  @Put('subscriptions/:id')
+  @ApiOperation({ summary: 'تعديل اشتراك (تغيير الباقة / الحالة / الدورة)' })
+  @ApiParam({ name: 'id', description: 'معرف الاشتراك (UUID)' })
+  @ApiResponse({ status: 200, description: 'تم تعديل الاشتراك بنجاح' })
+  @ApiResponse({ status: 404, description: 'الاشتراك غير موجود' })
+  async updateSubscription(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSubscriptionDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.updateSubscription(id, dto, userId);
+  }
+
+  @Post('subscriptions/:id/extend-trial')
+  @ApiOperation({ summary: 'تمديد فترة التجربة' })
+  @ApiParam({ name: 'id', description: 'معرف الاشتراك (UUID)' })
+  @ApiResponse({ status: 200, description: 'تم تمديد التجربة بنجاح' })
+  @ApiResponse({ status: 404, description: 'الاشتراك غير موجود' })
+  async extendTrial(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ExtendTrialDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.extendTrial(id, dto, userId);
   }
 
   @Get('invoices')
