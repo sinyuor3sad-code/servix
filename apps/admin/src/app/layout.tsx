@@ -68,13 +68,14 @@ export default function RootLayout({
         <Providers>{children}</Providers>
         <script dangerouslySetInnerHTML={{ __html: `
           if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
-              navigator.serviceWorker.register('/sw.js').then(function(reg) {
-                console.log('[SERVIX] SW registered, scope:', reg.scope);
-              }).catch(function(err) {
-                console.log('[SERVIX] SW registration failed:', err);
-              });
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(r) { r.unregister(); });
             });
+            if ('caches' in window) {
+              caches.keys().then(function(names) {
+                names.forEach(function(n) { caches.delete(n); });
+              });
+            }
           }
         ` }} />
       </body>
