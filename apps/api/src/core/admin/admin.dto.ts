@@ -8,6 +8,7 @@ import {
   Max,
   IsIn,
   IsUUID,
+  IsObject,
 } from 'class-validator';
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -158,6 +159,8 @@ export class AdminRefreshDto {
 // ─── Settings ───
 export class UpdateSettingsDto {
   @ApiProperty({ description: 'الإعدادات كمفتاح-قيمة', example: { platform_name: 'SERVIX' } })
+  @IsObject({ message: 'الإعدادات يجب أن تكون كائن' })
+  @IsNotEmpty({ message: 'الإعدادات مطلوبة' })
   settings: Record<string, string>;
 }
 
