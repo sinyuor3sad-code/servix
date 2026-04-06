@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, type ReactElement } from 'react';
+import { useState, useEffect, useCallback, type ReactElement } from 'react';
 import {
   Activity, Server, Database, Clock, Shield,
   RefreshCw, CheckCircle, XCircle, Zap, Cpu, HardDrive,
 } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
+import { adminService } from '@/services/admin.service';
 
 type Health = 'healthy' | 'warning' | 'critical' | 'offline' | 'checking';
 
@@ -17,13 +18,19 @@ const HEALTH: Record<Health, { label: string; badge: string }> = {
   checking: { label: 'فحص...', badge: 'nx-badge--blue' },
 };
 
-const FLAGS = [
+const FLAG_KEYS = [
   { key: 'maintenance_mode', label: 'وضع الصيانة', desc: 'تعطيل الوصول لجميع الصالونات', danger: true },
   { key: 'new_registrations', label: 'التسجيل الجديد', desc: 'السماح بتسجيل صالونات جديدة', danger: false },
   { key: 'online_booking', label: 'الحجز الإلكتروني', desc: 'تفعيل صفحات الحجز العامة', danger: false },
 ];
 
 interface Service { name: string; status: Health; icon: typeof Server; }
+
+interface HealthResponse {
+  status: string;
+  resources: { cpu: number; memory: number; disk: number; memoryTotal: string; memoryUsed: string; diskTotal: string; diskUsed: string; };
+  uptime: { formatted: string; };
+}
 
 export default function SystemPage(): ReactElement {
   const [services, setServices] = useState<Service[]>([
@@ -32,27 +39,35 @@ export default function SystemPage(): ReactElement {
     { name: 'صفحة الحجز',  status: 'checking', icon: Zap },
     { name: 'صفحة الهبوط', status: 'checking', icon: Activity },
   ]);
-  const [flags, setFlags] = useState<boolean[]>(FLAGS.map(() => false));
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
   const [lastCheck, setLastCheck] = useState('');
   const [uptime, setUptime] = useState('—');
+  const [resources, setResources] = useState([
+    { label: 'CPU', value: 0, color: '#34D399', icon: Cpu, detail: '' },
+    { label: 'ذاكرة', value: 0, color: '#6366F1', icon: Database, detail: '' },
+    { label: 'تخزين', value: 0, color: '#C9A84C', icon: HardDrive, detail: '' },
+  ]);
+  const [flagsLoading, setFlagsLoading] = useState(false);
 
-  const checkHealth = async () => {
+  const checkHealth = useCallback(async () => {
     setServices(prev => prev.map(s => ({ ...s, status: 'checking' as Health })));
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
-    // API health check — uses actual health endpoint with CORS
-    const checkApi = async (): Promise<Health> => {
+    // API health check — uses actual health endpoint
+    const checkApi = async (): Promise<{ status: Health; data: HealthResponse | null }> => {
       try {
         const res = await fetch(`${apiUrl}/health`, { signal: AbortSignal.timeout(5000) });
-        if (!res.ok) return 'warning';
-        const data = await res.json();
-        return data?.data?.status === 'healthy' || data?.status === 'healthy' ? 'healthy' : 'warning';
+        if (!res.ok) return { status: 'warning', data: null };
+        const json = await res.json();
+        const data = json?.data ?? json;
+        const s: Health = data?.status === 'healthy' ? 'healthy' : 'warning';
+        return { status: s, data };
       } catch {
-        return 'offline';
+        return { status: 'offline', data: null };
       }
     };
 
-    // External services — use no-cors HEAD (opaque response = reachable)
+    // External services — use no-cors HEAD
     const checkExternal = async (url: string): Promise<Health> => {
       try {
         await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: AbortSignal.timeout(5000) });
@@ -62,7 +77,7 @@ export default function SystemPage(): ReactElement {
       }
     };
 
-    const [apiStatus, dashStatus, bookingStatus, landingStatus] = await Promise.all([
+    const [apiResult, dashStatus, bookingStatus, landingStatus] = await Promise.all([
       checkApi(),
       checkExternal('https://app.servi-x.com'),
       checkExternal('https://booking.servi-x.com'),
@@ -70,40 +85,65 @@ export default function SystemPage(): ReactElement {
     ]);
 
     setServices([
-      { name: 'NestJS API', status: apiStatus, icon: Server },
+      { name: 'NestJS API', status: apiResult.status, icon: Server },
       { name: 'الداشبورد', status: dashStatus, icon: Database },
       { name: 'صفحة الحجز', status: bookingStatus, icon: Zap },
       { name: 'صفحة الهبوط', status: landingStatus, icon: Activity },
     ]);
+
+    // Update real resource metrics from API response
+    if (apiResult.data?.resources) {
+      const r = apiResult.data.resources;
+      setResources([
+        { label: 'CPU', value: r.cpu, color: r.cpu > 80 ? '#EF4444' : r.cpu > 60 ? '#F59E0B' : '#34D399', icon: Cpu, detail: `${r.cpu}%` },
+        { label: 'ذاكرة', value: r.memory, color: r.memory > 80 ? '#EF4444' : r.memory > 60 ? '#F59E0B' : '#6366F1', icon: Database, detail: `${r.memoryUsed} / ${r.memoryTotal}` },
+        { label: 'تخزين', value: r.disk, color: r.disk > 80 ? '#EF4444' : r.disk > 60 ? '#F59E0B' : '#C9A84C', icon: HardDrive, detail: `${r.diskUsed} / ${r.diskTotal}` },
+      ]);
+    }
+
+    if (apiResult.data?.uptime) {
+      setUptime(apiResult.data.uptime.formatted);
+    }
+
     setLastCheck(new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-  };
-
-  useEffect(() => { checkHealth(); }, []);
-
-  // Fake uptime counter
-  useEffect(() => {
-    const start = Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000;
-    const tick = () => {
-      const diff = Date.now() - start;
-      const d = Math.floor(diff / 86400000);
-      const h = Math.floor((diff % 86400000) / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      setUptime(`${d} يوم ${h} ساعة ${m} دقيقة`);
-    };
-    tick();
-    const id = setInterval(tick, 60000);
-    return () => clearInterval(id);
   }, []);
 
-  const toggleFlag = (i: number) => setFlags(prev => prev.map((v, idx) => idx === i ? !v : v));
-  const healthy = services.filter(s => s.status === 'healthy').length;
+  // Load feature flags from settings API
+  const loadFlags = useCallback(async () => {
+    try {
+      const settings = await adminService.getSettings();
+      const flagState: Record<string, boolean> = {};
+      for (const f of FLAG_KEYS) {
+        flagState[f.key] = settings[f.key] === 'true';
+      }
+      setFlags(flagState);
+    } catch {
+      // If settings API fails, default to false
+      const flagState: Record<string, boolean> = {};
+      for (const f of FLAG_KEYS) {
+        flagState[f.key] = false;
+      }
+      setFlags(flagState);
+    }
+  }, []);
 
-  // System resources (illustrative)
-  const resources = [
-    { label: 'CPU', value: 12, color: '#34D399', icon: Cpu },
-    { label: 'ذاكرة', value: 38, color: '#6366F1', icon: Database },
-    { label: 'تخزين', value: 24, color: '#C9A84C', icon: HardDrive },
-  ];
+  useEffect(() => { checkHealth(); loadFlags(); }, [checkHealth, loadFlags]);
+
+  const toggleFlag = async (key: string) => {
+    const newValue = !flags[key];
+    setFlags(prev => ({ ...prev, [key]: newValue }));
+    setFlagsLoading(true);
+    try {
+      await adminService.updateSettings({ [key]: String(newValue) });
+    } catch {
+      // Revert on failure
+      setFlags(prev => ({ ...prev, [key]: !newValue }));
+    } finally {
+      setFlagsLoading(false);
+    }
+  };
+
+  const healthy = services.filter(s => s.status === 'healthy').length;
 
   return (
     <div className="nx-space-y">
@@ -167,7 +207,7 @@ export default function SystemPage(): ReactElement {
           })}
         </div>
 
-        {/* ── Resources ── */}
+        {/* ── Resources (REAL data from API) ── */}
         <div className="nx-space-y">
           <h2 style={{ fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>موارد النظام</h2>
           {resources.map(r => {
@@ -182,8 +222,13 @@ export default function SystemPage(): ReactElement {
                     <span style={{ fontSize: 14, fontWeight: 900, color: r.color, ...TN }}>{r.value}%</span>
                   </div>
                   <div className="nx-progress">
-                    <div className="nx-progress-fill" style={{ width: `${r.value}%`, background: r.color }} />
+                    <div className="nx-progress-fill" style={{ width: `${r.value}%`, background: r.color, transition: 'width 0.6s ease' }} />
                   </div>
+                  {r.detail && (
+                    <div style={{ fontSize: 11, color: 'var(--ghost)', marginTop: 6, textAlign: 'left', direction: 'ltr', ...TN }}>
+                      {r.detail}
+                    </div>
+                  )}
                 </div>
               </Glass>
             );
@@ -191,20 +236,21 @@ export default function SystemPage(): ReactElement {
         </div>
       </div>
 
-      {/* ── Feature Flags ── */}
+      {/* ── Feature Flags (connected to Settings API) ── */}
       <Glass>
-        <div style={{ padding: '20px 20px 8px' }}>
+        <div style={{ padding: '20px 20px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>Feature Flags</h3>
+          {flagsLoading && <span style={{ fontSize: 11, color: 'var(--ghost)' }}>جاري الحفظ...</span>}
         </div>
-        {FLAGS.map((f, i) => (
-          <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: i < FLAGS.length - 1 ? '1px solid var(--border)' : 'none' }}>
+        {FLAG_KEYS.map((f, i) => (
+          <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: i < FLAG_KEYS.length - 1 ? '1px solid var(--border)' : 'none' }}>
             <div>
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--slate)' }}>{f.label}</p>
               <p style={{ fontSize: 11, color: 'var(--ghost)', marginTop: 2 }}>{f.desc}</p>
             </div>
             <button
-              onClick={() => toggleFlag(i)}
-              className={`nx-toggle ${flags[i] ? 'nx-toggle--on' : ''} ${f.danger ? 'nx-toggle--danger' : ''}`}
+              onClick={() => toggleFlag(f.key)}
+              className={`nx-toggle ${flags[f.key] ? 'nx-toggle--on' : ''} ${f.danger ? 'nx-toggle--danger' : ''}`}
             >
               <span className="nx-toggle-knob" />
             </button>
