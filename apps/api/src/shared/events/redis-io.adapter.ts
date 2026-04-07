@@ -8,9 +8,14 @@ export class RedisIoAdapter extends IoAdapter {
   private adapterConstructor: ReturnType<typeof createAdapter> | null = null;
 
   async connectToRedis(): Promise<void> {
+    const redisHost = process.env.REDIS_HOST || 'localhost';
+    const redisPort = process.env.REDIS_PORT || '6379';
+    const redisPassword = process.env.REDIS_PASSWORD || '';
     const redisUrl =
       process.env.REDIS_URL ||
-      `redis://${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`;
+      (redisPassword
+        ? `redis://:${redisPassword}@${redisHost}:${redisPort}`
+        : `redis://${redisHost}:${redisPort}`);
 
     try {
       const pubClient = createClient({ url: redisUrl });
