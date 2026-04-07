@@ -159,6 +159,7 @@ model TenantUser {
   @@unique([tenantId, userId])
   @@index([tenantId])
   @@index([userId])
+  @@index([roleId])
   @@map("tenant_users")
 }
 

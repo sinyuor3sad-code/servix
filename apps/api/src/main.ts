@@ -10,11 +10,19 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './shared/filters/http-exception.filter';
 import { ResponseTransformInterceptor } from './shared/interceptors/response-transform.interceptor';
+import { RedisIoAdapter } from './shared/events/redis-io.adapter';
+import { CorrelationIdMiddleware } from './shared/middleware/correlation-id.middleware';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 
 const logger = new Logger('Bootstrap');
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true, // Buffer until Winston is ready
+  });
+
+  // Use Winston as the app logger
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
   // Serve uploaded files (logos etc.)
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
@@ -23,6 +31,10 @@ async function bootstrap(): Promise<void> {
     contentSecurityPolicy: false, // Managed by CloudFlare
     hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
   }));
+
+  // Correlation ID — must run before all other middleware
+  const correlationMiddleware = new CorrelationIdMiddleware();
+  app.use(correlationMiddleware.use.bind(correlationMiddleware));
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 4000);
@@ -117,6 +129,11 @@ async function bootstrap(): Promise<void> {
 
   // Enable NestJS shutdown lifecycle hooks (OnModuleDestroy, etc.)
   app.enableShutdownHooks();
+
+  // ── Redis WebSocket Adapter (multi-instance support) ──
+  const redisIoAdapter = new RedisIoAdapter(app);
+  await redisIoAdapter.connectToRedis();
+  app.useWebSocketAdapter(redisIoAdapter);
 
   const server = await app.listen(port);
   logger.log(`SERVIX API listening on port ${port} (${nodeEnv})`);

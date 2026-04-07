@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { WinstonModule } from 'nest-winston';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AppConfigValidationSchema } from './shared/config/env.validation';
@@ -26,6 +27,7 @@ import { NotificationsModule } from './core/notifications/notifications.module';
 import { AdminModule } from './core/admin/admin.module';
 import { HealthModule } from './core/health/health.module';
 import { SalonModule } from './modules/salon/salon.module';
+import { winstonConfig } from './shared/logger/winston.config';
 
 @Module({
   imports: [
@@ -34,6 +36,7 @@ import { SalonModule } from './modules/salon/salon.module';
       validationSchema: AppConfigValidationSchema,
       validationOptions: { abortEarly: false },
     }),
+    WinstonModule.forRoot(winstonConfig),
     DatabaseModule,
     CacheModule,
     PdfModule,

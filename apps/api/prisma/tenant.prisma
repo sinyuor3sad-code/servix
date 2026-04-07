@@ -320,7 +320,7 @@ model Service {
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  category            ServiceCategory      @relation(fields: [categoryId], references: [id])
+  category            ServiceCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   employeeServices    EmployeeService[]
   appointmentServices AppointmentService[]
   invoiceItems        InvoiceItem[]
@@ -514,6 +514,7 @@ model Appointment {
   @@index([date])
   @@index([status])
   @@index([date, status])
+  @@index([employeeId, date])
   @@unique([employeeId, date, startTime], name: "unique_employee_booking")
   @@map("appointments")
 }
@@ -742,6 +743,7 @@ model Notification {
   createdAt     DateTime                  @default(now()) @map("created_at") @db.Timestamptz()
 
   @@index([recipientType, recipientId])
+  @@index([recipientId, isRead])
   @@index([isRead])
   @@index([createdAt])
   @@map("notifications")

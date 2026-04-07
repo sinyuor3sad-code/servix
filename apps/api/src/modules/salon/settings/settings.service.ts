@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { TenantPrismaClient } from '../../../shared/types';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { CacheService } from '../../../shared/cache';
@@ -7,6 +7,7 @@ import { EventsGateway } from '../../../shared/events';
 import { SETTINGS_DEFAULTS } from './settings.constants';
 import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { TenantClientFactory } from '../../../shared/database/tenant-client.factory';
+import { validateSettingsBatch } from './settings.schema';
 
 @Injectable()
 export class SettingsService {
@@ -100,6 +101,15 @@ export class SettingsService {
     userId: string,
     tenantId?: string,
   ): Promise<Record<string, string>> {
+    // Validate setting values before writing
+    const errors = validateSettingsBatch(dto.settings);
+    if (Object.keys(errors).length > 0) {
+      const errorMessages = Object.entries(errors)
+        .map(([key, msg]) => `${key}: ${msg}`)
+        .join(', ');
+      throw new BadRequestException(`قيم إعدادات غير صحيحة — ${errorMessages}`);
+    }
+
     const operations = dto.settings.map((item) =>
       db.setting.upsert({
         where: { key: item.key },
