@@ -210,6 +210,87 @@ export class AdminController {
     return this.adminService.updatePlan(id, dto, userId);
   }
 
+  @Post('plans')
+  @ApiOperation({ summary: 'إنشاء باقة جديدة' })
+  @ApiResponse({ status: 201, description: 'تم إنشاء الباقة بنجاح' })
+  async createPlan(
+    @Body() dto: Record<string, unknown>,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.createPlan(dto, userId);
+  }
+
+  @Put('plans/:id/features')
+  @ApiOperation({ summary: 'تحديث ميزات الباقة' })
+  @ApiParam({ name: 'id', description: 'معرف الباقة (UUID)' })
+  async updatePlanFeatures(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { featureIds: string[] },
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.updatePlanFeatures(id, dto.featureIds, userId);
+  }
+
+  @Post('plans/:id/duplicate')
+  @ApiOperation({ summary: 'تكرار باقة' })
+  @ApiParam({ name: 'id', description: 'معرف الباقة المصدر (UUID)' })
+  async duplicatePlan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.duplicatePlan(id, userId);
+  }
+
+  @Get('features/catalog')
+  @ApiOperation({ summary: 'عرض كتالوج الميزات الكامل' })
+  async getFeatureCatalog() {
+    return this.adminService.getFeatureCatalog();
+  }
+
+  @Get('addons')
+  @ApiOperation({ summary: 'عرض جميع الإضافات' })
+  async getAddons() {
+    return this.adminService.getAddons();
+  }
+
+  @Post('addons')
+  @ApiOperation({ summary: 'إنشاء إضافة جديدة' })
+  async createAddon(
+    @Body() dto: Record<string, unknown>,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.createAddon(dto, userId);
+  }
+
+  @Put('addons/:id')
+  @ApiOperation({ summary: 'تحديث إضافة' })
+  @ApiParam({ name: 'id', description: 'معرف الإضافة (UUID)' })
+  async updateAddon(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: Record<string, unknown>,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.updateAddon(id, dto, userId);
+  }
+
+  @Get('tenants/:id/overrides')
+  @ApiOperation({ summary: 'عرض إعدادات المنشأة المخصصة' })
+  async getTenantOverrides(
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.adminService.getTenantOverrides(id);
+  }
+
+  @Put('tenants/:id/overrides')
+  @ApiOperation({ summary: 'تحديث إعدادات المنشأة المخصصة' })
+  async setTenantOverrides(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { overrides: { featureId: string; isEnabled: boolean }[] },
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.adminService.setTenantOverrides(id, dto.overrides, userId);
+  }
+
   // ═══════════════════ Token Refresh ═══════════════════
 
   @Post('auth/refresh')

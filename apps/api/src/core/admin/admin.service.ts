@@ -935,10 +935,12 @@ export class AdminService {
 
     // Only allow updating specific fields
     const allowedFields = [
-      'nameAr', 'name', 'priceMonthly', 'priceYearly',
+      'nameAr', 'name', 'nameEn', 'slug', 'priceMonthly', 'priceYearly',
       'maxEmployees', 'maxClients', 'maxAppointmentsMonth',
       'revenueSharePercent', 'perAppointmentFee', 'includedAppointments',
       'descriptionAr', 'trialDays', 'isActive', 'sortOrder',
+      'badge', 'isPublic', 'isInternal', 'setupFee',
+      'trialEnabled', 'upgradeAllowed', 'downgradeAllowed', 'metadata',
     ];
 
     const updateData: Record<string, unknown> = {};
@@ -971,6 +973,259 @@ export class AdminService {
     ]);
 
     return updatedPlan;
+  }
+
+  // ═══════════════════ Plan Catalog Management ═══════════════════
+
+  async createPlan(dto: Record<string, unknown>, userId: string) {
+    const data: Record<string, unknown> = {};
+    const allowedFields = [
+      'name', 'nameAr', 'nameEn', 'slug', 'priceMonthly', 'priceYearly',
+      'maxEmployees', 'maxClients', 'maxAppointmentsMonth',
+      'revenueSharePercent', 'perAppointmentFee', 'includedAppointments',
+      'descriptionAr', 'trialDays', 'isActive', 'sortOrder',
+      'badge', 'isPublic', 'isInternal', 'setupFee',
+      'trialEnabled', 'upgradeAllowed', 'downgradeAllowed', 'metadata',
+    ];
+    for (const key of allowedFields) {
+      if (key in dto) data[key] = dto[key];
+    }
+
+    if (!data.name || !data.nameAr) {
+      throw new BadRequestException('اسم الباقة مطلوب بالعربي والإنجليزي');
+    }
+
+    const plan = await this.prisma.plan.create({
+      data: data as any,
+      include: { planFeatures: { include: { feature: true } } },
+    });
+
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId,
+        action: 'create_plan',
+        entityType: 'plan',
+        entityId: plan.id,
+        newValues: JSON.parse(JSON.stringify(data)),
+      },
+    });
+
+    return plan;
+  }
+
+  async updatePlanFeatures(
+    planId: string,
+    featureIds: string[],
+    userId: string,
+  ) {
+    const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
+    if (!plan) throw new NotFoundException('الباقة غير موجودة');
+
+    const oldFeatures = await this.prisma.planFeature.findMany({
+      where: { planId },
+      include: { feature: true },
+    });
+
+    // Delete all existing and replace
+    await this.prisma.$transaction([
+      this.prisma.planFeature.deleteMany({ where: { planId } }),
+      ...featureIds.map(featureId =>
+        this.prisma.planFeature.create({
+          data: { planId, featureId },
+        }),
+      ),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId,
+          action: 'update_plan_features',
+          entityType: 'plan',
+          entityId: planId,
+          oldValues: { features: oldFeatures.map(f => f.feature.code) },
+          newValues: { featureIds },
+        },
+      }),
+    ]);
+
+    return this.prisma.planFeature.findMany({
+      where: { planId },
+      include: { feature: true },
+    });
+  }
+
+  async duplicatePlan(planId: string, userId: string) {
+    const plan = await this.prisma.plan.findUnique({
+      where: { id: planId },
+      include: { planFeatures: true },
+    });
+    if (!plan) throw new NotFoundException('الباقة غير موجودة');
+
+    const { id, createdAt, updatedAt, slug, ...planData } = plan as any;
+    const newPlan = await this.prisma.plan.create({
+      data: {
+        ...planData,
+        name: `${plan.name}_copy`,
+        nameAr: `${plan.nameAr} (نسخة)`,
+        slug: null,
+        planFeatures: undefined,
+        subscriptions: undefined,
+      },
+      include: { planFeatures: { include: { feature: true } } },
+    });
+
+    // Copy features
+    if (plan.planFeatures.length > 0) {
+      await this.prisma.planFeature.createMany({
+        data: plan.planFeatures.map(pf => ({
+          planId: newPlan.id,
+          featureId: pf.featureId,
+          limitValue: pf.limitValue,
+          isIncluded: pf.isIncluded,
+        })),
+      });
+    }
+
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId,
+        action: 'duplicate_plan',
+        entityType: 'plan',
+        entityId: newPlan.id,
+        newValues: { sourcePlanId: planId, newPlanId: newPlan.id },
+      },
+    });
+
+    return this.prisma.plan.findUnique({
+      where: { id: newPlan.id },
+      include: { planFeatures: { include: { feature: true } } },
+    });
+  }
+
+  // ═══════════════════ Feature Catalog ═══════════════════
+
+  async getFeatureCatalog() {
+    return this.prisma.feature.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        planFeatures: {
+          select: { planId: true },
+        },
+      },
+    });
+  }
+
+  // ═══════════════════ Add-ons ═══════════════════
+
+  async getAddons() {
+    return this.prisma.planAddon.findMany({
+      orderBy: { sortOrder: 'asc' },
+      include: { feature: true },
+    });
+  }
+
+  async createAddon(dto: Record<string, unknown>, userId: string) {
+    const addon = await this.prisma.planAddon.create({
+      data: dto as any,
+      include: { feature: true },
+    });
+
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId,
+        action: 'create_addon',
+        entityType: 'plan_addon',
+        entityId: addon.id,
+        newValues: JSON.parse(JSON.stringify(dto)),
+      },
+    });
+
+    return addon;
+  }
+
+  async updateAddon(id: string, dto: Record<string, unknown>, userId: string) {
+    const addon = await this.prisma.planAddon.findUnique({ where: { id } });
+    if (!addon) throw new NotFoundException('الإضافة غير موجودة');
+
+    const updated = await this.prisma.planAddon.update({
+      where: { id },
+      data: dto as any,
+      include: { feature: true },
+    });
+
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId,
+        action: 'update_addon',
+        entityType: 'plan_addon',
+        entityId: id,
+        oldValues: JSON.parse(JSON.stringify(addon)),
+        newValues: JSON.parse(JSON.stringify(dto)),
+      },
+    });
+
+    return updated;
+  }
+
+  // ═══════════════════ Tenant Feature Overrides ═══════════════════
+
+  async getTenantOverrides(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('المنشأة غير موجودة');
+
+    return this.prisma.tenantFeature.findMany({
+      where: { tenantId },
+      include: { feature: true },
+    });
+  }
+
+  async setTenantOverrides(
+    tenantId: string,
+    overrides: { featureId: string; isEnabled: boolean }[],
+    userId: string,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('المنشأة غير موجودة');
+
+    const oldOverrides = await this.prisma.tenantFeature.findMany({
+      where: { tenantId },
+      include: { feature: true },
+    });
+
+    // Upsert all overrides
+    const ops = overrides.map(o =>
+      this.prisma.tenantFeature.upsert({
+        where: { tenantId_featureId: { tenantId, featureId: o.featureId } },
+        create: {
+          tenantId,
+          featureId: o.featureId,
+          isEnabled: o.isEnabled,
+          ...(o.isEnabled ? {} : { disabledAt: new Date() }),
+        },
+        update: {
+          isEnabled: o.isEnabled,
+          ...(o.isEnabled ? { disabledAt: null } : { disabledAt: new Date() }),
+        },
+      }),
+    );
+
+    await this.prisma.$transaction([
+      ...ops,
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId,
+          tenantId,
+          action: 'set_tenant_overrides',
+          entityType: 'tenant',
+          entityId: tenantId,
+          oldValues: { overrides: oldOverrides.map(o => ({ featureId: o.featureId, isEnabled: o.isEnabled })) },
+          newValues: { overrides },
+        },
+      }),
+    ]);
+
+    return this.prisma.tenantFeature.findMany({
+      where: { tenantId },
+      include: { feature: true },
+    });
   }
 
   // ═══════════════════ Subscription Management ═══════════════════

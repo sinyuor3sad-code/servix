@@ -242,12 +242,41 @@ export const adminService = {
   updatePlan: (id: string, data: Partial<Plan>): Promise<Plan> =>
     api.put<Plan>(`/admin/plans/${id}`, data),
 
+  createPlan: (data: Record<string, unknown>): Promise<any> =>
+    api.post<any>('/admin/plans', data),
+
+  updatePlanFeatures: (id: string, featureIds: string[]): Promise<any> =>
+    api.put<any>(`/admin/plans/${id}/features`, { featureIds }),
+
+  duplicatePlan: (id: string): Promise<any> =>
+    api.post<any>(`/admin/plans/${id}/duplicate`, {}),
+
   // ── Features ──
   getFeatures: (): Promise<Feature[]> =>
     api.get<Feature[]>('/features'),
 
+  getFeatureCatalog: (): Promise<any[]> =>
+    api.get<any[]>('/admin/features/catalog'),
+
   updateFeature: (id: string, data: Partial<Feature>): Promise<Feature> =>
     api.put<Feature>(`/features/${id}`, data),
+
+  // ── Add-ons ──
+  getAddons: (): Promise<any[]> =>
+    api.get<any[]>('/admin/addons'),
+
+  createAddon: (data: Record<string, unknown>): Promise<any> =>
+    api.post<any>('/admin/addons', data),
+
+  updateAddon: (id: string, data: Record<string, unknown>): Promise<any> =>
+    api.put<any>(`/admin/addons/${id}`, data),
+
+  // ── Tenant Overrides ──
+  getTenantOverrides: (tenantId: string): Promise<any[]> =>
+    api.get<any[]>(`/admin/tenants/${tenantId}/overrides`),
+
+  setTenantOverrides: (tenantId: string, overrides: { featureId: string; isEnabled: boolean }[]): Promise<any[]> =>
+    api.put<any[]>(`/admin/tenants/${tenantId}/overrides`, { overrides }),
 
   // ── Settings ──
   getSettings: (): Promise<Record<string, string>> =>
