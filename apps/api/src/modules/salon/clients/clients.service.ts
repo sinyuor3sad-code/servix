@@ -3,6 +3,7 @@ import { TenantPrismaClient } from '../../../shared/types';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { QueryClientsDto } from './dto/query-clients.dto';
+import { AuditService } from '../../../core/audit/audit.service';
 import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
 interface ClientStats {
@@ -14,6 +15,8 @@ interface ClientStats {
 
 @Injectable()
 export class ClientsService {
+  constructor(private readonly auditService: AuditService) {}
+
   async findAll(
     db: TenantPrismaClient,
     query: QueryClientsDto,
@@ -110,6 +113,15 @@ export class ClientsService {
       },
     });
 
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: id,
+      action: 'client.update',
+      entityType: 'Client',
+      entityId: id,
+      newValues: dto as Record<string, unknown>,
+    }).catch(() => {});
+
     return client as unknown as Record<string, unknown>;
   }
 
@@ -123,6 +135,14 @@ export class ClientsService {
       where: { id },
       data: { deletedAt: new Date() },
     });
+
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: id,
+      action: 'client.delete',
+      entityType: 'Client',
+      entityId: id,
+    }).catch(() => {});
 
     return client as unknown as Record<string, unknown>;
   }

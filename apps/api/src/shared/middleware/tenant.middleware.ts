@@ -147,7 +147,15 @@ export class TenantMiddleware implements CanActivate {
     features: string[];
     subscriptionStatus?: import('../../core/subscriptions/subscription-status.service').SubscriptionStatus;
   }> {
-    const cached = await this.cacheService.getTenant(tenantId);
+    // Try cache first — gracefully degrade if Redis is down
+    let cached: import('../cache/cache.service').CachedTenantData | null = null;
+    try {
+      cached = await this.cacheService.getTenant(tenantId);
+    } catch (error) {
+      this.logger.warn(
+        `Redis error in TenantMiddleware — falling back to DB: ${(error as Error).message}`,
+      );
+    }
 
     if (cached?.subscription) {
       const subStatus = computeSubscriptionStatus(
@@ -155,7 +163,7 @@ export class TenantMiddleware implements CanActivate {
         cached.subscription.status ?? 'active',
       );
       if (subStatus.phase === 'deleted') {
-        await this.cacheService.invalidateTenant(tenantId);
+        this.cacheService.invalidateTenant(tenantId).catch(() => {});
       } else if (subStatus.phase === 'expired_locked') {
         const isRenewalPath = RENEWAL_ALLOWED_PATHS.some((p) => path.startsWith(p));
         if (!isRenewalPath) {
@@ -164,7 +172,7 @@ export class TenantMiddleware implements CanActivate {
           );
         }
       } else if (subStatus.phase !== 'expired_grace' && subStatus.phase !== 'active' && subStatus.phase !== 'trial') {
-        await this.cacheService.invalidateTenant(tenantId);
+        this.cacheService.invalidateTenant(tenantId).catch(() => {});
       } else {
         const tenantDb = this.tenantClientFactory.getTenantClient(
           cached.tenant.databaseName,

@@ -9,6 +9,7 @@ import { MailService } from '../../../shared/mail/mail.service';
 import { WhatsAppService } from '../../../shared/whatsapp/whatsapp.service';
 import { SmsService } from '../../../shared/sms/sms.service';
 import { SettingsService } from '../settings/settings.service';
+import { AuditService } from '../../../core/audit/audit.service';
 import { SETTINGS_KEYS } from '../settings/settings.constants';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
@@ -28,6 +29,7 @@ export class InvoicesService {
     private readonly whatsAppService: WhatsAppService,
     private readonly smsService: SmsService,
     private readonly settingsService: SettingsService,
+    private readonly auditService: AuditService,
   ) {}
 
   async findAll(
@@ -136,6 +138,15 @@ export class InvoicesService {
         },
       },
     });
+
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: createdBy,
+      action: 'invoice.create',
+      entityType: 'Invoice',
+      entityId: (invoice as Record<string, unknown>).id as string,
+      newValues: { clientId: dto.clientId, total },
+    }).catch(() => {});
 
     return invoice as unknown as Record<string, unknown>;
   }
@@ -302,6 +313,15 @@ export class InvoicesService {
       return { payment, invoice: updatedInvoice };
     });
 
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: id,
+      action: 'invoice.payment',
+      entityType: 'Invoice',
+      entityId: id,
+      newValues: { amount: dto.amount, method: dto.method },
+    }).catch(() => {});
+
     return result as unknown as Record<string, unknown>;
   }
 
@@ -325,6 +345,16 @@ export class InvoicesService {
       data: { status: 'void' },
       include: { invoiceItems: true, payments: true },
     });
+
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: id,
+      action: 'invoice.void',
+      entityType: 'Invoice',
+      entityId: id,
+      oldValues: { status: invoice.status },
+      newValues: { status: 'void' },
+    }).catch(() => {});
 
     return updated as unknown as Record<string, unknown>;
   }

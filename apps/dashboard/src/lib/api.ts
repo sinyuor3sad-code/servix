@@ -7,6 +7,25 @@ interface ApiOptions {
   token?: string;
 }
 
+// ── Token Refresh Queue ──
+// Prevents multiple concurrent refresh calls when several requests get 401 simultaneously.
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (error: Error) => void;
+}> = [];
+
+function processQueue(error: Error | null, token: string | null) {
+  failedQueue.forEach((promise) => {
+    if (error) {
+      promise.reject(error);
+    } else {
+      promise.resolve(token!);
+    }
+  });
+  failedQueue = [];
+}
+
 /**
  * Try to refresh the access token using the stored refresh token.
  * Returns the new access token or null if refresh fails.
@@ -14,9 +33,22 @@ interface ApiOptions {
  * CRITICAL: Updates BOTH localStorage AND zustand in-memory store.
  * Without updating the in-memory store, zustand would overwrite the
  * new token in localStorage with the old one on the next state change.
+ * 
+ * Uses a queue pattern: only one refresh request runs at a time.
+ * Other callers wait for the result via the failedQueue.
  */
 async function tryRefreshToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
+
+  // If already refreshing, queue this request
+  if (isRefreshing) {
+    return new Promise<string>((resolve, reject) => {
+      failedQueue.push({ resolve, reject });
+    });
+  }
+
+  isRefreshing = true;
+
   try {
     const raw = localStorage.getItem('servix-auth');
     if (!raw) return null;
@@ -30,13 +62,19 @@ async function tryRefreshToken(): Promise<string | null> {
       body: JSON.stringify({ refreshToken }),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      processQueue(new Error('Refresh failed'), null);
+      return null;
+    }
 
     const json = await res.json();
     const newAccessToken = json?.data?.accessToken ?? json?.accessToken;
     const newRefreshToken = json?.data?.refreshToken ?? json?.refreshToken ?? refreshToken;
 
-    if (!newAccessToken) return null;
+    if (!newAccessToken) {
+      processQueue(new Error('No access token in response'), null);
+      return null;
+    }
 
     // 1. Update localStorage directly (for next page load)
     stored.state.accessToken = newAccessToken;
@@ -48,9 +86,15 @@ async function tryRefreshToken(): Promise<string | null> {
       detail: { accessToken: newAccessToken, refreshToken: newRefreshToken },
     }));
 
+    // 3. Process queued requests with the new token
+    processQueue(null, newAccessToken);
+
     return newAccessToken;
-  } catch {
+  } catch (error) {
+    processQueue(error as Error, null);
     return null;
+  } finally {
+    isRefreshing = false;
   }
 }
 

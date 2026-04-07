@@ -14,6 +14,7 @@ import { AvailableSlotsDto } from './dto/available-slots.dto';
 import { CalendarQueryDto } from './dto/calendar-query.dto';
 import { CommitmentsService } from '../commitments/commitments.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { AuditService } from '../../../core/audit/audit.service';
 import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
 const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -45,6 +46,7 @@ export class AppointmentsService {
   constructor(
     private readonly commitmentsService: CommitmentsService,
     private readonly inventoryService: InventoryService,
+    private readonly auditService: AuditService,
   ) {}
   async findAll(
     db: TenantPrismaClient,
@@ -120,69 +122,82 @@ export class AppointmentsService {
     const endTime = addMinutesToTime(dto.startTime, totalDuration);
 
     const employeeIds = [...new Set(dto.services.map((s) => s.employeeId))];
-    for (const empId of employeeIds) {
-      const conflict = await db.appointment.findFirst({
-        where: {
-          date: new Date(dto.date),
-          status: { notIn: ['cancelled', 'no_show'] },
-          OR: [
-            { employeeId: empId },
-            { appointmentServices: { some: { employeeId: empId } } },
-          ],
-          AND: [
-            { startTime: { lt: endTime } },
-            { endTime: { gt: dto.startTime } },
-          ],
-        },
-      });
-      if (conflict) {
-        throw new ConflictException(
-          'يوجد تعارض في المواعيد مع أحد الموظفين المحددين',
-        );
-      }
-    }
 
-    const appointment = await db.$transaction(async (tx) => {
-      const created = await tx.appointment.create({
-        data: {
-          clientId: dto.clientId,
-          employeeId: dto.employeeId || dto.services[0].employeeId,
-          date: new Date(dto.date),
-          startTime: dto.startTime,
-          endTime,
-          totalPrice,
-          totalDuration,
-          notes: dto.notes,
-        },
-      });
+    let appointment: Record<string, unknown> | null;
 
-      await tx.appointmentService.createMany({
-        data: dto.services.map((s) => {
-          const svc = services.find((sv) => sv.id === s.serviceId)!;
-          return {
-            appointmentId: created.id,
-            serviceId: s.serviceId,
-            employeeId: s.employeeId,
-            price: Number(svc.price),
-            duration: svc.duration,
-          };
-        }),
-      });
+    try {
+      appointment = await db.$transaction(async (tx) => {
+        // 1. Lock conflicting rows with SELECT FOR UPDATE to prevent race condition
+        for (const empId of employeeIds) {
+          const conflicts = await tx.$queryRaw<{ id: string }[]>`
+            SELECT id FROM "appointments"
+            WHERE "employee_id" = ${empId}::uuid
+            AND "date" = ${new Date(dto.date)}::date
+            AND "start_time" < ${endTime}
+            AND "end_time" > ${dto.startTime}
+            AND "status" NOT IN ('cancelled', 'no_show')
+            FOR UPDATE
+          `;
 
-      return tx.appointment.findUnique({
-        where: { id: created.id },
-        include: {
-          client: { select: { id: true, fullName: true, phone: true } },
-          employee: { select: { id: true, fullName: true } },
-          appointmentServices: {
-            include: {
-              service: { select: { id: true, nameAr: true, nameEn: true } },
-              employee: { select: { id: true, fullName: true } },
+          if (conflicts.length > 0) {
+            throw new ConflictException(
+              'يوجد تعارض في المواعيد مع أحد الموظفين المحددين',
+            );
+          }
+        }
+
+        // 2. Create the appointment inside the same transaction
+        const created = await tx.appointment.create({
+          data: {
+            clientId: dto.clientId,
+            employeeId: dto.employeeId || dto.services[0].employeeId,
+            date: new Date(dto.date),
+            startTime: dto.startTime,
+            endTime,
+            totalPrice,
+            totalDuration,
+            notes: dto.notes,
+          },
+        });
+
+        await tx.appointmentService.createMany({
+          data: dto.services.map((s) => {
+            const svc = services.find((sv) => sv.id === s.serviceId)!;
+            return {
+              appointmentId: created.id,
+              serviceId: s.serviceId,
+              employeeId: s.employeeId,
+              price: Number(svc.price),
+              duration: svc.duration,
+            };
+          }),
+        });
+
+        return tx.appointment.findUnique({
+          where: { id: created.id },
+          include: {
+            client: { select: { id: true, fullName: true, phone: true } },
+            employee: { select: { id: true, fullName: true } },
+            appointmentServices: {
+              include: {
+                service: { select: { id: true, nameAr: true, nameEn: true } },
+                employee: { select: { id: true, fullName: true } },
+              },
             },
           },
-        },
+        });
       });
-    });
+    } catch (error: unknown) {
+      // 3. Handle UNIQUE constraint violation (P2002) as a conflict
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+      const prismaError = error as { code?: string };
+      if (prismaError.code === 'P2002') {
+        throw new ConflictException('هذا الموعد محجوز بالفعل');
+      }
+      throw error;
+    }
 
     // --- Commitment Engine Integration ---
     try {
@@ -217,6 +232,15 @@ export class AppointmentsService {
     } catch (err) {
       this.logger.warn(`Failed to create commitment for appointment: ${err}`);
     }
+
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: dto.clientId,
+      action: 'appointment.create',
+      entityType: 'Appointment',
+      entityId: (appointment as Record<string, unknown>).id as string,
+      newValues: { date: dto.date, startTime: dto.startTime, employeeId: dto.employeeId },
+    }).catch(() => {});
 
     return appointment as unknown as Record<string, unknown>;
   }
@@ -286,6 +310,15 @@ export class AppointmentsService {
       },
     });
 
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: id,
+      action: 'appointment.update',
+      entityType: 'Appointment',
+      entityId: id,
+      newValues: updateData,
+    }).catch(() => {});
+
     return appointment as unknown as Record<string, unknown>;
   }
 
@@ -345,6 +378,16 @@ export class AppointmentsService {
 
       return updated;
     });
+
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: id,
+      action: `appointment.${dto.status}`,
+      entityType: 'Appointment',
+      entityId: id,
+      oldValues: { status: existing.status },
+      newValues: { status: dto.status },
+    }).catch(() => {});
 
     return appointment as unknown as Record<string, unknown>;
   }

@@ -76,6 +76,7 @@ model Tenant {
   latitude       Decimal?     @db.Decimal(10, 7)
   longitude      Decimal?     @db.Decimal(10, 7)
   pendingDeletionAt DateTime?  @map("pending_deletion_at") @db.Timestamptz()
+  schemaVersion  String       @default("0001_baseline") @map("schema_version") @db.VarChar(50)
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -526,4 +527,19 @@ model PlatformAuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("platform_audit_logs")
+}
+
+// ─────────────────── Token Blacklist (Redis fallback) ───────────────────
+
+model TokenBlacklist {
+  id        String   @id @default(uuid()) @db.Uuid
+  tokenHash String   @unique @map("token_hash") @db.VarChar(64)
+  userId    String   @map("user_id") @db.Uuid
+  reason    String   @default("logout") @db.VarChar(30)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz()
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([expiresAt])
+  @@index([userId])
+  @@map("token_blacklist")
 }

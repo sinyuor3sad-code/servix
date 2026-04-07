@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaClient } from '../../../shared/types';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { CacheService } from '../../../shared/cache';
+import { AuditService } from '../../../core/audit/audit.service';
 import { EventsGateway } from '../../../shared/events';
 import { SETTINGS_DEFAULTS } from './settings.constants';
 import { PlatformPrismaClient } from '../../../shared/database/platform.client';
@@ -14,6 +15,7 @@ export class SettingsService {
     private readonly eventsGateway: EventsGateway,
     private readonly platformDb: PlatformPrismaClient,
     private readonly tenantFactory: TenantClientFactory,
+    private readonly auditService: AuditService,
   ) {}
 
   async getAll(
@@ -116,6 +118,8 @@ export class SettingsService {
     }
     return this.getAll(db);
   }
+
+  // Note: audit for updateBatch handled in controller or caller with userId context
 
   async updateByKey(
     db: TenantPrismaClient,

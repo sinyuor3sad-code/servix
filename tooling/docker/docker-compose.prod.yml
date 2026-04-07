@@ -76,6 +76,7 @@ services:
       dockerfile: apps/api/Dockerfile
     container_name: servix-api
     restart: always
+    stop_grace_period: 35s
     environment:
       NODE_ENV: production
       PORT: 4000

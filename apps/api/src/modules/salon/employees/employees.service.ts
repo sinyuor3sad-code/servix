@@ -8,6 +8,7 @@ import { SetScheduleDto } from './dto/set-schedule.dto';
 import { SetServicesDto } from './dto/set-services.dto';
 import { QueryEmployeesDto } from './dto/query-employees.dto';
 import { CreateEmployeeAccountDto } from './dto/create-employee-account.dto';
+import { AuditService } from '../../../core/audit/audit.service';
 import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
 const BCRYPT_ROUNDS = 12;
@@ -15,7 +16,10 @@ const BCRYPT_ROUNDS = 12;
 
 @Injectable()
 export class EmployeesService {
-  constructor(private readonly platformPrisma: PlatformPrismaClient) {}
+  constructor(
+    private readonly platformPrisma: PlatformPrismaClient,
+    private readonly auditService: AuditService,
+  ) {}
   private mapDecimalFields<
     T extends {
       commissionValue: { toNumber?: () => number } | number;
@@ -107,6 +111,15 @@ export class EmployeesService {
       },
     });
 
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: dto.fullName,
+      action: 'employee.create',
+      entityType: 'Employee',
+      entityId: (employee as Record<string, unknown>).id as string,
+      newValues: { fullName: dto.fullName, role: dto.role },
+    }).catch(() => {});
+
     return this.mapDecimalFields(employee);
   }
 
@@ -157,6 +170,15 @@ export class EmployeesService {
         where: { id },
         data: { isActive: false },
       });
+
+      // Audit log (fire-and-forget)
+      this.auditService.log({
+        userId: id,
+        action: 'employee.deactivate',
+        entityType: 'Employee',
+        entityId: id,
+      }).catch(() => {});
+
       return { id, deactivated: true };
     }
   }

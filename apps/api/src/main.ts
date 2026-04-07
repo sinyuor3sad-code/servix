@@ -1,7 +1,7 @@
 // IMPORTANT: Sentry must be imported before everything else
 import './instrument';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe, VersioningType, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -10,6 +10,8 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './shared/filters/http-exception.filter';
 import { ResponseTransformInterceptor } from './shared/interceptors/response-transform.interceptor';
+
+const logger = new Logger('Bootstrap');
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -113,7 +115,45 @@ async function bootstrap(): Promise<void> {
     SwaggerModule.setup('docs', app, swaggerDocument);
   }
 
-  await app.listen(port);
+  // Enable NestJS shutdown lifecycle hooks (OnModuleDestroy, etc.)
+  app.enableShutdownHooks();
+
+  const server = await app.listen(port);
+  logger.log(`SERVIX API listening on port ${port} (${nodeEnv})`);
+
+  // ── Graceful Shutdown ──
+  const SHUTDOWN_TIMEOUT_MS = 30_000;
+
+  const gracefulShutdown = async (signal: string) => {
+    logger.log(`${signal} received — بدء الإيقاف الرشيق...`);
+
+    // 1. Stop accepting new connections
+    server.close(() => {
+      logger.log('HTTP server closed — لا طلبات جديدة');
+    });
+
+    // 2. Force exit after timeout
+    const forceTimeout = setTimeout(() => {
+      logger.warn('Graceful shutdown timeout — إغلاق إجباري');
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+
+    try {
+      // 3. Wait for NestJS to close (prisma disconnect, bullmq, etc.)
+      await app.close();
+      clearTimeout(forceTimeout);
+      logger.log('تم الإيقاف الرشيق بنجاح ✓');
+      process.exit(0);
+    } catch (error) {
+      logger.error('خطأ أثناء الإيقاف الرشيق', error);
+      clearTimeout(forceTimeout);
+      process.exit(1);
+    }
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
 
 bootstrap();
+

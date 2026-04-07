@@ -514,6 +514,7 @@ model Appointment {
   @@index([date])
   @@index([status])
   @@index([date, status])
+  @@unique([employeeId, date, startTime], name: "unique_employee_booking")
   @@map("appointments")
 }
 

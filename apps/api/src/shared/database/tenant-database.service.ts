@@ -28,11 +28,11 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
   }
 
   /**
-   * Push the tenant schema to ALL existing tenant databases.
+   * Deploy migrations to ALL existing tenant databases.
    * Called on startup to ensure all tenants have the latest schema.
    */
   async syncAllTenantSchemas(): Promise<void> {
-    this.logger.log('🔄 Starting tenant schema sync...');
+    this.logger.log('🔄 Starting tenant schema sync (migrate deploy)...');
 
     try {
       const tenants = await this.platformPrisma.tenant.findMany({
@@ -57,13 +57,13 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
 
       for (const dbName of tenantDbs) {
         try {
-          await this.pushTenantSchema(dbName);
+          await this.deployTenantMigrations(dbName);
           success++;
-          this.logger.log(`✅ Schema synced: ${dbName} (${success}/${tenantDbs.length})`);
+          this.logger.log(`✅ Migrations deployed: ${dbName} (${success}/${tenantDbs.length})`);
         } catch (error: unknown) {
           failed++;
           const msg = error instanceof Error ? error.message : String(error);
-          this.logger.warn(`⚠️ Schema sync failed for ${dbName}: ${msg}`);
+          this.logger.warn(`⚠️ Migration deploy failed for ${dbName}: ${msg}`);
         }
       }
 
@@ -108,21 +108,22 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
       }
     }
 
-    // Step 2: Push the tenant schema to the new database
+    // Step 2: Deploy migrations to the new database
     try {
-      await this.pushTenantSchema(databaseName);
-      this.logger.log(`Tenant schema pushed to ${databaseName}`);
+      await this.deployTenantMigrations(databaseName);
+      this.logger.log(`Tenant migrations deployed to ${databaseName}`);
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Failed to push schema to ${databaseName}: ${errMsg}`);
+      this.logger.error(`Failed to deploy migrations to ${databaseName}: ${errMsg}`);
       throw error;
     }
   }
 
   /**
-   * Push tenant schema by executing prisma db push via CLI.
+   * Deploy tenant migrations using `prisma migrate deploy`.
+   * Unlike `db push --accept-data-loss`, this refuses destructive changes.
    */
-  private async pushTenantSchema(databaseName: string): Promise<void> {
+  private async deployTenantMigrations(databaseName: string): Promise<void> {
     const { execSync } = await import('child_process');
     const baseUrl = process.env.PLATFORM_DATABASE_URL || '';
     const url = new URL(baseUrl);
@@ -130,7 +131,7 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
     const tenantUrl = url.toString();
 
     const env = { ...process.env, TENANT_DATABASE_URL: tenantUrl };
-    const opts = { cwd: process.cwd(), timeout: 30000, env };
+    const opts = { cwd: process.cwd(), timeout: 60000, env };
 
     // Try multiple prisma binary paths (pnpm deploy vs pnpm install have different structures)
     const prismaPaths = [
@@ -142,17 +143,23 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
     for (const prismaCmd of prismaPaths) {
       try {
         execSync(
-          `${prismaCmd} db push --schema=./prisma/tenant.prisma --skip-generate --accept-data-loss 2>&1`,
+          `${prismaCmd} migrate deploy --schema=./prisma/tenant.prisma 2>&1`,
           opts,
         );
         return; // Success
-      } catch {
-        continue; // Try next path
+      } catch (err: unknown) {
+        // If prisma binary not found, try next path
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes('not found') || errMsg.includes('ENOENT')) {
+          continue;
+        }
+        // If migration error (not binary issue), throw immediately
+        throw err;
       }
     }
 
-    this.logger.error(`Schema push failed for ${databaseName}: no working prisma binary found`);
-    throw new Error(`Could not push schema to ${databaseName}`);
+    this.logger.error(`Migration deploy failed for ${databaseName}: no working prisma binary found`);
+    throw new Error(`Could not deploy migrations to ${databaseName}`);
   }
 
   /**

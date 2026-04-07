@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { PlatformPrismaClient } from '../database/platform.client';
 
 const TENANT_CACHE_PREFIX = 'servix:tenant:';
 const SETTINGS_CACHE_PREFIX = 'servix:settings:';
@@ -57,7 +58,10 @@ export class CacheService implements OnModuleDestroy {
   private readonly redis: Redis | null = null;
   private readonly enabled: boolean;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly platformPrisma: PlatformPrismaClient,
+  ) {
     const host = this.configService.get<string>('REDIS_HOST', 'localhost');
     const port = this.configService.get<number>('REDIS_PORT', 6379);
     const password = this.configService.get<string>('REDIS_PASSWORD', '');
@@ -319,26 +323,54 @@ export class CacheService implements OnModuleDestroy {
     }
   }
 
-  /** SEC-2: Add refresh token to blacklist */
-  async blacklistRefreshToken(tokenHash: string): Promise<void> {
-    if (!this.enabled || !this.redis) return;
+  /** SEC-2: Add refresh token to blacklist (Redis + DB dual-write) */
+  async blacklistRefreshToken(tokenHash: string, userId?: string): Promise<void> {
+    // 1. Write to Redis (fast check)
+    if (this.enabled && this.redis) {
+      try {
+        const key = `${REFRESH_BLACKLIST_PREFIX}${tokenHash}`;
+        await this.redis.setex(key, REFRESH_BLACKLIST_TTL_SECONDS, '1');
+      } catch (err) {
+        this.logger.warn(`Failed to blacklist token in Redis: ${(err as Error).message}`);
+      }
+    }
+
+    // 2. Write to DB (durable fallback)
     try {
-      const key = `${REFRESH_BLACKLIST_PREFIX}${tokenHash}`;
-      await this.redis.setex(key, REFRESH_BLACKLIST_TTL_SECONDS, '1');
+      const expiresAt = new Date(Date.now() + REFRESH_BLACKLIST_TTL_SECONDS * 1000);
+      await this.platformPrisma.tokenBlacklist.upsert({
+        where: { tokenHash },
+        create: { tokenHash, userId: userId || 'unknown', reason: 'logout', expiresAt },
+        update: { expiresAt },
+      });
     } catch (err) {
-      this.logger.warn(`Failed to blacklist token: ${(err as Error).message}`);
+      this.logger.warn(`Failed to blacklist token in DB: ${(err as Error).message}`);
     }
   }
 
-  /** SEC-2: Check if refresh token is blacklisted */
+  /** SEC-2: Check if refresh token is blacklisted (Redis first, DB fallback) */
   async isRefreshTokenBlacklisted(tokenHash: string): Promise<boolean> {
-    if (!this.enabled || !this.redis) return false;
-    try {
-      const key = `${REFRESH_BLACKLIST_PREFIX}${tokenHash}`;
-      return (await this.redis.get(key)) === '1';
-    } catch {
-      return false;
+    // 1. Check Redis first (fast)
+    if (this.enabled && this.redis) {
+      try {
+        const key = `${REFRESH_BLACKLIST_PREFIX}${tokenHash}`;
+        if ((await this.redis.get(key)) === '1') return true;
+      } catch {
+        // Redis down — fall through to DB
+      }
     }
+
+    // 2. Fallback to DB
+    try {
+      const entry = await this.platformPrisma.tokenBlacklist.findUnique({
+        where: { tokenHash },
+      });
+      if (entry && entry.expiresAt > new Date()) return true;
+    } catch {
+      // DB also failed — fail open (allow token)
+    }
+
+    return false;
   }
 
   /** SEC-2: On password change — invalidate all refresh tokens for user (token issued before this time is invalid) */

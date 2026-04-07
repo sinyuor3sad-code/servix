@@ -25,6 +25,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { TwoFactorService } from './two-factor.service';
 import { GoogleAuthService } from './google-auth.service';
+import { AuditService } from '../audit/audit.service';
 
 interface UserResponse {
   id: string;
@@ -97,6 +98,7 @@ export class AuthService {
     private readonly tenantDatabaseService: TenantDatabaseService,
     private readonly twoFactorService: TwoFactorService,
     private readonly googleAuthService: GoogleAuthService,
+    private readonly auditService: AuditService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResult> {
@@ -203,9 +205,25 @@ export class AuthService {
     try {
       await this.tenantDatabaseService.createTenantDatabase(databaseName);
     } catch (error: unknown) {
-      // Log but don't fail registration — database can be retried
+      // DB creation failed — clean up the platform records to prevent orphaned state
       const errMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`Failed to create tenant database ${databaseName}: ${errMsg}`);
+
+      try {
+        // Delete in reverse dependency order
+        await this.prisma.subscription.deleteMany({ where: { tenantId: result.tenant.id } });
+        await this.prisma.tenantUser.deleteMany({ where: { tenantId: result.tenant.id } });
+        await this.prisma.tenant.delete({ where: { id: result.tenant.id } });
+        await this.prisma.user.delete({ where: { id: result.user.id } });
+        this.logger.log(`Cleaned up platform records for failed tenant: ${result.tenant.id}`);
+      } catch (cleanupError: unknown) {
+        const cleanupMsg = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+        this.logger.error(`Failed to clean up platform records: ${cleanupMsg}`);
+      }
+
+      throw new InternalServerErrorException(
+        'فشل إنشاء حساب الصالون. يرجى المحاولة لاحقاً.',
+      );
     }
 
     const tokens = await this.generateTokens({
@@ -222,7 +240,7 @@ export class AuthService {
       slug: result.tenant.slug,
     };
 
-    return {
+    const registerResult: RegisterResult = {
       user: this.mapUserResponse(result.user),
       tenant: tenantResponse,
       tenants: [
@@ -241,6 +259,18 @@ export class AuthService {
       ],
       tokens,
     };
+
+    // Audit log: registration (fire-and-forget)
+    this.auditService.log({
+      tenantId: result.tenant.id,
+      userId: result.user.id,
+      action: 'auth.register',
+      entityType: 'User',
+      entityId: result.user.id,
+      newValues: { email: result.user.email, tenantSlug: result.tenant.slug },
+    }).catch(() => {});
+
+    return registerResult;
   }
 
   async login(dto: LoginDto, ip: string): Promise<LoginResult> {
@@ -294,6 +324,15 @@ export class AuthService {
 
     await this.cacheService.resetLoginFailIp(ip);
     await this.cacheService.resetLoginFailAccount(user.id);
+
+    // Audit log: successful login (fire-and-forget)
+    this.auditService.log({
+      userId: user.id,
+      action: 'auth.login',
+      entityType: 'User',
+      entityId: user.id,
+      newValues: { ip },
+    }).catch(() => {});
 
     const tenantUsers = await this.prisma.tenantUser.findMany({
       where: { userId: user.id, status: 'active' },
