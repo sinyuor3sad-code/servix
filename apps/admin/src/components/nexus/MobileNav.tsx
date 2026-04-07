@@ -7,18 +7,38 @@ import { useAuthStore } from '@/stores/auth.store';
 import {
   Menu, X, LayoutDashboard, Building2, CreditCard, BarChart3,
   Shield, FileText, ScrollText, Settings, Bell,
-  Package, LogOut, Sun, Moon, HardDrive,
+  Package, LogOut, Sun, Moon, HardDrive, MoreHorizontal,
 } from 'lucide-react';
 
-const NAV = [
-  { section: 'القيادة' },
-  { href: '/dashboard', label: 'مركز القيادة', icon: LayoutDashboard },
-  { href: '/analytics', label: 'التحليلات', icon: BarChart3 },
-  { section: 'الإدارة' },
+/* ── Route → Page Title mapping ── */
+const PAGE_TITLES: Record<string, string> = {
+  '/dashboard': 'مركز القيادة',
+  '/analytics': 'التحليلات',
+  '/tenants': 'إدارة الأقاليم',
+  '/subscriptions': 'الاشتراكات',
+  '/plans': 'الباقات',
+  '/invoices': 'الفواتير',
+  '/system': 'صحة النظام',
+  '/backups': 'النسخ الاحتياطي',
+  '/audit-logs': 'سجل العمليات',
+  '/notifications': 'الإشعارات',
+  '/settings': 'الإعدادات',
+  '/features': 'الميزات',
+};
+
+/* ── Bottom Tab Bar Items ── */
+const TAB_ITEMS = [
+  { href: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
   { href: '/tenants', label: 'الأقاليم', icon: Building2 },
   { href: '/subscriptions', label: 'الاشتراكات', icon: CreditCard },
-  { href: '/plans', label: 'الباقات', icon: Package },
   { href: '/invoices', label: 'الفواتير', icon: FileText },
+];
+
+/* ── Drawer-only items (accessed via "المزيد" tab) ── */
+const NAV_EXTRA = [
+  { section: 'التحليلات' },
+  { href: '/analytics', label: 'التحليلات', icon: BarChart3 },
+  { href: '/plans', label: 'الباقات', icon: Package },
   { section: 'النظام' },
   { href: '/system', label: 'صحة النظام', icon: Shield },
   { href: '/backups', label: 'النسخ الاحتياطي', icon: HardDrive },
@@ -26,6 +46,14 @@ const NAV = [
   { href: '/notifications', label: 'الإشعارات', icon: Bell },
   { href: '/settings', label: 'الإعدادات', icon: Settings },
 ] as const;
+
+function getPageTitle(pathname: string): string {
+  // Exact match first
+  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
+  // Dynamic routes (e.g. /subscriptions/[id])
+  const base = '/' + pathname.split('/').filter(Boolean)[0];
+  return PAGE_TITLES[base] || 'SERVIX';
+}
 
 export function MobileNav() {
   const pathname = usePathname();
@@ -56,31 +84,66 @@ export function MobileNav() {
     localStorage.setItem('nexus-theme', next);
   }, [theme]);
 
+  const pageTitle = getPageTitle(pathname);
+  const activeBase = '/' + pathname.split('/').filter(Boolean)[0];
+  const isTabActive = TAB_ITEMS.some(t => t.href === activeBase);
+
   return (
     <>
-      {/* Header bar */}
+      {/* ═══ Top App Header ═══ */}
       <header className="nx-mobile-header">
-        <span className="nx-mobile-brand">SERVIX</span>
+        <div className="nx-app-header-right">
+          <div className="nx-app-logo">S</div>
+          <div className="nx-app-header-titles">
+            <span className="nx-app-header-brand">SERVIX</span>
+            <span className="nx-app-header-page">{pageTitle}</span>
+          </div>
+        </div>
         <button className="nx-hamburger" onClick={() => setOpen(true)}>
-          <Menu size={20} />
+          <Menu size={18} />
         </button>
       </header>
 
-      {/* Overlay */}
+      {/* ═══ Bottom Tab Bar ═══ */}
+      <nav className="nx-bottom-tabs">
+        {TAB_ITEMS.map(item => {
+          const Icon = item.icon;
+          const active = activeBase === item.href;
+          return (
+            <Link key={item.href} href={item.href} className={`nx-tab-item ${active ? 'nx-tab-item--active' : ''}`}>
+              <Icon size={20} strokeWidth={active ? 2 : 1.5} />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+        <button className={`nx-tab-item ${!isTabActive ? 'nx-tab-item--active' : ''}`} onClick={() => setOpen(true)}>
+          <MoreHorizontal size={20} strokeWidth={!isTabActive ? 2 : 1.5} />
+          <span>المزيد</span>
+        </button>
+      </nav>
+
+      {/* ═══ Drawer Overlay ═══ */}
       <div
         className={`nx-drawer-overlay ${open ? 'nx-drawer-overlay--open' : ''}`}
         onClick={() => setOpen(false)}
       />
 
-      {/* Drawer */}
+      {/* ═══ Drawer Panel ═══ */}
       <nav className={`nx-drawer ${open ? 'nx-drawer--open' : ''}`}>
-        <div className="nx-drawer-close">
-          <button className="nx-hamburger" onClick={() => setOpen(false)}>
-            <X size={18} />
+        <div className="nx-drawer-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="nx-app-logo" style={{ width: 36, height: 36, fontSize: 14 }}>S</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 900, letterSpacing: '0.08em', color: 'var(--slate)' }}>SERVIX</div>
+              <div style={{ fontSize: 10, color: 'var(--ghost)', fontWeight: 600 }}>نظام القيادة المركزي</div>
+            </div>
+          </div>
+          <button className="nx-hamburger" style={{ width: 36, height: 36 }} onClick={() => setOpen(false)}>
+            <X size={16} />
           </button>
         </div>
 
-        {NAV.map((item, i) => {
+        {NAV_EXTRA.map((item, i) => {
           if ('section' in item) {
             return <div key={i} className="nx-sidebar-section">{item.section}</div>;
           }
