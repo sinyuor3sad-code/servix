@@ -325,10 +325,13 @@ export default function UsersPage(): ReactElement {
   const [deleteUserData, setDeleteUserData] = useState<any>(null);
   const [toast, setToast] = useState('');
 
+  const [fetchError, setFetchError] = useState('');
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
+    setFetchError('');
     const params = new URLSearchParams();
     params.set('page', page.toString());
     params.set('perPage', PER.toString());
@@ -337,7 +340,11 @@ export default function UsersPage(): ReactElement {
 
     adminService.getUsers(params.toString())
       .then((res) => { setUsers(res.data ?? []); setTotal(res.meta?.total ?? 0); })
-      .catch(() => { setUsers([]); setTotal(0); })
+      .catch((err) => {
+        console.error('fetchUsers error:', err);
+        setFetchError(err?.message || 'خطأ في تحميل المستخدمين');
+        // DON'T clear existing data on error — keep what we had
+      })
       .finally(() => setLoading(false));
   }, [page, search, verified]);
 
@@ -482,6 +489,14 @@ export default function UsersPage(): ReactElement {
         </div>
       </Glass>
 
+      {/* Error Banner */}
+      {fetchError && (
+        <div style={{ padding: '14px 20px', borderRadius: 12, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#F87171' }}>⚠️ {fetchError}</span>
+          <button className="nx-btn" onClick={fetchUsers} style={{ fontSize: 12, padding: '6px 16px', minHeight: 'auto' }}>🔄 إعادة المحاولة</button>
+        </div>
+      )}
+
       {/* Table */}
       <Glass>
         {loading ? (
@@ -592,7 +607,14 @@ export default function UsersPage(): ReactElement {
       {resetPwUser && <ResetPasswordModal user={resetPwUser} onClose={() => setResetPwUser(null)} onDone={() => showToast('تم تعيين كلمة المرور')} />}
       {confirm && <ConfirmDialog title={confirm.title} message={confirm.message} danger={confirm.danger} onConfirm={async () => { await confirm.action(); setConfirm(null); }} onClose={() => setConfirm(null)} />}
       {impersonateData && <ImpersonateModal data={impersonateData} onClose={() => setImpersonateData(null)} />}
-      {deleteUserData && <DeleteUserModal user={deleteUserData} onClose={() => setDeleteUserData(null)} onDone={(msg) => { showToast(msg); fetchUsers(); }} />}
+      {deleteUserData && <DeleteUserModal user={deleteUserData} onClose={() => setDeleteUserData(null)} onDone={(msg) => {
+        showToast(msg);
+        // Remove deleted user from local state immediately
+        setUsers(prev => prev.filter(u => u.id !== deleteUserData.id));
+        setTotal(prev => Math.max(0, prev - 1));
+        // Then refetch after a short delay to get fresh data
+        setTimeout(fetchUsers, 500);
+      }} />}
     </div>
   );
 }
