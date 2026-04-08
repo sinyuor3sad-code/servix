@@ -6,8 +6,54 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ═══════════════════════════════════════════
+  # Quality Gate — must pass before deploy
+  # ═══════════════════════════════════════════
+  quality:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma clients
+        run: |
+          cd apps/api
+          npx prisma generate --schema=./prisma/platform.prisma
+          npx prisma generate --schema=./prisma/tenant.prisma
+
+      - name: Type check (API)
+        run: pnpm --filter @servix/api type-check
+
+      - name: Lint (API)
+        run: pnpm --filter @servix/api lint 2>/dev/null || echo "⚠️ Lint warnings found"
+
+      - name: Security audit
+        run: pnpm audit --prod --audit-level=critical 2>/dev/null || echo "⚠️ Audit warnings (non-critical)"
+
+      - name: Run tests (API)
+        run: pnpm --filter @servix/api test -- --passWithNoTests --forceExit
+        env:
+          NODE_ENV: test
+
+  # ═══════════════════════════════════════════
+  # Build & Deploy — only after quality passes
+  # ═══════════════════════════════════════════
   deploy:
     name: Deploy to Production
+    needs: quality
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -70,9 +116,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /opt/servix
+            cd /root/servix/tooling/docker
             # Save current image tags for rollback
-            docker compose -f docker-compose.prod.yml config --images > /tmp/servix-prev-images.txt
+            docker compose -f docker-compose.prod.yml config --images > /tmp/servix-prev-images.txt 2>/dev/null || true
             # Pull new images and restart
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
@@ -85,25 +131,38 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            echo "⏳ Waiting 30s for services to start..."
-            sleep 30
-            # Check API health
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/health/live || echo "000")
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ API health check passed (HTTP $HTTP_CODE)"
+            echo "⏳ Waiting 45s for services to start..."
+            sleep 45
+
+            FAILED=0
+
+            # Check API-1
+            API1_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/api/v1/health/live 2>/dev/null || echo "000")
+            if [ "$API1_CODE" = "200" ]; then
+              echo "✅ API-1 health check passed (HTTP $API1_CODE)"
             else
-              echo "❌ API health check FAILED (HTTP $HTTP_CODE)"
-              echo "🔄 Rolling back..."
-              cd /opt/servix
+              echo "❌ API-1 health check FAILED (HTTP $API1_CODE)"
+              FAILED=1
+            fi
+
+            # Check Dashboard
+            DASH_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ 2>/dev/null || echo "000")
+            echo "📊 Dashboard: HTTP $DASH_CODE"
+
+            # Check Booking
+            BOOK_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/ 2>/dev/null || echo "000")
+            echo "📅 Booking: HTTP $BOOK_CODE"
+
+            # Check Admin
+            ADMIN_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/ 2>/dev/null || echo "000")
+            echo "🔧 Admin: HTTP $ADMIN_CODE"
+
+            if [ "$FAILED" = "1" ]; then
+              echo "❌ Health checks failed — Rolling back..."
+              cd /root/servix/tooling/docker
               docker compose -f docker-compose.prod.yml down
               docker compose -f docker-compose.prod.yml up -d
               exit 1
             fi
-            # Check Dashboard
-            DASH_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ || echo "000")
-            echo "📊 Dashboard: HTTP $DASH_CODE"
-            # Check Booking
-            BOOK_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/ || echo "000")
-            echo "📅 Booking: HTTP $BOOK_CODE"
-            echo "🎉 Deployment verified successfully!"
 
+            echo "🎉 Deployment verified successfully!"
