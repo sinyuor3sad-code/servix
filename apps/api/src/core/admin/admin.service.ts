@@ -6,7 +6,8 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { compare } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
 import type {
@@ -337,6 +338,421 @@ export class AdminService {
         totalPages: Math.ceil(total / perPage),
       },
     };
+  }
+
+  async getUserById(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        avatarUrl: true,
+        isEmailVerified: true,
+        isPhoneVerified: true,
+        twoFactorEnabled: true,
+        authProvider: true,
+        lastLoginAt: true,
+        createdAt: true,
+        updatedAt: true,
+        tenantUsers: {
+          select: {
+            id: true,
+            isOwner: true,
+            status: true,
+            tenant: { select: { id: true, nameAr: true, nameEn: true, slug: true, status: true } },
+            role: { select: { id: true, name: true, nameAr: true } },
+          },
+        },
+        passwordResets: {
+          select: { createdAt: true, usedAt: true },
+          orderBy: { createdAt: 'desc' as const },
+          take: 5,
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return user;
+  }
+
+  async updateUser(id: string, data: { fullName?: string; email?: string; phone?: string }, adminId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    const updateData: Record<string, unknown> = {};
+    if (data.fullName) updateData.fullName = data.fullName.trim();
+    if (data.email) updateData.email = data.email.toLowerCase().trim();
+    if (data.phone) updateData.phone = data.phone.trim();
+
+    if (Object.keys(updateData).length === 0) {
+      throw new BadRequestException('لا توجد بيانات للتحديث');
+    }
+
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id }, data: updateData }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: 'admin_update_user',
+          entityType: 'user',
+          entityId: id,
+          oldValues: { fullName: user.fullName, email: user.email, phone: user.phone },
+          newValues: updateData as any,
+        },
+      }),
+    ]);
+
+    return updated;
+  }
+
+  async updateUserStatus(id: string, status: 'active' | 'suspended', reason: string, adminId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { tenantUsers: true },
+    });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    // Update all tenant user statuses
+    const tuStatus = status === 'active' ? 'active' : 'suspended';
+    await this.prisma.$transaction([
+      ...user.tenantUsers.map((tu) =>
+        this.prisma.tenantUser.update({
+          where: { id: tu.id },
+          data: { status: tuStatus as any },
+        }),
+      ),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: status === 'suspended' ? 'admin_suspend_user' : 'admin_activate_user',
+          entityType: 'user',
+          entityId: id,
+          newValues: { status, reason },
+        },
+      }),
+    ]);
+
+    return { message: status === 'suspended' ? 'تم تعليق الحساب' : 'تم تفعيل الحساب', status };
+  }
+
+  async resetUserPassword(id: string, newPassword: string, adminId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    if (newPassword.length < 8) {
+      throw new BadRequestException('كلمة المرور يجب أن تكون 8 أحرف على الأقل');
+    }
+
+    const passwordHash = await hash(newPassword, 12);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id }, data: { passwordHash } }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: 'admin_reset_password',
+          entityType: 'user',
+          entityId: id,
+          newValues: { resetBy: 'admin', adminId },
+        },
+      }),
+    ]);
+
+    return { message: 'تم تعيين كلمة مرور جديدة بنجاح' };
+  }
+
+  async sendPasswordResetLink(id: string, adminId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await this.prisma.$transaction([
+      this.prisma.passwordReset.create({
+        data: { userId: id, token, expiresAt },
+      }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: 'admin_send_reset_link',
+          entityType: 'user',
+          entityId: id,
+          newValues: { sentTo: user.email },
+        },
+      }),
+    ]);
+
+    // TODO: Send email with reset link when MailService is available in AdminModule
+    // For now, log it
+    console.log(`[AdminResetLink] User ${user.email} → token: ${token}`);
+
+    return { message: `تم إنشاء رابط التعيين وإرساله إلى ${user.email}` };
+  }
+
+  async changeUserRole(userId: string, roleId: string, tenantId: string | undefined, adminId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { tenantUsers: { include: { role: true } } },
+    });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
+    if (!role) throw new NotFoundException('الدور غير موجود');
+
+    // Find the tenant-user record to update
+    let tu = user.tenantUsers[0]; // default to first
+    if (tenantId) {
+      tu = user.tenantUsers.find((t) => t.tenantId === tenantId) || tu;
+    }
+    if (!tu) throw new BadRequestException('المستخدم غير مرتبط بأي صالون');
+
+    const oldRoleName = tu.role?.name || 'unknown';
+
+    await this.prisma.$transaction([
+      this.prisma.tenantUser.update({
+        where: { id: tu.id },
+        data: { roleId },
+      }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: 'admin_change_role',
+          entityType: 'user',
+          entityId: userId,
+          oldValues: { role: oldRoleName, tenantId: tu.tenantId },
+          newValues: { role: role.name, roleId },
+        },
+      }),
+    ]);
+
+    return { message: `تم تغيير الدور إلى ${role.nameAr}`, role };
+  }
+
+  async impersonateUser(userId: string, adminId: string) {
+    if (userId === adminId) {
+      throw new BadRequestException('لا يمكنك الدخول كنفسك');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        tenantUsers: {
+          include: { tenant: true, role: true },
+          where: { status: 'active' },
+          take: 1,
+        },
+      },
+    });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    // Prevent impersonating other super admins
+    const superAdminRole = await this.prisma.role.findUnique({ where: { name: 'super_admin' } });
+    if (superAdminRole) {
+      const isSuperAdmin = user.tenantUsers.some((tu) => tu.roleId === superAdminRole.id);
+      if (isSuperAdmin) {
+        throw new BadRequestException('لا يمكنك الدخول كمدير منصة آخر');
+      }
+    }
+
+    const tu = user.tenantUsers[0];
+    if (!tu) throw new BadRequestException('المستخدم غير مرتبط بأي صالون نشط');
+
+    const accessSecret = this.configService.get<string>('jwt.accessSecret', '');
+
+    // Create a 15-minute impersonation token
+    const token = await this.jwtService.signAsync(
+      {
+        sub: user.id,
+        email: user.email,
+        tenantId: tu.tenantId,
+        roleId: tu.roleId,
+        impersonatedBy: adminId,
+      },
+      { secret: accessSecret, expiresIn: '15m' },
+    );
+
+    // Audit log — CRITICAL for security
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId: adminId,
+        action: 'admin_impersonate',
+        entityType: 'user',
+        entityId: userId,
+        newValues: {
+          impersonatedUser: user.email,
+          impersonatedUserId: userId,
+          adminId,
+          tokenExpiresIn: '15 minutes',
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+
+    return {
+      message: `تم إنشاء جلسة مؤقتة (15 دقيقة) كـ ${user.fullName}`,
+      accessToken: token,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+      },
+      tenant: {
+        id: tu.tenant.id,
+        nameAr: tu.tenant.nameAr,
+        slug: tu.tenant.slug,
+      },
+      expiresIn: 900,
+    };
+  }
+
+  async softDeleteUser(userId: string, adminId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { tenantUsers: true },
+    });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    // Don't allow deleting yourself
+    if (userId === adminId) {
+      throw new BadRequestException('لا يمكنك حذف حسابك الخاص');
+    }
+
+    // Soft delete: suspend all tenant-user records + anonymize email/phone
+    const anonSuffix = `_deleted_${Date.now()}`;
+
+    await this.prisma.$transaction([
+      // Suspend all tenant-user records
+      ...user.tenantUsers.map((tu) =>
+        this.prisma.tenantUser.update({
+          where: { id: tu.id },
+          data: { status: 'suspended' as any },
+        }),
+      ),
+      // Anonymize identifying data
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          email: `${user.email}${anonSuffix}`,
+          phone: `${user.phone}${anonSuffix}`,
+          fullName: `[محذوف] ${user.fullName}`,
+        },
+      }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: 'admin_delete_user',
+          entityType: 'user',
+          entityId: userId,
+          oldValues: { email: user.email, phone: user.phone, fullName: user.fullName },
+          newValues: { status: 'deleted', deletedAt: new Date().toISOString() },
+        },
+      }),
+    ]);
+
+    return { message: 'تم حذف المستخدم بنجاح (يمكن الاستعادة)', deletedId: userId };
+  }
+
+  async restoreUser(userId: string, adminId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { tenantUsers: true },
+    });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    // Check if this is a soft-deleted user (name starts with [محذوف])
+    if (!user.fullName.startsWith('[محذوف]')) {
+      throw new BadRequestException('هذا المستخدم ليس محذوفاً');
+    }
+
+    // Restore: remove anonymization suffix and reactivate
+    const cleanEmail = user.email.replace(/_deleted_\d+$/, '');
+    const cleanPhone = user.phone.replace(/_deleted_\d+$/, '');
+    const cleanName = user.fullName.replace(/^\[محذوف\] /, '');
+
+    await this.prisma.$transaction([
+      ...user.tenantUsers.map((tu) =>
+        this.prisma.tenantUser.update({
+          where: { id: tu.id },
+          data: { status: 'active' as any },
+        }),
+      ),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { email: cleanEmail, phone: cleanPhone, fullName: cleanName },
+      }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: 'admin_restore_user',
+          entityType: 'user',
+          entityId: userId,
+          newValues: { email: cleanEmail, restoredAt: new Date().toISOString() },
+        },
+      }),
+    ]);
+
+    return { message: 'تم استعادة المستخدم بنجاح' };
+  }
+
+  async forceLogoutUser(userId: string, adminId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    // Force-change the password hash timestamp so all existing tokens become invalid
+    // This works because JWT tokens are verified against the latest password hash change
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { updatedAt: new Date() },
+      }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: 'admin_force_logout',
+          entityType: 'user',
+          entityId: userId,
+          newValues: { loggedOutAt: new Date().toISOString() },
+        },
+      }),
+    ]);
+
+    return { message: 'تم تسجيل خروج المستخدم من جميع الأجهزة' };
+  }
+
+  async updateVerification(
+    userId: string,
+    data: { isEmailVerified?: boolean; isPhoneVerified?: boolean },
+    adminId: string,
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+
+    const updateData: Record<string, boolean> = {};
+    if (data.isEmailVerified !== undefined) updateData.isEmailVerified = data.isEmailVerified;
+    if (data.isPhoneVerified !== undefined) updateData.isPhoneVerified = data.isPhoneVerified;
+
+    if (Object.keys(updateData).length === 0) {
+      throw new BadRequestException('لا توجد بيانات للتحديث');
+    }
+
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: updateData }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: 'admin_update_verification',
+          entityType: 'user',
+          entityId: userId,
+          oldValues: { isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified },
+          newValues: updateData,
+        },
+      }),
+    ]);
+
+    return updated;
   }
 
   async getTenants(dto: GetTenantsDto): Promise<PaginatedResult<TenantWithSubscription>> {

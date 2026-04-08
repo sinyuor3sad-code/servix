@@ -190,24 +190,44 @@ export const adminService = {
     api.get<AdminStats>('/admin/stats'),
 
   // ── Users ──
-  getUsers: (params?: string): Promise<PaginatedResult<{
-    id: string;
-    fullName: string;
-    email: string;
-    phone: string;
-    avatarUrl: string | null;
-    isEmailVerified: boolean;
-    isPhoneVerified: boolean;
-    authProvider: string;
-    lastLoginAt: string | null;
-    createdAt: string;
-    tenantUsers: Array<{
-      isOwner: boolean;
-      tenant: { id: string; nameAr: string; nameEn: string; slug: string };
-      role: { name: string; nameAr: string };
-    }>;
-  }>> =>
+  getUsers: (params?: string): Promise<PaginatedResult<any>> =>
     api.getPaginated(`/admin/users${params ? `?${params}` : ''}`),
+
+  getUserById: (id: string): Promise<any> =>
+    api.get(`/admin/users/${id}`),
+
+  updateUser: (id: string, data: { fullName?: string; email?: string; phone?: string }): Promise<any> =>
+    api.put(`/admin/users/${id}`, data),
+
+  updateUserStatus: (id: string, status: string, reason?: string): Promise<any> =>
+    api.put(`/admin/users/${id}/status`, { status, reason }),
+
+  resetUserPassword: (id: string, newPassword: string): Promise<any> =>
+    api.post(`/admin/users/${id}/reset-password`, { newPassword }),
+
+  sendResetLink: (id: string): Promise<any> =>
+    api.post(`/admin/users/${id}/send-reset-link`, {}),
+
+  changeUserRole: (id: string, roleId: string, tenantId?: string): Promise<any> =>
+    api.put(`/admin/users/${id}/role`, { roleId, tenantId }),
+
+  impersonateUser: (id: string): Promise<any> =>
+    api.post(`/admin/users/${id}/impersonate`, {}),
+
+  deleteUser: (id: string): Promise<any> =>
+    api.post(`/admin/users/${id}/delete`, {}),
+
+  restoreUser: (id: string): Promise<any> =>
+    api.post(`/admin/users/${id}/restore`, {}),
+
+  forceLogoutUser: (id: string): Promise<any> =>
+    api.post(`/admin/users/${id}/force-logout`, {}),
+
+  updateVerification: (id: string, data: { isEmailVerified?: boolean; isPhoneVerified?: boolean }): Promise<any> =>
+    api.put(`/admin/users/${id}/verification`, data),
+
+  getRoles: (): Promise<any[]> =>
+    api.get('/admin/plans').then(() => []).catch(() => []), // placeholder — roles come from getUserById
 
   // ── Tenants ──
   getTenants: (params?: string): Promise<PaginatedResult<Tenant>> =>

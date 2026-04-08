@@ -102,6 +102,113 @@ export class AdminController {
     });
   }
 
+  @Get('users/:id')
+  @ApiOperation({ summary: 'عرض تفاصيل مستخدم محدد' })
+  async getUserById(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getUserById(id);
+  }
+
+  @Put('users/:id')
+  @ApiOperation({ summary: 'تعديل بيانات مستخدم' })
+  async updateUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { fullName?: string; email?: string; phone?: string },
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.updateUser(id, dto, adminId);
+  }
+
+  @Put('users/:id/status')
+  @ApiOperation({ summary: 'تعليق أو تفعيل حساب مستخدم' })
+  async updateUserStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { status: 'active' | 'suspended'; reason?: string },
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.updateUserStatus(id, dto.status, dto.reason || '', adminId);
+  }
+
+  @Post('users/:id/reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'إعادة تعيين كلمة مرور مستخدم' })
+  async resetUserPassword(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { newPassword: string },
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.resetUserPassword(id, dto.newPassword, adminId);
+  }
+
+  @Post('users/:id/send-reset-link')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'إرسال رابط تعيين كلمة مرور للمستخدم' })
+  async sendResetLink(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.sendPasswordResetLink(id, adminId);
+  }
+
+  @Put('users/:id/role')
+  @ApiOperation({ summary: 'تغيير دور المستخدم' })
+  async changeUserRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { roleId: string; tenantId?: string },
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.changeUserRole(id, dto.roleId, dto.tenantId, adminId);
+  }
+
+  @Post('users/:id/impersonate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'تسجيل دخول كمستخدم (Impersonate) — مُسجل أمنياً' })
+  async impersonateUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.impersonateUser(id, adminId);
+  }
+
+  @Post('users/:id/delete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'حذف مستخدم (Soft Delete)' })
+  async deleteUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.softDeleteUser(id, adminId);
+  }
+
+  @Post('users/:id/restore')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'استعادة مستخدم محذوف' })
+  async restoreUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.restoreUser(id, adminId);
+  }
+
+  @Post('users/:id/force-logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'تسجيل خروج شامل من جميع الأجهزة' })
+  async forceLogoutUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.forceLogoutUser(id, adminId);
+  }
+
+  @Put('users/:id/verification')
+  @ApiOperation({ summary: 'توثيق أو إلغاء توثيق البريد/الجوال يدوياً' })
+  async updateVerification(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { isEmailVerified?: boolean; isPhoneVerified?: boolean },
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.updateVerification(id, dto, adminId);
+  }
+
   @Post('tenants')
   @ApiOperation({ summary: 'إنشاء منشأة جديدة من لوحة الإدارة' })
   @ApiResponse({ status: 201, description: 'تم إنشاء المنشأة بنجاح' })
