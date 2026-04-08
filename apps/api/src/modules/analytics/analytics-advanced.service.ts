@@ -19,7 +19,7 @@ export class AnalyticsAdvancedService {
     averageLifetimeLTV: number;
     topTenants: Array<{ tenantId: string; name: string; ltv: number }>;
   }> {
-    const tenants = await this.prisma.tenant.findMany({
+    const tenants = await (this.prisma.tenant as any).findMany({
       where: { status: { not: 'deleted' } },
       include: {
         subscriptions: {
@@ -30,7 +30,7 @@ export class AnalyticsAdvancedService {
       },
     });
 
-    const ltvData = tenants.map((t) => {
+    const ltvData = tenants.map((t: any) => {
       const sub = t.subscriptions[0];
       const monthlyPrice = sub?.plan?.price ?? 0;
       const ageMonths = Math.max(
@@ -46,16 +46,16 @@ export class AnalyticsAdvancedService {
       };
     });
 
-    const totalMonthly = ltvData.reduce((s, d) => s + d.monthlyLTV, 0);
-    const totalLifetime = ltvData.reduce((s, d) => s + d.lifetimeLTV, 0);
+    const totalMonthly = ltvData.reduce((s: number, d: any) => s + d.monthlyLTV, 0);
+    const totalLifetime = ltvData.reduce((s: number, d: any) => s + d.lifetimeLTV, 0);
 
     return {
       averageMonthlyLTV: ltvData.length > 0 ? Math.round(totalMonthly / ltvData.length) : 0,
       averageLifetimeLTV: ltvData.length > 0 ? Math.round(totalLifetime / ltvData.length) : 0,
       topTenants: ltvData
-        .sort((a, b) => b.lifetimeLTV - a.lifetimeLTV)
+        .sort((a: any, b: any) => b.lifetimeLTV - a.lifetimeLTV)
         .slice(0, 10)
-        .map((d) => ({ tenantId: d.tenantId, name: d.name, ltv: d.lifetimeLTV })),
+        .map((d: any) => ({ tenantId: d.tenantId, name: d.name, ltv: d.lifetimeLTV })),
     };
   }
 
@@ -90,7 +90,7 @@ export class AnalyticsAdvancedService {
       reasons: string[];
     }>
   > {
-    const tenants = await this.prisma.tenant.findMany({
+    const tenants = await (this.prisma.tenant as any).findMany({
       where: { status: { in: ['active', 'trial'] } },
       include: {
         subscriptions: {
@@ -100,7 +100,7 @@ export class AnalyticsAdvancedService {
       },
     });
 
-    return tenants.map((t) => {
+    return tenants.map((t: any) => {
       let riskScore = 0;
       const reasons: string[] = [];
       const sub = t.subscriptions[0];
@@ -217,13 +217,13 @@ export class AnalyticsAdvancedService {
       this.prisma.tenant.count({ where: { status: 'trial' } }),
     ]);
 
-    const subscriptions = await this.prisma.subscription.findMany({
+    const subscriptions = await (this.prisma.subscription as any).findMany({
       where: { status: 'active' },
       include: { plan: true },
     });
 
     const mrr = subscriptions.reduce(
-      (sum, s) => sum + (s.plan?.price ?? 0),
+      (sum: number, s: any) => sum + (s.plan?.price ?? 0),
       0,
     );
 
