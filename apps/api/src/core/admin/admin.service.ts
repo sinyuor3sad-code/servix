@@ -615,29 +615,37 @@ export class AdminService {
     });
     if (!user) throw new NotFoundException('المستخدم غير موجود');
 
-    // Don't allow deleting yourself
     if (userId === adminId) {
       throw new BadRequestException('لا يمكنك حذف حسابك الخاص');
     }
 
+    // Already deleted?
+    if (user.fullName.startsWith('[محذوف]') || user.fullName.startsWith('[قيد الحذف]')) {
+      throw new BadRequestException('هذا المستخدم محذوف بالفعل');
+    }
+
+    // Suspend all tenant-user records (shared by both modes)
+    const suspendOps = user.tenantUsers.map((tu) =>
+      this.prisma.tenantUser.update({
+        where: { id: tu.id },
+        data: { status: 'suspended' as any },
+      }),
+    );
+
     if (immediate) {
       // ══ Immediate delete: anonymize + suspend ══
-      const anonSuffix = `_deleted_${Date.now()}`;
+      // Use short suffix to avoid VarChar overflow (email=100, phone=15)
+      const suffix = `_d${Date.now().toString(36).slice(-6)}`;
+      // Truncate to fit: email max 100, phone max 15
+      const anonEmail = (user.email.slice(0, 90) + suffix).slice(0, 100);
+      const anonPhone = ('0000000' + suffix).slice(0, 15);
+      const anonName = `[محذوف] ${user.fullName}`.slice(0, 100);
 
       await this.prisma.$transaction([
-        ...user.tenantUsers.map((tu) =>
-          this.prisma.tenantUser.update({
-            where: { id: tu.id },
-            data: { status: 'suspended' as any },
-          }),
-        ),
+        ...suspendOps,
         this.prisma.user.update({
           where: { id: userId },
-          data: {
-            email: `${user.email}${anonSuffix}`,
-            phone: `${user.phone}${anonSuffix}`,
-            fullName: `[محذوف] ${user.fullName}`,
-          },
+          data: { email: anonEmail, phone: anonPhone, fullName: anonName },
         }),
         this.prisma.platformAuditLog.create({
           data: {
@@ -658,18 +666,13 @@ export class AdminService {
       const deletionDate = new Date();
       deletionDate.setDate(deletionDate.getDate() + graceDays);
 
+      const pendingName = `[قيد الحذف] ${user.fullName}`.slice(0, 100);
+
       await this.prisma.$transaction([
-        ...user.tenantUsers.map((tu) =>
-          this.prisma.tenantUser.update({
-            where: { id: tu.id },
-            data: { status: 'suspended' as any },
-          }),
-        ),
+        ...suspendOps,
         this.prisma.user.update({
           where: { id: userId },
-          data: {
-            fullName: `[قيد الحذف] ${user.fullName}`,
-          },
+          data: { fullName: pendingName },
         }),
         this.prisma.platformAuditLog.create({
           data: {

@@ -17,7 +17,12 @@ function ConfirmDialog({ title, message, danger, onConfirm, onClose }: {
   title: string; message: string; danger?: boolean; onConfirm: () => void; onClose: () => void;
 }) {
   const [loading, setLoading] = useState(false);
-  const go = async () => { setLoading(true); await onConfirm(); setLoading(false); };
+  const [error, setError] = useState('');
+  const go = async () => {
+    setLoading(true); setError('');
+    try { await onConfirm(); }
+    catch (e: any) { setError(e?.response?.data?.message || e?.message || 'حدث خطأ'); setLoading(false); }
+  };
   return (
     <div className="nx-modal-overlay" onClick={onClose}>
       <div className="nx-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
@@ -26,6 +31,7 @@ function ConfirmDialog({ title, message, danger, onConfirm, onClose }: {
           <h2 className="nx-modal-title" style={{ marginBottom: 0 }}>{title}</h2>
         </div>
         <p style={{ fontSize: 14, color: 'var(--ghost)', lineHeight: 1.7, marginBottom: 20 }}>{message}</p>
+        {error && <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', color: '#F87171', fontSize: 13, fontWeight: 600, marginBottom: 16 }}>{error}</div>}
         <div className="nx-form-actions">
           <button className="nx-btn" onClick={onClose}>إلغاء</button>
           <button className={`nx-btn ${danger ? 'nx-btn--danger' : 'nx-btn--primary'}`} onClick={go} disabled={loading}>
@@ -213,14 +219,19 @@ function ImpersonateModal({ data, onClose }: { data: any; onClose: () => void })
 /* ── Delete User Modal (Two Options) ── */
 function DeleteUserModal({ user, onClose, onDone }: { user: any; onClose: () => void; onDone: (msg: string) => void }) {
   const [loading, setLoading] = useState<'immediate' | 'grace' | null>(null);
+  const [error, setError] = useState('');
 
   const handleDelete = async (immediate: boolean) => {
     setLoading(immediate ? 'immediate' : 'grace');
+    setError('');
     try {
       const res = await adminService.deleteUser(user.id, immediate);
       onDone(res.message || 'تم الحذف');
       onClose();
-    } catch { setLoading(null); }
+    } catch (e: any) {
+      setError(e?.response?.data?.message || e?.message || 'حدث خطأ أثناء الحذف');
+      setLoading(null);
+    }
   };
 
   return (
@@ -233,6 +244,7 @@ function DeleteUserModal({ user, onClose, onDone }: { user: any; onClose: () => 
         <p style={{ fontSize: 14, color: 'var(--ghost)', lineHeight: 1.7, marginBottom: 20 }}>
           أنت على وشك حذف حساب <strong style={{ color: 'var(--slate)' }}>{user.fullName}</strong> ({user.email}). اختر طريقة الحذف:
         </p>
+        {error && <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', color: '#F87171', fontSize: 13, fontWeight: 600, marginBottom: 16 }}>{error}</div>}
 
         <div style={{ display: 'grid', gap: 10 }}>
           {/* Grace Period Option */}
