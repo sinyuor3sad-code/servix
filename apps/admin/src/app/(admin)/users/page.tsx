@@ -292,8 +292,8 @@ function DeleteUserModal({ user, onClose, onDone }: { user: any; onClose: () => 
               {loading === 'immediate' ? <div style={{ width: 16, height: 16, border: '2px solid #F87171', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} /> : <Zap size={18} style={{ color: '#F87171' }} />}
             </div>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#F87171', marginBottom: 3 }}>⚡ حذف فوري</div>
-              <div style={{ fontSize: 12, color: 'var(--ghost)', lineHeight: 1.5 }}>يُحذف الحساب ويُخفى فوراً (إخفاء البيانات). لا يزال قابلاً للاستعادة لكن البيانات الحساسة تُخفى فوراً.</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#F87171', marginBottom: 3 }}>⚡ حذف نهائي</div>
+              <div style={{ fontSize: 12, color: 'var(--ghost)', lineHeight: 1.5 }}>يُحذف الحساب نهائياً من قاعدة البيانات بجميع بياناته. <strong style={{ color: '#F87171' }}>لا يمكن الاستعادة بعد الحذف.</strong></div>
             </div>
           </button>
         </div>

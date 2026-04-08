@@ -619,49 +619,49 @@ export class AdminService {
       throw new BadRequestException('لا يمكنك حذف حسابك الخاص');
     }
 
-    // Already deleted?
-    if (user.fullName.startsWith('[محذوف]') || user.fullName.startsWith('[قيد الحذف]')) {
-      throw new BadRequestException('هذا المستخدم محذوف بالفعل');
-    }
-
-    // Suspend all tenant-user records (shared by both modes)
-    const suspendOps = user.tenantUsers.map((tu) =>
-      this.prisma.tenantUser.update({
-        where: { id: tu.id },
-        data: { status: 'suspended' as any },
-      }),
-    );
-
     if (immediate) {
-      // ══ Immediate delete: anonymize + suspend ══
-      // Use short suffix to avoid VarChar overflow (email=100, phone=15)
-      const suffix = `_d${Date.now().toString(36).slice(-6)}`;
-      // Truncate to fit: email max 100, phone max 15
-      const anonEmail = (user.email.slice(0, 90) + suffix).slice(0, 100);
-      const anonPhone = ('0000000' + suffix).slice(0, 15);
-      const anonName = `[محذوف] ${user.fullName}`.slice(0, 100);
-
-      await this.prisma.$transaction([
-        ...suspendOps,
-        this.prisma.user.update({
-          where: { id: userId },
-          data: { email: anonEmail, phone: anonPhone, fullName: anonName },
-        }),
-        this.prisma.platformAuditLog.create({
-          data: {
-            userId: adminId,
-            action: 'admin_delete_user_immediate',
-            entityType: 'user',
-            entityId: userId,
-            oldValues: { email: user.email, phone: user.phone, fullName: user.fullName },
-            newValues: { status: 'deleted', deletedAt: new Date().toISOString(), mode: 'immediate' },
+      // ══ HARD DELETE: permanently remove user from database ══
+      // 1. First, create audit log under admin's ID (before deleting user data)
+      await this.prisma.platformAuditLog.create({
+        data: {
+          userId: adminId,
+          action: 'admin_hard_delete_user',
+          entityType: 'user',
+          entityId: userId,
+          oldValues: {
+            email: user.email,
+            phone: user.phone,
+            fullName: user.fullName,
+            authProvider: user.authProvider,
+            createdAt: user.createdAt.toISOString(),
+            tenantCount: user.tenantUsers.length,
           },
-        }),
+          newValues: { status: 'permanently_deleted', deletedAt: new Date().toISOString(), mode: 'hard_delete' },
+        },
+      });
+
+      // 2. Delete all related records, then the user
+      await this.prisma.$transaction([
+        // Delete audit logs where this user is the actor
+        this.prisma.platformAuditLog.deleteMany({ where: { userId } }),
+        // Delete password resets
+        this.prisma.passwordReset.deleteMany({ where: { userId } }),
+        // Delete tenant-user associations
+        this.prisma.tenantUser.deleteMany({ where: { userId } }),
+        // Delete blacklisted tokens
+        this.prisma.tokenBlacklist.deleteMany({ where: { userId } }),
+        // Finally delete the user
+        this.prisma.user.delete({ where: { id: userId } }),
       ]);
 
-      return { message: 'تم حذف المستخدم فوراً (يمكن الاستعادة)', deletedId: userId, mode: 'immediate' };
+      return { message: `تم حذف "${user.fullName}" نهائياً من قاعدة البيانات`, deletedId: userId, mode: 'hard_delete' };
     } else {
-      // ══ Grace period delete: suspend + mark pending ══
+      // ══ Grace period: soft delete + suspend ══
+      // Already deleted?
+      if (user.fullName.startsWith('[محذوف]') || user.fullName.startsWith('[قيد الحذف]')) {
+        throw new BadRequestException('هذا المستخدم محذوف بالفعل');
+      }
+
       const graceDays = await this.platformSettings.getNumber('user_deletion_grace_days', 30);
       const deletionDate = new Date();
       deletionDate.setDate(deletionDate.getDate() + graceDays);
@@ -669,7 +669,12 @@ export class AdminService {
       const pendingName = `[قيد الحذف] ${user.fullName}`.slice(0, 100);
 
       await this.prisma.$transaction([
-        ...suspendOps,
+        ...user.tenantUsers.map((tu) =>
+          this.prisma.tenantUser.update({
+            where: { id: tu.id },
+            data: { status: 'suspended' as any },
+          }),
+        ),
         this.prisma.user.update({
           where: { id: userId },
           data: { fullName: pendingName },
