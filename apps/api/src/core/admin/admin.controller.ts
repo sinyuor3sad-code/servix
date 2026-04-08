@@ -23,6 +23,7 @@ import { RolesGuard } from '../../shared/guards';
 import { Roles, CurrentUser, Public } from '../../shared/decorators';
 import { RateLimit } from '../../shared/guards/rate-limit.guard';
 import { TenantsService } from '../tenants/tenants.service';
+import { CircuitBreakerService } from '../../shared/resilience/circuit-breaker.service';
 import { CreateTenantDto } from '../tenants/dto/create-tenant.dto';
 import {
   GetTenantsDto,
@@ -54,6 +55,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly tenantsService: TenantsService,
+    private readonly circuitBreakerService: CircuitBreakerService,
   ) {}
 
   @Post('auth/login')
@@ -124,6 +126,32 @@ export class AdminController {
     @CurrentUser('sub') userId: string,
   ) {
     return this.adminService.updateTenantStatus(id, dto.status, userId);
+  }
+
+  // ═══════════════════ Force Actions ═══════════════════
+
+  @Post('tenants/:id/force-logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'تسجيل خروج إجباري لجميع مستخدمي منشأة' })
+  @ApiParam({ name: 'id', description: 'معرف المنشأة (UUID)' })
+  @ApiResponse({ status: 200, description: 'تم تسجيل خروج جميع المستخدمين' })
+  async forceLogoutTenant(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.forceLogoutTenant(id, adminId);
+  }
+
+  @Post('tenants/:id/force-password-reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'إجبار جميع مستخدمي منشأة على تغيير كلمة المرور' })
+  @ApiParam({ name: 'id', description: 'معرف المنشأة (UUID)' })
+  @ApiResponse({ status: 200, description: 'تم إجبار تغيير كلمة المرور' })
+  async forcePasswordReset(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.adminService.forcePasswordReset(id, adminId);
   }
 
   @Get('subscriptions')
@@ -398,5 +426,14 @@ export class AdminController {
   @ApiOperation({ summary: 'جلب التجديدات' })
   async getRenewals(@Query() dto: GetRenewalsDto) {
     return this.adminService.getRenewals(dto);
+  }
+
+  // ═══════════════════ Circuit Breakers (4.4) ═══════════════════
+
+  @Get('circuit-breakers')
+  @ApiOperation({ summary: 'حالة جميع دوائر القطع' })
+  @ApiResponse({ status: 200, description: 'حالة الخدمات الخارجية' })
+  async getCircuitBreakers() {
+    return this.circuitBreakerService.getAllStates();
   }
 }

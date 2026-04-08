@@ -4,11 +4,26 @@ const config: Config = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: 'src',
   testRegex: '.*\\.spec\\.ts$',
+  testPathIgnorePatterns: ['/node_modules/', '/test/pact/'],
   transform: {
     '^.+\\.(t|j)s$': 'ts-jest',
   },
-  collectCoverageFrom: ['**/*.(t|j)s'],
+  collectCoverageFrom: [
+    '**/*.service.ts',
+    '**/*.controller.ts',
+    '**/*.middleware.ts',
+    '!**/*.spec.ts',
+    '!**/generated/**',
+  ],
   coverageDirectory: '../coverage',
+  coverageThreshold: {
+    global: {
+      statements: 90,
+      branches: 85,
+      functions: 88,
+      lines: 90,
+    },
+  },
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/core/$1',

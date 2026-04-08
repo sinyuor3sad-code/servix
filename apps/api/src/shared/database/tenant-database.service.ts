@@ -34,6 +34,8 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
   async syncAllTenantSchemas(): Promise<void> {
     this.logger.log('🔄 Starting tenant schema sync (migrate deploy)...');
 
+    const batchSize = parseInt(process.env.MIGRATION_BATCH_SIZE || '10', 10);
+
     try {
       const tenants = await this.platformPrisma.tenant.findMany({
         where: { status: { not: 'cancelled' } },
@@ -50,20 +52,34 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
         return;
       }
 
-      this.logger.log(`Found ${tenantDbs.length} tenant databases to sync`);
+      const totalBatches = Math.ceil(tenantDbs.length / batchSize);
+      this.logger.log(`Found ${tenantDbs.length} tenant databases — migrating in ${totalBatches} batches of ${batchSize}`);
 
       let success = 0;
       let failed = 0;
 
-      for (const dbName of tenantDbs) {
-        try {
-          await this.deployTenantMigrations(dbName);
-          success++;
-          this.logger.log(`✅ Migrations deployed: ${dbName} (${success}/${tenantDbs.length})`);
-        } catch (error: unknown) {
-          failed++;
-          const msg = error instanceof Error ? error.message : String(error);
-          this.logger.warn(`⚠️ Migration deploy failed for ${dbName}: ${msg}`);
+      for (let i = 0; i < tenantDbs.length; i += batchSize) {
+        const batch = tenantDbs.slice(i, i + batchSize);
+        const batchNum = Math.floor(i / batchSize) + 1;
+
+        this.logger.log(`Batch ${batchNum}/${totalBatches}: migrating ${batch.length} tenants...`);
+
+        const results = await Promise.allSettled(
+          batch.map(async (dbName) => {
+            await this.deployTenantMigrations(dbName);
+            return dbName;
+          }),
+        );
+
+        for (const result of results) {
+          if (result.status === 'fulfilled') {
+            success++;
+            this.logger.log(`✅ Migrations deployed: ${result.value} (${success}/${tenantDbs.length})`);
+          } else {
+            failed++;
+            const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+            this.logger.warn(`⚠️ Migration deploy failed: ${msg}`);
+          }
         }
       }
 

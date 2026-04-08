@@ -5,6 +5,7 @@ import { TenantMiddleware } from './tenant.middleware';
 import { PlatformPrismaClient } from '../database/platform.client';
 import { TenantClientFactory } from '../database/tenant-client.factory';
 import { CacheService } from '../cache/cache.service';
+import { PlatformSettingsService } from '../database/platform-settings.service';
 
 const mockPlatformPrisma = {
   tenant: { findUnique: jest.fn() },
@@ -21,6 +22,14 @@ const mockCacheService = {
   getTenant: jest.fn().mockResolvedValue(null),
   setTenant: jest.fn().mockResolvedValue(undefined),
   invalidateTenant: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockPlatformSettingsService = {
+  getNumber: jest.fn().mockResolvedValue(7),
+  getString: jest.fn().mockReturnValue(''),
+  getBoolean: jest.fn().mockResolvedValue(false),
+  get: jest.fn().mockResolvedValue(''),
+  invalidateCache: jest.fn().mockResolvedValue(undefined),
 };
 
 const createMockContext = (path: string, user?: { tenantId?: string; sub?: string }) => {
@@ -63,6 +72,7 @@ describe('TenantMiddleware', () => {
         { provide: PlatformPrismaClient, useValue: mockPlatformPrisma },
         { provide: TenantClientFactory, useValue: mockTenantFactory },
         { provide: CacheService, useValue: mockCacheService },
+        { provide: PlatformSettingsService, useValue: mockPlatformSettingsService },
       ],
     }).compile();
 
@@ -80,6 +90,7 @@ describe('TenantMiddleware', () => {
         { provide: PlatformPrismaClient, useValue: mockPlatformPrisma },
         { provide: TenantClientFactory, useValue: mockTenantFactory },
         { provide: CacheService, useValue: mockCacheService },
+        { provide: PlatformSettingsService, useValue: mockPlatformSettingsService },
       ],
     }).compile();
   };

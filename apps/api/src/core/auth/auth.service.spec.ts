@@ -48,6 +48,18 @@ const mockPrisma = {
   passwordReset: {
     create: jest.fn(),
   },
+  plan: {
+    findFirst: jest.fn(),
+  },
+  subscription: {
+    create: jest.fn(),
+  },
+  planFeature: {
+    findMany: jest.fn(),
+  },
+  tenantFeature: {
+    createMany: jest.fn(),
+  },
   $transaction: jest.fn(),
 };
 
@@ -89,6 +101,9 @@ const mockSmsService = { send: jest.fn().mockResolvedValue(undefined) };
 const mockTenantDatabaseService = { createTenantDatabase: jest.fn().mockResolvedValue(undefined) };
 const mockTwoFactorService = { generateSecret: jest.fn(), generateOtpAuthUrl: jest.fn(), verifyToken: jest.fn(), generateBackupCodes: jest.fn() };
 const mockGoogleAuthService = { verifyIdToken: jest.fn(), isEnabled: jest.fn().mockReturnValue(false) };
+const mockAuditService = { log: jest.fn().mockResolvedValue(undefined) };
+
+import { AuditService } from '../audit/audit.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -106,6 +121,7 @@ describe('AuthService', () => {
         { provide: TenantDatabaseService, useValue: mockTenantDatabaseService },
         { provide: TwoFactorService, useValue: mockTwoFactorService },
         { provide: GoogleAuthService, useValue: mockGoogleAuthService },
+        { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
 
@@ -153,6 +169,12 @@ describe('AuthService', () => {
         id: 'role-owner-id',
         name: 'owner',
       });
+      mockPrisma.plan.findFirst.mockResolvedValue({
+        id: 'plan-basic',
+        name: 'Basic',
+        isActive: true,
+      });
+      mockPrisma.planFeature.findMany.mockResolvedValue([]);
 
       const createdUser = {
         id: 'user-id',
@@ -174,6 +196,8 @@ describe('AuthService', () => {
           user: { create: jest.fn().mockResolvedValue(createdUser) },
           tenant: { create: jest.fn().mockResolvedValue(createdTenant) },
           tenantUser: { create: jest.fn().mockResolvedValue({}) },
+          subscription: { create: jest.fn().mockResolvedValue({ id: 'sub-1', status: 'trial' }) },
+          tenantFeature: { createMany: jest.fn().mockResolvedValue({}) },
         };
         return cb(tx);
       });

@@ -1,0 +1,96 @@
+groups:
+  - name: slo-alerts
+    rules:
+      # ── Availability ──────────────────────────────────────
+      - alert: ErrorBudgetBurning
+        expr: |
+          1 - (
+            sum(rate(http_requests_total{status_code=~"5.."}[1h]))
+            / sum(rate(http_requests_total[1h]))
+          ) < 0.999
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "🔴 Error budget burning — availability below 99.9%"
+          description: "1h availability is {{ $value | humanizePercentage }}. Investigate immediately."
+
+      - alert: ErrorBudgetExhausted
+        expr: |
+          1 - (
+            (1 - (1 - sum(rate(http_requests_total{status_code=~"5.."}[30d])) / sum(rate(http_requests_total[30d]))))
+            / (1 - 0.999)
+          ) < 0
+        labels:
+          severity: P1
+        annotations:
+          summary: "🔴 Error budget EXHAUSTED — freeze deployments"
+          description: "30-day error budget has been consumed. Non-critical deploys must stop."
+
+      # ── Latency ───────────────────────────────────────────
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+        for: 10m
+        labels:
+          severity: P2
+        annotations:
+          summary: "⚠️ p95 latency > 500ms"
+          description: "p95 latency is {{ $value }}s over the last 5 minutes."
+
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 2.0
+        for: 10m
+        labels:
+          severity: P2
+        annotations:
+          summary: "⚠️ p99 latency > 2000ms"
+
+      # ── Error Rate ────────────────────────────────────────
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status_code=~"5.."}[5m]))
+          / sum(rate(http_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "🔴 Error rate > 1%"
+          description: "5xx error rate is {{ $value | humanizePercentage }}."
+
+      # ── Traffic Anomaly ───────────────────────────────────
+      - alert: TrafficAnomaly
+        expr: |
+          rate(http_request_duration_seconds_count[5m])
+          < 0.5 * avg_over_time(rate(http_request_duration_seconds_count[5m])[7d:1h])
+        for: 15m
+        labels:
+          severity: P2
+        annotations:
+          summary: "⚠️ Traffic drop — 50%+ below 7-day average"
+
+      # ── Infrastructure ────────────────────────────────────
+      - alert: HighCPU
+        expr: process_cpu_user_seconds_total > 0.8
+        for: 10m
+        labels:
+          severity: P2
+        annotations:
+          summary: "⚠️ CPU usage > 80% for 10 minutes"
+
+      - alert: HighMemory
+        expr: process_resident_memory_bytes / 1024 / 1024 > 1500
+        for: 10m
+        labels:
+          severity: P2
+        annotations:
+          summary: "⚠️ Memory usage > 1.5GB"
+
+      - alert: PostgresConnectionsHigh
+        expr: pg_stat_activity_count > 80
+        for: 5m
+        labels:
+          severity: P2
+        annotations:
+          summary: "⚠️ PostgreSQL connections > 80"

@@ -22,6 +22,7 @@ const mockDb = {
   appointmentService: { createMany: jest.fn() },
   commitment: { findFirst: jest.fn() },
   $transaction: jest.fn(),
+  $queryRaw: jest.fn().mockResolvedValue([]),
 };
 
 const mockCommitmentsService = {
@@ -33,6 +34,12 @@ const mockInventoryService = {
   autoDeductForAppointment: jest.fn().mockResolvedValue(undefined),
 };
 
+import { AuditService } from '../../../core/audit/audit.service';
+
+const mockAuditService = {
+  log: jest.fn().mockResolvedValue(undefined),
+};
+
 describe('AppointmentsService', () => {
   let service: AppointmentsService;
 
@@ -42,6 +49,7 @@ describe('AppointmentsService', () => {
         AppointmentsService,
         { provide: CommitmentsService, useValue: mockCommitmentsService },
         { provide: InventoryService, useValue: mockInventoryService },
+        { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
 
@@ -58,13 +66,10 @@ describe('AppointmentsService', () => {
       mockDb.service.findMany.mockResolvedValue([
         { id: 'svc-1', price: 50, duration: 30 },
       ]);
-      mockDb.appointment.findFirst.mockResolvedValue({
-        id: 'existing-app',
-        startTime: '14:00',
-        endTime: '14:30',
-      });
+      // Phase 1: conflict detection uses $queryRaw SELECT FOR UPDATE
+      const mockQueryRaw = jest.fn().mockResolvedValue([{ id: 'existing-app' }]);
       mockDb.$transaction.mockImplementation((fn: (tx: unknown) => unknown) =>
-        fn(mockDb),
+        fn({ ...mockDb, $queryRaw: mockQueryRaw }),
       );
 
       await expect(
@@ -76,14 +81,7 @@ describe('AppointmentsService', () => {
         } as never),
       ).rejects.toThrow(ConflictException);
 
-      expect(mockDb.appointment.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            date: new Date('2026-04-15'),
-            status: { notIn: ['cancelled', 'no_show'] },
-          }),
-        }),
-      );
+      expect(mockQueryRaw).toHaveBeenCalled();
     });
 
     it('يجب أن يسمح بالإنشاء عند عدم وجود تعارض', async () => {
@@ -135,7 +133,8 @@ describe('AppointmentsService', () => {
       );
 
       expect(result).toHaveProperty('id', 'new-app');
-      expect(mockDb.appointment.findFirst).toHaveBeenCalled();
+      // Phase 1: conflict detection uses $queryRaw, not findFirst
+      expect(mockDb.$queryRaw).toHaveBeenCalled();
     });
 
     it('يجب أن يرمي NotFoundException عندما لا يوجد العميل', async () => {
@@ -241,6 +240,7 @@ describe('AppointmentsService', () => {
         async (fn: (tx: unknown) => unknown) => {
           const tx = {
             ...mockDb,
+            $queryRaw: jest.fn().mockResolvedValue([]),
             appointment: {
               ...mockDb.appointment,
               create: mockDb.appointment.create,

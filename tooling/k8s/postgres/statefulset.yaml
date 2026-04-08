@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: servix
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: servix-secrets
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: servix-secrets
+                  key: DB_PASSWORD
+            - name: POSTGRES_DB
+              value: servix_platform
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            # WAL settings for streaming replication
+            - name: POSTGRES_INITDB_ARGS
+              value: "--data-checksums"
+          args:
+            - "-c"
+            - "wal_level=replica"
+            - "-c"
+            - "max_wal_senders=5"
+            - "-c"
+            - "wal_keep_size=256MB"
+            - "-c"
+            - "max_connections=300"
+            - "-c"
+            - "shared_buffers=1GB"
+            - "-c"
+            - "effective_cache_size=3GB"
+            - "-c"
+            - "work_mem=16MB"
+            - "-c"
+            - "maintenance_work_mem=256MB"
+            - "-c"
+            - "random_page_cost=1.1"
+            - "-c"
+            - "log_min_duration_statement=500"
+          volumeMounts:
+            - name: pg-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - servix
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - servix
+            initialDelaySeconds: 30
+            periodSeconds: 15
+
+        # PgBouncer sidecar for connection pooling
+        - name: pgbouncer
+          image: edoburu/pgbouncer:1.22.0
+          ports:
+            - containerPort: 6432
+              name: pgbouncer
+          env:
+            - name: DATABASE_URL
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@localhost:5432/servix_platform"
+            - name: POOL_MODE
+              value: "transaction"
+            - name: DEFAULT_POOL_SIZE
+              value: "50"
+            - name: MAX_CLIENT_CONN
+              value: "300"
+            - name: SERVER_IDLE_TIMEOUT
+              value: "300"
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: servix-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: servix-secrets
+                  key: DB_PASSWORD
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+  volumeClaimTemplates:
+    - metadata:
+        name: pg-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 80Gi

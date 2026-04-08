@@ -1,0 +1,38 @@
+# Bitnami Redis Helm chart values for SERVIX
+# Install: helm install redis bitnami/redis --namespace servix -f values.yaml
+
+auth:
+  password: "${REDIS_PASSWORD}"
+
+sentinel:
+  enabled: true
+  quorum: 2
+
+master:
+  persistence:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+replica:
+  replicaCount: 2
+  persistence:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: servix

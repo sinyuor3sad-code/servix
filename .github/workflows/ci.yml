@@ -37,6 +37,34 @@ jobs:
       - name: Type Check Admin
         run: pnpm --filter @servix/admin type-check
 
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: npm audit (high + critical)
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Semgrep SAST scan
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/javascript
+            p/typescript
+            p/nodejs
+            p/owasp-top-ten
+        continue-on-error: true
+
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -53,8 +81,32 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generate Prisma Clients
         run: pnpm --filter @servix/api db:generate
-      - name: Run Unit Tests
-        run: pnpm --filter @servix/api test -- --coverage --passWithNoTests
+
+      - name: Run Unit Tests with Coverage
+        run: pnpm --filter @servix/api test -- --coverage --passWithNoTests --coverageReporters=json-summary --coverageReporters=text
+
+      - name: Coverage Gate (90% minimum)
+        run: |
+          COVERAGE=$(node -e "
+            const report = require('./apps/api/coverage/coverage-summary.json');
+            const total = report.total;
+            const avg = (total.lines.pct + total.branches.pct + total.functions.pct + total.statements.pct) / 4;
+            console.log(avg.toFixed(2));
+          ")
+          echo "Coverage: ${COVERAGE}%"
+          node -e "if (parseFloat('${COVERAGE}') < 90) { console.error('❌ Coverage ${COVERAGE}% is below 90% threshold'); process.exit(1); } else { console.log('✅ Coverage ${COVERAGE}% meets 90% threshold'); }"
+
+      - name: Dashboard unit tests with coverage
+        run: pnpm --filter @servix/dashboard vitest run --coverage --reporter=verbose
+
+      - name: Consumer Contract Tests (Pact)
+        run: pnpm --filter @servix/dashboard test:pact
+        continue-on-error: true
+
+      - name: Provider Contract Verification (Pact)
+        run: pnpm --filter @servix/api test:pact:verify
+        continue-on-error: true
+
       - name: Upload Coverage
         uses: actions/upload-artifact@v4
         with:
@@ -83,3 +135,114 @@ jobs:
         run: pnpm --filter @servix/api db:generate
       - name: Build ${{ matrix.app }}
         run: pnpm --filter @servix/${{ matrix.app }} build
+
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npx playwright install --with-deps chromium
+      - name: Run E2E tests
+        run: cd apps/dashboard && npx playwright test --reporter=html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: apps/dashboard/playwright-report/
+
+  performance:
+    name: Performance Budget (Lighthouse)
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build Dashboard
+        run: pnpm --filter @servix/dashboard build
+      - name: Lighthouse CI
+        run: cd apps/dashboard && npx lhci autorun
+        continue-on-error: true
+      - name: Bundle Size Check
+        run: |
+          cd apps/dashboard
+          TOTAL_KB=$(du -sk .next/static/chunks 2>/dev/null | cut -f1)
+          echo "📦 JS Bundle Size: ${TOTAL_KB:-0}KB"
+          if [ "${TOTAL_KB:-0}" -gt 400 ]; then
+            echo "::error::Bundle size ${TOTAL_KB}KB exceeds 400KB budget!"
+            exit 1
+          fi
+          echo "✅ Bundle within 400KB budget"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-report
+          path: apps/dashboard/lhci-results/
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build, security, e2e-tests, performance]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Staging Server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /root/servix
+            git pull origin main
+            docker compose -f tooling/docker/docker-compose.staging.yml up -d --build
+            sleep 15
+            curl -f http://localhost:4100/api/v1/health/live || exit 1
+            echo "✅ Staging deployed successfully"
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Production Server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /root/servix
+            bash tooling/docker/scripts/backup.sh
+            git pull origin main
+            docker compose -f tooling/docker/docker-compose.prod.yml up -d --build --no-deps api-1
+            sleep 15
+            curl -f http://localhost:4000/api/v1/health/live || exit 1
+            docker compose -f tooling/docker/docker-compose.prod.yml up -d --build --no-deps api-2
+            sleep 15
+            docker compose -f tooling/docker/docker-compose.prod.yml up -d --build
+            # Update changelog
+            npx conventional-changelog -p angular -i CHANGELOG.md -s
+            git add CHANGELOG.md
+            git diff --cached --quiet || git commit -m "docs: update changelog [skip ci]"
+            git push origin main || true
+            echo "✅ Production deployed successfully"

@@ -1,0 +1,46 @@
+# ═══════════════════════════════════════════════════════════
+# SERVIX Blue Environment — Blue-Green Deployment
+# Only API instances. Shared infra runs in docker-compose.prod.yml
+# ═══════════════════════════════════════════════════════════
+
+services:
+  api-blue-1:
+    image: servix-api:${VERSION:-latest}
+    container_name: servix-api-blue-1
+    restart: unless-stopped
+    env_file: ../../.env.production
+    environment:
+      PORT: 4000
+      INSTANCE_ID: blue-1
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/v1/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - servix-network
+
+  api-blue-2:
+    image: servix-api:${VERSION:-latest}
+    container_name: servix-api-blue-2
+    restart: unless-stopped
+    env_file: ../../.env.production
+    environment:
+      PORT: 4000
+      INSTANCE_ID: blue-2
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/v1/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - servix-network
+
+networks:
+  servix-network:
+    external: true
+    name: servix-network

@@ -1,0 +1,8 @@
+# Copy this file to terraform.tfvars and fill in your values
+# NEVER commit terraform.tfvars to version control!
+
+hcloud_token         = ""
+cloudflare_api_token = ""
+cloudflare_zone_id   = ""
+ssh_public_key       = "ssh-ed25519 AAAA... your-key"
+deploy_ip            = "YOUR_IP/32"

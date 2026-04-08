@@ -1,3 +1,5 @@
+// IMPORTANT: OpenTelemetry must bootstrap before everything else
+import './shared/telemetry/tracing';
 // IMPORTANT: Sentry must be imported before everything else
 import './instrument';
 import { NestFactory } from '@nestjs/core';
@@ -6,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './shared/filters/http-exception.filter';
@@ -27,9 +30,50 @@ async function bootstrap(): Promise<void> {
   // Serve uploaded files (logos etc.)
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
 
+  // ── Cookie Parser (5.5 — CSRF support) ──
+  app.use(cookieParser());
+
+  // ── Security Headers (5.6 — Custom CSP) ──
+  const nodeEnvEarly = process.env.NODE_ENV || 'development';
   app.use(helmet({
-    contentSecurityPolicy: false, // Managed by CloudFlare
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "https://cdn.moyasar.com",  // Moyasar payment SDK
+        ],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",  // Required for CSS-in-JS / styled-jsx
+        ],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "blob:",
+          process.env.S3_PUBLIC_URL || "http://localhost:9000",
+          "https://*.cloudflare.com",
+        ],
+        connectSrc: [
+          "'self'",
+          "ws://localhost:*",
+          "wss://*.servi-x.com",
+          process.env.API_URL || "http://localhost:4000",
+        ],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        objectSrc: ["'none'"],
+        mediaSrc: ["'none'"],
+        frameSrc: [
+          "https://api.moyasar.com",  // Moyasar iframe for payment
+        ],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        ...(nodeEnvEarly === 'production' ? { upgradeInsecureRequests: [] } : {}),
+      },
+    },
     hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+    crossOriginEmbedderPolicy: false, // Required for external images
+    crossOriginResourcePolicy: { policy: 'cross-origin' as const },
   }));
 
   // Correlation ID — must run before all other middleware
@@ -86,7 +130,7 @@ async function bootstrap(): Promise<void> {
         : 'http://localhost:3000',
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Accept-Language'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Accept-Language', 'X-CSRF-Token', 'X-Correlation-ID'],
     maxAge: 86400, // Cache preflight for 24h
   });
 

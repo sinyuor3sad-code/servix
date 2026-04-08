@@ -10,6 +10,12 @@
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:pact": "vitest run test/pact/",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
+    "lighthouse": "lhci autorun",
     "clean": "rimraf .next .turbo"
   },
   "dependencies": {
@@ -35,12 +41,27 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "jsdom": "^29.0.2",
     "postcss": "^8.5.0",
     "rimraf": "^6.0.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.3",
+    "@vitest/coverage-v8": "^4.1.3",
+    "@pact-foundation/pact": "^13.0.0",
+    "@lhci/cli": "^0.14.0",
+    "@axe-core/playwright": "^4.9.0",
+    "storybook": "^8.0.0",
+    "@storybook/react-vite": "^8.0.0",
+    "@storybook/addon-essentials": "^8.0.0",
+    "@storybook/addon-a11y": "^8.0.0",
+    "@storybook/addon-interactions": "^8.0.0",
+    "@storybook/blocks": "^8.0.0"
   }
 }

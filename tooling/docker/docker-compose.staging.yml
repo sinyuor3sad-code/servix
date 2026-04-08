@@ -1,0 +1,127 @@
+# ═══════════════════════════════════════════════════════════
+# SERVIX — Staging Environment (docker-compose.staging.yml)
+# Isolated from production: separate DB, different ports
+# ═══════════════════════════════════════════════════════════
+
+services:
+  staging-postgres:
+    image: postgres:17-alpine
+    container_name: servix-staging-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: servix_staging
+    volumes:
+      - staging_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - servix-staging
+
+  staging-redis:
+    image: redis:8-alpine
+    container_name: servix-staging-redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - staging_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - servix-staging
+
+  staging-api:
+    build:
+      context: ../../
+      dockerfile: apps/api/Dockerfile
+    container_name: servix-staging-api
+    restart: always
+    environment:
+      NODE_ENV: staging
+      PORT: 4000
+      INSTANCE_ID: staging-api
+      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@staging-postgres:5432/servix_staging
+      REDIS_HOST: staging-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      CORS_ORIGINS: "http://localhost:4101,http://localhost:4102,http://localhost:4103"
+    depends_on:
+      staging-postgres:
+        condition: service_healthy
+      staging-redis:
+        condition: service_healthy
+    ports:
+      - "4100:4000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      - servix-staging
+
+  staging-dashboard:
+    build:
+      context: ../../
+      dockerfile: apps/dashboard/Dockerfile
+    container_name: servix-staging-dashboard
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4100/api/v1
+      NEXT_PUBLIC_WS_URL: http://localhost:4100
+    ports:
+      - "4101:3000"
+    depends_on:
+      staging-api:
+        condition: service_healthy
+    networks:
+      - servix-staging
+
+  staging-booking:
+    build:
+      context: ../../
+      dockerfile: apps/booking/Dockerfile
+    container_name: servix-staging-booking
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4100/api/v1
+    ports:
+      - "4102:3001"
+    depends_on:
+      staging-api:
+        condition: service_healthy
+    networks:
+      - servix-staging
+
+  staging-admin:
+    build:
+      context: ../../
+      dockerfile: apps/admin/Dockerfile
+    container_name: servix-staging-admin
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4100/api/v1
+    ports:
+      - "4103:3002"
+    depends_on:
+      - staging-api
+    networks:
+      - servix-staging
+
+volumes:
+  staging_postgres_data:
+  staging_redis_data:
+
+networks:
+  servix-staging:
+    driver: bridge

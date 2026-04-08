@@ -26,6 +26,12 @@ const mockDb = {
   $transaction: jest.fn(),
 };
 
+import { AuditService } from '../../../core/audit/audit.service';
+
+const mockAuditService = {
+  log: jest.fn().mockResolvedValue(undefined),
+};
+
 describe('InvoicesService', () => {
   let service: InvoicesService;
 
@@ -38,6 +44,7 @@ describe('InvoicesService', () => {
         { provide: WhatsAppService, useValue: {} },
         { provide: SmsService, useValue: {} },
         { provide: SettingsService, useValue: {} },
+        { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
 

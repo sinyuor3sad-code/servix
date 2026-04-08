@@ -109,3 +109,20 @@ temp/
 *.orig
 *.patch
 .history/
+
+# ──────────────── Terraform ────────────────
+*.tfstate
+*.tfstate.*
+.terraform/
+terraform.tfvars
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# ──────────────── Stryker Mutation Testing ────────────────
+.stryker-tmp/
+reports/mutation/

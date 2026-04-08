@@ -4,7 +4,10 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
+import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
 
 const mockPrisma = {
   tenant: {
@@ -37,6 +40,20 @@ const mockPrisma = {
   $transaction: jest.fn(),
 };
 
+const mockJwtService = {
+  signAsync: jest.fn().mockResolvedValue('mock-token'),
+  verifyAsync: jest.fn(),
+};
+
+const mockConfigService = {
+  get: jest.fn((key: string, defaultValue?: string) => defaultValue ?? ''),
+};
+
+const mockPlatformSettingsService = {
+  getNumber: jest.fn().mockResolvedValue(1440),
+  invalidateCache: jest.fn().mockResolvedValue(undefined),
+};
+
 describe('AdminService', () => {
   let service: AdminService;
 
@@ -45,6 +62,9 @@ describe('AdminService', () => {
       providers: [
         AdminService,
         { provide: PlatformPrismaClient, useValue: mockPrisma },
+        { provide: JwtService, useValue: mockJwtService },
+        { provide: ConfigService, useValue: mockConfigService },
+        { provide: PlatformSettingsService, useValue: mockPlatformSettingsService },
       ],
     }).compile();
 
@@ -58,7 +78,10 @@ describe('AdminService', () => {
         .mockResolvedValueOnce(50) // totalTenants
         .mockResolvedValueOnce(35) // activeTenants
         .mockResolvedValueOnce(5) // suspendedTenants
+        .mockResolvedValueOnce(3) // pendingTenants (trial)
         .mockResolvedValueOnce(8); // newTenantsThisMonth
+
+      mockPrisma.tenant.findMany.mockResolvedValue([]); // recentTenants
 
       mockPrisma.user.count.mockResolvedValue(120);
 
@@ -102,6 +125,7 @@ describe('AdminService', () => {
 
     it('يجب إرجاع صفر للإيرادات عند عدم وجود فواتير', async () => {
       mockPrisma.tenant.count.mockResolvedValue(0);
+      mockPrisma.tenant.findMany.mockResolvedValue([]); // recentTenants
       mockPrisma.user.count.mockResolvedValue(0);
       mockPrisma.subscription.count.mockResolvedValue(0);
       mockPrisma.platformInvoice.aggregate.mockResolvedValue({

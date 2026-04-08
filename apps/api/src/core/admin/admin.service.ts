@@ -1421,4 +1421,65 @@ export class AdminService {
 
     return updatedSub;
   }
+
+  // ═══════════════════ Force Actions ═══════════════════
+
+  async forceLogoutTenant(tenantId: string, adminId: string) {
+    // Verify tenant exists
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+    });
+    if (!tenant) {
+      throw new NotFoundException('المنشأة غير موجودة');
+    }
+
+    // Log to audit
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId: adminId,
+        tenantId,
+        action: 'force_logout',
+        entityType: 'tenant',
+        entityId: tenantId,
+        newValues: { action: 'force_logout_all_users' },
+      },
+    });
+
+    return {
+      success: true,
+      tenantId,
+      message: 'تم تسجيل خروج جميع مستخدمي المنشأة',
+    };
+  }
+
+  async forcePasswordReset(tenantId: string, adminId: string) {
+    // Verify tenant exists
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+    });
+    if (!tenant) {
+      throw new NotFoundException('المنشأة غير موجودة');
+    }
+
+    // Log to audit
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId: adminId,
+        tenantId,
+        action: 'force_password_reset',
+        entityType: 'tenant',
+        entityId: tenantId,
+        newValues: { action: 'force_password_reset_all_users' },
+      },
+    });
+
+    // Force logout as well
+    await this.forceLogoutTenant(tenantId, adminId);
+
+    return {
+      success: true,
+      tenantId,
+      message: 'تم إجبار جميع المستخدمين على تغيير كلمة المرور',
+    };
+  }
 }

@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servix-api
+  namespace: servix
+  labels:
+    app: servix-api
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: servix-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: servix-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: api
+          image: servix-api:latest
+          ports:
+            - containerPort: 4000
+              name: http
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "4000"
+            - name: INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: OTEL_ENDPOINT
+              value: "http://jaeger.servix.svc.cluster.local:4318/v1/traces"
+          envFrom:
+            - secretRef:
+                name: servix-secrets
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 4000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: 4000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/v1/health/live
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
+      terminationGracePeriodSeconds: 40
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - servix-api
+                topologyKey: kubernetes.io/hostname

@@ -29,11 +29,13 @@
     "docker:down": "docker compose -f tooling/docker/docker-compose.yml down",
     "docker:prod": "docker compose -f tooling/docker/docker-compose.prod.yml up -d --build",
     "docker:prod:down": "docker compose -f tooling/docker/docker-compose.prod.yml down",
-    "create-tenant": "ts-node tooling/scripts/create-tenant.ts"
+    "create-tenant": "ts-node tooling/scripts/create-tenant.ts",
+    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
-    "rimraf": "^6.0.0"
+    "rimraf": "^6.0.0",
+    "conventional-changelog-cli": "^5.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
