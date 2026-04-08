@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import {
   Menu, X, LayoutDashboard, Building2, CreditCard, BarChart3,
   Shield, FileText, ScrollText, Settings, Bell,
-  Package, LogOut, Sun, Moon, HardDrive, MoreHorizontal,
+  Package, LogOut, Sun, Moon, HardDrive, MoreHorizontal, Users,
 } from 'lucide-react';
 
 /* ── Route → Page Title mapping ── */
@@ -15,6 +15,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'مركز القيادة',
   '/analytics': 'التحليلات',
   '/tenants': 'إدارة الأقاليم',
+  '/users': 'المستخدمون',
   '/subscriptions': 'الاشتراكات',
   '/plans': 'الباقات',
   '/invoices': 'الفواتير',
@@ -39,6 +40,8 @@ const NAV_EXTRA = [
   { section: 'التحليلات' },
   { href: '/analytics', label: 'التحليلات', icon: BarChart3 },
   { href: '/plans', label: 'الباقات', icon: Package },
+  { section: 'الإدارة' },
+  { href: '/users', label: 'المستخدمون', icon: Users },
   { section: 'النظام' },
   { href: '/system', label: 'صحة النظام', icon: Shield },
   { href: '/backups', label: 'النسخ الاحتياطي', icon: HardDrive },

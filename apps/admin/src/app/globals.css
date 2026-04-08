@@ -1308,6 +1308,29 @@ html {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+@keyframes nx-sheet-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Danger Button ── */
+.nx-btn--danger {
+  background: rgba(248,113,113,0.08);
+  color: #F87171;
+  border-color: rgba(248,113,113,0.15);
+}
+.nx-btn--danger:hover {
+  background: rgba(248,113,113,0.15);
+  border-color: rgba(248,113,113,0.25);
+  color: #F87171;
+  box-shadow: var(--shadow-elevated), 0 0 20px rgba(248,113,113,0.08);
+}
+
 @keyframes nx-shimmer {
   from { background-position: -200% 0; }
   to   { background-position: 200% 0; }
