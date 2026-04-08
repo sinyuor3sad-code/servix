@@ -269,6 +269,76 @@ export class AdminService {
     };
   }
 
+  // ═══════════════════ Users ═══════════════════
+
+  async getUsers(opts: {
+    page: number;
+    perPage: number;
+    search: string;
+    verified?: boolean;
+  }) {
+    const { page, perPage, search, verified } = opts;
+    const skip = (page - 1) * perPage;
+
+    const where: Record<string, unknown> = {};
+
+    if (search) {
+      where.OR = [
+        { fullName: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search } },
+      ];
+    }
+
+    if (verified !== undefined) {
+      where.isEmailVerified = verified;
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          phone: true,
+          avatarUrl: true,
+          isEmailVerified: true,
+          isPhoneVerified: true,
+          authProvider: true,
+          lastLoginAt: true,
+          createdAt: true,
+          tenantUsers: {
+            select: {
+              isOwner: true,
+              tenant: {
+                select: { id: true, nameAr: true, nameEn: true, slug: true },
+              },
+              role: {
+                select: { name: true, nameAr: true },
+              },
+            },
+            take: 3,
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: perPage,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        page,
+        perPage,
+        total,
+        totalPages: Math.ceil(total / perPage),
+      },
+    };
+  }
+
   async getTenants(dto: GetTenantsDto): Promise<PaginatedResult<TenantWithSubscription>> {
     const { page = 1, perPage = 20, search, status } = dto;
     const skip = (page - 1) * perPage;

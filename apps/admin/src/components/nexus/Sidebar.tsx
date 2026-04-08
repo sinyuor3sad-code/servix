@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import {
   LayoutDashboard, Building2, CreditCard, BarChart3,
   Shield, FileText, ScrollText, Settings, Bell,
-  Package, LogOut, Sun, Moon, HardDrive,
+  Package, LogOut, Sun, Moon, HardDrive, Users,
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -16,6 +16,7 @@ const NAV = [
   { href: '/analytics', label: 'التحليلات', icon: BarChart3 },
   { section: 'الإدارة' },
   { href: '/tenants', label: 'الأقاليم', icon: Building2 },
+  { href: '/users', label: 'المستخدمون', icon: Users },
   { href: '/subscriptions', label: 'الاشتراكات', icon: CreditCard },
   { href: '/plans', label: 'الباقات', icon: Package },
   { href: '/invoices', label: 'الفواتير', icon: FileText },

@@ -83,6 +83,25 @@ export class AdminController {
     return this.adminService.getStats();
   }
 
+  // ═══════════════════ Users ═══════════════════
+
+  @Get('users')
+  @ApiOperation({ summary: 'عرض جميع المستخدمين المسجلين في المنصة' })
+  @ApiResponse({ status: 200, description: 'قائمة المستخدمين مع حالة التحقق' })
+  async getUsers(
+    @Query('page') page?: string,
+    @Query('perPage') perPage?: string,
+    @Query('search') search?: string,
+    @Query('verified') verified?: string,
+  ) {
+    return this.adminService.getUsers({
+      page: parseInt(page || '1', 10),
+      perPage: parseInt(perPage || '20', 10),
+      search: search || '',
+      verified: verified === 'true' ? true : verified === 'false' ? false : undefined,
+    });
+  }
+
   @Post('tenants')
   @ApiOperation({ summary: 'إنشاء منشأة جديدة من لوحة الإدارة' })
   @ApiResponse({ status: 201, description: 'تم إنشاء المنشأة بنجاح' })

@@ -189,6 +189,26 @@ export const adminService = {
   getStats: (): Promise<AdminStats> =>
     api.get<AdminStats>('/admin/stats'),
 
+  // ── Users ──
+  getUsers: (params?: string): Promise<PaginatedResult<{
+    id: string;
+    fullName: string;
+    email: string;
+    phone: string;
+    avatarUrl: string | null;
+    isEmailVerified: boolean;
+    isPhoneVerified: boolean;
+    authProvider: string;
+    lastLoginAt: string | null;
+    createdAt: string;
+    tenantUsers: Array<{
+      isOwner: boolean;
+      tenant: { id: string; nameAr: string; nameEn: string; slug: string };
+      role: { name: string; nameAr: string };
+    }>;
+  }>> =>
+    api.getPaginated(`/admin/users${params ? `?${params}` : ''}`),
+
   // ── Tenants ──
   getTenants: (params?: string): Promise<PaginatedResult<Tenant>> =>
     api.getPaginated<Tenant>(`/admin/tenants${params ? `?${params}` : ''}`),
