@@ -214,8 +214,8 @@ export const adminService = {
   impersonateUser: (id: string): Promise<any> =>
     api.post(`/admin/users/${id}/impersonate`, {}),
 
-  deleteUser: (id: string): Promise<any> =>
-    api.post(`/admin/users/${id}/delete`, {}),
+  deleteUser: (id: string, immediate?: boolean): Promise<any> =>
+    api.post(`/admin/users/${id}/delete`, { immediate: immediate ?? false }),
 
   restoreUser: (id: string): Promise<any> =>
     api.post(`/admin/users/${id}/restore`, {}),

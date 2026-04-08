@@ -608,7 +608,7 @@ export class AdminService {
     };
   }
 
-  async softDeleteUser(userId: string, adminId: string) {
+  async softDeleteUser(userId: string, adminId: string, immediate: boolean = false) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { tenantUsers: true },
@@ -620,39 +620,82 @@ export class AdminService {
       throw new BadRequestException('لا يمكنك حذف حسابك الخاص');
     }
 
-    // Soft delete: suspend all tenant-user records + anonymize email/phone
-    const anonSuffix = `_deleted_${Date.now()}`;
+    if (immediate) {
+      // ══ Immediate delete: anonymize + suspend ══
+      const anonSuffix = `_deleted_${Date.now()}`;
 
-    await this.prisma.$transaction([
-      // Suspend all tenant-user records
-      ...user.tenantUsers.map((tu) =>
-        this.prisma.tenantUser.update({
-          where: { id: tu.id },
-          data: { status: 'suspended' as any },
+      await this.prisma.$transaction([
+        ...user.tenantUsers.map((tu) =>
+          this.prisma.tenantUser.update({
+            where: { id: tu.id },
+            data: { status: 'suspended' as any },
+          }),
+        ),
+        this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            email: `${user.email}${anonSuffix}`,
+            phone: `${user.phone}${anonSuffix}`,
+            fullName: `[محذوف] ${user.fullName}`,
+          },
         }),
-      ),
-      // Anonymize identifying data
-      this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          email: `${user.email}${anonSuffix}`,
-          phone: `${user.phone}${anonSuffix}`,
-          fullName: `[محذوف] ${user.fullName}`,
-        },
-      }),
-      this.prisma.platformAuditLog.create({
-        data: {
-          userId: adminId,
-          action: 'admin_delete_user',
-          entityType: 'user',
-          entityId: userId,
-          oldValues: { email: user.email, phone: user.phone, fullName: user.fullName },
-          newValues: { status: 'deleted', deletedAt: new Date().toISOString() },
-        },
-      }),
-    ]);
+        this.prisma.platformAuditLog.create({
+          data: {
+            userId: adminId,
+            action: 'admin_delete_user_immediate',
+            entityType: 'user',
+            entityId: userId,
+            oldValues: { email: user.email, phone: user.phone, fullName: user.fullName },
+            newValues: { status: 'deleted', deletedAt: new Date().toISOString(), mode: 'immediate' },
+          },
+        }),
+      ]);
 
-    return { message: 'تم حذف المستخدم بنجاح (يمكن الاستعادة)', deletedId: userId };
+      return { message: 'تم حذف المستخدم فوراً (يمكن الاستعادة)', deletedId: userId, mode: 'immediate' };
+    } else {
+      // ══ Grace period delete: suspend + mark pending ══
+      const graceDays = await this.platformSettings.getNumber('user_deletion_grace_days', 30);
+      const deletionDate = new Date();
+      deletionDate.setDate(deletionDate.getDate() + graceDays);
+
+      await this.prisma.$transaction([
+        ...user.tenantUsers.map((tu) =>
+          this.prisma.tenantUser.update({
+            where: { id: tu.id },
+            data: { status: 'suspended' as any },
+          }),
+        ),
+        this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            fullName: `[قيد الحذف] ${user.fullName}`,
+          },
+        }),
+        this.prisma.platformAuditLog.create({
+          data: {
+            userId: adminId,
+            action: 'admin_delete_user_grace',
+            entityType: 'user',
+            entityId: userId,
+            oldValues: { email: user.email, phone: user.phone, fullName: user.fullName },
+            newValues: {
+              status: 'pending_deletion',
+              scheduledDeletionAt: deletionDate.toISOString(),
+              graceDays,
+              mode: 'grace_period',
+            },
+          },
+        }),
+      ]);
+
+      return {
+        message: `تم تعليق الحساب. سيُحذف نهائياً بعد ${graceDays} يوم (${deletionDate.toLocaleDateString('ar-SA')})`,
+        deletedId: userId,
+        mode: 'grace_period',
+        graceDays,
+        scheduledDeletionAt: deletionDate.toISOString(),
+      };
+    }
   }
 
   async restoreUser(userId: string, adminId: string) {
@@ -662,15 +705,15 @@ export class AdminService {
     });
     if (!user) throw new NotFoundException('المستخدم غير موجود');
 
-    // Check if this is a soft-deleted user (name starts with [محذوف])
-    if (!user.fullName.startsWith('[محذوف]')) {
+    // Check if this is a soft-deleted or pending-deletion user
+    if (!user.fullName.startsWith('[محذوف]') && !user.fullName.startsWith('[قيد الحذف]')) {
       throw new BadRequestException('هذا المستخدم ليس محذوفاً');
     }
 
     // Restore: remove anonymization suffix and reactivate
     const cleanEmail = user.email.replace(/_deleted_\d+$/, '');
     const cleanPhone = user.phone.replace(/_deleted_\d+$/, '');
-    const cleanName = user.fullName.replace(/^\[محذوف\] /, '');
+    const cleanName = user.fullName.replace(/^\[محذوف\] /, '').replace(/^\[قيد الحذف\] /, '');
 
     await this.prisma.$transaction([
       ...user.tenantUsers.map((tu) =>

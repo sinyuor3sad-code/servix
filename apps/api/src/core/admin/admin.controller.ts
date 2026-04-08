@@ -174,9 +174,10 @@ export class AdminController {
   @ApiOperation({ summary: 'حذف مستخدم (Soft Delete)' })
   async deleteUser(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { immediate?: boolean },
     @CurrentUser('sub') adminId: string,
   ) {
-    return this.adminService.softDeleteUser(id, adminId);
+    return this.adminService.softDeleteUser(id, adminId, dto.immediate ?? false);
   }
 
   @Post('users/:id/restore')

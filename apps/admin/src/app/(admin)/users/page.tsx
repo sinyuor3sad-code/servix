@@ -6,7 +6,7 @@ import {
   Users, Mail, Phone, ShieldCheck, ShieldX, Crown,
   Eye, Edit3, Ban, CheckCircle, Key, Send, UserCog,
   UserX, RotateCcw, LogOut, Shield, Trash2, MoreHorizontal,
-  AlertTriangle, Copy,
+  AlertTriangle, Copy, Clock, Zap,
 } from 'lucide-react';
 import { Glass, PageTitle, TN } from '@/components/ui/glass';
 import { DropdownMenu } from '@/components/ui/DropdownMenu';
@@ -210,6 +210,90 @@ function ImpersonateModal({ data, onClose }: { data: any; onClose: () => void })
   );
 }
 
+/* ── Delete User Modal (Two Options) ── */
+function DeleteUserModal({ user, onClose, onDone }: { user: any; onClose: () => void; onDone: (msg: string) => void }) {
+  const [loading, setLoading] = useState<'immediate' | 'grace' | null>(null);
+
+  const handleDelete = async (immediate: boolean) => {
+    setLoading(immediate ? 'immediate' : 'grace');
+    try {
+      const res = await adminService.deleteUser(user.id, immediate);
+      onDone(res.message || 'تم الحذف');
+      onClose();
+    } catch { setLoading(null); }
+  };
+
+  return (
+    <div className="nx-modal-overlay" onClick={onClose}>
+      <div className="nx-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <AlertTriangle size={20} style={{ color: '#F87171' }} />
+          <h2 className="nx-modal-title" style={{ marginBottom: 0 }}>حذف المستخدم</h2>
+        </div>
+        <p style={{ fontSize: 14, color: 'var(--ghost)', lineHeight: 1.7, marginBottom: 20 }}>
+          أنت على وشك حذف حساب <strong style={{ color: 'var(--slate)' }}>{user.fullName}</strong> ({user.email}). اختر طريقة الحذف:
+        </p>
+
+        <div style={{ display: 'grid', gap: 10 }}>
+          {/* Grace Period Option */}
+          <button
+            onClick={() => handleDelete(false)}
+            disabled={!!loading}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '16px 18px', borderRadius: 12,
+              border: '1px solid rgba(251,191,36,0.2)',
+              background: 'rgba(251,191,36,0.04)',
+              cursor: 'pointer', textAlign: 'start',
+              transition: 'all 0.2s',
+              fontFamily: 'inherit',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(251,191,36,0.08)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(251,191,36,0.04)'; }}
+          >
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(251,191,36,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {loading === 'grace' ? <div style={{ width: 16, height: 16, border: '2px solid #FBBF24', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} /> : <Clock size={18} style={{ color: '#FBBF24' }} />}
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#FBBF24', marginBottom: 3 }}>⏱️ حذف مع مهلة</div>
+              <div style={{ fontSize: 12, color: 'var(--ghost)', lineHeight: 1.5 }}>يُعلّق الحساب الآن ويُحذف نهائياً بعد المهلة المحددة (قابلة للتعديل من الإعدادات). يمكنك الاستعادة قبل انتهاء المهلة.</div>
+            </div>
+          </button>
+
+          {/* Immediate Option */}
+          <button
+            onClick={() => handleDelete(true)}
+            disabled={!!loading}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '16px 18px', borderRadius: 12,
+              border: '1px solid rgba(248,113,113,0.2)',
+              background: 'rgba(248,113,113,0.04)',
+              cursor: 'pointer', textAlign: 'start',
+              transition: 'all 0.2s',
+              fontFamily: 'inherit',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(248,113,113,0.08)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(248,113,113,0.04)'; }}
+          >
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(248,113,113,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {loading === 'immediate' ? <div style={{ width: 16, height: 16, border: '2px solid #F87171', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} /> : <Zap size={18} style={{ color: '#F87171' }} />}
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#F87171', marginBottom: 3 }}>⚡ حذف فوري</div>
+              <div style={{ fontSize: 12, color: 'var(--ghost)', lineHeight: 1.5 }}>يُحذف الحساب ويُخفى فوراً (إخفاء البيانات). لا يزال قابلاً للاستعادة لكن البيانات الحساسة تُخفى فوراً.</div>
+            </div>
+          </button>
+        </div>
+
+        <div className="nx-form-actions" style={{ marginTop: 20 }}>
+          <button className="nx-btn" onClick={onClose} style={{ flex: 1, justifyContent: 'center' }}>إلغاء</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════ Main Page ════════════════════ */
 export default function UsersPage(): ReactElement {
   const [users, setUsers] = useState<any[]>([]);
@@ -226,6 +310,7 @@ export default function UsersPage(): ReactElement {
   const [resetPwUser, setResetPwUser] = useState<any>(null);
   const [confirm, setConfirm] = useState<{ title: string; message: string; danger?: boolean; action: () => Promise<void> } | null>(null);
   const [impersonateData, setImpersonateData] = useState<any>(null);
+  const [deleteUserData, setDeleteUserData] = useState<any>(null);
   const [toast, setToast] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -250,7 +335,7 @@ export default function UsersPage(): ReactElement {
   const verifiedCount = users.filter(u => u.isEmailVerified).length;
   const unverifiedCount = users.filter(u => !u.isEmailVerified).length;
 
-  const isDeleted = (u: any) => u.fullName?.startsWith('[محذوف]');
+  const isDeleted = (u: any) => u.fullName?.startsWith('[محذوف]') || u.fullName?.startsWith('[قيد الحذف]');
 
   const buildActions = (u: any) => {
     const items: any[] = [
@@ -317,14 +402,11 @@ export default function UsersPage(): ReactElement {
     // Delete / Restore
     if (isDeleted(u)) {
       items.push({ label: '♻️ استعادة المستخدم', icon: <RotateCcw size={14} />, color: '#34D399', onClick: () => setConfirm({
-        title: 'استعادة المستخدم', message: `هل تريد استعادة حساب "${u.fullName.replace('[محذوف] ', '')}"؟`,
+        title: 'استعادة المستخدم', message: `هل تريد استعادة حساب "${u.fullName.replace('[محذوف] ', '').replace('[قيد الحذف] ', '')}"؟`,
         action: async () => { await adminService.restoreUser(u.id); showToast('تم استعادة المستخدم'); fetchUsers(); },
       })});
     } else {
-      items.push({ label: '🗑️ حذف المستخدم', icon: <Trash2 size={14} />, color: '#F87171', onClick: () => setConfirm({
-        title: 'حذف المستخدم', message: `هل أنت متأكد من حذف "${u.fullName}"؟ يمكنك الاستعادة لاحقاً.`, danger: true,
-        action: async () => { await adminService.deleteUser(u.id); showToast('تم حذف المستخدم'); fetchUsers(); },
-      })});
+      items.push({ label: '🗑️ حذف المستخدم', icon: <Trash2 size={14} />, color: '#F87171', onClick: () => setDeleteUserData(u) });
     }
 
     return items;
@@ -498,6 +580,7 @@ export default function UsersPage(): ReactElement {
       {resetPwUser && <ResetPasswordModal user={resetPwUser} onClose={() => setResetPwUser(null)} onDone={() => showToast('تم تعيين كلمة المرور')} />}
       {confirm && <ConfirmDialog title={confirm.title} message={confirm.message} danger={confirm.danger} onConfirm={async () => { await confirm.action(); setConfirm(null); }} onClose={() => setConfirm(null)} />}
       {impersonateData && <ImpersonateModal data={impersonateData} onClose={() => setImpersonateData(null)} />}
+      {deleteUserData && <DeleteUserModal user={deleteUserData} onClose={() => setDeleteUserData(null)} onDone={(msg) => { showToast(msg); fetchUsers(); }} />}
     </div>
   );
 }
