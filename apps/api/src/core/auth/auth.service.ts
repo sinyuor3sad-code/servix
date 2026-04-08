@@ -60,8 +60,8 @@ interface TenantWithRole {
 interface RegisterResult {
   user: UserResponse;
   tenant: TenantResponse;
-  tenants: TenantWithRole[];
-  tokens: JwtTokens;
+  requiresVerification: boolean;
+  message: string;
 }
 
 interface LoginResult {
@@ -226,13 +226,6 @@ export class AuthService {
       );
     }
 
-    const tokens = await this.generateTokens({
-      sub: result.user.id,
-      email: result.user.email,
-      tenantId: result.tenant.id,
-      roleId: ownerRole.id,
-    });
-
     const tenantResponse: TenantResponse = {
       id: result.tenant.id,
       nameAr: result.tenant.nameAr,
@@ -240,25 +233,8 @@ export class AuthService {
       slug: result.tenant.slug,
     };
 
-    const registerResult: RegisterResult = {
-      user: this.mapUserResponse(result.user),
-      tenant: tenantResponse,
-      tenants: [
-        {
-          id: result.user.id,
-          tenantId: result.tenant.id,
-          roleId: ownerRole.id,
-          isOwner: true,
-          tenant: tenantResponse,
-          role: {
-            id: ownerRole.id,
-            name: ownerRole.name,
-            nameAr: ownerRole.nameAr,
-          },
-        },
-      ],
-      tokens,
-    };
+    // Generate and send email OTP
+    await this.sendEmailOtpInternal(result.user.email, result.user.fullName);
 
     // Audit log: registration (fire-and-forget)
     this.auditService.log({
@@ -270,7 +246,12 @@ export class AuthService {
       newValues: { email: result.user.email, tenantSlug: result.tenant.slug },
     }).catch(() => {});
 
-    return registerResult;
+    return {
+      user: this.mapUserResponse(result.user),
+      tenant: tenantResponse,
+      requiresVerification: true,
+      message: 'تم إنشاء الحساب. يرجى إدخال رمز التحقق المرسل إلى بريدك الإلكتروني',
+    };
   }
 
   async login(dto: LoginDto, ip: string): Promise<LoginResult> {
@@ -299,6 +280,15 @@ export class AuthService {
     if (!user) {
       await this.cacheService.incrementLoginFailIp(ip);
       throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
+
+    // Block login if email is not verified
+    if (!user.isEmailVerified) {
+      // Re-send OTP automatically
+      await this.sendEmailOtpInternal(user.email, user.fullName).catch(() => {});
+      throw new UnauthorizedException(
+        'يرجى تأكيد بريدك الإلكتروني أولاً. تم إرسال رمز تحقق جديد',
+      );
     }
 
     const isPasswordValid = await compare(dto.password, user.passwordHash);
@@ -858,5 +848,144 @@ export class AuthService {
       phone: user.phone,
       avatarUrl: user.avatarUrl,
     };
+  }
+
+  // ══════════════ Email OTP Verification ══════════════
+
+  private generateOtpCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private async sendEmailOtpInternal(email: string, fullName: string): Promise<void> {
+    const canSend = await this.cacheService.canSendEmailOtp(email);
+    if (!canSend) {
+      this.logger.log(`[OTP] Rate limited — skipping OTP for ${email}`);
+      return;
+    }
+
+    const code = this.generateOtpCode();
+    await this.cacheService.setEmailOtp(email, code);
+    await this.cacheService.markEmailOtpSent(email);
+
+    this.logger.log(`[OTP] Sending verification code to ${email}`);
+
+    await this.mailService.send({
+      to: email,
+      subject: 'رمز التحقق — SERVIX',
+      body: `مرحباً ${fullName}،\n\nرمز التحقق الخاص بك هو: ${code}\n\nصالح لمدة 10 دقائق.\n\nإذا لم تطلب هذا الرمز، تجاهل هذه الرسالة.`,
+      html: `
+        <div dir="rtl" style="font-family: 'Segoe UI', Tahoma, sans-serif; max-width: 480px; margin: 0 auto; padding: 30px; background: #f9fafb; border-radius: 12px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h2 style="color: #1f2937; margin: 0;">SERVIX</h2>
+            <p style="color: #6b7280; margin: 4px 0 0;">رمز التحقق</p>
+          </div>
+          <div style="background: white; border-radius: 8px; padding: 24px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <p style="color: #374151; font-size: 16px; margin: 0 0 16px;">مرحباً ${fullName}،</p>
+            <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+              <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #7c3aed;">${code}</span>
+            </div>
+            <p style="color: #6b7280; font-size: 14px; margin: 16px 0 0;">صالح لمدة 10 دقائق</p>
+          </div>
+          <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 16px;">إذا لم تطلب هذا الرمز، تجاهل هذه الرسالة.</p>
+        </div>
+      `,
+    });
+  }
+
+  async verifyEmailOtp(email: string, code: string): Promise<{
+    user: UserResponse;
+    tenants: TenantWithRole[];
+    tokens: JwtTokens;
+  }> {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const isValid = await this.cacheService.verifyEmailOtp(normalizedEmail, code);
+    if (!isValid) {
+      throw new BadRequestException('رمز التحقق غير صحيح أو منتهي الصلاحية');
+    }
+
+    // Mark email as verified
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+    if (!user) {
+      throw new NotFoundException('المستخدم غير موجود');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { isEmailVerified: true },
+    });
+
+    this.logger.log(`[OTP] Email verified for user ${user.id} (${user.email})`);
+
+    // Get tenant associations
+    const tenantUsers = await this.prisma.tenantUser.findMany({
+      where: { userId: user.id, status: 'active' },
+      include: {
+        tenant: {
+          select: { id: true, nameAr: true, nameEn: true, slug: true },
+        },
+        role: {
+          select: { id: true, name: true, nameAr: true },
+        },
+      },
+    });
+
+    const firstTenantUser = tenantUsers[0];
+    const tokens = await this.generateTokens({
+      sub: user.id,
+      email: user.email,
+      tenantId: firstTenantUser?.tenantId ?? '',
+      roleId: firstTenantUser?.roleId ?? '',
+    });
+
+    // Audit log
+    this.auditService.log({
+      userId: user.id,
+      tenantId: firstTenantUser?.tenantId,
+      action: 'auth.email_verified',
+      entityType: 'User',
+      entityId: user.id,
+      newValues: { email: user.email },
+    }).catch(() => {});
+
+    return {
+      user: this.mapUserResponse(user),
+      tenants: tenantUsers.map((tu) => ({
+        id: tu.id,
+        tenantId: tu.tenantId,
+        roleId: tu.roleId,
+        isOwner: tu.isOwner,
+        tenant: tu.tenant,
+        role: tu.role,
+      })),
+      tokens,
+    };
+  }
+
+  async resendEmailOtp(email: string): Promise<{ message: string }> {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+    if (!user) {
+      // Don't reveal if email exists
+      return { message: 'إذا كان البريد مسجلاً، سيتم إرسال رمز تحقق جديد' };
+    }
+
+    if (user.isEmailVerified) {
+      return { message: 'البريد الإلكتروني مُؤكد بالفعل' };
+    }
+
+    const canSend = await this.cacheService.canSendEmailOtp(normalizedEmail);
+    if (!canSend) {
+      throw new BadRequestException('يرجى الانتظار 60 ثانية قبل إعادة الإرسال');
+    }
+
+    await this.sendEmailOtpInternal(user.email, user.fullName);
+
+    return { message: 'تم إرسال رمز تحقق جديد إلى بريدك الإلكتروني' };
   }
 }

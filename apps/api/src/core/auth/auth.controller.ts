@@ -52,15 +52,8 @@ export class AuthController {
   ): Promise<{
     user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
     tenant: { id: string; nameAr: string; nameEn: string; slug: string };
-    tenants: Array<{
-      id: string;
-      tenantId: string;
-      roleId: string;
-      isOwner: boolean;
-      tenant: { id: string; nameAr: string; nameEn: string; slug: string };
-      role: { id: string; name: string; nameAr: string };
-    }>;
-    tokens: JwtTokens;
+    requiresVerification: boolean;
+    message: string;
   }> {
     return this.authService.register(dto);
   }
@@ -167,11 +160,39 @@ export class AuthController {
 
   @Post('verify-otp')
   @Public()
+  @RateLimit(10, 60)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'التحقق من رمز OTP (غير متاح حالياً)' })
-  @ApiResponse({ status: 200, description: 'تم التحقق بنجاح' })
-  async verifyOtp(): Promise<{ message: string }> {
-    return { message: 'ميزة التحقق بـ OTP ستكون متاحة قريباً' };
+  @ApiOperation({ summary: 'التحقق من رمز OTP المرسل للبريد الإلكتروني' })
+  @ApiResponse({ status: 200, description: 'تم التحقق بنجاح — يُعيد tokens' })
+  @ApiResponse({ status: 400, description: 'رمز التحقق غير صحيح أو منتهي' })
+  async verifyOtp(
+    @Body() body: { email: string; code: string },
+  ): Promise<{
+    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    tenants: Array<{
+      id: string;
+      tenantId: string;
+      roleId: string;
+      isOwner: boolean;
+      tenant: { id: string; nameAr: string; nameEn: string; slug: string };
+      role: { id: string; name: string; nameAr: string };
+    }>;
+    tokens: JwtTokens;
+  }> {
+    return this.authService.verifyEmailOtp(body.email, body.code);
+  }
+
+  @Post('resend-otp')
+  @Public()
+  @RateLimit(3, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'إعادة إرسال رمز التحقق للبريد الإلكتروني' })
+  @ApiResponse({ status: 200, description: 'تم إرسال رمز جديد' })
+  @ApiResponse({ status: 400, description: 'يرجى الانتظار قبل إعادة الإرسال' })
+  async resendOtp(
+    @Body() body: { email: string },
+  ): Promise<{ message: string }> {
+    return this.authService.resendEmailOtp(body.email);
   }
 
   @Get('me')

@@ -95,9 +95,28 @@ function getDevAccount(credentials: LoginCredentials): AuthResponse | null {
   return buildDevResponse(credentials.emailOrPhone);
 }
 
+interface RegisterResponse {
+  user: User;
+  tenant: { id: string; nameAr: string; nameEn: string; slug: string };
+  requiresVerification: boolean;
+  message: string;
+}
+
+interface VerifyOtpResponse {
+  user: User;
+  tokens: AuthTokens;
+  tenants: TenantUser[];
+}
+
 export const authService = {
   register: (data: RegisterData) =>
-    api.post<AuthResponse>('/auth/register', data),
+    api.post<RegisterResponse>('/auth/register', data),
+
+  verifyOtp: (email: string, code: string) =>
+    api.post<VerifyOtpResponse>('/auth/verify-otp', { email, code }),
+
+  resendOtp: (email: string) =>
+    api.post<{ message: string }>('/auth/resend-otp', { email }),
 
   login: (credentials: LoginCredentials) => {
     const devResponse = getDevAccount(credentials);

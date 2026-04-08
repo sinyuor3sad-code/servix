@@ -454,6 +454,78 @@ export class CacheService implements OnModuleDestroy {
     } catch { /* noop */ }
   }
 
+  // ─── Email OTP (Registration Verification) ───
+
+  private readonly EMAIL_OTP_PREFIX = 'servix:email_otp:';
+  private readonly EMAIL_OTP_TTL = 600; // 10 minutes
+  private readonly EMAIL_OTP_RATE_PREFIX = 'servix:email_otp_rate:';
+  private readonly EMAIL_OTP_RATE_TTL = 60; // 1 per minute
+  private readonly EMAIL_OTP_MAX_ATTEMPTS_PREFIX = 'servix:email_otp_attempts:';
+  private readonly EMAIL_OTP_MAX_ATTEMPTS = 5;
+
+  async setEmailOtp(email: string, code: string): Promise<void> {
+    if (!this.enabled || !this.redis) return;
+    try {
+      const key = `${this.EMAIL_OTP_PREFIX}${email.toLowerCase()}`;
+      await this.redis.set(key, code, 'EX', this.EMAIL_OTP_TTL);
+      // Reset attempt counter on new OTP
+      await this.redis.del(`${this.EMAIL_OTP_MAX_ATTEMPTS_PREFIX}${email.toLowerCase()}`);
+    } catch { /* noop */ }
+  }
+
+  async verifyEmailOtp(email: string, code: string): Promise<boolean> {
+    if (!this.enabled || !this.redis) return true; // fail open if Redis is down
+    try {
+      const normalizedEmail = email.toLowerCase();
+
+      // Check max attempts
+      const attemptsKey = `${this.EMAIL_OTP_MAX_ATTEMPTS_PREFIX}${normalizedEmail}`;
+      const attempts = await this.redis.incr(attemptsKey);
+      if (attempts === 1) {
+        await this.redis.expire(attemptsKey, this.EMAIL_OTP_TTL);
+      }
+      if (attempts > this.EMAIL_OTP_MAX_ATTEMPTS) {
+        // Too many wrong attempts — delete the OTP
+        await this.redis.del(`${this.EMAIL_OTP_PREFIX}${normalizedEmail}`);
+        return false;
+      }
+
+      const stored = await this.redis.get(`${this.EMAIL_OTP_PREFIX}${normalizedEmail}`);
+      if (stored === code) {
+        // Clean up
+        await this.redis.del(`${this.EMAIL_OTP_PREFIX}${normalizedEmail}`);
+        await this.redis.del(attemptsKey);
+        return true;
+      }
+      return false;
+    } catch {
+      return true; // fail open
+    }
+  }
+
+  async canSendEmailOtp(email: string): Promise<boolean> {
+    if (!this.enabled || !this.redis) return true;
+    try {
+      const key = `${this.EMAIL_OTP_RATE_PREFIX}${email.toLowerCase()}`;
+      const exists = await this.redis.exists(key);
+      return !exists;
+    } catch {
+      return true;
+    }
+  }
+
+  async markEmailOtpSent(email: string): Promise<void> {
+    if (!this.enabled || !this.redis) return;
+    try {
+      await this.redis.set(
+        `${this.EMAIL_OTP_RATE_PREFIX}${email.toLowerCase()}`,
+        '1',
+        'EX',
+        this.EMAIL_OTP_RATE_TTL,
+      );
+    } catch { /* noop */ }
+  }
+
   // ─── Global Rate Limiting ───
 
   /** Increment rate limit counter for a key, returns current count */

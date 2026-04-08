@@ -72,8 +72,8 @@ export default function RegisterPage(): React.ReactElement {
           salonNameAr: form.salonNameAr.trim(),
           salonNameEn: form.salonNameEn.trim(),
         });
-        toast.success('تم إنشاء الحساب بنجاح');
-        router.push('/onboarding');
+        toast.success('تم إنشاء الحساب — أدخل رمز التحقق المرسل لإيميلك');
+        router.push(`/verify-email?email=${encodeURIComponent(form.email.trim())}`);
       } catch (error) {
         if (error instanceof ApiError) {
           // Show validation details if available

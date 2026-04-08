@@ -94,6 +94,10 @@ const mockCacheService = {
   getPasswordChangedAt: jest.fn().mockResolvedValue(null),
   checkForgotPasswordRateLimit: jest.fn().mockResolvedValue(true),
   incrementForgotPasswordAttempt: jest.fn().mockResolvedValue(1),
+  canSendEmailOtp: jest.fn().mockResolvedValue(true),
+  setEmailOtp: jest.fn().mockResolvedValue(undefined),
+  markEmailOtpSent: jest.fn().mockResolvedValue(undefined),
+  verifyEmailOtp: jest.fn().mockResolvedValue(true),
 };
 
 const mockMailService = { send: jest.fn().mockResolvedValue(undefined) };
@@ -206,8 +210,8 @@ describe('AuthService', () => {
 
       expect(result.user.email).toBe(registerDto.email);
       expect(result.tenant.nameAr).toBe(registerDto.salonNameAr);
-      expect(result.tokens).toBeDefined();
-      expect(result.tokens.accessToken).toBe('mock-token');
+      expect(result.requiresVerification).toBe(true);
+      expect(result.message).toBeDefined();
     });
 
     it('يجب رفض التسجيل إذا كان البريد مسجلاً مسبقاً', async () => {
@@ -254,6 +258,9 @@ describe('AuthService', () => {
       phone: '+966501234567',
       avatarUrl: null,
       passwordHash: 'hashed_password',
+      isEmailVerified: true,
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
     };
 
     it('يجب تسجيل الدخول وإرجاع التوكنات لبيانات صحيحة', async () => {

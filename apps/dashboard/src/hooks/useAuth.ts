@@ -154,16 +154,10 @@ export function useAuth() {
   const register = useCallback(
     async (data: RegisterData) => {
       const result = await authService.register(data);
-      storeLogin(result.user, result.tokens.accessToken, result.tokens.refreshToken);
-      const { role, isOwner: owner } = extractRole(result.tenants);
-      setUserRole(role, owner);
-      if (result.tenants.length > 0) {
-        setCurrentTenant(result.tenants[0].tenant);
-      }
-      await queryClient.invalidateQueries({ queryKey: ['auth'] });
+      // Don't store tokens — user must verify email first
       return result;
     },
-    [storeLogin, setCurrentTenant, setUserRole, queryClient],
+    [],
   );
 
   const logout = useCallback(async () => {
