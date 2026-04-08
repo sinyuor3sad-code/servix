@@ -13,7 +13,7 @@
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { Resource } from '@opentelemetry/resources';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
@@ -24,8 +24,10 @@ const enabled = process.env.OTEL_ENABLED === 'true';
 let sdk: NodeSDK | null = null;
 
 if (enabled) {
+  const ignorePaths = ['/api/v1/health', '/api/v1/health/live', '/api/v1/health/ready', '/metrics'];
+
   sdk = new NodeSDK({
-    resource: new Resource({
+    resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: 'servix-api',
       [ATTR_SERVICE_VERSION]: process.env.APP_VERSION || '1.0.0',
       'deployment.environment': process.env.NODE_ENV || 'development',
@@ -37,12 +39,9 @@ if (enabled) {
     instrumentations: [
       getNodeAutoInstrumentations({
         '@opentelemetry/instrumentation-http': {
-          ignoreIncomingPaths: [
-            '/api/v1/health',
-            '/api/v1/health/live',
-            '/api/v1/health/ready',
-            '/metrics',
-          ],
+          ignoreIncomingRequestHook: (req) => {
+            return ignorePaths.some((p) => req.url?.startsWith(p));
+          },
         },
         '@opentelemetry/instrumentation-express': { enabled: true },
         '@opentelemetry/instrumentation-pg': { enabled: true },
