@@ -14,6 +14,13 @@
       "runtimeArgs": ["--filter", "@servix/admin", "dev"],
       "port": 3002,
       "autoPort": false
+    },
+    {
+      "name": "landing",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@servix/landing", "dev"],
+      "port": 3003,
+      "autoPort": false
     }
   ]
 }

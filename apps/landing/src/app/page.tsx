@@ -1,11 +1,12 @@
-import CosmicBg       from '@/components/cosmic-bg';
 import Navbar          from '@/components/navbar';
 import Hero            from '@/components/hero';
-import Features        from '@/components/features';
-import DevicesShowcase from '@/components/devices-showcase';
+import Marquee         from '@/components/marquee';
+import ProductShowcase from '@/components/product-showcase';
+import Capabilities    from '@/components/capabilities';
 import HowItWorks      from '@/components/how-it-works';
-import Pricing         from '@/components/pricing';
+import Stats           from '@/components/stats';
 import Testimonials    from '@/components/testimonials';
+import Pricing         from '@/components/pricing';
 import FAQ             from '@/components/faq';
 import CTASection      from '@/components/cta-section';
 import Footer          from '@/components/footer';
@@ -13,18 +14,17 @@ import Footer          from '@/components/footer';
 export default function LandingPage(): React.ReactElement {
   return (
     <>
-      {/* ── Persistent cosmic canvas (fixed, behind everything) ── */}
-      <CosmicBg />
-
       <Navbar />
 
-      <main className="relative overflow-hidden">
+      <main>
         <Hero />
-        <Features />
-        <DevicesShowcase />
+        <Marquee />
+        <ProductShowcase />
+        <Capabilities />
         <HowItWorks />
-        <Pricing />
+        <Stats />
         <Testimonials />
+        <Pricing />
         <FAQ />
         <CTASection />
       </main>

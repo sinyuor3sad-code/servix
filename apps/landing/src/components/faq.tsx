@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Minus } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
+
+const EASE = [0.22, 1, 0.36, 1] as [number, number, number, number];
 
 const faqs = [
   {
@@ -37,94 +40,81 @@ const faqs = [
 
 export default function FAQ(): React.ReactElement {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const { t } = useI18n();
 
   return (
     <section id="faq" className="relative overflow-hidden py-24 sm:py-32">
-      {/* Background */}
-      <div
-        aria-hidden
-        className="absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(ellipse 50% 40% at 50% 100%, rgba(99,102,241,0.06) 0%, transparent 70%)',
-        }}
-      />
+      <div className="relative mx-auto max-w-3xl px-5 sm:px-8">
 
-      <div className="relative mx-auto max-w-3xl px-4 sm:px-6">
         {/* Header */}
         <motion.div
-          initial={{ opacity: 0, y: 24 }}
+          initial={{ opacity: 0, y: 32 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
+          viewport={{ once: true, margin: '-60px' }}
+          transition={{ duration: 0.8, ease: EASE }}
           className="mb-14 text-center"
         >
-          <div
-            className="mb-4 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold text-violet-300"
-            style={{ border: '1px solid rgba(168,85,247,0.25)', background: 'rgba(168,85,247,0.1)' }}
-          >
-            الأسئلة الشائعة
-          </div>
-          <h2 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
-            أسئلتك
-            <span className="gradient-text"> مجاوبة</span>
+          <h2 className="text-4xl font-black tracking-tight sm:text-5xl" style={{ color: 'var(--fg)' }}>
+            {t('faq.title')}{' '}
+            <span style={{ color: 'var(--gold)' }}>{t('faq.titleAccent')}</span>
           </h2>
         </motion.div>
 
         {/* Accordion */}
         <div className="space-y-3">
-          {faqs.map((faq, i) => (
-            <motion.div
-              key={faq.q}
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.06 }}
-              className="overflow-hidden rounded-2xl transition-all duration-300"
-              style={{
-                border: openIdx === i
-                  ? '1px solid rgba(168,85,247,0.35)'
-                  : '1px solid rgba(255,255,255,0.06)',
-                background: openIdx === i
-                  ? 'rgba(168,85,247,0.06)'
-                  : 'rgba(255,255,255,0.02)',
-                backdropFilter: 'blur(16px)',
-              }}
-            >
-              <button
-                onClick={() => setOpenIdx(openIdx === i ? null : i)}
-                className="flex w-full items-center justify-between gap-4 px-6 py-5 text-right"
+          {faqs.map((faq, i) => {
+            const isOpen = openIdx === i;
+            return (
+              <motion.div
+                key={faq.q}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: i * 0.05, ease: EASE }}
+                className="overflow-hidden rounded-xl transition-all duration-300"
+                style={{
+                  border: isOpen ? '1px solid var(--border-gold)' : '1px solid var(--border)',
+                  background: isOpen ? 'var(--bg-surface)' : 'transparent',
+                }}
               >
-                <span className={`text-base font-semibold transition-colors ${openIdx === i ? 'text-white' : 'text-white/75'}`}>
-                  {faq.q}
-                </span>
-                <div
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-300"
-                  style={openIdx === i
-                    ? { background: 'rgba(168,85,247,0.3)', border: '1px solid rgba(168,85,247,0.4)', color: 'white' }
-                    : { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }
-                  }
+                <button
+                  onClick={() => setOpenIdx(isOpen ? null : i)}
+                  className="flex w-full items-center justify-between gap-4 px-6 py-5 text-right"
                 >
-                  {openIdx === i ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-                </div>
-              </button>
-
-              <AnimatePresence initial={false}>
-                {openIdx === i && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                  <span
+                    className="text-base font-semibold transition-colors"
+                    style={{ color: isOpen ? 'var(--fg)' : 'var(--fg-secondary)' }}
                   >
-                    <p className="px-6 pb-6 text-sm leading-relaxed text-white/55">
-                      {faq.a}
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          ))}
+                    {faq.q}
+                  </span>
+                  <div
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-300"
+                    style={isOpen
+                      ? { background: 'rgba(200,169,126,0.15)', border: '1px solid var(--border-gold)', color: 'var(--gold)' }
+                      : { background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--fg-muted)' }
+                    }
+                  >
+                    {isOpen ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  </div>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {isOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3, ease: EASE }}
+                    >
+                      <p className="px-6 pb-6 text-sm leading-relaxed" style={{ color: 'var(--fg-secondary)' }}>
+                        {faq.a}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </section>
