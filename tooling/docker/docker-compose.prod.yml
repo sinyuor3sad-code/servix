@@ -363,7 +363,8 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-servix2026}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+      GF_SERVER_ROOT_URL: "http://130.94.57.77:3100/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
