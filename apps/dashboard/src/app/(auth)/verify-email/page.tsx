@@ -4,10 +4,9 @@ import { useState, useCallback, useEffect, useRef, type FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { ShieldCheck, RotateCw } from 'lucide-react';
+import { ShieldCheck, RotateCw, ArrowLeft } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
-import { Button, Card, CardContent } from '@/components/ui';
 import { ApiError } from '@/lib/api';
 
 const OTP_LENGTH = 6;
@@ -21,108 +20,69 @@ export default function VerifyEmailPage(): React.ReactElement {
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(COOLDOWN_SECONDS);
+  const [mounted, setMounted] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const { login: storeLogin, setUserRole, setCurrentTenant } = useAuthStore();
 
-  // Auto-focus first input
-  useEffect(() => {
-    inputRefs.current[0]?.focus();
-  }, []);
-
-  // Cooldown timer
+  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { inputRefs.current[0]?.focus(); }, []);
   useEffect(() => {
     if (cooldown <= 0) return;
     const timer = setInterval(() => setCooldown((p) => p - 1), 1000);
     return () => clearInterval(timer);
   }, [cooldown]);
 
-  // Handle individual digit input
   const handleChange = useCallback(
     (index: number, value: string) => {
-      // Only allow digits
       const digit = value.replace(/\D/g, '').slice(-1);
       const newOtp = [...otp];
       newOtp[index] = digit;
       setOtp(newOtp);
-
-      // Auto-advance to next input
-      if (digit && index < OTP_LENGTH - 1) {
-        inputRefs.current[index + 1]?.focus();
-      }
-
-      // Auto-submit when all digits filled
-      if (digit && index === OTP_LENGTH - 1 && newOtp.every((d) => d)) {
-        handleSubmitCode(newOtp.join(''));
-      }
+      if (digit && index < OTP_LENGTH - 1) inputRefs.current[index + 1]?.focus();
+      if (digit && index === OTP_LENGTH - 1 && newOtp.every((d) => d)) handleSubmitCode(newOtp.join(''));
     },
     [otp], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // Handle backspace
   const handleKeyDown = useCallback(
     (index: number, e: React.KeyboardEvent) => {
-      if (e.key === 'Backspace' && !otp[index] && index > 0) {
-        inputRefs.current[index - 1]?.focus();
-      }
+      if (e.key === 'Backspace' && !otp[index] && index > 0) inputRefs.current[index - 1]?.focus();
     },
     [otp],
   );
 
-  // Handle paste
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
       e.preventDefault();
       const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, OTP_LENGTH);
-      if (pasted.length === 0) return;
+      if (!pasted.length) return;
       const newOtp = [...otp];
-      for (let i = 0; i < pasted.length; i++) {
-        newOtp[i] = pasted[i];
-      }
+      for (let i = 0; i < pasted.length; i++) newOtp[i] = pasted[i];
       setOtp(newOtp);
-      // Focus last filled or next empty
-      const focusIndex = Math.min(pasted.length, OTP_LENGTH - 1);
-      inputRefs.current[focusIndex]?.focus();
-
-      if (pasted.length === OTP_LENGTH) {
-        handleSubmitCode(pasted);
-      }
+      inputRefs.current[Math.min(pasted.length, OTP_LENGTH - 1)]?.focus();
+      if (pasted.length === OTP_LENGTH) handleSubmitCode(pasted);
     },
     [otp], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const handleSubmitCode = async (code: string) => {
-    if (!email) {
-      toast.error('البريد الإلكتروني مفقود');
-      return;
-    }
-
+    if (!email) { toast.error('البريد الإلكتروني مفقود'); return; }
     setLoading(true);
     try {
       const result = await authService.verifyOtp(email, code);
-
-      // Now login with the tokens
       storeLogin(result.user, result.tokens.accessToken, result.tokens.refreshToken);
-
       if (result.tenants?.length > 0) {
         const tu = result.tenants[0];
-        const roleName = tu.role?.name || 'owner';
-        setUserRole(roleName as 'owner' | 'manager' | 'cashier' | 'staff', tu.isOwner);
+        setUserRole((tu.role?.name || 'owner') as 'owner' | 'manager' | 'cashier' | 'staff', tu.isOwner);
         setCurrentTenant(tu.tenant);
       }
-
       toast.success('تم التحقق بنجاح — أهلاً بك!');
       router.push('/');
     } catch (error) {
-      // Clear OTP on error
       setOtp(Array(OTP_LENGTH).fill(''));
       inputRefs.current[0]?.focus();
-
-      if (error instanceof ApiError) {
-        toast.error(error.message);
-      } else {
-        toast.error('رمز التحقق غير صحيح');
-      }
+      toast.error(error instanceof ApiError ? error.message : 'رمز التحقق غير صحيح');
     } finally {
       setLoading(false);
     }
@@ -130,62 +90,59 @@ export default function VerifyEmailPage(): React.ReactElement {
 
   const handleResend = async () => {
     if (cooldown > 0) return;
-
     try {
       const result = await authService.resendOtp(email);
       toast.success(result.message);
       setCooldown(COOLDOWN_SECONDS);
     } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(error.message);
-      } else {
-        toast.error('فشل إعادة الإرسال');
-      }
+      toast.error(error instanceof ApiError ? (error as ApiError).message : 'فشل إعادة الإرسال');
     }
   };
 
   const handleFormSubmit = (e: FormEvent) => {
     e.preventDefault();
     const code = otp.join('');
-    if (code.length === OTP_LENGTH) {
-      handleSubmitCode(code);
-    }
+    if (code.length === OTP_LENGTH) handleSubmitCode(code);
   };
 
   if (!email) {
     return (
-      <Card>
-        <CardContent className="p-6 pt-6 text-center">
-          <p className="text-[var(--muted-foreground)]">رابط غير صالح</p>
-          <Link href="/register" className="mt-4 inline-block text-[var(--brand-primary)] hover:underline">
-            العودة للتسجيل
-          </Link>
-        </CardContent>
-      </Card>
+      <div className="auth-card-luxury p-8 sm:p-10 text-center">
+        <p style={{ color: '#B0AAA2' }}>رابط غير صالح</p>
+        <Link href="/register" className="auth-link mt-4 inline-block">العودة للتسجيل</Link>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardContent className="p-6 pt-6">
-        <div className="mb-6 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--brand-primary)]/10">
-            <ShieldCheck className="h-8 w-8 text-[var(--brand-primary)]" />
+    <div
+      className="transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
+      style={{
+        opacity: mounted ? 1 : 0,
+        transform: mounted ? 'translateY(0)' : 'translateY(16px)',
+      }}
+    >
+      <div className="auth-card-luxury p-8 sm:p-10">
+        {/* Header */}
+        <div className="mb-8 text-center">
+          <div
+            className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl"
+            style={{ background: 'rgba(212,184,150,0.08)', border: '1px solid rgba(212,184,150,0.15)' }}
+          >
+            <ShieldCheck className="h-8 w-8" style={{ color: '#D4B896' }} />
           </div>
-          <h2 className="text-lg font-semibold text-[var(--foreground)]">
-            تأكيد البريد الإلكتروني
-          </h2>
-          <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+          <h2 className="auth-title">تأكيد البريد الإلكتروني</h2>
+          <p className="mt-3 text-sm" style={{ color: '#B0AAA2' }}>
             أدخل رمز التحقق المكون من 6 أرقام المرسل إلى
           </p>
-          <p className="mt-1 font-medium text-[var(--foreground)]" dir="ltr">
+          <p className="mt-1.5 font-medium text-sm" style={{ color: '#F0EDE8' }} dir="ltr">
             {email}
           </p>
         </div>
 
         <form onSubmit={handleFormSubmit}>
           {/* OTP Input Boxes */}
-          <div className="mb-6 flex justify-center gap-2" dir="ltr" onPaste={handlePaste}>
+          <div className="mb-8 flex justify-center gap-2.5" dir="ltr" onPaste={handlePaste}>
             {otp.map((digit, index) => (
               <input
                 key={index}
@@ -196,50 +153,54 @@ export default function VerifyEmailPage(): React.ReactElement {
                 value={digit}
                 onChange={(e) => handleChange(index, e.target.value)}
                 onKeyDown={(e) => handleKeyDown(index, e)}
-                className={`
-                  h-14 w-12 rounded-lg border-2 text-center text-2xl font-bold
-                  transition-all duration-200 outline-none
-                  ${digit
-                    ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)]/5 text-[var(--foreground)]'
-                    : 'border-[var(--border)] bg-[var(--input)] text-[var(--foreground)]'
-                  }
-                  focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20
-                `}
                 disabled={loading}
                 autoComplete="one-time-code"
+                className="h-14 w-12 rounded-xl text-center text-2xl font-bold outline-none transition-all duration-200"
+                style={{
+                  background: digit ? 'rgba(212,184,150,0.06)' : '#0C0C0C',
+                  border: digit
+                    ? '2px solid rgba(212,184,150,0.4)'
+                    : '2px solid rgba(255,255,255,0.08)',
+                  color: '#F0EDE8',
+                  boxShadow: digit ? '0 0 12px rgba(212,184,150,0.06)' : 'none',
+                }}
               />
             ))}
           </div>
 
-          <Button
+          <button
             type="submit"
-            className="w-full"
             disabled={loading || otp.some((d) => !d)}
+            className="auth-btn-gold flex w-full items-center justify-center gap-2"
           >
             {loading ? (
-              <span className="inline-flex items-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              <>
+                <span
+                  className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
+                  style={{ borderColor: '#080808', borderTopColor: 'transparent' }}
+                />
                 جاري التحقق...
-              </span>
+              </>
             ) : (
-              <span className="inline-flex items-center gap-2">
+              <>
                 <ShieldCheck className="h-4 w-4" />
                 تأكيد
-              </span>
+              </>
             )}
-          </Button>
+          </button>
         </form>
 
         {/* Resend */}
-        <div className="mt-4 text-center">
+        <div className="mt-6 text-center">
           {cooldown > 0 ? (
-            <p className="text-sm text-[var(--muted-foreground)]">
-              إعادة الإرسال بعد <span className="font-mono font-bold text-[var(--foreground)]">{cooldown}</span> ثانية
+            <p className="text-sm" style={{ color: '#807A72' }}>
+              إعادة الإرسال بعد{' '}
+              <span className="font-mono font-bold" style={{ color: '#D4B896' }}>{cooldown}</span>{' '}ثانية
             </p>
           ) : (
             <button
               onClick={handleResend}
-              className="inline-flex items-center gap-1 text-sm font-medium text-[var(--brand-primary)] hover:underline"
+              className="auth-link inline-flex items-center gap-1.5 text-sm font-medium"
             >
               <RotateCw className="h-3.5 w-3.5" />
               إعادة إرسال الرمز
@@ -247,16 +208,24 @@ export default function VerifyEmailPage(): React.ReactElement {
           )}
         </div>
 
-        <p className="mt-6 text-center text-sm text-[var(--muted-foreground)]">
+        <div className="auth-divider my-6" />
+
+        <p className="text-center text-sm" style={{ color: '#807A72' }}>
           بريد خاطئ؟{' '}
-          <Link
-            href="/register"
-            className="font-medium text-[var(--brand-primary)] hover:underline"
-          >
-            العودة للتسجيل
-          </Link>
+          <Link href="/register" className="auth-link font-medium">العودة للتسجيل</Link>
         </p>
-      </CardContent>
-    </Card>
+      </div>
+
+      <div className="mt-6 text-center">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm transition-colors duration-200"
+          style={{ color: '#807A72' }}
+        >
+          <ArrowLeft className="h-3.5 w-3.5" style={{ transform: 'scaleX(-1)' }} />
+          العودة للصفحة الرئيسية
+        </Link>
+      </div>
+    </div>
   );
 }
