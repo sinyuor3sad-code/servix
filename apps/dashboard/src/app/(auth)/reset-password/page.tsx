@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, type FormEvent } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Lock, ArrowLeft, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Lock, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 
 export default function ResetPasswordPage(): React.ReactElement {
@@ -20,35 +20,30 @@ export default function ResetPasswordPage(): React.ReactElement {
   const [tokenValid, setTokenValid] = useState<boolean | null>(null);
   const [tokenError, setTokenError] = useState('');
   const [errors, setErrors] = useState<{ password?: string; confirm?: string }>({});
-  const [mounted, setMounted] = useState(false);
+  const [show, setShow] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { requestAnimationFrame(() => setShow(true)); }, []);
 
   useEffect(() => {
-    if (!token) {
-      setTokenValid(false);
-      setTokenError('رابط إعادة التعيين غير صالح — لا يوجد رمز');
-      return;
-    }
-    const verifyToken = async () => {
+    if (!token) { setTokenValid(false); setTokenError('رابط إعادة التعيين غير صالح — لا يوجد رمز'); return; }
+    (async () => {
       try {
         const res = await api.post<{ valid: boolean }>('/auth/verify-reset-token', { token });
-        setTokenValid(res.valid ? true : false);
-        if (!res.valid) setTokenError('رابط إعادة التعيين منتهي الصلاحية أو مُستخدم مسبقاً');
+        if (res.valid) setTokenValid(true);
+        else { setTokenValid(false); setTokenError('رابط إعادة التعيين منتهي الصلاحية أو مُستخدم مسبقاً'); }
       } catch {
         setTokenValid(false);
         setTokenError('رابط إعادة التعيين غير صالح أو منتهي الصلاحية');
       }
-    };
-    verifyToken();
+    })();
   }, [token]);
 
   const validate = useCallback((): boolean => {
-    const newErrors: { password?: string; confirm?: string } = {};
-    if (password.length < 8) newErrors.password = 'كلمة المرور يجب أن تكون 8 أحرف على الأقل';
-    if (password !== confirmPassword) newErrors.confirm = 'كلمتا المرور غير متطابقتين';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const e: { password?: string; confirm?: string } = {};
+    if (password.length < 8) e.password = 'كلمة المرور يجب أن تكون 8 أحرف على الأقل';
+    if (password !== confirmPassword) e.confirm = 'كلمتا المرور غير متطابقتين';
+    setErrors(e);
+    return Object.keys(e).length === 0;
   }, [password, confirmPassword]);
 
   const handleSubmit = useCallback(
@@ -65,15 +60,10 @@ export default function ResetPasswordPage(): React.ReactElement {
         if (err instanceof ApiError) {
           toast.error(err.message);
           if (err.message.includes('منتهي') || err.message.includes('مُستخدم')) {
-            setTokenValid(false);
-            setTokenError(err.message);
+            setTokenValid(false); setTokenError(err.message);
           }
-        } else {
-          toast.error('حدث خطأ غير متوقع');
-        }
-      } finally {
-        setLoading(false);
-      }
+        } else toast.error('حدث خطأ غير متوقع');
+      } finally { setLoading(false); }
     },
     [token, password, validate, router],
   );
@@ -81,24 +71,18 @@ export default function ResetPasswordPage(): React.ReactElement {
   // Token invalid
   if (tokenValid === false) {
     return (
-      <div className="auth-card-luxury p-8 sm:p-10 text-center">
+      <div className="auth-card p-8 sm:p-10 text-center">
         <div
-          className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full"
-          style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)' }}
+          className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl"
+          style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)' }}
         >
-          <AlertCircle className="h-7 w-7" style={{ color: '#f87171' }} />
+          <AlertCircle className="h-8 w-8" style={{ color: '#f87171' }} />
         </div>
         <h2 className="auth-title mb-3">رابط غير صالح</h2>
         <p className="mb-8 text-sm" style={{ color: '#B0AAA2' }}>{tokenError}</p>
-        <Link
-          href="/forgot-password"
-          className="inline-flex items-center justify-center gap-2 w-full rounded-xl py-3 text-sm font-medium transition-all"
-          style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: '#B0AAA2' }}
-        >
-          طلب رابط جديد
-        </Link>
+        <Link href="/forgot-password" className="auth-btn-outline">طلب رابط جديد</Link>
         <p className="mt-5 text-sm" style={{ color: '#807A72' }}>
-          <Link href="/login" className="auth-link font-medium">العودة لتسجيل الدخول</Link>
+          <Link href="/login" className="auth-link font-semibold">العودة لتسجيل الدخول</Link>
         </p>
       </div>
     );
@@ -107,9 +91,9 @@ export default function ResetPasswordPage(): React.ReactElement {
   // Loading
   if (tokenValid === null) {
     return (
-      <div className="auth-card-luxury p-8 sm:p-10 text-center">
+      <div className="auth-card p-8 sm:p-10 text-center">
         <div
-          className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-t-transparent"
+          className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-[3px] border-t-transparent"
           style={{ borderColor: 'rgba(212,184,150,0.3)', borderTopColor: 'transparent' }}
         />
         <p className="text-sm" style={{ color: '#B0AAA2' }}>جاري التحقق من الرابط...</p>
@@ -120,24 +104,18 @@ export default function ResetPasswordPage(): React.ReactElement {
   // Success
   if (success) {
     return (
-      <div className="auth-card-luxury p-8 sm:p-10 text-center">
+      <div className="auth-card p-8 sm:p-10 text-center">
         <div
-          className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full"
-          style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)' }}
+          className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl"
+          style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.15)' }}
         >
-          <CheckCircle2 className="h-7 w-7" style={{ color: '#4ade80' }} />
+          <CheckCircle2 className="h-8 w-8" style={{ color: '#4ade80' }} />
         </div>
         <h2 className="auth-title mb-3">تم التغيير بنجاح</h2>
         <p className="mb-8 text-sm" style={{ color: '#B0AAA2' }}>
-          تم إعادة تعيين كلمة المرور. سيتم توجيهك لتسجيل الدخول خلال 3 ثوان...
+          تم إعادة تعيين كلمة المرور. سيتم توجيهك لتسجيل الدخول...
         </p>
-        <Link
-          href="/login"
-          className="auth-btn-gold flex w-full items-center justify-center gap-2"
-        >
-          <ArrowLeft className="h-4 w-4" style={{ transform: 'scaleX(-1)' }} />
-          تسجيل الدخول الآن
-        </Link>
+        <Link href="/login" className="auth-btn">تسجيل الدخول الآن</Link>
       </div>
     );
   }
@@ -145,26 +123,22 @@ export default function ResetPasswordPage(): React.ReactElement {
   // Form
   return (
     <div
-      className="transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
       style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(16px)',
+        opacity: show ? 1 : 0,
+        transform: show ? 'translateY(0)' : 'translateY(12px)',
+        transition: 'all 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
-      <div className="auth-card-luxury p-8 sm:p-10">
-        <h2 className="auth-title mb-2 text-center">إعادة تعيين كلمة المرور</h2>
-        <p className="mb-8 text-center text-sm" style={{ color: '#807A72' }}>
-          أدخل كلمة مرورك الجديدة
-        </p>
+      <div className="auth-card p-8 sm:p-10">
+        <div className="mb-8 text-center">
+          <h2 className="auth-title">إعادة تعيين كلمة المرور</h2>
+          <p className="mt-2 text-sm" style={{ color: '#807A72' }}>أدخلي كلمة مرورك الجديدة</p>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Password */}
-          <div className="space-y-2">
-            <label className="auth-label block text-sm">كلمة المرور الجديدة</label>
+          <div>
+            <label className="auth-label">كلمة المرور الجديدة</label>
             <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-3.5">
-                <Lock className="h-4 w-4" style={{ color: '#807A72' }} />
-              </div>
               <input
                 type={showPassword ? 'text' : 'password'}
                 placeholder="••••••••"
@@ -172,28 +146,27 @@ export default function ResetPasswordPage(): React.ReactElement {
                 onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: undefined })); }}
                 autoComplete="new-password"
                 dir="ltr"
-                className="auth-input w-full pe-10 ps-10 text-start"
+                className="auth-input pe-11 ps-11 text-start"
               />
+              <div className="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-4">
+                <Lock className="h-[18px] w-[18px]" style={{ color: '#5A5650' }} />
+              </div>
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 start-0 flex items-center ps-3.5"
-                style={{ color: '#807A72' }}
+                className="absolute inset-y-0 start-0 flex items-center ps-4"
+                style={{ color: '#5A5650' }}
                 tabIndex={-1}
               >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
               </button>
             </div>
-            {errors.password && <p className="auth-error text-xs">{errors.password}</p>}
+            {errors.password && <p className="auth-error">{errors.password}</p>}
           </div>
 
-          {/* Confirm */}
-          <div className="space-y-2">
-            <label className="auth-label block text-sm">تأكيد كلمة المرور</label>
+          <div>
+            <label className="auth-label">تأكيد كلمة المرور</label>
             <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-3.5">
-                <Lock className="h-4 w-4" style={{ color: '#807A72' }} />
-              </div>
               <input
                 type="password"
                 placeholder="••••••••"
@@ -201,49 +174,29 @@ export default function ResetPasswordPage(): React.ReactElement {
                 onChange={(e) => { setConfirmPassword(e.target.value); setErrors((p) => ({ ...p, confirm: undefined })); }}
                 autoComplete="new-password"
                 dir="ltr"
-                className="auth-input w-full pe-10 text-start"
+                className="auth-input pe-11 text-start"
               />
+              <div className="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-4">
+                <Lock className="h-[18px] w-[18px]" style={{ color: '#5A5650' }} />
+              </div>
             </div>
-            {errors.confirm && <p className="auth-error text-xs">{errors.confirm}</p>}
+            {errors.confirm && <p className="auth-error">{errors.confirm}</p>}
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="auth-btn-gold flex w-full items-center justify-center gap-2"
-          >
+          <button type="submit" disabled={loading} className="auth-btn">
             {loading ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
-                  style={{ borderColor: '#080808', borderTopColor: 'transparent' }} />
-                جاري الحفظ...
-              </>
+              <><span className="auth-spinner" /> جاري الحفظ...</>
             ) : (
-              <>
-                <Lock className="h-4 w-4" />
-                تعيين كلمة المرور الجديدة
-              </>
+              <><Lock className="h-[18px] w-[18px]" /> تعيين كلمة المرور الجديدة</>
             )}
           </button>
         </form>
 
-        <div className="auth-divider my-7" />
-
+        <div className="auth-divider my-8" />
         <p className="text-center text-sm" style={{ color: '#807A72' }}>
           تذكرت كلمة المرور؟{' '}
-          <Link href="/login" className="auth-link font-medium">تسجيل الدخول</Link>
+          <Link href="/login" className="auth-link font-semibold">تسجيل الدخول</Link>
         </p>
-      </div>
-
-      <div className="mt-6 text-center">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-sm transition-colors duration-200"
-          style={{ color: '#807A72' }}
-        >
-          <ArrowLeft className="h-3.5 w-3.5" style={{ transform: 'scaleX(-1)' }} />
-          العودة للصفحة الرئيسية
-        </Link>
       </div>
     </div>
   );

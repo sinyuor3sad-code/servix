@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef, type FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { ShieldCheck, RotateCw, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, RotateCw } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
 import { ApiError } from '@/lib/api';
@@ -20,17 +20,17 @@ export default function VerifyEmailPage(): React.ReactElement {
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(COOLDOWN_SECONDS);
-  const [mounted, setMounted] = useState(false);
+  const [show, setShow] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const { login: storeLogin, setUserRole, setCurrentTenant } = useAuthStore();
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { requestAnimationFrame(() => setShow(true)); }, []);
   useEffect(() => { inputRefs.current[0]?.focus(); }, []);
   useEffect(() => {
     if (cooldown <= 0) return;
-    const timer = setInterval(() => setCooldown((p) => p - 1), 1000);
-    return () => clearInterval(timer);
+    const t = setInterval(() => setCooldown((p) => p - 1), 1000);
+    return () => clearInterval(t);
   }, [cooldown]);
 
   const handleChange = useCallback(
@@ -99,70 +99,62 @@ export default function VerifyEmailPage(): React.ReactElement {
     }
   };
 
-  const handleFormSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    const code = otp.join('');
-    if (code.length === OTP_LENGTH) handleSubmitCode(code);
-  };
-
   if (!email) {
     return (
-      <div className="auth-card-luxury p-8 sm:p-10 text-center">
+      <div className="auth-card p-8 sm:p-10 text-center">
         <p style={{ color: '#B0AAA2' }}>رابط غير صالح</p>
-        <Link href="/register" className="auth-link mt-4 inline-block">العودة للتسجيل</Link>
+        <Link href="/register" className="auth-link mt-4 inline-block font-medium">العودة للتسجيل</Link>
       </div>
     );
   }
 
   return (
     <div
-      className="transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
       style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(16px)',
+        opacity: show ? 1 : 0,
+        transform: show ? 'translateY(0)' : 'translateY(12px)',
+        transition: 'all 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
-      <div className="auth-card-luxury p-8 sm:p-10">
+      <div className="auth-card p-8 sm:p-10">
         {/* Header */}
         <div className="mb-8 text-center">
           <div
             className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl"
-            style={{ background: 'rgba(212,184,150,0.08)', border: '1px solid rgba(212,184,150,0.15)' }}
+            style={{ background: 'rgba(212,184,150,0.06)', border: '1px solid rgba(212,184,150,0.12)' }}
           >
             <ShieldCheck className="h-8 w-8" style={{ color: '#D4B896' }} />
           </div>
           <h2 className="auth-title">تأكيد البريد الإلكتروني</h2>
           <p className="mt-3 text-sm" style={{ color: '#B0AAA2' }}>
-            أدخل رمز التحقق المكون من 6 أرقام المرسل إلى
+            أدخلي رمز التحقق المكون من 6 أرقام المرسل إلى
           </p>
-          <p className="mt-1.5 font-medium text-sm" style={{ color: '#F0EDE8' }} dir="ltr">
+          <p className="mt-1.5 text-sm font-semibold" style={{ color: '#F0EDE8' }} dir="ltr">
             {email}
           </p>
         </div>
 
-        <form onSubmit={handleFormSubmit}>
-          {/* OTP Input Boxes */}
-          <div className="mb-8 flex justify-center gap-2.5" dir="ltr" onPaste={handlePaste}>
-            {otp.map((digit, index) => (
+        <form onSubmit={(e: FormEvent) => { e.preventDefault(); const c = otp.join(''); if (c.length === OTP_LENGTH) handleSubmitCode(c); }}>
+          {/* OTP Inputs */}
+          <div className="mb-8 flex justify-center gap-3" dir="ltr" onPaste={handlePaste}>
+            {otp.map((digit, i) => (
               <input
-                key={index}
-                ref={(el) => { inputRefs.current[index] = el; }}
+                key={i}
+                ref={(el) => { inputRefs.current[i] = el; }}
                 type="text"
                 inputMode="numeric"
                 maxLength={1}
                 value={digit}
-                onChange={(e) => handleChange(index, e.target.value)}
-                onKeyDown={(e) => handleKeyDown(index, e)}
+                onChange={(e) => handleChange(i, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(i, e)}
                 disabled={loading}
                 autoComplete="one-time-code"
                 className="h-14 w-12 rounded-xl text-center text-2xl font-bold outline-none transition-all duration-200"
                 style={{
-                  background: digit ? 'rgba(212,184,150,0.06)' : '#0C0C0C',
-                  border: digit
-                    ? '2px solid rgba(212,184,150,0.4)'
-                    : '2px solid rgba(255,255,255,0.08)',
+                  background: digit ? 'rgba(212,184,150,0.06)' : 'rgba(255,255,255,0.03)',
+                  border: digit ? '2px solid rgba(212,184,150,0.4)' : '2px solid rgba(255,255,255,0.07)',
                   color: '#F0EDE8',
-                  boxShadow: digit ? '0 0 12px rgba(212,184,150,0.06)' : 'none',
+                  boxShadow: digit ? '0 0 16px rgba(212,184,150,0.06)' : 'none',
                 }}
               />
             ))}
@@ -171,21 +163,12 @@ export default function VerifyEmailPage(): React.ReactElement {
           <button
             type="submit"
             disabled={loading || otp.some((d) => !d)}
-            className="auth-btn-gold flex w-full items-center justify-center gap-2"
+            className="auth-btn"
           >
             {loading ? (
-              <>
-                <span
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
-                  style={{ borderColor: '#080808', borderTopColor: 'transparent' }}
-                />
-                جاري التحقق...
-              </>
+              <><span className="auth-spinner" /> جاري التحقق...</>
             ) : (
-              <>
-                <ShieldCheck className="h-4 w-4" />
-                تأكيد
-              </>
+              <><ShieldCheck className="h-[18px] w-[18px]" /> تأكيد</>
             )}
           </button>
         </form>
@@ -198,10 +181,7 @@ export default function VerifyEmailPage(): React.ReactElement {
               <span className="font-mono font-bold" style={{ color: '#D4B896' }}>{cooldown}</span>{' '}ثانية
             </p>
           ) : (
-            <button
-              onClick={handleResend}
-              className="auth-link inline-flex items-center gap-1.5 text-sm font-medium"
-            >
+            <button onClick={handleResend} className="auth-link inline-flex items-center gap-1.5 text-sm font-semibold">
               <RotateCw className="h-3.5 w-3.5" />
               إعادة إرسال الرمز
             </button>
@@ -212,19 +192,8 @@ export default function VerifyEmailPage(): React.ReactElement {
 
         <p className="text-center text-sm" style={{ color: '#807A72' }}>
           بريد خاطئ؟{' '}
-          <Link href="/register" className="auth-link font-medium">العودة للتسجيل</Link>
+          <Link href="/register" className="auth-link font-semibold">العودة للتسجيل</Link>
         </p>
-      </div>
-
-      <div className="mt-6 text-center">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-sm transition-colors duration-200"
-          style={{ color: '#807A72' }}
-        >
-          <ArrowLeft className="h-3.5 w-3.5" style={{ transform: 'scaleX(-1)' }} />
-          العودة للصفحة الرئيسية
-        </Link>
       </div>
     </div>
   );

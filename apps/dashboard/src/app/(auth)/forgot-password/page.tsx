@@ -3,7 +3,7 @@
 import { useState, useCallback, type FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Mail, CheckCircle2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 
 export default function ForgotPasswordPage(): React.ReactElement {
@@ -11,30 +11,22 @@ export default function ForgotPasswordPage(): React.ReactElement {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
-  const [mounted, setMounted] = useState(false);
+  const [show, setShow] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { requestAnimationFrame(() => setShow(true)); }, []);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      if (!email.trim()) {
-        setError('البريد الإلكتروني مطلوب');
-        return;
-      }
+      if (!email.trim()) { setError('البريد الإلكتروني مطلوب'); return; }
       setError('');
       setLoading(true);
-
       try {
         await api.post('/auth/forgot-password', { email: email.trim() });
         setSubmitted(true);
         toast.success('تم إرسال رابط الاستعادة بنجاح');
       } catch (err) {
-        if (err instanceof ApiError) {
-          toast.error(err.message);
-        } else {
-          toast.error('حدث خطأ غير متوقع');
-        }
+        toast.error(err instanceof ApiError ? err.message : 'حدث خطأ غير متوقع');
       } finally {
         setLoading(false);
       }
@@ -44,59 +36,44 @@ export default function ForgotPasswordPage(): React.ReactElement {
 
   if (submitted) {
     return (
-      <div
-        className="transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
-        style={{ opacity: 1, transform: 'translateY(0)' }}
-      >
-        <div className="auth-card-luxury p-8 sm:p-10 text-center">
-          <div
-            className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full"
-            style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)' }}
-          >
-            <CheckCircle2 className="h-7 w-7" style={{ color: '#4ade80' }} />
-          </div>
-          <h2 className="auth-title mb-3">تم الإرسال بنجاح</h2>
-          <p className="mb-8 text-sm" style={{ color: '#B0AAA2' }}>
-            إذا كان البريد الإلكتروني مسجلاً لدينا، ستصلك رسالة تحتوي على رابط لاستعادة كلمة المرور.
-          </p>
-          <Link
-            href="/login"
-            className="inline-flex items-center justify-center gap-2 w-full rounded-xl py-3 text-sm font-medium transition-all"
-            style={{
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: '#B0AAA2',
-            }}
-          >
-            <ArrowLeft className="h-4 w-4" style={{ transform: 'scaleX(-1)' }} />
-            العودة لتسجيل الدخول
-          </Link>
+      <div className="auth-card p-8 sm:p-10 text-center">
+        <div
+          className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl"
+          style={{ background: 'rgba(74,222,128,0.06)', border: '1px solid rgba(74,222,128,0.15)' }}
+        >
+          <CheckCircle2 className="h-8 w-8" style={{ color: '#4ade80' }} />
         </div>
+        <h2 className="auth-title mb-3">تم الإرسال بنجاح</h2>
+        <p className="mb-8 text-sm leading-relaxed" style={{ color: '#B0AAA2' }}>
+          إذا كان البريد الإلكتروني مسجلاً لدينا، ستصلك رسالة تحتوي على رابط لاستعادة كلمة المرور.
+        </p>
+        <Link href="/login" className="auth-btn-outline">
+          العودة لتسجيل الدخول
+        </Link>
       </div>
     );
   }
 
   return (
     <div
-      className="transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
       style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(16px)',
+        opacity: show ? 1 : 0,
+        transform: show ? 'translateY(0)' : 'translateY(12px)',
+        transition: 'all 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
-      <div className="auth-card-luxury p-8 sm:p-10">
-        <h2 className="auth-title mb-2 text-center">استعادة كلمة المرور</h2>
-        <p className="mb-8 text-center text-sm" style={{ color: '#807A72' }}>
-          أدخل بريدك الإلكتروني وسنرسل لك رابطاً لاستعادة كلمة المرور
-        </p>
+      <div className="auth-card p-8 sm:p-10">
+        <div className="mb-8 text-center">
+          <h2 className="auth-title">استعادة كلمة المرور</h2>
+          <p className="mt-2 text-sm" style={{ color: '#807A72' }}>
+            أدخلي بريدك الإلكتروني وسنرسل لك رابطاً لاستعادة كلمة المرور
+          </p>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-2">
-            <label className="auth-label block text-sm">البريد الإلكتروني</label>
+          <div>
+            <label className="auth-label">البريد الإلكتروني</label>
             <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-3.5">
-                <Mail className="h-4 w-4" style={{ color: '#807A72' }} />
-              </div>
               <input
                 type="email"
                 placeholder="email@example.com"
@@ -104,51 +81,35 @@ export default function ForgotPasswordPage(): React.ReactElement {
                 onChange={(e) => { setEmail(e.target.value); setError(''); }}
                 autoComplete="email"
                 dir="ltr"
-                className="auth-input w-full pe-10 text-start"
+                className="auth-input pe-11 text-start"
               />
+              <div className="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-4">
+                <Mail className="h-[18px] w-[18px]" style={{ color: '#5A5650' }} />
+              </div>
             </div>
-            {error && <p className="auth-error text-xs">{error}</p>}
+            {error && <p className="auth-error">{error}</p>}
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="auth-btn-gold flex w-full items-center justify-center gap-2"
-          >
+          <button type="submit" disabled={loading} className="auth-btn">
             {loading ? (
-              <>
-                <span
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"
-                  style={{ borderColor: '#080808', borderTopColor: 'transparent' }}
-                />
-                جاري الإرسال...
-              </>
+              <><span className="auth-spinner" /> جاري الإرسال...</>
             ) : (
-              <>
-                <Mail className="h-4 w-4" />
-                إرسال رابط الاستعادة
-              </>
+              <><Mail className="h-[18px] w-[18px]" /> إرسال رابط الاستعادة</>
             )}
           </button>
         </form>
 
-        <div className="auth-divider my-7" />
+        <div className="auth-divider my-8" />
 
         <p className="text-center text-sm" style={{ color: '#807A72' }}>
           تذكرت كلمة المرور؟{' '}
-          <Link href="/login" className="auth-link font-medium">
-            تسجيل الدخول
-          </Link>
+          <Link href="/login" className="auth-link font-semibold">تسجيل الدخول</Link>
         </p>
       </div>
 
-      <div className="mt-6 text-center">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-sm transition-colors duration-200"
-          style={{ color: '#807A72' }}
-        >
-          <ArrowLeft className="h-3.5 w-3.5" style={{ transform: 'scaleX(-1)' }} />
+      <div className="mt-8 text-center">
+        <Link href="/" className="inline-flex items-center gap-2 text-sm" style={{ color: '#5A5650' }}>
+          <span style={{ transform: 'scaleX(-1)', display: 'inline-block' }}>←</span>
           العودة للصفحة الرئيسية
         </Link>
       </div>
