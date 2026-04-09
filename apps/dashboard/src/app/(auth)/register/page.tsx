@@ -4,37 +4,26 @@ import { useState, useCallback, type FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { UserPlus, User, Mail, Phone, Lock, Store } from 'lucide-react';
+import { UserPlus, User, Mail, Phone, Lock, Store, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { ApiError } from '@/lib/api';
 
+const LANDING_URL = 'https://servi-x.com';
+
 interface FormFields {
-  fullName: string;
-  email: string;
-  phone: string;
-  password: string;
-  salonNameAr: string;
-  salonNameEn: string;
+  fullName: string; email: string; phone: string;
+  password: string; salonNameAr: string; salonNameEn: string;
 }
 type FormErrors = Partial<Record<keyof FormFields, string>>;
 
 const initialForm: FormFields = {
-  fullName: '',
-  email: '',
-  phone: '',
-  password: '',
-  salonNameAr: '',
-  salonNameEn: '',
+  fullName: '', email: '', phone: '',
+  password: '', salonNameAr: '', salonNameEn: '',
 };
 
 type FieldDef = {
-  key: keyof FormFields;
-  label: string;
-  type: string;
-  placeholder: string;
-  icon: typeof User;
-  autoComplete: string;
-  dir?: 'ltr';
+  key: keyof FormFields; label: string; type: string;
+  placeholder: string; icon: typeof User; autoComplete: string; dir?: 'ltr';
 };
 
 const FIELDS: FieldDef[] = [
@@ -49,7 +38,6 @@ const FIELDS: FieldDef[] = [
 export default function RegisterPage(): React.ReactElement {
   const router = useRouter();
   const { register } = useAuth();
-
   const [form, setForm] = useState<FormFields>(initialForm);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -59,11 +47,9 @@ export default function RegisterPage(): React.ReactElement {
 
   const updateField = useCallback(
     (field: keyof FormFields, value: string) => {
-      setForm((prev) => ({ ...prev, [field]: value }));
-      setErrors((prev) => ({ ...prev, [field]: undefined }));
-    },
-    [],
-  );
+      setForm(p => ({ ...p, [field]: value }));
+      setErrors(p => ({ ...p, [field]: undefined }));
+    }, []);
 
   const validate = useCallback((): boolean => {
     const e: FormErrors = {};
@@ -77,118 +63,83 @@ export default function RegisterPage(): React.ReactElement {
     return Object.keys(e).length === 0;
   }, [form]);
 
-  const handleSubmit = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
-      if (!validate()) return;
-      setLoading(true);
-      try {
-        await register({
-          fullName: form.fullName.trim(),
-          email: form.email.trim(),
-          phone: form.phone.trim(),
-          password: form.password,
-          salonNameAr: form.salonNameAr.trim(),
-          salonNameEn: form.salonNameEn.trim(),
-        });
-        toast.success('تم إنشاء الحساب — أدخل رمز التحقق المرسل لإيميلك');
-        router.push(`/verify-email?email=${encodeURIComponent(form.email.trim())}`);
-      } catch (error) {
-        if (error instanceof ApiError) {
-          if (error.details?.length) error.details.forEach((d) => toast.error(d));
-          else toast.error(error.message);
-        } else {
-          toast.error('حدث خطأ غير متوقع');
-        }
-      } finally {
-        setLoading(false);
-      }
-    },
-    [form, register, router, validate],
-  );
+  const handleSubmit = useCallback(async (e: FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setLoading(true);
+    try {
+      await register({
+        fullName: form.fullName.trim(), email: form.email.trim(),
+        phone: form.phone.trim(), password: form.password,
+        salonNameAr: form.salonNameAr.trim(), salonNameEn: form.salonNameEn.trim(),
+      });
+      toast.success('تم إنشاء الحساب — أدخل رمز التحقق المرسل لإيميلك');
+      router.push(`/verify-email?email=${encodeURIComponent(form.email.trim())}`);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.details?.length) error.details.forEach(d => toast.error(d));
+        else toast.error(error.message);
+      } else toast.error('حدث خطأ غير متوقع');
+    } finally { setLoading(false); }
+  }, [form, register, router, validate]);
 
   return (
-    <div
-      style={{
-        opacity: show ? 1 : 0,
-        transform: show ? 'translateY(0)' : 'translateY(12px)',
-        transition: 'all 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
-      }}
-    >
-      <div className="auth-card p-7 sm:p-9">
-        {/* Header */}
+    <div style={{
+      opacity: show ? 1 : 0,
+      transform: show ? 'translateY(0)' : 'translateY(14px)',
+      transition: 'all 0.65s cubic-bezier(0.22, 1, 0.36, 1)',
+    }}>
+      <div className="auth-card px-8 py-9 sm:px-11 sm:py-10">
         <div className="mb-7 text-center">
           <h2 className="auth-title">إنشاء حساب جديد</h2>
-          <p className="mt-2 text-sm" style={{ color: '#807A72' }}>
+          <p className="mt-2 text-[15px]" style={{ color: '#807A72' }}>
             ابدئي تجربتك المجانية ١٤ يوم — بلا بطاقة ائتمان
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {FIELDS.map((field) => {
-            const Icon = field.icon;
+          {FIELDS.map((f) => {
+            const Icon = f.icon;
             return (
-              <div key={field.key}>
-                <label className="auth-label">{field.label}</label>
+              <div key={f.key}>
+                <label className="auth-label">{f.label}</label>
                 <div className="relative">
-                  <input
-                    type={field.type}
-                    placeholder={field.placeholder}
-                    value={form[field.key]}
-                    onChange={(e) => updateField(field.key, e.target.value)}
-                    autoComplete={field.autoComplete}
-                    dir={field.dir}
-                    className={`auth-input pe-11 ${field.dir === 'ltr' ? 'text-start' : ''}`}
-                  />
+                  <input type={f.type} placeholder={f.placeholder} value={form[f.key]}
+                    onChange={(e) => updateField(f.key, e.target.value)}
+                    autoComplete={f.autoComplete} dir={f.dir}
+                    className={`auth-input pe-12 ${f.dir === 'ltr' ? 'text-start' : ''}`} />
                   <div className="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-4">
                     <Icon className="h-[18px] w-[18px]" style={{ color: '#5A5650' }} />
                   </div>
                 </div>
-                {errors[field.key] && <p className="auth-error">{errors[field.key]}</p>}
+                {errors[f.key] && <p className="auth-error">{errors[f.key]}</p>}
               </div>
             );
           })}
 
-          {/* Submit */}
-          <div className="pt-1">
+          <div className="pt-2">
             <button type="submit" disabled={loading} className="auth-btn">
-              {loading ? (
-                <>
-                  <span className="auth-spinner" />
-                  جاري إنشاء الحساب...
-                </>
-              ) : (
-                <>
-                  <UserPlus className="h-[18px] w-[18px]" />
-                  إنشاء حساب
-                </>
-              )}
+              {loading ? <><span className="auth-spinner" /> جاري إنشاء الحساب...</>
+               : <><UserPlus className="h-[18px] w-[18px]" /> إنشاء حساب</>}
             </button>
           </div>
         </form>
 
-        {/* Divider */}
         <div className="auth-divider my-7" />
 
-        {/* Login link */}
-        <p className="text-center text-sm" style={{ color: '#807A72' }}>
+        <p className="text-center text-[15px]" style={{ color: '#807A72' }}>
           لديك حساب بالفعل؟{' '}
-          <Link href="/login" className="auth-link font-semibold">
-            تسجيل الدخول
-          </Link>
+          <Link href="/login" className="auth-link font-bold">تسجيل الدخول</Link>
         </p>
       </div>
 
-      {/* Back link */}
       <div className="mt-6 text-center">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-sm transition-colors duration-200"
-          style={{ color: '#5A5650' }}
-        >
-          <span style={{ transform: 'scaleX(-1)', display: 'inline-block' }}>←</span>
+        <a href={LANDING_URL}
+          className="group inline-flex items-center gap-2 text-sm font-medium transition-colors duration-200"
+          style={{ color: '#5A5650' }}>
+          <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:-translate-x-0.5" />
           العودة للصفحة الرئيسية
-        </Link>
+        </a>
       </div>
     </div>
   );
