@@ -16,17 +16,17 @@
 
   /* Foreground */
   --fg:            #F0EDE8;
-  --fg-secondary:  #7A756F;
-  --fg-muted:      #4A4641;
+  --fg-secondary:  #B0AAA2;
+  --fg-muted:      #807A72;
 
   /* Gold accent */
-  --gold:          #C8A97E;
+  --gold:          #D4B896;
   --gold-light:    #E8D5B5;
-  --gold-dim:      #9A7D55;
+  --gold-dim:      #A88D65;
 
   /* Borders */
-  --border:        rgba(255, 255, 255, 0.06);
-  --border-gold:   rgba(200, 169, 126, 0.25);
+  --border:        rgba(255, 255, 255, 0.08);
+  --border-gold:   rgba(200, 169, 126, 0.35);
 
   /* Status */
   --success:       #4ade80;

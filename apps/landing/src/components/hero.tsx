@@ -44,11 +44,11 @@ function ProductMockup() {
       >
         <div className="flex items-center gap-2">
           <span className="text-sm font-black" style={{ color: 'var(--gold)' }}>SERVIX</span>
-          <span className="text-[10px] font-medium" style={{ color: 'var(--fg-muted)' }}>لوحة التحكم</span>
+          <span className="text-xs font-medium" style={{ color: 'var(--fg-secondary)' }}>لوحة التحكم</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full" style={{ background: '#4ade80' }} />
-          <span className="text-[10px]" style={{ color: 'var(--fg-muted)' }}>مباشر</span>
+          <span className="text-xs" style={{ color: 'var(--fg-secondary)' }}>مباشر</span>
         </div>
       </div>
 
@@ -61,14 +61,14 @@ function ProductMockup() {
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}
           >
             <div className="text-xl font-black leading-none" style={{ color: k.color }}>{k.value}</div>
-            <div className="mt-1.5 text-[10px]" style={{ color: 'var(--fg-muted)' }}>{k.label}</div>
+            <div className="mt-1.5 text-xs" style={{ color: 'var(--fg-secondary)' }}>{k.label}</div>
           </div>
         ))}
       </div>
 
       {/* Revenue chart */}
       <div className="px-5">
-        <div className="text-[10px] font-semibold mb-2" style={{ color: 'var(--fg-muted)' }}>إيرادات الأسبوع</div>
+        <div className="text-xs font-semibold mb-2" style={{ color: 'var(--fg-secondary)' }}>إيرادات الأسبوع</div>
         <div className="flex items-end gap-1.5" style={{ height: 48 }}>
           {bars.map((h, i) => (
             <div
@@ -87,7 +87,7 @@ function ProductMockup() {
 
       {/* Appointments */}
       <div className="px-5 py-4">
-        <div className="text-[10px] font-semibold mb-2" style={{ color: 'var(--fg-muted)' }}>مواعيد اليوم</div>
+        <div className="text-xs font-semibold mb-2" style={{ color: 'var(--fg-secondary)' }}>مواعيد اليوم</div>
         <div className="space-y-1.5">
           {appointments.map((a) => (
             <div
@@ -97,18 +97,18 @@ function ProductMockup() {
             >
               <div className="flex items-center gap-2.5">
                 <div
-                  className="h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold"
+                  className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold"
                   style={{ background: 'rgba(200,169,126,0.12)', color: 'var(--gold)' }}
                 >
                   {a.name.charAt(0)}
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold" style={{ color: 'var(--fg)' }}>{a.name}</div>
-                  <div className="text-[9px]" style={{ color: 'var(--fg-muted)' }}>{a.service}</div>
+                  <div className="text-xs font-semibold" style={{ color: 'var(--fg)' }}>{a.name}</div>
+                  <div className="text-[11px]" style={{ color: 'var(--fg-secondary)' }}>{a.service}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-medium" style={{ color: 'var(--fg-secondary)' }}>{a.time}</span>
+                <span className="text-xs font-medium" style={{ color: 'var(--fg)' }}>{a.time}</span>
                 <div
                   className="h-1.5 w-1.5 rounded-full"
                   style={{ background: a.status === 'confirmed' ? '#4ade80' : '#fbbf24' }}
@@ -228,8 +228,8 @@ export default function Hero(): React.ReactElement {
                   { icon: Clock,       label: t('hero.trust2') },
                   { icon: CreditCard,  label: t('hero.trust3') },
                 ].map(({ icon: Icon, label }, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs" style={{ color: 'var(--fg-muted)' }}>
-                    <Icon className="h-3.5 w-3.5" style={{ color: 'var(--gold-dim)', opacity: 0.7 }} />
+                  <div key={i} className="flex items-center gap-2 text-sm" style={{ color: 'var(--fg-secondary)' }}>
+                    <Icon className="h-4 w-4" style={{ color: 'var(--gold)' }} />
                     {label}
                   </div>
                 ))}

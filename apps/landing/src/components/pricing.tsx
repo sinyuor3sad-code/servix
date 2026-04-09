@@ -157,11 +157,11 @@ export default function Pricing(): React.ReactElement {
                         border: '1px solid var(--border)',
                       }}
                     >
-                      <Icon className="h-5 w-5" style={{ color: isPopular ? 'var(--gold)' : 'var(--fg-muted)' }} />
+                      <Icon className="h-5 w-5" style={{ color: isPopular ? 'var(--gold)' : 'var(--fg-secondary)' }} />
                     </div>
                     <div>
                       <h3 className="text-lg font-bold" style={{ color: 'var(--fg)' }}>{plan.nameAr}</h3>
-                      <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>{plan.descriptionAr}</p>
+                      <p className="text-sm" style={{ color: 'var(--fg-secondary)' }}>{plan.descriptionAr}</p>
                     </div>
                   </div>
 
@@ -173,7 +173,7 @@ export default function Pricing(): React.ReactElement {
                     >
                       {plan.priceMonthly.toLocaleString('ar-SA')}
                     </span>
-                    <div className="text-sm" style={{ color: 'var(--fg-muted)' }}>
+                    <div className="text-sm" style={{ color: 'var(--fg-secondary)' }}>
                       <div>ر.س</div>
                       <div>شهرياً</div>
                     </div>
@@ -182,7 +182,7 @@ export default function Pricing(): React.ReactElement {
                   {/* Features */}
                   <ul className="mb-8 space-y-3">
                     {plan.features.map((f) => (
-                      <li key={f.code} className="flex items-start gap-2.5 text-sm" style={{ color: 'var(--fg-secondary)' }}>
+                      <li key={f.code} className="flex items-start gap-2.5 text-base" style={{ color: 'var(--fg)' }}>
                         <Check className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--gold)' }} />
                         {f.nameAr}
                       </li>
@@ -211,7 +211,7 @@ export default function Pricing(): React.ReactElement {
           viewport={{ once: true }}
           transition={{ duration: 0.8, delay: 0.4 }}
           className="mt-10 text-center text-sm"
-          style={{ color: 'var(--fg-muted)' }}
+          style={{ color: 'var(--fg-secondary)' }}
         >
           {t('pricing.note')}
         </motion.p>

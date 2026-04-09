@@ -29,7 +29,7 @@ function DashboardVisual() {
             {['الرئيسية', 'المواعيد', 'العملاء', 'التقارير'].map((label, i) => (
               <span
                 key={label}
-                className="text-[10px]"
+                className="text-xs"
                 style={{ color: i === 0 ? 'var(--fg)' : 'var(--fg-muted)' }}
               >
                 {label}
@@ -84,8 +84,8 @@ function DashboardVisual() {
               >
                 <div className="text-base font-black leading-none" style={{ color: 'var(--fg)' }}>{kpi.value}</div>
                 <div className="mt-1 flex items-center justify-between">
-                  <span className="text-[8px]" style={{ color: 'var(--fg-muted)' }}>{kpi.label}</span>
-                  <span className="text-[8px] font-semibold" style={{ color: '#4ade80' }}>{kpi.trend}</span>
+                  <span className="text-[10px]" style={{ color: 'var(--fg-secondary)' }}>{kpi.label}</span>
+                  <span className="text-[10px] font-semibold" style={{ color: '#4ade80' }}>{kpi.trend}</span>
                 </div>
               </div>
             ))}
@@ -97,7 +97,7 @@ function DashboardVisual() {
               className="col-span-2 rounded-xl p-3"
               style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}
             >
-              <div className="text-[9px] font-semibold mb-2" style={{ color: 'var(--fg-muted)' }}>إيرادات الشهر</div>
+              <div className="text-[11px] font-semibold mb-2" style={{ color: 'var(--fg-secondary)' }}>إيرادات الشهر</div>
               <div className="flex items-end gap-1" style={{ height: 60 }}>
                 {[0.3, 0.5, 0.4, 0.7, 0.6, 0.8, 0.75, 0.9, 0.85, 1.0, 0.7, 0.6].map((h, i) => (
                   <div
@@ -115,7 +115,7 @@ function DashboardVisual() {
               className="rounded-xl p-3"
               style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}
             >
-              <div className="text-[9px] font-semibold mb-2" style={{ color: 'var(--fg-muted)' }}>الخدمات الأكثر طلباً</div>
+              <div className="text-[11px] font-semibold mb-2" style={{ color: 'var(--fg-secondary)' }}>الخدمات الأكثر طلباً</div>
               <div className="space-y-1.5">
                 {[
                   { name: 'قص وصبغ', pct: 85 },
@@ -125,8 +125,8 @@ function DashboardVisual() {
                 ].map((s) => (
                   <div key={s.name}>
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[8px]" style={{ color: 'var(--fg-muted)' }}>{s.name}</span>
-                      <span className="text-[8px] font-semibold" style={{ color: 'var(--fg-secondary)' }}>{s.pct}٪</span>
+                      <span className="text-[10px]" style={{ color: 'var(--fg-secondary)' }}>{s.name}</span>
+                      <span className="text-[10px] font-semibold" style={{ color: 'var(--fg)' }}>{s.pct}٪</span>
                     </div>
                     <div className="h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.04)' }}>
                       <div className="h-full rounded-full" style={{ width: `${s.pct}%`, background: 'var(--gold)', opacity: 0.6 }} />
@@ -142,7 +142,7 @@ function DashboardVisual() {
             className="rounded-xl p-3"
             style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}
           >
-            <div className="text-[9px] font-semibold mb-2" style={{ color: 'var(--fg-muted)' }}>مواعيد اليوم</div>
+            <div className="text-[11px] font-semibold mb-2" style={{ color: 'var(--fg-secondary)' }}>مواعيد اليوم</div>
             <div className="space-y-1">
               {[
                 { name: 'سارة', time: '10:00', service: 'قص وصبغ', status: 'مؤكد' },
@@ -151,16 +151,16 @@ function DashboardVisual() {
               ].map((a) => (
                 <div key={a.name} className="flex items-center justify-between py-1">
                   <div className="flex items-center gap-2">
-                    <div className="h-4 w-4 rounded-full flex items-center justify-center text-[7px] font-bold"
+                    <div className="h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold"
                       style={{ background: 'rgba(200,169,126,0.1)', color: 'var(--gold)' }}>
                       {a.name.charAt(0)}
                     </div>
-                    <span className="text-[9px]" style={{ color: 'var(--fg-secondary)' }}>{a.name}</span>
+                    <span className="text-[11px]" style={{ color: 'var(--fg)' }}>{a.name}</span>
                   </div>
-                  <span className="text-[8px]" style={{ color: 'var(--fg-muted)' }}>{a.service}</span>
-                  <span className="text-[8px]" style={{ color: 'var(--fg-muted)' }}>{a.time}</span>
+                  <span className="text-[10px]" style={{ color: 'var(--fg-secondary)' }}>{a.service}</span>
+                  <span className="text-[10px]" style={{ color: 'var(--fg-secondary)' }}>{a.time}</span>
                   <span
-                    className="text-[7px] rounded-full px-1.5 py-0.5"
+                    className="text-[9px] rounded-full px-1.5 py-0.5"
                     style={{
                       background: a.status === 'مؤكد' ? 'rgba(74,222,128,0.1)' : 'rgba(251,191,36,0.1)',
                       color: a.status === 'مؤكد' ? '#4ade80' : '#fbbf24',
@@ -259,7 +259,7 @@ export default function ProductShowcase(): React.ReactElement {
                 }}
               >
                 <Icon className="h-4 w-4" style={{ color: 'var(--gold)' }} />
-                <span className="text-xs font-semibold" style={{ color: 'var(--fg-secondary)' }}>{label.text}</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>{label.text}</span>
               </motion.div>
             );
           })}

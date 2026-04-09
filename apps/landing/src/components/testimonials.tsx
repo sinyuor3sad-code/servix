@@ -71,12 +71,12 @@ export default function Testimonials(): React.ReactElement {
               {/* Stars */}
               <div className="mb-4 flex gap-1">
                 {Array.from({ length: 5 }).map((_, si) => (
-                  <Star key={si} className="h-3.5 w-3.5 fill-current" style={{ color: 'var(--gold)' }} />
+                  <Star key={si} className="h-4 w-4 fill-current" style={{ color: 'var(--gold)' }} />
                 ))}
               </div>
 
               {/* Quote */}
-              <p className="mb-6 text-sm leading-relaxed" style={{ color: 'var(--fg-secondary)' }}>
+              <p className="mb-6 text-base leading-relaxed" style={{ color: 'var(--fg)' }}>
                 {item.quote}
               </p>
 
@@ -97,7 +97,7 @@ export default function Testimonials(): React.ReactElement {
                 </div>
                 <div>
                   <div className="text-sm font-bold" style={{ color: 'var(--fg)' }}>{item.name}</div>
-                  <div className="text-xs" style={{ color: 'var(--fg-muted)' }}>{item.role}</div>
+                  <div className="text-sm" style={{ color: 'var(--fg-secondary)' }}>{item.role}</div>
                 </div>
               </div>
             </motion.div>
