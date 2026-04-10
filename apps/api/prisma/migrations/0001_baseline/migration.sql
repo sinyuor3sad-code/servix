@@ -179,6 +179,7 @@ CREATE TABLE "employees" (
     "role" "EmployeeRole" NOT NULL DEFAULT 'stylist',
     "commission_type" "CommissionType" NOT NULL DEFAULT 'none',
     "commission_value" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "salary" DECIMAL(10,2) NOT NULL DEFAULT 0,
     "max_daily_appointments" INTEGER NOT NULL DEFAULT 12,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
     "avatar_url" VARCHAR(500),
@@ -403,6 +404,7 @@ CREATE TABLE "expenses" (
     "amount" DECIMAL(10,2) NOT NULL,
     "date" DATE NOT NULL,
     "receipt_url" VARCHAR(500),
+    "employee_id" UUID,
     "created_by" UUID NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ NOT NULL,
@@ -835,6 +837,9 @@ CREATE INDEX "expenses_date_idx" ON "expenses"("date");
 CREATE INDEX "expenses_category_idx" ON "expenses"("category");
 
 -- CreateIndex
+CREATE INDEX "expenses_employee_id_idx" ON "expenses"("employee_id");
+
+-- CreateIndex
 CREATE INDEX "attendance_date_idx" ON "attendance"("date");
 
 -- CreateIndex
@@ -1010,6 +1015,9 @@ ALTER TABLE "loyalty_transactions" ADD CONSTRAINT "loyalty_transactions_client_i
 
 -- AddForeignKey
 ALTER TABLE "loyalty_transactions" ADD CONSTRAINT "loyalty_transactions_invoice_id_fkey" FOREIGN KEY ("invoice_id") REFERENCES "invoices"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "expenses" ADD CONSTRAINT "expenses_employee_id_fkey" FOREIGN KEY ("employee_id") REFERENCES "employees"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "attendance" ADD CONSTRAINT "attendance_employee_id_fkey" FOREIGN KEY ("employee_id") REFERENCES "employees"("id") ON DELETE CASCADE ON UPDATE CASCADE;

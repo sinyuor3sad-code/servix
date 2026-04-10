@@ -58,6 +58,7 @@ export class EmployeesController {
     return this.employeesService.create(
       req.tenantDb!,
       dto,
+      req.user?.sub,
     );
   }
 
@@ -88,6 +89,7 @@ export class EmployeesController {
       req.tenantDb!,
       id,
       dto,
+      req.user?.sub,
     );
   }
 

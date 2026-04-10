@@ -373,6 +373,7 @@ model Employee {
   role                  EmployeeRole   @default(stylist)
   commissionType        CommissionType @default(none) @map("commission_type")
   commissionValue       Decimal        @default(0) @map("commission_value") @db.Decimal(10, 2)
+  salary                Decimal        @default(0) @map("salary") @db.Decimal(10, 2)
   maxDailyAppointments  Int            @default(12) @map("max_daily_appointments")
   isActive              Boolean        @default(true) @map("is_active")
   avatarUrl             String?        @map("avatar_url") @db.VarChar(500)
@@ -389,6 +390,7 @@ model Employee {
   shifts              Shift[]
   commitments         Commitment[]
   debts               EmployeeDebt[]
+  expenses            Expense[]
 
   @@index([isActive])
   @@map("employees")
@@ -696,12 +698,16 @@ model Expense {
   amount      Decimal         @db.Decimal(10, 2)
   date        DateTime        @db.Date
   receiptUrl  String?         @map("receipt_url") @db.VarChar(500)
+  employeeId  String?         @map("employee_id") @db.Uuid
   createdBy   String          @map("created_by") @db.Uuid
   createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
 
+  employee    Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
   @@index([date])
   @@index([category])
+  @@index([employeeId])
   @@map("expenses")
 }
 

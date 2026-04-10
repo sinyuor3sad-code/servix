@@ -176,6 +176,17 @@ export default function EmployeeDetailPage() {
                 </div>
               </div>
             )}
+            {employee.salary > 0 && (
+              <div className="flex items-center gap-3">
+                <Banknote className="h-4 w-4 text-[var(--muted-foreground)]" />
+                <div>
+                  <p className="text-xs text-[var(--muted-foreground)]">الراتب الشهري</p>
+                  <p className="text-sm font-medium text-[var(--foreground)]">
+                    {employee.salary} ر.س
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               {employee.commissionType === 'percentage' ? (
                 <Percent className="h-4 w-4 text-[var(--muted-foreground)]" />

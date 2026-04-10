@@ -48,6 +48,7 @@ const employeeSchema = z.object({
     required_error: 'يرجى اختيار نوع العمولة',
   }),
   commissionValue: z.coerce.number().min(0, 'قيمة العمولة يجب أن تكون 0 أو أكثر'),
+  salary: z.coerce.number().min(0, 'الراتب يجب أن يكون 0 أو أكثر'),
 });
 
 type EmployeeFormData = z.infer<typeof employeeSchema>;
@@ -72,6 +73,7 @@ export default function NewEmployeePage() {
       role: 'stylist',
       commissionType: 'none',
       commissionValue: 0,
+      salary: 0,
     },
   });
 
@@ -177,10 +179,28 @@ export default function NewEmployeePage() {
           )}
         </div>
 
-        {/* ── Section 3: Commission ── */}
+        {/* ── Section 3: Salary ── */}
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 space-y-4">
           <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
             <span className="w-6 h-6 rounded-full bg-[var(--brand-primary)] text-white text-xs flex items-center justify-center">3</span>
+            الراتب الشهري
+          </h2>
+          <Input
+            type="number"
+            label="الراتب (ر.س)"
+            placeholder="مثال: 3000"
+            error={errors.salary?.message}
+            {...register('salary')}
+          />
+          <p className="text-[10px] text-[var(--muted-foreground)]">
+            سيظهر تلقائياً في قسم المصروفات ضمن رواتب الموظفين
+          </p>
+        </div>
+
+        {/* ── Section 4: Commission ── */}
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-[var(--brand-primary)] text-white text-xs flex items-center justify-center">4</span>
             العمولة
           </h2>
           <div className="grid grid-cols-3 gap-2">

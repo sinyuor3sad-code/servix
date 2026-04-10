@@ -50,4 +50,10 @@ export class CreateEmployeeDto {
   @IsNumber({}, { message: 'قيمة العمولة يجب أن تكون رقماً' })
   @Min(0, { message: 'قيمة العمولة يجب أن تكون 0 على الأقل' })
   commissionValue?: number;
+
+  @ApiPropertyOptional({ description: 'الراتب الشهري', minimum: 0 })
+  @IsOptional()
+  @IsNumber({}, { message: 'الراتب يجب أن يكون رقماً' })
+  @Min(0, { message: 'الراتب يجب أن يكون 0 على الأقل' })
+  salary?: number;
 }

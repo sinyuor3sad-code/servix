@@ -23,14 +23,21 @@ export class EmployeesService {
   private mapDecimalFields<
     T extends {
       commissionValue: { toNumber?: () => number } | number;
+      salary?: { toNumber?: () => number } | number;
     },
-  >(employee: T): T & { commissionValue: number } {
+  >(employee: T): T & { commissionValue: number; salary: number } {
     return {
       ...employee,
       commissionValue:
         typeof employee.commissionValue === 'number'
           ? employee.commissionValue
           : Number(employee.commissionValue),
+      salary:
+        employee.salary === undefined || employee.salary === null
+          ? 0
+          : typeof employee.salary === 'number'
+            ? employee.salary
+            : Number(employee.salary),
     };
   }
 
@@ -96,7 +103,10 @@ export class EmployeesService {
   async create(
     db: TenantPrismaClient,
     dto: CreateEmployeeDto,
+    userId?: string,
   ): Promise<Record<string, unknown>> {
+    const salary = dto.salary ?? 0;
+
     const employee = await db.employee.create({
       data: {
         fullName: dto.fullName,
@@ -108,8 +118,14 @@ export class EmployeesService {
           | 'fixed'
           | 'none',
         commissionValue: dto.commissionValue ?? 0,
+        salary,
       },
     });
+
+    // Auto-create salary expense if salary > 0
+    if (salary > 0) {
+      await this.upsertSalaryExpense(db, employee.id, employee.fullName, salary, userId);
+    }
 
     // Audit log (fire-and-forget)
     this.auditService.log({
@@ -117,7 +133,7 @@ export class EmployeesService {
       action: 'employee.create',
       entityType: 'Employee',
       entityId: (employee as Record<string, unknown>).id as string,
-      newValues: { fullName: dto.fullName, role: dto.role },
+      newValues: { fullName: dto.fullName, role: dto.role, salary },
     }).catch(() => {});
 
     return this.mapDecimalFields(employee);
@@ -127,6 +143,7 @@ export class EmployeesService {
     db: TenantPrismaClient,
     id: string,
     dto: UpdateEmployeeDto,
+    userId?: string,
   ): Promise<Record<string, unknown>> {
     await this.findEmployeeOrFail(db, id);
 
@@ -150,6 +167,16 @@ export class EmployeesService {
       where: { id },
       data,
     });
+
+    // Update salary expense if salary changed
+    if (dto.salary !== undefined) {
+      if (dto.salary > 0) {
+        await this.upsertSalaryExpense(db, id, employee.fullName, dto.salary, userId);
+      } else {
+        // Salary set to 0 — remove linked expense
+        await db.expense.deleteMany({ where: { employeeId: id, category: 'salary' } });
+      }
+    }
 
     return this.mapDecimalFields(employee);
   }
@@ -180,6 +207,45 @@ export class EmployeesService {
       }).catch(() => {});
 
       return { id, deactivated: true };
+    }
+  }
+
+  // ─── Salary Expense ───
+
+  private async upsertSalaryExpense(
+    db: TenantPrismaClient,
+    employeeId: string,
+    employeeName: string,
+    salary: number,
+    userId?: string,
+  ): Promise<void> {
+    const now = new Date();
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const existing = await db.expense.findFirst({
+      where: { employeeId, category: 'salary' },
+    });
+
+    if (existing) {
+      await db.expense.update({
+        where: { id: existing.id },
+        data: {
+          amount: salary,
+          description: `راتب ${employeeName}`,
+          date: firstOfMonth,
+        },
+      });
+    } else {
+      await db.expense.create({
+        data: {
+          category: 'salary',
+          description: `راتب ${employeeName}`,
+          amount: salary,
+          date: firstOfMonth,
+          employeeId,
+          createdBy: userId ?? 'system',
+        },
+      });
     }
   }
 
