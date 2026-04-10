@@ -58,7 +58,7 @@ upload_to_minio() {
 cleanup_old_minio_backups() {
   log "Cleaning MinIO backups older than ${RETENTION_DAYS} days..."
   local CUTOFF_DATE
-  CUTOFF_DATE=$(date -d "-${RETENTION_DAYS} days" +"%Y%m%d" 2>/dev/null || date -v-${RETENTION_DAYS}d +"%Y%m%d" 2>/dev/null || echo "")
+  CUTOFF_DATE=$(date -d "@$(( $(date +%s) - RETENTION_DAYS * 86400 ))" +"%Y%m%d" 2>/dev/null || echo "")
 
   if [ -z "$CUTOFF_DATE" ]; then
     log "  Could not compute cutoff date, skipping MinIO cleanup"
