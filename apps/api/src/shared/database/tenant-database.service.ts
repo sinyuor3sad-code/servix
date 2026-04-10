@@ -141,6 +141,7 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
    */
   private async deployTenantMigrations(databaseName: string): Promise<void> {
     const { execSync } = await import('child_process');
+    const { existsSync } = await import('fs');
     const baseUrl = process.env.PLATFORM_DATABASE_URL || '';
     const url = new URL(baseUrl);
     url.pathname = `/${databaseName}`;
@@ -153,29 +154,38 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
     const prismaPaths = [
       'node_modules/.bin/prisma',
       'node_modules/.pnpm/node_modules/.bin/prisma',
-      'npx prisma',
     ];
 
-    for (const prismaCmd of prismaPaths) {
-      try {
-        execSync(
-          `${prismaCmd} migrate deploy --schema=./prisma/tenant.prisma 2>&1`,
-          opts,
-        );
-        return; // Success
-      } catch (err: unknown) {
-        // If prisma binary not found, try next path
-        const errMsg = err instanceof Error ? err.message : String(err);
-        if (errMsg.includes('not found') || errMsg.includes('ENOENT')) {
-          continue;
-        }
-        // If migration error (not binary issue), throw immediately
-        throw err;
+    // Find the first existing prisma binary
+    let prismaCmd: string | null = null;
+    for (const candidate of prismaPaths) {
+      if (existsSync(candidate)) {
+        prismaCmd = candidate;
+        this.logger.log(`Found prisma binary at: ${candidate}`);
+        break;
       }
     }
 
-    this.logger.error(`Migration deploy failed for ${databaseName}: no working prisma binary found`);
-    throw new Error(`Could not deploy migrations to ${databaseName}`);
+    // Fallback to npx if no local binary found
+    if (!prismaCmd) {
+      prismaCmd = 'npx prisma';
+      this.logger.warn(`No local prisma binary found, falling back to: ${prismaCmd}`);
+    }
+
+    try {
+      execSync(
+        `${prismaCmd} migrate deploy --schema=./prisma/tenant.prisma`,
+        { ...opts, stdio: 'pipe' },
+      );
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // Include stderr/stdout from the failed command for better debugging
+      const stderr = (err as { stderr?: Buffer })?.stderr?.toString() || '';
+      const stdout = (err as { stdout?: Buffer })?.stdout?.toString() || '';
+      const details = stderr || stdout || errMsg;
+      this.logger.error(`Migration deploy failed for ${databaseName}: ${details}`);
+      throw new Error(`Failed to deploy migrations to ${databaseName}: ${details}`);
+    }
   }
 
   /**
