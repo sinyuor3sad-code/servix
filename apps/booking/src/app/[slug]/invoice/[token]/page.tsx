@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import {
-  Star, MapPin, Globe, Receipt, ExternalLink,
-  ShoppingBag, CheckCircle2, AlertTriangle, Loader2, Send,
+  MapPin, Globe, Receipt,
+  ShoppingBag, AlertTriangle, Loader2,
 } from 'lucide-react';
 import { menuApi, type InvoiceData } from '@/lib/menu-api';
 import { getThemeCSSVars, isDarkTheme } from '@/lib/menu-themes';
+import { RatingSection } from './RatingSection';
 
 /* ═══════════════════════════════════════════════════════════════
    TRANSLATIONS
@@ -31,14 +32,6 @@ const T = {
     tax: 'ضريبة 15%',
     total: 'الإجمالي',
     sar: 'ر.س',
-    feedbackTitle: 'كيف كانت تجربتك؟',
-    feedbackPositive: 'يسعدنا! هل تحبين مشاركة تجربتك على Google؟',
-    feedbackNegative: 'نعتذر. هل تحبين إضافة ملاحظة؟',
-    shareGoogle: 'شاركي تجربتك',
-    submitFeedback: 'إرسال',
-    thankYou: 'شكراً لتقييمك! 💜',
-    alreadyRated: 'تم التقييم',
-    commentPlaceholder: 'أضيفي ملاحظتك هنا...',
     direction: 'الاتجاه إلى الموقع',
     poweredBy: 'Powered by',
   },
@@ -60,14 +53,6 @@ const T = {
     tax: 'Tax 15%',
     total: 'Total',
     sar: 'SAR',
-    feedbackTitle: 'How was your experience?',
-    feedbackPositive: "We're glad! Would you like to share your experience on Google?",
-    feedbackNegative: "We're sorry. Would you like to add a note?",
-    shareGoogle: 'Share your experience',
-    submitFeedback: 'Submit',
-    thankYou: 'Thank you for your feedback! 💜',
-    alreadyRated: 'Already rated',
-    commentPlaceholder: 'Add your note here...',
     direction: 'Get Directions',
     poweredBy: 'Powered by',
   },
@@ -103,41 +88,6 @@ function formatDate(iso: string, lang: Lang): string {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   STAR RATING
-   ═══════════════════════════════════════════════════════════════ */
-function StarRating({
-  value,
-  onChange,
-  readOnly,
-}: {
-  value: number;
-  onChange?: (v: number) => void;
-  readOnly?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-1.5 justify-center" dir="ltr">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <button
-          key={i}
-          onClick={() => !readOnly && onChange?.(i)}
-          disabled={readOnly}
-          className={`transition-all duration-200 ${readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-125 active:scale-95'}`}
-          type="button"
-        >
-          <Star
-            size={36}
-            fill={i <= value ? '#FACC15' : 'transparent'}
-            stroke={i <= value ? '#FACC15' : 'var(--sm-border)'}
-            strokeWidth={1.5}
-            className="transition-all"
-          />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════
    MAIN PAGE
    ═══════════════════════════════════════════════════════════════ */
 export default function PublicInvoicePage() {
@@ -150,12 +100,6 @@ export default function PublicInvoicePage() {
   const [error, setError] = useState<'not_found' | 'network' | null>(null);
   const [lang, setLang] = useState<Lang>('ar');
 
-  // Feedback state
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState('');
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-
   const t = T[lang];
   const isRTL = lang === 'ar';
 
@@ -166,10 +110,6 @@ export default function PublicInvoicePage() {
     try {
       const result = await menuApi.getInvoice(slug, token);
       setData(result);
-      if (result.feedback) {
-        setRating(result.feedback.rating);
-        setFeedbackSubmitted(true);
-      }
     } catch (err: unknown) {
       const e = err as { statusCode?: number };
       if (e.statusCode === 404) {
@@ -185,32 +125,6 @@ export default function PublicInvoicePage() {
   useEffect(() => {
     fetchInvoice();
   }, [slug, token]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* ── Submit feedback ── */
-  const handleSubmitFeedback = async () => {
-    if (rating === 0 || submitting) return;
-    setSubmitting(true);
-    try {
-      const showGoogle = rating >= 4 && !!data?.salon.googleMapsUrl;
-      await menuApi.submitFeedback(slug, token, {
-        rating,
-        comment: comment.trim() || undefined,
-        googlePromptShown: showGoogle,
-      });
-      setFeedbackSubmitted(true);
-    } catch {
-      // 409 = already submitted, treat as success
-      setFeedbackSubmitted(true);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  /* ── Track Google click ── */
-  const handleGoogleClick = () => {
-    // Fire and forget — don't block the user
-    menuApi.trackGoogleClick(slug, token).catch(() => {});
-  };
 
   /* ── Theme ── */
   const paletteId = data?.salon.brandColorPreset || 'purple';
@@ -277,7 +191,6 @@ export default function PublicInvoicePage() {
   }
 
   const { salon, invoice, feedback } = data;
-  const isExistingFeedback = feedback !== null;
 
   return (
     <div
@@ -423,127 +336,14 @@ export default function PublicInvoicePage() {
           </div>
         </div>
 
-        {/* ═══ FEEDBACK SECTION ═══ */}
-        <div
-          className="rounded-3xl p-6 space-y-5"
-          style={{
-            background: 'var(--sm-bg-card)',
-            border: '1px solid var(--sm-border)',
-          }}
-        >
-          <h2 className="text-base font-black text-center">{t.feedbackTitle}</h2>
-
-          <StarRating
-            value={rating}
-            onChange={(v) => {
-              if (!feedbackSubmitted && !isExistingFeedback) {
-                setRating(v);
-              }
-            }}
-            readOnly={feedbackSubmitted || isExistingFeedback}
-          />
-
-          {/* After submission or existing feedback */}
-          {(feedbackSubmitted || isExistingFeedback) ? (
-            <div className="text-center space-y-3">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full" style={{ background: 'rgba(16,185,129,0.1)' }}>
-                <CheckCircle2 className="h-6 w-6 text-emerald-500" />
-              </div>
-              <p className="text-sm font-bold" style={{ color: 'var(--sm-primary)' }}>
-                {isExistingFeedback && !feedbackSubmitted ? t.alreadyRated : t.thankYou}
-              </p>
-              {/* Show Google prompt for high ratings */}
-              {rating >= 4 && salon.googleMapsUrl && (
-                <a
-                  href={salon.googleMapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-105"
-                  style={{ background: '#4285F4' }}
-                  onClick={handleGoogleClick}
-                >
-                  <ExternalLink size={14} /> {t.shareGoogle}
-                </a>
-              )}
-            </div>
-          ) : (
-            <>
-              {/* Pre-submission flow */}
-              {rating > 0 && (
-                <div className="space-y-3 animate-[fadeIn_0.3s_ease-out]">
-                  {rating >= 4 ? (
-                    /* Positive: Google prompt */
-                    <div className="text-center space-y-3">
-                      <p className="text-sm" style={{ color: 'var(--sm-text-secondary)' }}>
-                        {t.feedbackPositive}
-                      </p>
-                      {salon.googleMapsUrl && (
-                        <a
-                          href={salon.googleMapsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-white shadow-md transition-transform hover:scale-105"
-                          style={{ background: '#4285F4' }}
-                          onClick={() => {
-                            handleGoogleClick();
-                            // Submit the positive feedback silently
-                            handleSubmitFeedback();
-                          }}
-                        >
-                          <ExternalLink size={14} /> {t.shareGoogle}
-                        </a>
-                      )}
-                      <button
-                        onClick={handleSubmitFeedback}
-                        disabled={submitting}
-                        className="block mx-auto text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-40"
-                        style={{ color: 'var(--sm-text-secondary)' }}
-                      >
-                        {submitting ? '...' : t.submitFeedback}
-                      </button>
-                    </div>
-                  ) : (
-                    /* Negative: Comment box */
-                    <div className="space-y-3">
-                      <p className="text-sm text-center" style={{ color: 'var(--sm-text-secondary)' }}>
-                        {t.feedbackNegative}
-                      </p>
-                      <textarea
-                        value={comment}
-                        onChange={(e) => setComment(e.target.value)}
-                        placeholder={t.commentPlaceholder}
-                        className="w-full resize-none rounded-2xl p-4 text-sm outline-none transition-all focus:ring-2"
-                        style={{
-                          background: 'var(--sm-accent)',
-                          color: 'var(--sm-text)',
-                          border: '1px solid var(--sm-border)',
-                          minHeight: 80,
-                          focusRingColor: 'var(--sm-primary)',
-                        } as React.CSSProperties}
-                        rows={3}
-                        maxLength={500}
-                      />
-                      <button
-                        onClick={handleSubmitFeedback}
-                        disabled={submitting}
-                        className="flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold text-white shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-                        style={{ background: 'var(--sm-primary)' }}
-                      >
-                        {submitting ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Send size={14} /> {t.submitFeedback}
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        {/* ═══ RATING SECTION ═══ */}
+        <RatingSection
+          slug={slug}
+          token={token}
+          lang={lang}
+          googleMapsUrl={salon.googleMapsUrl}
+          existingFeedback={feedback}
+        />
 
         {/* ═══ ACTION BUTTONS ═══ */}
         <div className="space-y-3">
@@ -578,6 +378,7 @@ export default function PublicInvoicePage() {
         </div>
 
         {/* ═══ FOOTER ═══ */}
+        {/* TODO: Hide "Powered by SERVIX" based on subscription plan (premium plans can hide branding) */}
         <div className="pb-8 pt-4 text-center">
           <p className="text-xs" style={{ color: 'var(--sm-text-secondary)', opacity: 0.4 }}>
             {t.poweredBy} <a href="https://servi-x.com" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700 }}>SERVIX</a>
@@ -590,6 +391,10 @@ export default function PublicInvoicePage() {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(8px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.5); }
+          to { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>

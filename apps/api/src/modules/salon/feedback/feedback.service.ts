@@ -10,6 +10,8 @@ interface FeedbackQuery {
   followUpStatus?: string;
   dateFrom?: string;
   dateTo?: string;
+  sortBy?: 'createdAt' | 'rating';
+  sortOrder?: 'asc' | 'desc';
 }
 
 @Injectable()
@@ -55,7 +57,7 @@ export class FeedbackService {
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { [query.sortBy || 'createdAt']: query.sortOrder || 'desc' },
         skip,
         take: limit,
       }),

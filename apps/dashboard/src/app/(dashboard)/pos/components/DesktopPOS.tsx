@@ -30,7 +30,8 @@ import { QRSuccessModal } from './QRSuccessModal';
 import { useAuth } from '@/hooks/useAuth';
 
 export function DesktopPOS({ e }: { e: E }) {
-  const { currentTenant } = useAuth();
+  const { currentTenant, userRole, isOwner } = useAuth();
+  const isCashierOnly = userRole === 'cashier' && !isOwner;
   const searchRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -55,8 +56,10 @@ export function DesktopPOS({ e }: { e: E }) {
           <button onClick={() => e.setPanel('refund')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><RotateCcw size={12} className="text-[var(--muted-foreground)] group-hover:text-red-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-red-400 sm:inline">إرجاع</span></button>
           <button onClick={() => e.setPanel('receipt')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Printer size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /></button>
           <button onClick={() => e.setPanel('attendance')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><ClipboardCheck size={12} className="text-[var(--muted-foreground)] group-hover:text-emerald-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-emerald-400 sm:inline">تحضير</span></button>
-          <div className={`mx-0.5 h-4 w-px ${bg(6)}`} />
-          <Link href="/" className={`${B} flex h-8 w-8 items-center justify-center rounded-xl ${G3} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><ArrowLeft size={13} /></Link>
+          {!isCashierOnly && <>
+            <div className={`mx-0.5 h-4 w-px ${bg(6)}`} />
+            <Link href="/" className={`${B} flex h-8 w-8 items-center justify-center rounded-xl ${G3} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><ArrowLeft size={13} /></Link>
+          </>}
         </div>
       </header>
 

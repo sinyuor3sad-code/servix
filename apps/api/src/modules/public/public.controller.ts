@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Param,
   Body,
   Logger,
@@ -151,17 +152,21 @@ export class PublicController {
     if (result.error === 'already_exists') {
       throw new ConflictException('تم التقييم مسبقاً');
     }
-    return { success: true };
+    return {
+      success: true,
+      rating: dto.rating,
+      showGooglePrompt: result.showGooglePrompt ?? false,
+    };
   }
 
   /* ════════════════════════════════════════
-     POST /public/:tenantSlug/invoice/:token/google-click
+     PATCH /public/:tenantSlug/invoice/:token/feedback/google-clicked
      ════════════════════════════════════════ */
-  @Post(':tenantSlug/invoice/:token/google-click')
-  @ApiOperation({ summary: 'تتبع نقرة Google Maps' })
+  @Patch(':tenantSlug/invoice/:token/feedback/google-clicked')
+  @ApiOperation({ summary: 'تسجيل نقرة Google Maps' })
   @ApiParam({ name: 'tenantSlug', description: 'معرّف الصالون (slug)' })
   @ApiParam({ name: 'token', description: 'التوكن العام للفاتورة' })
-  @ApiResponse({ status: 201, description: 'تم التسجيل' })
+  @ApiResponse({ status: 200, description: 'تم التسجيل' })
   async trackGoogleClick(
     @Param('tenantSlug') slug: string,
     @Param('token') token: string,

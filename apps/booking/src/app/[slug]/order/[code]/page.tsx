@@ -380,6 +380,7 @@ export default function OrderStatusPage() {
       )}
 
       {/* ── Powered By ── */}
+      {/* TODO: Hide "Powered by SERVIX" based on subscription plan (premium plans can hide branding) */}
       <div className="pb-6 text-center">
         <p className="text-xs" style={{ color: 'var(--sm-text-secondary)', opacity: 0.4 }}>
           Powered by <a href="https://servi-x.com" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700 }}>SERVIX</a>

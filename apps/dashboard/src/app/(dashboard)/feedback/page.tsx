@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Star, TrendingUp, TrendingDown, ExternalLink,
   ThumbsUp, MousePointerClick, Calendar, Filter,
+  BarChart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Spinner, Badge } from '@/components/ui';
@@ -194,10 +195,44 @@ export default function FeedbackPage() {
               <MousePointerClick className="h-4 w-4" />
               <span className="text-[10px] font-bold">نقرات Google</span>
             </div>
-            <div className="text-3xl font-black tabular-nums">{summary.googleClickTotal}</div>
+            <div className="text-3xl font-black tabular-nums">{summary.googleClickRate}%</div>
             <p className="text-[10px] opacity-50 mt-1">
-              {summary.googleClickRate}% من {summary.googlePromptTotal} عُرض عليهم
+              {summary.googleClickTotal} من {summary.googlePromptTotal} عُرض عليهم
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Star Distribution ═══ */}
+      {summary && summary.totalCount > 0 && (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart className="h-4 w-4 text-[var(--brand-primary)]" />
+            <span className="text-xs font-bold text-[var(--muted-foreground)]">توزيع النجوم</span>
+          </div>
+          <div className="space-y-2">
+            {[5, 4, 3, 2, 1].map((star) => {
+              const count = summary.distribution[star] || 0;
+              const pct = summary.totalCount > 0 ? Math.round((count / summary.totalCount) * 100) : 0;
+              return (
+                <div key={star} className="flex items-center gap-2">
+                  <span className="text-xs font-bold w-4 tabular-nums text-[var(--muted-foreground)]">{star}</span>
+                  <Star size={12} fill="#FACC15" stroke="#FACC15" />
+                  <div className="flex-1 h-3 rounded-full bg-[var(--muted)] overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${pct}%`,
+                        background: star >= 4 ? '#10B981' : star === 3 ? '#F59E0B' : '#EF4444',
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold tabular-nums w-10 text-end text-[var(--muted-foreground)]">
+                    {count} ({pct}%)
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -367,19 +402,22 @@ function FeedbackRow({ fb, onStatusChange }: { fb: FeedbackItem; onStatusChange:
       </td>
       <td className="px-4 py-3">
         {fb.invoice?.invoiceNumber ? (
-          <span className="text-xs font-mono font-bold text-[var(--brand-primary)] tabular-nums">
+          <a
+            href={`/invoices/${fb.invoiceId}`}
+            className="text-xs font-mono font-bold text-[var(--brand-primary)] tabular-nums hover:underline"
+          >
             {fb.invoice.invoiceNumber}
-          </span>
+          </a>
         ) : '—'}
       </td>
       <td className="px-4 py-3">
         <span className={cn(
           'inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold',
-          fb.invoice?.selfOrderId
+          fb.source === 'self_order' || fb.invoice?.selfOrderId
             ? 'bg-violet-50 text-violet-700 border-violet-200'
             : 'bg-sky-50 text-sky-700 border-sky-200',
         )}>
-          {fb.invoice?.selfOrderId ? 'طلب ذاتي' : 'QR'}
+          {fb.source === 'self_order' || fb.invoice?.selfOrderId ? '📱 طلب ذاتي' : '🖥️ كاشيرة'}
         </span>
       </td>
       <td className="px-4 py-3">
@@ -387,7 +425,7 @@ function FeedbackRow({ fb, onStatusChange }: { fb: FeedbackItem; onStatusChange:
           'inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold',
           googleBadge.style,
         )}>
-          {fb.googleClicked && <ExternalLink className="h-2.5 w-2.5" />}
+          <span className="text-xs">{fb.googleClicked ? '●' : fb.googlePromptShown ? '◐' : '○'}</span>
           {googleBadge.label}
         </span>
       </td>
@@ -436,19 +474,20 @@ function FeedbackCard({ fb, onStatusChange }: { fb: FeedbackItem; onStatusChange
 
       <div className="flex items-center gap-2 flex-wrap">
         {fb.invoice?.invoiceNumber && (
-          <span className="text-[10px] font-mono font-bold text-[var(--brand-primary)]">
+          <a href={`/invoices/${fb.invoiceId}`} className="text-[10px] font-mono font-bold text-[var(--brand-primary)] hover:underline">
             #{fb.invoice.invoiceNumber}
-          </span>
+          </a>
         )}
         <span className={cn(
           'inline-flex rounded-lg border px-2 py-0.5 text-[10px] font-bold',
-          fb.invoice?.selfOrderId
+          fb.source === 'self_order' || fb.invoice?.selfOrderId
             ? 'bg-violet-50 text-violet-700 border-violet-200'
             : 'bg-sky-50 text-sky-700 border-sky-200',
         )}>
-          {fb.invoice?.selfOrderId ? 'طلب ذاتي' : 'QR'}
+          {fb.source === 'self_order' || fb.invoice?.selfOrderId ? '📱 طلب ذاتي' : '🖥️ كاشيرة'}
         </span>
-        <span className={cn('inline-flex rounded-lg border px-2 py-0.5 text-[10px] font-bold', googleBadge.style)}>
+        <span className={cn('inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold', googleBadge.style)}>
+          <span>{fb.googleClicked ? '●' : fb.googlePromptShown ? '◐' : '○'}</span>
           {googleBadge.label}
         </span>
       </div>

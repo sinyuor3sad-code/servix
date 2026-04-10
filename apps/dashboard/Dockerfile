@@ -5,8 +5,16 @@ WORKDIR /app
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/dashboard/package.json apps/dashboard/
+# Copy ALL workspace package manifests so pnpm can resolve internal deps
+COPY packages/types/package.json packages/types/
+COPY packages/utils/package.json packages/utils/
+COPY packages/ui/package.json packages/ui/
+COPY packages/constants/package.json packages/constants/
+COPY packages/validations/package.json packages/validations/
+COPY packages/tsconfig/package.json packages/tsconfig/
+COPY packages/eslint-config/package.json packages/eslint-config/
 RUN echo "node-linker=hoisted" > .npmrc && \
-    pnpm install --filter @servix/dashboard...
+    pnpm install --filter @servix/dashboard... --frozen-lockfile
 
 FROM base AS builder
 # With hoisted, everything is in root node_modules (no apps/dashboard/node_modules)
@@ -32,6 +40,6 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=5 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/ || exit 1
 CMD ["node", "apps/dashboard/server.js"]

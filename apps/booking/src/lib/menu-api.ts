@@ -156,9 +156,8 @@ export const menuApi = {
 
   /** Track Google Maps click */
   trackGoogleClick: (slug: string, token: string) =>
-    fetchPublic<{ success: boolean }>(`/public/${slug}/invoice/${token}/google-click`, {
-      method: 'POST',
-      body: JSON.stringify({}),
+    fetchPublic<{ success: boolean }>(`/public/${slug}/invoice/${token}/feedback/google-clicked`, {
+      method: 'PATCH',
     }),
 };
 

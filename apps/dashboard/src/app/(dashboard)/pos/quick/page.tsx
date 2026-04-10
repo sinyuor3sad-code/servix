@@ -204,7 +204,8 @@ function Panel({ open, onClose, title, children }: {
    ═══════════════════════════════════════════════════════════════════════ */
 
 export default function QuickPOSPage(): React.ReactElement {
-  const { accessToken } = useAuth();
+  const { accessToken, userRole, isOwner } = useAuth();
+  const isCashierOnly = userRole === 'cashier' && !isOwner;
 
   /* ── Core state ── */
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -398,16 +399,17 @@ export default function QuickPOSPage(): React.ReactElement {
         items: cart.map(i => ({ serviceId: i.service.id, description: i.service.nameAr, quantity: i.quantity, unitPrice: i.service.price, employeeId: i.employeeId })),
       }, accessToken!);
       if (gDisc > 0) await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: gDisc }, accessToken!);
+      let paymentResult: Record<string, unknown> | undefined;
       if (method === 'split') {
-        for (const e of splits) { if (e.amount > 0) { const m = e.method === 'apple_pay' ? 'card' : e.method; await dashboardService.recordInvoicePayment(inv.id, { amount: e.amount, method: m as 'cash' | 'card' | 'bank_transfer' }, accessToken!); } }
+        for (const e of splits) { if (e.amount > 0) { const m = e.method === 'apple_pay' ? 'card' : e.method; paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: e.amount, method: m as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>; } }
       } else {
         const m = method === 'apple_pay' ? 'card' : method;
-        await dashboardService.recordInvoicePayment(inv.id, { amount: total, method: m as 'cash' | 'card' | 'bank_transfer' }, accessToken!);
+        paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: total, method: m as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>;
       }
       if (sendWA) { try { await dashboardService.sendInvoice(inv.id, 'whatsapp', accessToken!); } catch { /* ok */ } }
-      return inv;
+      return { ...inv, _paymentResult: paymentResult };
     },
-    onSuccess: (inv) => { toast.success(`فاتورة ${inv.id} تمت بنجاح`); clearAll(); setPanel(null); setShowCart(false); },
+    onSuccess: (inv) => { clearAll(); setPanel(null); setShowCart(false); },
     onError: (e: Error) => toast.error(e.message || 'خطأ'),
   });
 
@@ -473,11 +475,13 @@ export default function QuickPOSPage(): React.ReactElement {
             <Printer size={16} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" />
           </button>
 
-          <div className={`mx-1 h-6 w-px ${bg(6)}`} />
-          <Link href="/pos" className={`${B} group flex h-11 items-center gap-2 rounded-2xl px-4 ${G1} hover:${brd(8)}`}>
-            <Monitor size={16} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" />
-            <span className="text-[12px] font-bold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]">الكامل</span>
-          </Link>
+          {!isCashierOnly && <>
+            <div className={`mx-1 h-6 w-px ${bg(6)}`} />
+            <Link href="/pos" className={`${B} group flex h-11 items-center gap-2 rounded-2xl px-4 ${G1} hover:${brd(8)}`}>
+              <Monitor size={16} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" />
+              <span className="text-[12px] font-bold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]">الكامل</span>
+            </Link>
+          </>}
         </div>
       </header>
 

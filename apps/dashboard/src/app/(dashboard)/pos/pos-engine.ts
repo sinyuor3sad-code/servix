@@ -231,7 +231,7 @@ export function usePOSEngine() {
 
   const payMut = useMutation({
     mutationFn: async (method: string) => {
-      if (isDev(accessToken)) { await new Promise(r => setTimeout(r, 500)); return { id: 'INV-' + Date.now() }; }
+      if (isDev(accessToken)) { await new Promise(r => setTimeout(r, 500)); return { id: 'INV-' + Date.now(), _paymentResult: undefined }; }
       let clientId = client?.id;
       // If walk-in mode with name/phone provided, create client
       if (!clientId && walkInMode && walkName.trim() && walkPhone.trim()) {
@@ -263,18 +263,17 @@ export function usePOSEngine() {
         })),
       }, accessToken!);
       if (gDiscVal > 0) await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: gDiscVal }, accessToken!);
-      if (method === 'split') { for (const e of splits) { if (e.amount > 0) await dashboardService.recordInvoicePayment(inv.id, { amount: e.amount, method: (e.method === 'apple_pay' ? 'card' : e.method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!); } }
-      else await dashboardService.recordInvoicePayment(inv.id, { amount: total, method: (method === 'apple_pay' ? 'card' : method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!);
+      let paymentResult: Record<string, unknown> | undefined;
+      if (method === 'split') { for (const e of splits) { if (e.amount > 0) paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: e.amount, method: (e.method === 'apple_pay' ? 'card' : e.method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>; } }
+      else paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: total, method: (method === 'apple_pay' ? 'card' : method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>;
       if (sendWA) { try { await dashboardService.sendInvoice(inv.id, 'whatsapp', accessToken!); } catch { /* ok */ } }
       if (sendMail) { try { await dashboardService.sendInvoice(inv.id, 'email', accessToken!); } catch { /* ok */ } }
-      return inv;
+      return { ...inv, _paymentResult: paymentResult };
     },
     onSuccess: (inv) => {
-      toast.success(`فاتورة ${inv.id} تمت بنجاح`);
-      // Extract publicToken from the payment response
-      const invRes = inv as Record<string, unknown>;
-      const payResult = invRes.invoice as Record<string, unknown> | undefined;
-      const token = payResult?.publicToken as string | undefined || invRes.publicToken as string | undefined;
+      // Extract publicToken from the payment result
+      const payRes = inv._paymentResult as Record<string, unknown> | undefined;
+      const token = payRes?.publicToken as string | undefined;
       if (token) {
         setPublicToken(token);
         setShowQRModal(true);

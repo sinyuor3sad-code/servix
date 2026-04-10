@@ -354,14 +354,14 @@ export class PublicService {
     db: TenantPrismaClient,
     token: string,
     dto: { rating: number; comment?: string; googlePromptShown?: boolean },
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; showGooglePrompt?: boolean }> {
     // 1. Find invoice by publicToken (active only)
     const invoice = await db.invoice.findFirst({
       where: {
         publicToken: token,
         publicTokenStatus: 'active',
       },
-      select: { id: true },
+      select: { id: true, selfOrderId: true },
     });
 
     if (!invoice) {
@@ -377,19 +377,29 @@ export class PublicService {
       return { success: false, error: 'already_exists' };
     }
 
-    // 3. Create feedback
+    // 3. Determine source from invoice
+    const source = invoice.selfOrderId ? 'self_order' : 'cashier';
+
+    // 4. Create feedback
     await db.invoiceFeedback.create({
       data: {
         invoiceId: invoice.id,
         rating: dto.rating,
         comment: dto.comment || null,
-        source: 'qr',
+        source,
         googlePromptShown: dto.googlePromptShown ?? false,
+        googleClicked: false,
+        followUpStatus: 'new',
       },
     });
 
-    this.logger.log(`Feedback submitted for invoice ${invoice.id}: ${dto.rating}/5`);
-    return { success: true };
+    this.logger.log(`Feedback submitted for invoice ${invoice.id}: ${dto.rating}/5 (source: ${source})`);
+
+    // Only suggest Google for 4+ ratings
+    return {
+      success: true,
+      showGooglePrompt: dto.rating >= 4,
+    };
   }
 
   /* ================================================================
@@ -421,10 +431,13 @@ export class PublicService {
       return { success: false, error: 'not_found' };
     }
 
-    // 3. Update googleClicked
+    // 3. Update both googleClicked and googlePromptShown
     await db.invoiceFeedback.update({
       where: { id: feedback.id },
-      data: { googleClicked: true },
+      data: {
+        googleClicked: true,
+        googlePromptShown: true,
+      },
     });
 
     this.logger.log(`Google click tracked for invoice ${invoice.id}`);

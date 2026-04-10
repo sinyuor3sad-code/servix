@@ -207,6 +207,7 @@ export default function SmartMenuPage() {
       )}
 
       {/* ── Powered By ── */}
+      {/* TODO: Hide "Powered by SERVIX" based on subscription plan (premium plans can hide branding) */}
       <div className="pb-28 pt-6 text-center">
         <p className="text-xs" style={{ color: 'var(--sm-text-secondary)', opacity: 0.4 }}>
           {t.poweredBy} <span className="font-bold">SERVIX</span>
@@ -627,6 +628,7 @@ function ElegantLayout({ salon, categories, selected, toggle, sn, cn, t, lang, d
       </div>
 
       {/* ═══ POWERED BY ═══ */}
+      {/* TODO: Hide "Powered by SERVIX" based on subscription plan (premium plans can hide branding) */}
       <div style={{ textAlign: 'center', padding: '24px 0 16px', opacity: 0.4, fontSize: '11px', color: 'var(--sm-text-secondary)' }}>
         Powered by <a href="https://servi-x.com" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700 }}>SERVIX</a>
       </div>

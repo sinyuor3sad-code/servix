@@ -29,7 +29,8 @@ import { QRSuccessModal } from './QRSuccessModal';
 import { useAuth } from '@/hooks/useAuth';
 
 export function TouchPOS({ e }: { e: E }) {
-  const { currentTenant } = useAuth();
+  const { currentTenant, userRole, isOwner } = useAuth();
+  const isCashierOnly = userRole === 'cashier' && !isOwner;
   const [showCart, setShowCart] = useState(false);
 
   return (
@@ -47,7 +48,7 @@ export function TouchPOS({ e }: { e: E }) {
           <button onClick={() => e.setPanel('refund')} className={`${B} flex h-9 w-9 md:h-11 md:w-auto md:px-4 items-center justify-center md:gap-2 rounded-xl md:rounded-2xl ${G1}`}><RotateCcw size={15} className="text-[var(--muted-foreground)]" /><span className="hidden md:inline text-[12px] font-bold text-[var(--muted-foreground)]">إرجاع</span></button>
           <button onClick={() => e.setPanel('receipt')} className={`${B} flex h-9 w-9 md:h-11 md:w-11 items-center justify-center rounded-xl md:rounded-2xl ${G1}`}><Printer size={15} className="text-[var(--muted-foreground)]" /></button>
           <button onClick={() => e.setPanel('attendance')} className={`${B} flex h-9 w-9 md:h-11 md:w-auto md:px-4 items-center justify-center md:gap-2 rounded-xl md:rounded-2xl bg-emerald-500/10 text-emerald-500`}><ClipboardCheck size={15} /><span className="hidden md:inline text-[12px] font-bold">تحضير</span></button>
-          <Link href="/" className={`${B} flex h-9 w-9 md:h-11 md:w-11 items-center justify-center rounded-xl md:rounded-2xl ${G1}`}><ArrowLeft size={15} className="text-[var(--muted-foreground)]" /></Link>
+          {!isCashierOnly && <Link href="/" className={`${B} flex h-9 w-9 md:h-11 md:w-11 items-center justify-center rounded-xl md:rounded-2xl ${G1}`}><ArrowLeft size={15} className="text-[var(--muted-foreground)]" /></Link>}
         </div>
       </header>
 

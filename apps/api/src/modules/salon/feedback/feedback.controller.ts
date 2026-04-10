@@ -21,6 +21,8 @@ export class FeedbackController {
   @ApiQuery({ name: 'followUpStatus', required: false, type: String })
   @ApiQuery({ name: 'dateFrom', required: false, type: String })
   @ApiQuery({ name: 'dateTo', required: false, type: String })
+  @ApiQuery({ name: 'sortBy', required: false, type: String, description: 'createdAt|rating' })
+  @ApiQuery({ name: 'sortOrder', required: false, type: String, description: 'asc|desc' })
   async findAll(
     @Req() req: AuthenticatedRequest,
     @Query('page') page?: string,
@@ -30,6 +32,8 @@ export class FeedbackController {
     @Query('followUpStatus') followUpStatus?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
   ) {
     return this.feedbackService.findAll(req.tenantDb!, {
       page: page ? +page : 1,
@@ -39,6 +43,8 @@ export class FeedbackController {
       followUpStatus: followUpStatus || undefined,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
+      sortBy: sortBy as 'createdAt' | 'rating' | undefined,
+      sortOrder: sortOrder as 'asc' | 'desc' | undefined,
     });
   }
 
