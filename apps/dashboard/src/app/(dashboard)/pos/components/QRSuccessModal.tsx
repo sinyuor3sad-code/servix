@@ -27,7 +27,7 @@ export function QRSuccessModal({
   if (!isOpen) return null;
 
   const invoiceUrl = publicToken
-    ? `https://${tenantSlug}.servix.com/invoice/${publicToken}`
+    ? `https://booking.servi-x.com/${tenantSlug}/invoice/${publicToken}`
     : null;
 
   return (
