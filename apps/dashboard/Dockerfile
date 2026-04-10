@@ -25,7 +25,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
-COPY --from=builder /app/apps/dashboard/public ./public
+COPY --from=builder /app/apps/dashboard/public ./apps/dashboard/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
 USER nextjs
