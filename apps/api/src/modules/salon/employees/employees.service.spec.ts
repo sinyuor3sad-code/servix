@@ -38,8 +38,11 @@ const mockDb = {
   appointment: {
     updateMany: jest.fn(),
   },
+  invoiceItem: {
+    deleteMany: jest.fn(),
+  },
   appointmentService: {
-    updateMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
 };
 
@@ -203,7 +206,8 @@ describe('EmployeesService', () => {
       mockDb.employeeService.deleteMany.mockResolvedValue({ count: 0 });
       mockDb.employeeSchedule.deleteMany.mockResolvedValue({ count: 0 });
       mockDb.employeeBreak.deleteMany.mockResolvedValue({ count: 0 });
-      mockDb.appointmentService.updateMany.mockResolvedValue({ count: 0 });
+      mockDb.invoiceItem.deleteMany.mockResolvedValue({ count: 0 });
+      mockDb.appointmentService.deleteMany.mockResolvedValue({ count: 0 });
       mockDb.appointment.updateMany.mockResolvedValue({ count: 0 });
       mockDb.employee.delete.mockResolvedValue({ id: 'emp-1' });
 

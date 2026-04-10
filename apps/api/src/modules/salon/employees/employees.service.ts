@@ -194,17 +194,20 @@ export class EmployeesService {
     // 1. Delete salary expense linked to this employee
     await db.expense.deleteMany({ where: { employeeId: id } });
 
-    // 2. Delete related records that have FK constraints
+    // 2. Delete related records
     await db.employeeDebt.deleteMany({ where: { employeeId: id } });
     await db.employeeService.deleteMany({ where: { employeeId: id } });
     await db.employeeSchedule.deleteMany({ where: { employeeId: id } });
     await db.employeeBreak.deleteMany({ where: { employeeId: id } });
 
-    // 3. Nullify references in appointments/invoices instead of blocking delete
-    await db.appointmentService.updateMany({ where: { employeeId: id }, data: { employeeId: id } });
+    // 3. Clean up invoice items and appointment services (NOT NULL FK)
+    await db.invoiceItem.deleteMany({ where: { employeeId: id } });
+    await db.appointmentService.deleteMany({ where: { employeeId: id } });
+
+    // 4. Nullify nullable references
     await db.appointment.updateMany({ where: { employeeId: id }, data: { employeeId: null as any } });
 
-    // 4. Delete the employee from tenant DB
+    // 5. Delete the employee from tenant DB
     await db.employee.delete({ where: { id } });
 
     // 5. Clean up platform user account if exists (cashier login)
