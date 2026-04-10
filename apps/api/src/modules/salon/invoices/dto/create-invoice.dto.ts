@@ -54,6 +54,11 @@ export class CreateInvoiceDto {
   @IsUUID('4', { message: 'معرّف الموعد يجب أن يكون UUID صالحاً' })
   appointmentId?: string;
 
+  @ApiPropertyOptional({ description: 'معرّف الطلب الذاتي', example: 'uuid' })
+  @IsOptional()
+  @IsUUID('4', { message: 'معرّف الطلب الذاتي يجب أن يكون UUID صالحاً' })
+  selfOrderId?: string;
+
   @ApiProperty({ description: 'عناصر الفاتورة', type: [InvoiceItemDto] })
   @IsArray({ message: 'العناصر يجب أن تكون مصفوفة' })
   @ValidateNested({ each: true })

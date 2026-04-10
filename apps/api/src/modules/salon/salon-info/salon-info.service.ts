@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TenantPrismaClient } from '../../../shared/types';
 import { UpdateSalonDto } from './dto/update-salon.dto';
 import { UpdateBrandingDto } from './dto/update-branding.dto';
+import { UpdateThemeDto } from './dto/update-theme.dto';
 import { UpdateWorkingHoursDto } from './dto/update-working-hours.dto';
 
 interface BrandingResponse {
@@ -153,6 +154,49 @@ export class SalonInfoService {
       closingTime: updated.closingTime,
       slotDuration: updated.slotDuration,
       bufferTime: updated.bufferTime,
+    };
+  }
+
+  async updateTheme(
+    db: TenantPrismaClient,
+    dto: UpdateThemeDto,
+  ) {
+    const salon = await this.getOrCreateSalon(db);
+
+    const data: Record<string, unknown> = {};
+    if (dto.logoUrl !== undefined) data.logoUrl = dto.logoUrl;
+    if (dto.coverImageUrl !== undefined) data.coverImageUrl = dto.coverImageUrl;
+    if (dto.brandColorPreset !== undefined) data.brandColorPreset = dto.brandColorPreset;
+    if (dto.themeLayout !== undefined) data.themeLayout = dto.themeLayout;
+    if (dto.welcomeMessage !== undefined) data.welcomeMessage = dto.welcomeMessage;
+    if (dto.googleMapsUrl !== undefined) data.googleMapsUrl = dto.googleMapsUrl;
+    if (dto.googlePlaceId !== undefined) data.googlePlaceId = dto.googlePlaceId;
+
+    if (Object.keys(data).length === 0) {
+      return {
+        logoUrl: salon.logoUrl,
+        coverImageUrl: salon.coverImageUrl,
+        brandColorPreset: salon.brandColorPreset,
+        themeLayout: salon.themeLayout,
+        welcomeMessage: salon.welcomeMessage,
+        googleMapsUrl: salon.googleMapsUrl,
+        googlePlaceId: salon.googlePlaceId,
+      };
+    }
+
+    const updated = await db.salonInfo.update({
+      where: { id: salon.id },
+      data,
+    });
+
+    return {
+      logoUrl: updated.logoUrl,
+      coverImageUrl: updated.coverImageUrl,
+      brandColorPreset: updated.brandColorPreset,
+      themeLayout: updated.themeLayout,
+      welcomeMessage: updated.welcomeMessage,
+      googleMapsUrl: updated.googleMapsUrl,
+      googlePlaceId: updated.googlePlaceId,
     };
   }
 }

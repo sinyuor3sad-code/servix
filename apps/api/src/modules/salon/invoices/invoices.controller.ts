@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -133,6 +134,7 @@ export class InvoicesController {
       req.tenantDb!,
       id,
       dto,
+      req.tenant?.slug ?? '',
     );
     return {
       success: true,
@@ -259,6 +261,58 @@ export class InvoicesController {
     return {
       success: true,
       message: result.message,
+    };
+  }
+
+  /* ════════════════════════════════════════
+     TOKEN MANAGEMENT
+     ════════════════════════════════════════ */
+
+  @Post(':id/generate-token')
+  @ApiOperation({ summary: 'توليد رابط عام', description: 'توليد أو إرجاع رابط عام للفاتورة' })
+  @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
+  @ApiResponse({ status: 200, description: 'تم توليد الرابط' })
+  async generateToken(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Record<string, unknown>> {
+    const data = await this.invoicesService.generateToken(req.tenantDb!, id);
+    return {
+      success: true,
+      data,
+      message: data.alreadyExists ? 'الرابط النشط الحالي' : 'تم توليد الرابط بنجاح',
+    };
+  }
+
+  @Delete(':id/revoke-token')
+  @ApiOperation({ summary: 'تعطيل الرابط العام', description: 'تعطيل الرابط العام للفاتورة' })
+  @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
+  @ApiResponse({ status: 200, description: 'تم تعطيل الرابط' })
+  async revokeToken(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Record<string, unknown>> {
+    const data = await this.invoicesService.revokeToken(req.tenantDb!, id);
+    return {
+      success: true,
+      data,
+      message: 'تم تعطيل الرابط بنجاح',
+    };
+  }
+
+  @Post(':id/regenerate-token')
+  @ApiOperation({ summary: 'إعادة توليد الرابط', description: 'إعادة توليد رابط عام جديد (القديم يبطل)' })
+  @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
+  @ApiResponse({ status: 200, description: 'تم إعادة التوليد' })
+  async regenerateToken(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Record<string, unknown>> {
+    const data = await this.invoicesService.regenerateToken(req.tenantDb!, id);
+    return {
+      success: true,
+      data,
+      message: 'تم إعادة توليد الرابط بنجاح',
     };
   }
 }

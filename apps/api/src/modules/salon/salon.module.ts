@@ -23,6 +23,8 @@ import { MarketingModule } from './marketing/marketing.module';
 import { DynamicPricingModule } from './dynamic-pricing/dynamic-pricing.module';
 import { PackagesModule } from './packages/packages.module';
 import { DebtsModule } from './debts/debts.module';
+import { SelfOrdersModule } from './self-orders/self-orders.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -50,6 +52,8 @@ import { DebtsModule } from './debts/debts.module';
     DynamicPricingModule,
     PackagesModule,
     DebtsModule,
+    SelfOrdersModule,
+    FeedbackModule,
   ],
 })
 export class SalonModule {}

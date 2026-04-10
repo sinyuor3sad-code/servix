@@ -44,6 +44,7 @@ const PUBLIC_TENANT_PATHS = [
   '/api/v1/booking',
   '/api/v1/health',
   '/api/v1/admin',
+  '/api/v1/public',
 ];
 
 /** When LOCKED, only these paths are allowed */

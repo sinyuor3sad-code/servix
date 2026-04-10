@@ -45,9 +45,11 @@ export class EventsGateway
   handleConnection(client: Socket): void {
     const tenantId = client.handshake.query.tenantId as string;
     const userId = client.handshake.query.userId as string;
+    const orderRoom = client.handshake.query.orderRoom as string;
     if (tenantId) client.join(`tenant:${tenantId}`);
     if (userId) client.join(`user:${userId}`);
-    this.logger.log(`Client connected: ${client.id}`);
+    if (orderRoom) client.join(`order:${orderRoom}`);
+    this.logger.log(`Client connected: ${client.id}${orderRoom ? ` (order: ${orderRoom})` : ''}`);
   }
 
   handleDisconnect(client: Socket): void {
@@ -60,6 +62,10 @@ export class EventsGateway
 
   emitToUser(userId: string, event: string, data: unknown): void {
     this.server.to(`user:${userId}`).emit(event, data);
+  }
+
+  emitToOrder(tenantSlug: string, orderCode: string, event: string, data: unknown): void {
+    this.server.to(`order:${tenantSlug}:${orderCode}`).emit(event, data);
   }
 
   emitToAll(event: string, data: unknown): void {

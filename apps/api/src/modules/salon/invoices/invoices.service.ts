@@ -1,8 +1,10 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { TenantPrismaClient } from '../../../shared/types';
 import { PdfService } from '../../../shared/pdf/pdf.service';
 import { MailService } from '../../../shared/mail/mail.service';
@@ -10,6 +12,7 @@ import { WhatsAppService } from '../../../shared/whatsapp/whatsapp.service';
 import { SmsService } from '../../../shared/sms/sms.service';
 import { SettingsService } from '../settings/settings.service';
 import { AuditService } from '../../../core/audit/audit.service';
+import { EventsGateway } from '../../../shared/events/events.gateway';
 import { SETTINGS_KEYS } from '../settings/settings.constants';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
@@ -23,6 +26,8 @@ import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helpe
 
 @Injectable()
 export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
+
   constructor(
     private readonly pdfService: PdfService,
     private readonly mailService: MailService,
@@ -30,6 +35,7 @@ export class InvoicesService {
     private readonly smsService: SmsService,
     private readonly settingsService: SettingsService,
     private readonly auditService: AuditService,
+    private readonly eventsGateway: EventsGateway,
   ) {}
 
   async findAll(
@@ -114,6 +120,7 @@ export class InvoicesService {
       data: {
         clientId: dto.clientId,
         appointmentId: dto.appointmentId,
+        selfOrderId: dto.selfOrderId,
         invoiceNumber,
         subtotal,
         taxAmount,
@@ -249,6 +256,7 @@ export class InvoicesService {
     db: TenantPrismaClient,
     id: string,
     dto: RecordPaymentDto,
+    tenantSlug?: string,
   ): Promise<Record<string, unknown>> {
     const invoice = await db.invoice.findUnique({
       where: { id },
@@ -290,16 +298,27 @@ export class InvoicesService {
       const invoiceTotal = Number(invoice.total);
       const newStatus = newTotalPaid >= invoiceTotal ? 'paid' : 'partially_paid';
 
+      // Generate publicToken for all paid invoices (QR invoice link)
+      const publicToken = newStatus === 'paid'
+        ? randomBytes(32).toString('hex')
+        : undefined;
+
       const updatedInvoice = await tx.invoice.update({
         where: { id },
         data: {
           status: newStatus,
           paidAt: newStatus === 'paid' ? new Date() : undefined,
+          ...(publicToken && {
+            publicToken,
+            publicTokenStatus: 'active',
+            publicTokenCreatedAt: new Date(),
+          }),
         },
         include: { payments: true, invoiceItems: true },
       });
 
       if (newStatus === 'paid') {
+        // Update client stats
         await tx.client.update({
           where: { id: invoice.clientId },
           data: {
@@ -308,9 +327,17 @@ export class InvoicesService {
             lastVisitAt: new Date(),
           },
         });
+
+        // If linked to a self-order, mark it as paid
+        if (invoice.selfOrderId) {
+          await tx.selfOrder.update({
+            where: { id: invoice.selfOrderId },
+            data: { status: 'paid' },
+          });
+        }
       }
 
-      return { payment, invoice: updatedInvoice };
+      return { payment, invoice: updatedInvoice, publicToken };
     });
 
     // Audit log (fire-and-forget)
@@ -321,6 +348,33 @@ export class InvoicesService {
       entityId: id,
       newValues: { amount: dto.amount, method: dto.method },
     }).catch(() => {});
+
+    // Notify customer if self-order was paid (WebSocket)
+    const res = result as { payment: unknown; invoice: Record<string, unknown>; publicToken?: string };
+    if (res.publicToken && invoice.selfOrderId && tenantSlug) {
+      try {
+        const selfOrder = await db.selfOrder.findUnique({
+          where: { id: invoice.selfOrderId },
+          select: { orderCode: true },
+        });
+        if (selfOrder) {
+          this.eventsGateway.emitToOrder(
+            tenantSlug,
+            selfOrder.orderCode,
+            'order:paid',
+            {
+              orderCode: selfOrder.orderCode,
+              invoiceToken: res.publicToken,
+              invoiceNumber: res.invoice.invoiceNumber || '',
+              total: Number(invoice.total),
+            },
+          );
+          this.logger.log(`Emitted order:paid for ${tenantSlug}:${selfOrder.orderCode}`);
+        }
+      } catch (err) {
+        this.logger.error(`Failed to emit order:paid: ${(err as Error).message}`);
+      }
+    }
 
     return result as unknown as Record<string, unknown>;
   }
@@ -612,5 +666,77 @@ export class InvoicesService {
     }
 
     return `INV-${nextNumber.toString().padStart(4, '0')}`;
+  }
+
+  /* ════════════════════════════════════════════════
+     TOKEN MANAGEMENT
+     ════════════════════════════════════════════════ */
+
+  /** Generate a public token for a paid invoice (or return existing active one) */
+  async generateToken(db: TenantPrismaClient, invoiceId: string) {
+    const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException('الفاتورة غير موجودة');
+    if (invoice.status !== 'paid') throw new BadRequestException('يجب أن تكون الفاتورة مدفوعة');
+
+    // If active token already exists, return it
+    if (invoice.publicToken && invoice.publicTokenStatus === 'active') {
+      return { publicToken: invoice.publicToken, alreadyExists: true };
+    }
+
+    // Generate new token
+    const token = randomBytes(32).toString('hex');
+    await db.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        publicToken: token,
+        publicTokenStatus: 'active',
+        publicTokenCreatedAt: new Date(),
+        publicTokenRevokedAt: null,
+      },
+    });
+
+    this.logger.log(`Public token generated for invoice ${invoiceId}`);
+    return { publicToken: token, alreadyExists: false };
+  }
+
+  /** Revoke an active public token (doesn't delete — just changes status) */
+  async revokeToken(db: TenantPrismaClient, invoiceId: string) {
+    const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException('الفاتورة غير موجودة');
+    if (!invoice.publicToken || invoice.publicTokenStatus !== 'active') {
+      throw new BadRequestException('لا يوجد رابط نشط لتعطيله');
+    }
+
+    await db.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        publicTokenStatus: 'revoked',
+        publicTokenRevokedAt: new Date(),
+      },
+    });
+
+    this.logger.log(`Public token revoked for invoice ${invoiceId}`);
+    return { success: true };
+  }
+
+  /** Regenerate a new public token (old token becomes invalid automatically) */
+  async regenerateToken(db: TenantPrismaClient, invoiceId: string) {
+    const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException('الفاتورة غير موجودة');
+    if (invoice.status !== 'paid') throw new BadRequestException('يجب أن تكون الفاتورة مدفوعة');
+
+    const token = randomBytes(32).toString('hex');
+    await db.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        publicToken: token,
+        publicTokenStatus: 'active',
+        publicTokenCreatedAt: new Date(),
+        publicTokenRevokedAt: null,
+      },
+    });
+
+    this.logger.log(`Public token regenerated for invoice ${invoiceId}`);
+    return { publicToken: token };
   }
 }

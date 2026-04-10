@@ -15,6 +15,7 @@ const PROTECTED_PATHS = [
   '/notifications',
   '/settings',
   '/features',
+  '/users',
 ];
 
 const PUBLIC_PATHS = ['/login'];

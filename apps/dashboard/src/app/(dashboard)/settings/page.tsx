@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { Building2, Palette, Clock, Users, Bell, CreditCard, SlidersHorizontal, UserCog, ChevronLeft } from 'lucide-react';
+import { Building2, Palette, Clock, Users, Bell, CreditCard, SlidersHorizontal, UserCog, ChevronLeft, QrCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const CARDS = [
   { title: 'لوحة التحكم',   desc: 'الحجز، الإجازة، الووك إن', href: '/settings/toggles',       icon: SlidersHorizontal, gradient: 'from-violet-500 to-purple-600' },
   { title: 'بيانات الصالون', desc: 'الاسم، العنوان، التواصل',     href: '/settings/salon',         icon: Building2,         gradient: 'from-sky-500 to-blue-600' },
   { title: 'الشعار والثيم',  desc: 'المظهر، الألوان، الشعار',    href: '/settings/branding',      icon: Palette,           gradient: 'from-fuchsia-500 to-pink-600' },
+  { title: 'المنيو والعرض العام', desc: 'ثيم المنيو الذكي والغلاف',   href: '/settings/smart-menu',    icon: QrCode,            gradient: 'from-cyan-500 to-teal-600' },
   { title: 'ساعات العمل',    desc: 'الفتح والإغلاق لكل يوم',    href: '/settings/working-hours', icon: Clock,             gradient: 'from-amber-500 to-orange-600' },
   { title: 'المستخدمين',     desc: 'الأدوار والصلاحيات',          href: '/settings/users',         icon: Users,             gradient: 'from-emerald-500 to-teal-600' },
   { title: 'الإشعارات',      desc: 'التنبيهات والإشعارات',        href: '/settings/notifications', icon: Bell,              gradient: 'from-rose-500 to-red-600' },

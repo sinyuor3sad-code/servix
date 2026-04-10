@@ -285,6 +285,15 @@ model SalonInfo {
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
+  // ──── العرض العام (Smart Menu) ────
+  logoUrl           String?  @map("logo_url") @db.VarChar(500)
+  coverImageUrl     String?  @map("cover_image_url") @db.VarChar(500)
+  brandColorPreset  String   @default("purple") @map("brand_color_preset") @db.VarChar(30)
+  themeLayout       String   @default("classic") @map("theme_layout") @db.VarChar(30)
+  welcomeMessage    String?  @map("welcome_message") @db.VarChar(300)
+  googleMapsUrl     String?  @map("google_maps_url") @db.VarChar(500)
+  googlePlaceId     String?  @map("google_place_id") @db.VarChar(100)
+
   @@map("salon_info")
 }
 
@@ -560,8 +569,19 @@ model Invoice {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
 
+  // ──── الوصول العام (Invoice QR) ────
+  publicToken          String?   @unique @map("public_token") @db.VarChar(64)
+  publicTokenStatus    String    @default("active") @map("public_token_status") @db.VarChar(20)
+  publicTokenCreatedAt DateTime? @map("public_token_created_at") @db.Timestamptz()
+  publicTokenRevokedAt DateTime? @map("public_token_revoked_at") @db.Timestamptz()
+
+  // ──── ربط بالطلب الذاتي ────
+  selfOrderId          String?   @unique @map("self_order_id") @db.Uuid
+
   appointment         Appointment?         @relation(fields: [appointmentId], references: [id])
   client              Client               @relation(fields: [clientId], references: [id])
+  selfOrder           SelfOrder?           @relation(fields: [selfOrderId], references: [id])
+  feedback            InvoiceFeedback?
   invoiceItems        InvoiceItem[]
   payments            Payment[]
   discounts           Discount[]
@@ -1153,4 +1173,50 @@ model ClientDebt {
   @@index([clientId])
   @@index([isPaid])
   @@map("client_debts")
+}
+
+// ─────────────────── Self Orders (Smart Menu) ───────────────────
+
+enum SelfOrderStatus {
+  pending
+  claimed
+  paid
+  expired
+}
+
+model SelfOrder {
+  id            String          @id @default(uuid()) @db.Uuid
+  orderCode     String          @map("order_code") @db.VarChar(10)
+  status        SelfOrderStatus @default(pending)
+  services      Json            @db.JsonB
+  totalEstimate Decimal         @map("total_estimate") @db.Decimal(10, 2)
+  monthLetter   String          @map("month_letter") @db.VarChar(1)
+  expiresAt     DateTime        @map("expires_at") @db.Timestamptz()
+  claimedAt     DateTime?       @map("claimed_at") @db.Timestamptz()
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+  invoice       Invoice?
+
+  @@unique([orderCode, monthLetter])
+  @@index([status, expiresAt])
+  @@index([orderCode])
+  @@map("self_orders")
+}
+
+// ─────────────────── Invoice Feedback (Rating) ───────────────────
+
+model InvoiceFeedback {
+  id                String   @id @default(uuid()) @db.Uuid
+  invoiceId         String   @unique @map("invoice_id") @db.Uuid
+  rating            Int      @db.SmallInt
+  comment           String?  @db.Text
+  source            String   @default("qr") @map("source") @db.VarChar(20)
+  googlePromptShown Boolean  @default(false) @map("google_prompt_shown")
+  googleClicked     Boolean  @default(false) @map("google_clicked")
+  followUpStatus    String   @default("new") @map("follow_up_status") @db.VarChar(30)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_feedbacks")
 }

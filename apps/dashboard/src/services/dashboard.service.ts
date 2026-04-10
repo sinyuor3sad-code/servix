@@ -32,6 +32,36 @@ interface ListParams {
   sortOrder?: 'asc' | 'desc';
 }
 
+export interface FeedbackItem {
+  id: string;
+  invoiceId: string;
+  rating: number;
+  comment: string | null;
+  source: string;
+  googlePromptShown: boolean;
+  googleClicked: boolean;
+  followUpStatus: string;
+  createdAt: string;
+  invoice?: {
+    invoiceNumber: string;
+    selfOrderId: string | null;
+    publicToken: string | null;
+  };
+}
+
+export interface FeedbackSummary {
+  totalCount: number;
+  avgRating: number;
+  thisMonthCount: number;
+  lastMonthCount: number;
+  distribution: Record<number, number>;
+  satisfactionRate: number;
+  googlePromptTotal: number;
+  googleClickTotal: number;
+  googleClickRate: number;
+}
+
+
 function buildQuery(params: ListParams): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -261,4 +291,14 @@ export const dashboardService = {
 
   updateSetting: (key: string, value: string, token: string) =>
     api.put<void>(`/settings/${key}`, { value }, token),
+
+  // ─── Feedback ───
+  getFeedbacks: (params: ListParams & { minRating?: number; maxRating?: number; followUpStatus?: string; dateFrom?: string; dateTo?: string }, token: string) =>
+    api.get<PaginatedResponse<FeedbackItem>>(`/feedback${buildQuery(params)}`, token),
+
+  getFeedbackSummary: (token: string) =>
+    api.get<FeedbackSummary>('/feedback/summary', token),
+
+  updateFeedbackStatus: (id: string, status: string, token: string) =>
+    api.patch<unknown>(`/feedback/${id}/status`, { status }, token),
 };

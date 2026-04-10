@@ -27,6 +27,7 @@ import { NotificationsModule } from './core/notifications/notifications.module';
 import { AdminModule } from './core/admin/admin.module';
 import { HealthModule } from './core/health/health.module';
 import { SalonModule } from './modules/salon/salon.module';
+import { PublicModule } from './modules/public/public.module';
 import { MetricsModule } from './shared/metrics/metrics.module';
 import { HttpMetricsInterceptor } from './shared/metrics/http-metrics.interceptor';
 import { DistributedLockModule } from './shared/locks/distributed-lock.module';
@@ -66,6 +67,7 @@ import { winstonConfig } from './shared/logger/winston.config';
     AdminModule,
     HealthModule,
     SalonModule,
+    PublicModule,
     MetricsModule,
     DistributedLockModule,
     CircuitBreakerModule,

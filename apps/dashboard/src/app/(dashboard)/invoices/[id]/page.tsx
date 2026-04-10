@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowRight, Send, Ban, CreditCard, Receipt, User, Calendar, Hash, CheckCircle2, Clock, XCircle, AlertCircle, Banknote, CreditCard as CardIcon, Building, Wallet, Printer, Download, FileText } from 'lucide-react';
+import { ArrowRight, Send, Ban, CreditCard, Receipt, User, Calendar, Hash, CheckCircle2, Clock, XCircle, AlertCircle, Banknote, CreditCard as CardIcon, Building, Wallet, Printer, Download, FileText, ExternalLink, Copy, QrCode, Link, ShieldOff, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button, Spinner, Input, Select, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui';
@@ -42,6 +42,8 @@ export default function InvoiceDetailPage() {
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState<PaymentMethod>('cash');
   const [downloading, setDownloading] = useState(false);
+  const [showConfirm, setShowConfirm] = useState<'revoke' | 'regenerate' | null>(null);
+  const [showQR, setShowQR] = useState(false);
 
   const { data: inv, isLoading } = useQuery({
     queryKey: ['invoice', id],
@@ -65,6 +67,25 @@ export default function InvoiceDetailPage() {
     mutationFn: () => api.post(`/invoices/${id}/send`, { channel: 'whatsapp' }, accessToken!),
     onSuccess: () => toast.success('تم الإرسال'),
     onError: () => toast.error('خطأ في الإرسال'),
+  });
+
+  // Token mutations
+  const generateTokenMut = useMutation({
+    mutationFn: () => api.post<{ publicToken: string }>(`/invoices/${id}/generate-token`, {}, accessToken!),
+    onSuccess: () => { toast.success('✅ تم توليد الرابط العام'); qc.invalidateQueries({ queryKey: ['invoice', id] }); },
+    onError: () => toast.error('خطأ في توليد الرابط'),
+  });
+
+  const revokeTokenMut = useMutation({
+    mutationFn: () => api.delete(`/invoices/${id}/revoke-token`, accessToken!),
+    onSuccess: () => { toast.success('تم تعطيل الرابط'); qc.invalidateQueries({ queryKey: ['invoice', id] }); setShowConfirm(null); },
+    onError: () => toast.error('خطأ'),
+  });
+
+  const regenerateTokenMut = useMutation({
+    mutationFn: () => api.post<{ publicToken: string }>(`/invoices/${id}/regenerate-token`, {}, accessToken!),
+    onSuccess: () => { toast.success('✅ تم إعادة توليد الرابط'); qc.invalidateQueries({ queryKey: ['invoice', id] }); setShowConfirm(null); },
+    onError: () => toast.error('خطأ'),
   });
 
   // 🖨️ Print receipt
@@ -183,6 +204,63 @@ export default function InvoiceDetailPage() {
           <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> {fmtDate(inv.createdAt)}</span>
         </div>
       </div>
+
+      {/* ── Token Management Bar (only for paid invoices) ── */}
+      {inv.status === 'paid' && (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <QrCode className="h-4 w-4 text-[var(--brand-primary)]" />
+            <span className="text-xs font-bold text-[var(--muted-foreground)]">الرابط العام</span>
+            {(inv as any).publicToken && (inv as any).publicTokenStatus === 'active' && (
+              <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[9px] font-bold text-emerald-700">نشط</span>
+            )}
+            {(inv as any).publicTokenStatus === 'revoked' && (
+              <span className="rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[9px] font-bold text-red-600">معطّل</span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {/* No token → Generate */}
+            {!(inv as any).publicToken && (
+              <Button size="sm" variant="outline" onClick={() => generateTokenMut.mutate()} disabled={generateTokenMut.isPending}>
+                <Link className="h-3.5 w-3.5" /> {generateTokenMut.isPending ? '...' : 'توليد الرابط'}
+              </Button>
+            )}
+
+            {/* Active token → View, Copy, QR, Revoke */}
+            {(inv as any).publicToken && (inv as any).publicTokenStatus === 'active' && (
+              <>
+                <Button size="sm" variant="outline" onClick={() => {
+                  const slug = (window as any).__SERVIX_SLUG || 'salon';
+                  window.open(`/${slug}/invoice/${(inv as any).publicToken}`, '_blank');
+                }}>
+                  <ExternalLink className="h-3.5 w-3.5" /> عرض
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => {
+                  const slug = (window as any).__SERVIX_SLUG || 'salon';
+                  const url = `https://${slug}.servix.com/invoice/${(inv as any).publicToken}`;
+                  navigator.clipboard.writeText(url);
+                  toast.success('تم نسخ الرابط ✅');
+                }}>
+                  <Copy className="h-3.5 w-3.5" /> نسخ
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setShowQR(true)}>
+                  <QrCode className="h-3.5 w-3.5" /> QR
+                </Button>
+                <Button size="sm" variant="destructive" onClick={() => setShowConfirm('revoke')}>
+                  <ShieldOff className="h-3.5 w-3.5" /> تعطيل
+                </Button>
+              </>
+            )}
+
+            {/* Revoked token → Regenerate */}
+            {(inv as any).publicTokenStatus === 'revoked' && (
+              <Button size="sm" variant="outline" onClick={() => setShowConfirm('regenerate')}>
+                <RefreshCw className="h-3.5 w-3.5" /> إعادة إنشاء
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Items */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
@@ -330,6 +408,64 @@ export default function InvoiceDetailPage() {
               {payMut.isPending ? '...' : 'تسجيل الدفعة'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Confirm Revoke/Regenerate Dialog ── */}
+      <Dialog open={showConfirm !== null} onOpenChange={() => setShowConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{showConfirm === 'revoke' ? 'تأكيد تعطيل الرابط' : 'تأكيد إعادة إنشاء الرابط'}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--muted-foreground)] py-4">
+            {showConfirm === 'revoke'
+              ? 'سيتم تعطيل الرابط العام للفاتورة. لن يتمكن العملاء من الوصول للفاتورة عبر الرابط الحالي.'
+              : 'سيتم إنشاء رابط جديد للفاتورة. الرابط القديم سيتوقف عن العمل تلقائياً.'}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowConfirm(null)}>إلغاء</Button>
+            <Button
+              variant={showConfirm === 'revoke' ? 'destructive' : 'default'}
+              onClick={() => showConfirm === 'revoke' ? revokeTokenMut.mutate() : regenerateTokenMut.mutate()}
+              disabled={revokeTokenMut.isPending || regenerateTokenMut.isPending}
+            >
+              {(revokeTokenMut.isPending || regenerateTokenMut.isPending) ? '...' : 'تأكيد'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── QR Modal ── */}
+      <Dialog open={showQR} onOpenChange={setShowQR}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>QR Code — {inv.invoiceNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-6">
+            <div className="rounded-2xl bg-white p-6 shadow-inner">
+              {/* Simple SVG QR placeholder — actual qrcode.react is in POS app */}
+              <div
+                className="flex items-center justify-center"
+                style={{ width: 200, height: 200 }}
+                dangerouslySetInnerHTML={{
+                  __html: `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="200" height="200" fill="white"/>
+                    <text x="100" y="95" text-anchor="middle" font-size="14" fill="#666">QR Code</text>
+                    <text x="100" y="115" text-anchor="middle" font-size="10" fill="#999">${inv.invoiceNumber}</text>
+                  </svg>`,
+                }}
+              />
+            </div>
+            <p className="text-xs text-[var(--muted-foreground)] text-center">امسح الكود للوصول إلى صفحة الفاتورة</p>
+            <Button size="sm" variant="outline" onClick={() => {
+              const slug = (window as any).__SERVIX_SLUG || 'salon';
+              const url = `https://${slug}.servix.com/invoice/${(inv as any).publicToken}`;
+              navigator.clipboard.writeText(url);
+              toast.success('تم نسخ الرابط ✅');
+            }}>
+              <Copy className="h-3.5 w-3.5" /> نسخ الرابط
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

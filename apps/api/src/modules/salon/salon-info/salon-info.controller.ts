@@ -14,11 +14,14 @@ import { TenantGuard } from '../../../shared/guards';
 import { SalonInfoService } from './salon-info.service';
 import { UpdateSalonDto } from './dto/update-salon.dto';
 import { UpdateBrandingDto } from './dto/update-branding.dto';
+import { UpdateThemeDto } from './dto/update-theme.dto';
 import { UpdateWorkingHoursDto } from './dto/update-working-hours.dto';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'logos');
+const COVER_DIR = join(process.cwd(), 'uploads', 'covers');
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!existsSync(COVER_DIR)) mkdirSync(COVER_DIR, { recursive: true });
 
 @ApiTags('Salon Info')
 @ApiBearerAuth()
@@ -110,5 +113,53 @@ export class SalonInfoController {
     await this.salonInfoService.updateBranding(req.tenantDb!, { logoUrl });
 
     return { logoUrl, message: 'تم رفع الشعار بنجاح ✅' };
+  }
+
+  @Put('theme')
+  @ApiOperation({ summary: 'تحديث إعدادات ثيم المنيو الذكي' })
+  @ApiResponse({ status: 200, description: 'تم تحديث الثيم بنجاح' })
+  @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
+  async updateTheme(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateThemeDto,
+  ) {
+    return this.salonInfoService.updateTheme(
+      req.tenantDb!,
+      dto,
+    );
+  }
+
+  @Post('cover')
+  @ApiOperation({ summary: 'رفع صورة غلاف الصالون' })
+  @ApiConsumes('multipart/form-data')
+  @ApiResponse({ status: 201, description: 'تم رفع صورة الغلاف بنجاح' })
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: COVER_DIR,
+      filename: (_req, file, cb) => {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1e6);
+        cb(null, `cover-${unique}${extname(file.originalname)}`);
+      },
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (!file.mimetype.match(/^image\/(png|jpe?g|webp)$/)) {
+        cb(new BadRequestException('فقط PNG, JPG, WebP'), false);
+        return;
+      }
+      cb(null, true);
+    },
+  }))
+  async uploadCover(
+    @Req() req: AuthenticatedRequest,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('الرجاء رفع ملف');
+    const apiBase = process.env.API_URL || 'https://api.servi-x.com';
+    const coverImageUrl = `${apiBase}/uploads/covers/${file.filename}`;
+
+    await this.salonInfoService.updateTheme(req.tenantDb!, { coverImageUrl });
+
+    return { coverImageUrl, message: 'تم رفع صورة الغلاف بنجاح ✅' };
   }
 }
