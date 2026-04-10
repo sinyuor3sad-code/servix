@@ -136,18 +136,6 @@ export class AuthService {
       );
     }
 
-    // Find the Basic plan for trial subscription
-    const basicPlan = await this.prisma.plan.findFirst({
-      where: { name: 'Basic', isActive: true },
-    });
-    if (!basicPlan) {
-      this.logger.error('[AuthService.register] Basic plan not found — cannot create trial subscription');
-      throw new InternalServerErrorException(
-        'خطأ في النظام: لم يتم العثور على خطة الاشتراك الأساسية',
-      );
-    }
-
-    const TRIAL_DAYS = 14;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
@@ -160,20 +148,16 @@ export class AuthService {
       });
       this.logger.log(`[AuthService.register] Created user id=${user.id}`);
 
-      const trialEnd = new Date();
-      trialEnd.setDate(trialEnd.getDate() + TRIAL_DAYS);
-
       const tenant = await tx.tenant.create({
         data: {
           nameAr: dto.salonNameAr,
           nameEn: dto.salonNameEn ?? dto.salonNameAr,
           slug,
           databaseName,
-          status: 'trial',
-          trialEndsAt: trialEnd,
+          status: 'pending',
         },
       });
-      this.logger.log(`[AuthService.register] Created tenant id=${tenant.id}, slug=${slug}`);
+      this.logger.log(`[AuthService.register] Created tenant id=${tenant.id}, slug=${slug} (pending verification)`);
 
       const tenantUser = await tx.tenantUser.create({
         data: {
@@ -185,46 +169,8 @@ export class AuthService {
       });
       this.logger.log(`[AuthService.register] Created tenantUser id=${tenantUser.id}, roleId=${ownerRole.id}`);
 
-      // Create trial subscription so TenantMiddleware allows access
-      const subscription = await tx.subscription.create({
-        data: {
-          tenantId: tenant.id,
-          planId: basicPlan.id,
-          status: 'trial',
-          billingCycle: 'monthly',
-          currentPeriodStart: new Date(),
-          currentPeriodEnd: trialEnd,
-        },
-      });
-      this.logger.log(`[AuthService.register] Created trial subscription id=${subscription.id}, ends=${trialEnd.toISOString()}`);
-
       return { user, tenant };
     });
-
-    // Create the tenant's isolated PostgreSQL database and push schema
-    try {
-      await this.tenantDatabaseService.createTenantDatabase(databaseName);
-    } catch (error: unknown) {
-      // DB creation failed — clean up the platform records to prevent orphaned state
-      const errMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Failed to create tenant database ${databaseName}: ${errMsg}`);
-
-      try {
-        // Delete in reverse dependency order
-        await this.prisma.subscription.deleteMany({ where: { tenantId: result.tenant.id } });
-        await this.prisma.tenantUser.deleteMany({ where: { tenantId: result.tenant.id } });
-        await this.prisma.tenant.delete({ where: { id: result.tenant.id } });
-        await this.prisma.user.delete({ where: { id: result.user.id } });
-        this.logger.log(`Cleaned up platform records for failed tenant: ${result.tenant.id}`);
-      } catch (cleanupError: unknown) {
-        const cleanupMsg = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
-        this.logger.error(`Failed to clean up platform records: ${cleanupMsg}`);
-      }
-
-      throw new InternalServerErrorException(
-        'فشل إنشاء حساب الصالون. يرجى المحاولة لاحقاً.',
-      );
-    }
 
     const tenantResponse: TenantResponse = {
       id: result.tenant.id,
@@ -919,6 +865,18 @@ export class AuthService {
 
     this.logger.log(`[OTP] Email verified for user ${user.id} (${user.email})`);
 
+    // Provision tenant database for pending tenants (created during registration)
+    const pendingTenantUsers = await this.prisma.tenantUser.findMany({
+      where: { userId: user.id, isOwner: true },
+      include: { tenant: true },
+    });
+
+    for (const tu of pendingTenantUsers) {
+      if (tu.tenant.status === 'pending') {
+        await this.provisionTenantAfterVerification(tu.tenant);
+      }
+    }
+
     // Get tenant associations
     const tenantUsers = await this.prisma.tenantUser.findMany({
       where: { userId: user.id, status: 'active' },
@@ -962,6 +920,61 @@ export class AuthService {
       })),
       tokens,
     };
+  }
+
+  private async provisionTenantAfterVerification(tenant: {
+    id: string;
+    databaseName: string;
+    status: string;
+  }): Promise<void> {
+    const TRIAL_DAYS = 14;
+    this.logger.log(`[Provision] Starting tenant provisioning for ${tenant.id} (${tenant.databaseName})`);
+
+    // Find Basic plan for trial subscription
+    const basicPlan = await this.prisma.plan.findFirst({
+      where: { name: 'Basic', isActive: true },
+    });
+    if (!basicPlan) {
+      this.logger.error('[Provision] Basic plan not found');
+      throw new InternalServerErrorException(
+        'خطأ في النظام: لم يتم العثور على خطة الاشتراك الأساسية',
+      );
+    }
+
+    // Create the tenant's isolated database
+    try {
+      await this.tenantDatabaseService.createTenantDatabase(tenant.databaseName);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`[Provision] Failed to create tenant database ${tenant.databaseName}: ${errMsg}`);
+      throw new InternalServerErrorException(
+        'فشل إنشاء قاعدة بيانات الصالون. يرجى المحاولة لاحقاً.',
+      );
+    }
+
+    // Activate tenant: set status to trial + create subscription
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + TRIAL_DAYS);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.tenant.update({
+        where: { id: tenant.id },
+        data: { status: 'trial', trialEndsAt: trialEnd },
+      });
+
+      await tx.subscription.create({
+        data: {
+          tenantId: tenant.id,
+          planId: basicPlan.id,
+          status: 'trial',
+          billingCycle: 'monthly',
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: trialEnd,
+        },
+      });
+    });
+
+    this.logger.log(`[Provision] Tenant ${tenant.id} provisioned successfully — trial ends ${trialEnd.toISOString()}`);
   }
 
   async resendEmailOtp(email: string): Promise<{ message: string }> {

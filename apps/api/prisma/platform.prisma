@@ -16,6 +16,7 @@ datasource db {
 // ─────────────────── Enums ───────────────────
 
 enum TenantStatus {
+  pending
   active
   suspended
   trial
