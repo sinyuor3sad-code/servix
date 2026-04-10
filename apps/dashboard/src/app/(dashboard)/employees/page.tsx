@@ -173,7 +173,7 @@ export default function EmployeesPage() {
                 {/* Delete trigger button */}
                 <button
                   onClick={() => setConfirmDeleteId(emp.id)}
-                  className="absolute top-3 left-3 p-1.5 rounded-lg text-[var(--muted-foreground)] hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                  className="absolute top-3 left-3 p-1.5 rounded-lg text-[var(--muted-foreground)] hover:text-red-500 hover:bg-red-50 transition-all"
                   title="حذف"
                 >
                   <Trash2 className="h-4 w-4" />

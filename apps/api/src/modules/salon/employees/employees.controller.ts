@@ -94,8 +94,8 @@ export class EmployeesController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'تعطيل موظف' })
-  @ApiResponse({ status: 200, description: 'تم تعطيل الموظف بنجاح' })
+  @ApiOperation({ summary: 'حذف موظف نهائياً' })
+  @ApiResponse({ status: 200, description: 'تم حذف الموظف بنجاح' })
   @ApiResponse({ status: 404, description: 'الموظف غير موجود' })
   async deactivate(
     @Req() req: AuthenticatedRequest,
@@ -103,6 +103,7 @@ export class EmployeesController {
   ): Promise<Record<string, unknown>> {
     return this.employeesService.deactivate(
       req.tenantDb!,
+      req.tenant!.id,
       id,
     );
   }

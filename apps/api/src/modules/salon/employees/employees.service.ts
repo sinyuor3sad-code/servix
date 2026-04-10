@@ -183,31 +183,60 @@ export class EmployeesService {
 
   async deactivate(
     db: TenantPrismaClient,
+    tenantId: string,
     id: string,
   ): Promise<Record<string, unknown>> {
-    await this.findEmployeeOrFail(db, id);
-
-    try {
-      // Try actual delete first
-      await db.employee.delete({ where: { id } });
-      return { id, deleted: true };
-    } catch {
-      // If FK constraints prevent deletion, deactivate instead
-      await db.employee.update({
-        where: { id },
-        data: { isActive: false },
-      });
-
-      // Audit log (fire-and-forget)
-      this.auditService.log({
-        userId: id,
-        action: 'employee.deactivate',
-        entityType: 'Employee',
-        entityId: id,
-      }).catch(() => {});
-
-      return { id, deactivated: true };
+    const employee = await db.employee.findUnique({ where: { id } });
+    if (!employee) {
+      throw new NotFoundException('الموظف غير موجود');
     }
+
+    // 1. Delete salary expense linked to this employee
+    await db.expense.deleteMany({ where: { employeeId: id } });
+
+    // 2. Delete related records that have FK constraints
+    await db.employeeDebt.deleteMany({ where: { employeeId: id } });
+    await db.employeeService.deleteMany({ where: { employeeId: id } });
+    await db.employeeSchedule.deleteMany({ where: { employeeId: id } });
+    await db.employeeBreak.deleteMany({ where: { employeeId: id } });
+
+    // 3. Nullify references in appointments/invoices instead of blocking delete
+    await db.appointmentService.updateMany({ where: { employeeId: id }, data: { employeeId: id } });
+    await db.appointment.updateMany({ where: { employeeId: id }, data: { employeeId: null as any } });
+
+    // 4. Delete the employee from tenant DB
+    await db.employee.delete({ where: { id } });
+
+    // 5. Clean up platform user account if exists (cashier login)
+    if (employee.email) {
+      const platformUser = await this.platformPrisma.user.findUnique({
+        where: { email: employee.email },
+      });
+      if (platformUser) {
+        // Delete tenant-user link first, then user
+        await this.platformPrisma.tenantUser.deleteMany({
+          where: { userId: platformUser.id, tenantId },
+        });
+        // Only delete user if no other tenant links remain
+        const otherLinks = await this.platformPrisma.tenantUser.count({
+          where: { userId: platformUser.id },
+        });
+        if (otherLinks === 0) {
+          await this.platformPrisma.user.delete({ where: { id: platformUser.id } });
+        }
+      }
+    }
+
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: id,
+      action: 'employee.delete',
+      entityType: 'Employee',
+      entityId: id,
+      newValues: { fullName: employee.fullName, email: employee.email },
+    }).catch(() => {});
+
+    return { id, deleted: true };
   }
 
   // ─── Salary Expense ───

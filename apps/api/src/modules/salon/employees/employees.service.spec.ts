@@ -23,6 +23,24 @@ const mockDb = {
     deleteMany: jest.fn(),
     createMany: jest.fn(),
   },
+  employeeBreak: {
+    deleteMany: jest.fn(),
+  },
+  employeeDebt: {
+    deleteMany: jest.fn(),
+  },
+  expense: {
+    findFirst: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  appointment: {
+    updateMany: jest.fn(),
+  },
+  appointmentService: {
+    updateMany: jest.fn(),
+  },
 };
 
 const mockPlatformPrisma = {
@@ -178,40 +196,31 @@ describe('EmployeesService', () => {
   });
 
   describe('deactivate', () => {
-    it('يجب حذف الموظف إذا لم يكن لديه علاقات', async () => {
-      mockDb.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
+    it('يجب حذف الموظف نهائياً مع السجلات المرتبطة', async () => {
+      mockDb.employee.findUnique.mockResolvedValue({ id: 'emp-1', email: null, fullName: 'Test' });
+      mockDb.expense.deleteMany.mockResolvedValue({ count: 0 });
+      mockDb.employeeDebt.deleteMany.mockResolvedValue({ count: 0 });
+      mockDb.employeeService.deleteMany.mockResolvedValue({ count: 0 });
+      mockDb.employeeSchedule.deleteMany.mockResolvedValue({ count: 0 });
+      mockDb.employeeBreak.deleteMany.mockResolvedValue({ count: 0 });
+      mockDb.appointmentService.updateMany.mockResolvedValue({ count: 0 });
+      mockDb.appointment.updateMany.mockResolvedValue({ count: 0 });
       mockDb.employee.delete.mockResolvedValue({ id: 'emp-1' });
 
       const result = await service.deactivate(
         mockDb as unknown as TenantPrismaClient,
+        'tenant-1',
         'emp-1',
       );
 
       expect(result).toHaveProperty('deleted', true);
     });
 
-    it('يجب تعطيل الموظف إذا فشل الحذف بسبب FK constraints', async () => {
-      mockDb.employee.findUnique.mockResolvedValue({ id: 'emp-1' });
-      mockDb.employee.delete.mockRejectedValue(new Error('FK constraint'));
-      mockDb.employee.update.mockResolvedValue({ id: 'emp-1', isActive: false });
-
-      const result = await service.deactivate(
-        mockDb as unknown as TenantPrismaClient,
-        'emp-1',
-      );
-
-      expect(result).toHaveProperty('deactivated', true);
-      expect(mockDb.employee.update).toHaveBeenCalledWith({
-        where: { id: 'emp-1' },
-        data: { isActive: false },
-      });
-    });
-
     it('يجب رمي NotFoundException لموظف غير موجود', async () => {
       mockDb.employee.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.deactivate(mockDb as unknown as TenantPrismaClient, 'nonexistent'),
+        service.deactivate(mockDb as unknown as TenantPrismaClient, 'tenant-1', 'nonexistent'),
       ).rejects.toThrow(NotFoundException);
     });
   });
