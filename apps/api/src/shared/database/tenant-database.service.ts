@@ -144,6 +144,11 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
     const { existsSync } = await import('fs');
     const baseUrl = process.env.PLATFORM_DATABASE_URL || '';
     const url = new URL(baseUrl);
+    // Connect directly to postgres instead of pgbouncer for migrations
+    // PgBouncer only routes known databases; new tenant DBs aren't in its config
+    if (url.hostname === 'pgbouncer') {
+      url.hostname = 'postgres';
+    }
     url.pathname = `/${databaseName}`;
     const tenantUrl = url.toString();
 
