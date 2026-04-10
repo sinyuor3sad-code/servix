@@ -81,7 +81,7 @@ services:
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN:-servix-dev-token}
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
     ports:
-      - "8200:8200"
+      - "127.0.0.1:8200:8200"
     volumes:
       - vault_data:/vault/file
     restart: unless-stopped
@@ -101,8 +101,8 @@ services:
     volumes:
       - jaeger_data:/badger
     ports:
-      - "16686:16686"  # Jaeger UI
-      - "4318:4318"    # OTLP HTTP receiver
+      - "127.0.0.1:16686:16686"  # Jaeger UI
+      - "127.0.0.1:4318:4318"    # OTLP HTTP receiver
     restart: unless-stopped
     networks:
       - servix-network
@@ -309,7 +309,7 @@ services:
     networks:
       - servix-network
 
-  # ═══════ Automated Backup (cron every 6 hours) ═══════
+  # ═══════ Automated Backup (cron every 6 hours → MinIO S3) ═══════
   backup:
     image: postgres:17-alpine
     container_name: servix-backup
@@ -319,19 +319,27 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGHOST: postgres
       PGPORT: 5432
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - ./scripts/backup.sh:/scripts/backup.sh:ro
       - ./scripts/restore.sh:/scripts/restore.sh:ro
       - backup_data:/backups
     entrypoint: /bin/sh
     command: >
-      -c "echo '0 */6 * * * /bin/sh /scripts/backup.sh >> /backups/cron.log 2>&1' > /etc/crontabs/root &&
-          echo '🕐 Backup cron scheduled (every 6 hours)' &&
+      -c "apk add --no-cache curl >/dev/null 2>&1 &&
+          curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc &&
+          chmod +x /usr/local/bin/mc &&
+          echo '0 */6 * * * /bin/sh /scripts/backup.sh >> /backups/cron.log 2>&1' > /etc/crontabs/root &&
+          echo 'Backup cron scheduled (every 6h -> MinIO)' &&
           /bin/sh /scripts/backup.sh &&
           crond -f -l 2"
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_started
     networks:
       - servix-network
 
@@ -342,9 +350,10 @@ services:
     restart: always
     volumes:
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.retention.time=30d'
@@ -369,7 +378,7 @@ services:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
     ports:
-      - "3100:3000"
+      - "127.0.0.1:3100:3000"
     depends_on:
       - prometheus
     networks:
@@ -382,7 +391,7 @@ services:
     volumes:
       - uptime_kuma_data:/app/data
     ports:
-      - "3200:3001"
+      - "127.0.0.1:3200:3001"
     networks:
       - servix-network
 
@@ -416,6 +425,35 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - servix-network
+
+  # ═══════ Redis Exporter ═══════
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: servix-redis-exporter
+    restart: always
+    environment:
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    expose:
+      - "9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - servix-network
+
+  # ═══════ Nginx Exporter ═══════
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: servix-nginx-exporter
+    restart: always
+    command: ["-nginx.scrape-uri=http://nginx:8080/stub_status"]
+    expose:
+      - "9113"
+    depends_on:
+      - nginx
     networks:
       - servix-network
 
