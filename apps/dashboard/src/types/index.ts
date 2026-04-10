@@ -129,6 +129,7 @@ export interface Employee {
   role: EmployeeRole;
   commissionType: CommissionType;
   commissionValue: number;
+  salary: number;
   isActive: boolean;
   avatarUrl: string | null;
   createdAt: string;
