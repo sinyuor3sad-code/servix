@@ -109,11 +109,11 @@ const M_SVCS: Service[] = [
 ];
 
 const M_EMP: Employee[] = [
-  { id: 'e1', userId: null, fullName: 'سارة القحطاني', phone: null, email: null, role: 'stylist', commissionType: 'percentage', commissionValue: 15, isActive: true, avatarUrl: null, createdAt: '', updatedAt: '' },
-  { id: 'e2', userId: null, fullName: 'هند الشمري',    phone: null, email: null, role: 'stylist', commissionType: 'percentage', commissionValue: 12, isActive: true, avatarUrl: null, createdAt: '', updatedAt: '' },
-  { id: 'e3', userId: null, fullName: 'أمل الزهراني',  phone: null, email: null, role: 'stylist', commissionType: 'percentage', commissionValue: 10, isActive: true, avatarUrl: null, createdAt: '', updatedAt: '' },
-  { id: 'e4', userId: null, fullName: 'ديما البقمي',   phone: null, email: null, role: 'stylist', commissionType: 'fixed',      commissionValue: 50, isActive: true, avatarUrl: null, createdAt: '', updatedAt: '' },
-  { id: 'e5', userId: null, fullName: 'منيرة الدوسري', phone: null, email: null, role: 'stylist', commissionType: 'percentage', commissionValue: 8,  isActive: true, avatarUrl: null, createdAt: '', updatedAt: '' },
+  { id: 'e1', userId: null, fullName: 'سارة القحطاني', phone: null, email: null, role: 'stylist', commissionType: 'percentage', commissionValue: 15, isActive: true, salary: 0, avatarUrl: null, createdAt: '', updatedAt: '' },
+  { id: 'e2', userId: null, fullName: 'هند الشمري',    phone: null, email: null, role: 'stylist', commissionType: 'percentage', commissionValue: 12, isActive: true, salary: 0, avatarUrl: null, createdAt: '', updatedAt: '' },
+  { id: 'e3', userId: null, fullName: 'أمل الزهراني',  phone: null, email: null, role: 'stylist', commissionType: 'percentage', commissionValue: 10, isActive: true, salary: 0, avatarUrl: null, createdAt: '', updatedAt: '' },
+  { id: 'e4', userId: null, fullName: 'ديما البقمي',   phone: null, email: null, role: 'stylist', commissionType: 'fixed',      commissionValue: 50, isActive: true, salary: 0, avatarUrl: null, createdAt: '', updatedAt: '' },
+  { id: 'e5', userId: null, fullName: 'منيرة الدوسري', phone: null, email: null, role: 'stylist', commissionType: 'percentage', commissionValue: 8,  isActive: true, salary: 0, avatarUrl: null, createdAt: '', updatedAt: '' },
 ];
 
 const M_CLI: Client[] = [
