@@ -312,85 +312,84 @@ export default function EmployeeDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Create Login Account */}
-      <Card className="mt-6 border-[var(--brand-primary)]/20">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <KeyRound className="h-5 w-5 text-[var(--brand-primary)]" />
-            حساب الدخول
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {accountSuccess ? (
-            <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
-              <CheckCircle className="h-5 w-5 shrink-0 text-green-600" />
-              <div>
-                <p className="text-sm font-medium text-green-700 dark:text-green-400">
-                  {accountSuccess}
-                </p>
-                <p className="text-xs text-green-600 dark:text-green-500 mt-1">
-                  يمكنها الآن تسجيل الدخول من app.servi-x.com/login
-                </p>
+      {/* Create Login Account — Cashier only */}
+      {employee.role === 'cashier' && (
+        <Card className="mt-6 border-[var(--brand-primary)]/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-[var(--brand-primary)]" />
+              حساب الدخول — الكاشيرة
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {accountSuccess ? (
+              <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+                <CheckCircle className="h-5 w-5 shrink-0 text-green-600" />
+                <div>
+                  <p className="text-sm font-medium text-green-700 dark:text-green-400">
+                    {accountSuccess}
+                  </p>
+                  <p className="text-xs text-green-600 dark:text-green-500 mt-1">
+                    يمكنها الآن تسجيل الدخول من app.servi-x.com/login
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <p className="text-sm text-[var(--muted-foreground)]">
-                أنشئ حساب دخول لهذه الموظفة لتتمكن من الدخول للوحة التحكم بدور{' '}
-                <strong>{ROLE_LABELS[employee.role]}</strong>.
-                {employee.role === 'cashier' && (
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  أنشئ حساب دخول للكاشيرة لتتمكن من الدخول لصفحة الكاشير والفواتير.
                   <span className="block mt-1 text-[var(--brand-primary)] font-medium">
                     الكاشيرة سترى فقط صفحة الكاشير والفواتير — لن تستطيع الوصول لباقي الصفحات.
                   </span>
+                </p>
+
+                {accountError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                    {accountError}
+                  </div>
                 )}
-              </p>
 
-              {accountError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                  {accountError}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+                      البريد الإلكتروني
+                    </label>
+                    <input
+                      type="email"
+                      value={accountEmail || employee.email || ''}
+                      onChange={(e) => setAccountEmail(e.target.value)}
+                      placeholder="cashier@salon.com"
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+                      كلمة المرور
+                    </label>
+                    <input
+                      type="password"
+                      value={accountPassword}
+                      onChange={(e) => setAccountPassword(e.target.value)}
+                      placeholder="أدخل كلمة مرور (6 أحرف على الأقل)"
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
-              )}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
-                    البريد الإلكتروني
-                  </label>
-                  <input
-                    type="email"
-                    value={accountEmail || employee.email || ''}
-                    onChange={(e) => setAccountEmail(e.target.value)}
-                    placeholder="cashier@salon.com"
-                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-                    dir="ltr"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
-                    كلمة المرور
-                  </label>
-                  <input
-                    type="password"
-                    value={accountPassword}
-                    onChange={(e) => setAccountPassword(e.target.value)}
-                    placeholder="أدخل كلمة مرور (6 أحرف على الأقل)"
-                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-                    dir="ltr"
-                  />
-                </div>
+                <Button
+                  onClick={() => createAccountMutation.mutate({ email: accountEmail || employee.email || '', password: accountPassword })}
+                  disabled={!(accountEmail || employee.email) || accountPassword.length < 6 || createAccountMutation.isPending}
+                >
+                  <KeyRound className="h-4 w-4" />
+                  {createAccountMutation.isPending ? 'جاري الإنشاء...' : 'إنشاء حساب الدخول'}
+                </Button>
               </div>
-
-              <Button
-                onClick={() => createAccountMutation.mutate({ email: accountEmail || employee.email || '', password: accountPassword })}
-                disabled={!(accountEmail || employee.email) || accountPassword.length < 6 || createAccountMutation.isPending}
-              >
-                <KeyRound className="h-4 w-4" />
-                {createAccountMutation.isPending ? 'جاري الإنشاء...' : 'إنشاء حساب الدخول'}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

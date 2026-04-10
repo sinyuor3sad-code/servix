@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import { hash } from 'bcryptjs';
 import { TenantPrismaClient } from '../../../shared/types';
 import { PlatformPrismaClient } from '../../../shared/database/platform.client';
@@ -365,10 +365,13 @@ export class EmployeesService {
     employeeId: string,
     dto: CreateEmployeeAccountDto,
   ): Promise<{ message: string; userId: string }> {
-    // 1. Verify the employee exists
+    // 1. Verify the employee exists and is a cashier
     const employee = await db.employee.findUnique({ where: { id: employeeId } });
     if (!employee) {
       throw new NotFoundException('الموظف غير موجود');
+    }
+    if (employee.role !== 'cashier') {
+      throw new BadRequestException('حساب الدخول متاح فقط للكاشيرة');
     }
 
     // 2. Check if email is already taken
