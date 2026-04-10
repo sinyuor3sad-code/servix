@@ -36,11 +36,6 @@ const employeeSchema = z.object({
     .regex(/^[0-9+]+$/, 'رقم جوال غير صالح')
     .or(z.literal(''))
     .optional(),
-  email: z
-    .string()
-    .email('البريد الإلكتروني غير صالح')
-    .or(z.literal(''))
-    .optional(),
   role: z.enum(['stylist', 'cashier', 'makeup', 'nails', 'skincare'], {
     required_error: 'يرجى اختيار الدور',
   }),
@@ -69,7 +64,6 @@ export default function NewEmployeePage() {
     defaultValues: {
       fullName: '',
       phone: '',
-      email: '',
       role: 'stylist',
       commissionType: 'none',
       commissionValue: 0,
@@ -132,21 +126,12 @@ export default function NewEmployeePage() {
             error={errors.fullName?.message}
             {...register('fullName')}
           />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input
-              label="رقم الجوال"
-              placeholder="05XXXXXXXX"
-              error={errors.phone?.message}
-              {...register('phone')}
-            />
-            <Input
-              type="email"
-              label="البريد الإلكتروني (اختياري)"
-              placeholder="sara@example.com"
-              error={errors.email?.message}
-              {...register('email')}
-            />
-          </div>
+          <Input
+            label="رقم الجوال"
+            placeholder="05XXXXXXXX"
+            error={errors.phone?.message}
+            {...register('phone')}
+          />
         </div>
 
         {/* ── Section 2: Role Selection ── */}
