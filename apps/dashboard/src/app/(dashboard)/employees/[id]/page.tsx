@@ -67,8 +67,10 @@ export default function EmployeeDetailPage() {
   // Account creation form state
   const [accountEmail, setAccountEmail] = useState('');
   const [accountPassword, setAccountPassword] = useState('');
-  const [accountSuccess, setAccountSuccess] = useState('');
+  const [accountStep, setAccountStep] = useState<'form' | 'otp' | 'done'>('form');
   const [accountError, setAccountError] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpEmail, setOtpEmail] = useState('');
 
   const createAccountMutation = useMutation({
     mutationFn: (data: { email: string; password: string }) =>
@@ -77,17 +79,38 @@ export default function EmployeeDetailPage() {
         data,
         accessToken!,
       ),
-    onSuccess: (result) => {
-      setAccountSuccess(result.message || 'تم إنشاء حساب الدخول بنجاح');
+    onSuccess: async (_result, variables) => {
       setAccountError('');
-      setAccountEmail('');
-      setAccountPassword('');
-      queryClient.invalidateQueries({ queryKey: ['employee', id] });
+      setOtpEmail(variables.email);
+      // Send OTP to the new email
+      try {
+        await api.post('/auth/resend-otp', { email: variables.email });
+      } catch { /* OTP send might fail silently, user can resend */ }
+      setAccountStep('otp');
     },
     onError: (err: Error) => {
       setAccountError(err.message || 'حدث خطأ أثناء إنشاء الحساب');
-      setAccountSuccess('');
     },
+  });
+
+  const verifyOtpMutation = useMutation({
+    mutationFn: (data: { email: string; code: string }) =>
+      api.post('/auth/verify-otp', data),
+    onSuccess: () => {
+      setAccountError('');
+      setAccountStep('done');
+      queryClient.invalidateQueries({ queryKey: ['employee', id] });
+    },
+    onError: (err: Error) => {
+      setAccountError(err.message || 'رمز التحقق غير صحيح أو منتهي');
+    },
+  });
+
+  const resendOtpMutation = useMutation({
+    mutationFn: (email: string) =>
+      api.post('/auth/resend-otp', { email }),
+    onSuccess: () => setAccountError(''),
+    onError: (err: Error) => setAccountError(err.message),
   });
 
   const { data: employee, isLoading } = useQuery({
@@ -322,16 +345,61 @@ export default function EmployeeDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {accountSuccess ? (
+            {accountStep === 'done' ? (
               <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
                 <CheckCircle className="h-5 w-5 shrink-0 text-green-600" />
                 <div>
                   <p className="text-sm font-medium text-green-700 dark:text-green-400">
-                    {accountSuccess}
+                    تم إنشاء وتفعيل حساب الدخول بنجاح
                   </p>
                   <p className="text-xs text-green-600 dark:text-green-500 mt-1">
                     يمكنها الآن تسجيل الدخول من app.servi-x.com/login
                   </p>
+                </div>
+              </div>
+            ) : accountStep === 'otp' ? (
+              <div className="space-y-4">
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  تم إرسال رمز التحقق إلى <strong dir="ltr">{otpEmail}</strong>
+                  <span className="block mt-1">أدخلي الرمز لتفعيل الحساب</span>
+                </p>
+
+                {accountError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                    {accountError}
+                  </div>
+                )}
+
+                <div className="max-w-xs">
+                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">
+                    رمز التحقق
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-center text-lg font-bold tracking-[0.5em] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Button
+                    onClick={() => verifyOtpMutation.mutate({ email: otpEmail, code: otpCode })}
+                    disabled={otpCode.length !== 6 || verifyOtpMutation.isPending}
+                  >
+                    {verifyOtpMutation.isPending ? 'جاري التحقق...' : 'تفعيل الحساب'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => resendOtpMutation.mutate(otpEmail)}
+                    disabled={resendOtpMutation.isPending}
+                  >
+                    {resendOtpMutation.isPending ? 'جاري الإرسال...' : 'إعادة إرسال الرمز'}
+                  </Button>
                 </div>
               </div>
             ) : (
