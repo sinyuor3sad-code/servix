@@ -158,6 +158,8 @@ services:
         condition: service_healthy
     expose:
       - "4000"
+    volumes:
+      - uploads_data:/app/uploads
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health/live"]
       interval: 30s
@@ -194,6 +196,8 @@ services:
         condition: service_healthy
     expose:
       - "4000"
+    volumes:
+      - uploads_data:/app/uploads
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health/live"]
       interval: 30s
@@ -465,6 +469,7 @@ volumes:
   prometheus_data:
   grafana_data:
   uptime_kuma_data:
+  uploads_data:
   vault_data:
   jaeger_data:
 
