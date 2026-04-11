@@ -123,6 +123,34 @@ export class AppointmentsService {
 
     const employeeIds = [...new Set(dto.services.map((s) => s.employeeId))];
 
+    // D16: Check if any employee is on vacation or day-off
+    const appointmentDate = new Date(dto.date);
+    const dayOfWeek = appointmentDate.getDay();
+
+    for (const empId of employeeIds) {
+      // Check attendance (vacation/absent)
+      const attendance = await db.attendance.findUnique({
+        where: { employeeId_date: { employeeId: empId, date: appointmentDate } },
+      });
+      if (attendance && ['vacation', 'absent'].includes(attendance.status)) {
+        const emp = await db.employee.findUnique({ where: { id: empId }, select: { fullName: true } });
+        throw new BadRequestException(
+          `الموظف/ة ${emp?.fullName || ''} في إجازة في هذا التاريخ`,
+        );
+      }
+
+      // Check schedule (day off)
+      const schedule = await db.employeeSchedule.findUnique({
+        where: { employeeId_dayOfWeek: { employeeId: empId, dayOfWeek } },
+      });
+      if (schedule?.isDayOff) {
+        const emp = await db.employee.findUnique({ where: { id: empId }, select: { fullName: true } });
+        throw new BadRequestException(
+          `الموظف/ة ${emp?.fullName || ''} لا يعمل في هذا اليوم`,
+        );
+      }
+    }
+
     let appointment: Record<string, unknown> | null;
 
     try {

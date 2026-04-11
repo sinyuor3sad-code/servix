@@ -13,6 +13,9 @@ import { AppointmentStatusEnum } from './dto/change-status.dto';
 const mockDb = {
   client: { findFirst: jest.fn(), update: jest.fn() },
   service: { findMany: jest.fn() },
+  employee: { findUnique: jest.fn() },
+  attendance: { findUnique: jest.fn().mockResolvedValue(null) },
+  employeeSchedule: { findUnique: jest.fn().mockResolvedValue(null) },
   appointment: {
     findFirst: jest.fn(),
     create: jest.fn(),

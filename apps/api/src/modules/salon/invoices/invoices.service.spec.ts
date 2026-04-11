@@ -6,6 +6,7 @@ import { MailService } from '../../../shared/mail/mail.service';
 import { WhatsAppService } from '../../../shared/whatsapp/whatsapp.service';
 import { SmsService } from '../../../shared/sms/sms.service';
 import { SettingsService } from '../settings/settings.service';
+import { EventsGateway } from '../../../shared/events/events.gateway';
 import type { TenantPrismaClient } from '../../../shared/types';
 import { RecordPaymentDto, PaymentMethodEnum } from './dto/record-payment.dto';
 import { AddDiscountDto, DiscountTypeEnum } from './dto/add-discount.dto';
@@ -45,6 +46,7 @@ describe('InvoicesService', () => {
         { provide: SmsService, useValue: {} },
         { provide: SettingsService, useValue: {} },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: EventsGateway, useValue: { emitToTenant: jest.fn(), emitToOrder: jest.fn() } },
       ],
     }).compile();
 

@@ -350,10 +350,13 @@ Client-facing booking widget. Each salon has a unique slug.
 
 **Routes:**
 ```
-/                        → Entry / salon directory
-/[slug]/                 → Salon landing page (info, services, reviews)
-/[slug]/book             → Multi-step booking flow (select service → employee → time → confirm)
-/[slug]/confirmation/[id]→ Booking confirmation page
+/                           → Entry / salon directory
+/[slug]/                    → Salon landing page (info, services, reviews)
+/[slug]/book                → Multi-step booking flow (select service → employee → time → confirm)
+/[slug]/confirmation/[id]   → Booking confirmation page
+/[slug]/invoice/[token]     → Public invoice page (QR link, no login required)
+/[slug]/order               → Smart Menu — browse & self-order services
+/[slug]/order/[code]        → Order status tracking (real-time via WebSocket)
 ```
 
 ### 6D. Landing Page (`apps/landing` — Port 3002)
@@ -406,10 +409,16 @@ Security:
 Storage:
   S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET
 
-Communication (placeholders):
+Communication (active integrations):
   MAIL_API_KEY, MAIL_FROM
-  SMS_API_KEY, SMS_SENDER_ID
-  WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID
+  SMS credentials stored in platform_settings table (sms_provider, sms_app_id, sms_sender_id)
+  WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID (per-tenant, stored in salon settings)
+
+Encryption:
+  ENCRYPTION_KEY (min 32 chars — encrypts phone/email in DB)
+
+Observability:
+  SENTRY_DSN, OTEL_EXPORTER_OTLP_ENDPOINT
 
 Frontend:
   NEXT_PUBLIC_API_URL (http://localhost:4000/api/v1)
@@ -432,33 +441,53 @@ Frontend:
 
 6. **Subscription enforcement:** SubscriptionWriteGuard prevents mutations when subscription is expired.
 
-7. **Real-time:** EventsGateway (Socket.io) pushes updates to tenant/user rooms.
+7. **Real-time:** EventsGateway (Socket.io) pushes updates to tenant/user rooms. Redis IO Adapter for multi-instance support.
 
 8. **Background jobs:** BullMQ queues for notifications, emails, SMS. NotificationProcessor handles all three.
 
 9. **Caching:** Redis-based tenant-aware caching via CacheService (ioredis).
 
+11. **Circuit Breaker:** opossum-based with Prometheus metrics for external API resilience.
+
+12. **Distributed Locks:** Redis SET NX PX + Lua atomic release for concurrent operations.
+
+13. **Commitment Engine:** Track appointments/shifts as commitments with dependency graph. State machine: pledged → confirmed → in_progress → fulfilled/broken/healed.
+
+14. **Healing Engine:** Auto-recovery for broken commitments: reassign → time_shift → compensate → escalate.
+
+15. **Race Condition Protection:** Appointment creation uses `$transaction` + `SELECT FOR UPDATE` to prevent double-booking.
+
+16. **Graceful Shutdown:** SIGTERM/SIGINT handlers with 30s timeout, clean Redis/WebSocket/Prisma disconnection.
+
 10. **Arabic-first:** All user-facing fields have `nameAr` primary, `nameEn` optional. Currency SAR. Tax 15%.
 
 ---
 
-## 9. WHAT DOES NOT EXIST YET (Gaps)
+## 9. CURRENT STATUS & REMAINING GAPS (Updated 2026-04-11)
 
-The following are NOT implemented yet and represent the next evolution:
+### ✅ Previously listed as gaps — NOW IMPLEMENTED:
 
-1. **Commitment Fabric** — No concept of tracking appointments/shifts as "commitments" in a dependency graph.
-2. **Auto-Healing Engine** — No automatic rescheduling when staff is late/absent.
-3. **Concrete Shifts** — EmployeeSchedule is a weekly template, but there's no daily Shift instance that appointments bind to.
-4. **Inventory System** — No products, no service-product consumption links, no stock tracking.
-5. **Client DNA** — Client model has basic totalVisits/totalSpent but no predictive profile (CLV, churn risk, price sensitivity).
-6. **Domain Events** — No event sourcing or domain event log.
-7. **ZATCA Integration** — No e-invoicing, no UBL XML generation, no digital signatures, no QR codes.
-8. **Marketing Automation** — No auto-campaigns, no gap-filling offers.
-9. **Dynamic Pricing** — No peak/off-peak pricing.
-10. **Predictive Analytics** — No forecasting, no cancellation probability.
-11. **WhatsApp Integration** — Module exists but is a placeholder (no actual API integration).
-12. **SMS Integration** — Module exists but is a placeholder.
-13. **Cross-branch intelligence** — Schema supports multi-branch (Tenant = business, not branch) but no load balancing between locations.
+- ~~Commitment Fabric~~ → ✅ `commitments/` module with full state machine
+- ~~Auto-Healing Engine~~ → ✅ `healing/` module (reassign → time_shift → compensate → escalate)
+- ~~Concrete Shifts~~ → ✅ `shifts/` module with daily shift instances
+- ~~Inventory System~~ → ✅ `inventory/` module with auto-deduct on appointment completion
+- ~~Client DNA~~ → ✅ `client-dna/` module with behavior profiling
+- ~~Domain Events~~ → ✅ `DomainEvent` model in tenant schema, used by commitments/healing
+- ~~ZATCA Integration~~ → ⚠️ Code ready (`zatca/` — XML builder, crypto, QR TLV), but NOT registered with ZATCA portal
+- ~~Marketing Automation~~ → ✅ `marketing/` module with campaigns
+- ~~Dynamic Pricing~~ → ✅ `dynamic-pricing/` module with rule-based pricing
+- ~~WhatsApp Integration~~ → ✅ Real Meta Graph API v21.0 integration (text + PDF documents)
+- ~~SMS Integration~~ → ✅ Unifonic provider integration (needs credentials to activate)
+
+### ❌ Actual remaining gaps:
+
+1. **Payment Gateway (Moyasar/Tap)** — `payments/` module is empty (only a mock spec file). No online payment processing.
+2. **ZATCA Portal Registration** — Code is ready but not registered with the government portal. Requires official registration process.
+3. **Report Export (PDF/Excel)** — Dashboard shows reports but cannot export them.
+4. **Predictive Analytics** — No forecasting or cancellation probability models.
+5. **Cross-branch Intelligence** — Schema supports multi-branch but no load balancing between locations.
+6. **React Native App** — `apps/mobile/` is a skeleton only. PWA booking app is fully functional as alternative.
+7. **Grafana Dashboards** — Prometheus metrics endpoint exists but no pre-configured Grafana dashboards.
 
 ---
 

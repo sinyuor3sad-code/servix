@@ -98,6 +98,7 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
     this.logger.log(`Creating tenant database: ${databaseName}`);
 
     // Step 1: Create the PostgreSQL database using raw SQL on platform connection
+    let dbCreated = false;
     try {
       const existing = await this.platformPrisma.$queryRawUnsafe<{ count: bigint }[]>(
         `SELECT COUNT(*) as count FROM pg_database WHERE datname = $1`,
@@ -112,6 +113,7 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
         await this.platformPrisma.$executeRawUnsafe(
           `CREATE DATABASE "${safeName}"`,
         );
+        dbCreated = true;
         this.logger.log(`Database ${databaseName} created successfully`);
       }
     } catch (error: unknown) {
@@ -131,6 +133,20 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`Failed to deploy migrations to ${databaseName}: ${errMsg}`);
+
+      // D2 fix: If we just created the DB but migrations failed, drop it to avoid orphaned databases
+      if (dbCreated) {
+        try {
+          const safeName = databaseName.replace(/[^a-zA-Z0-9_]/g, '');
+          await this.platformPrisma.$executeRawUnsafe(
+            `DROP DATABASE IF EXISTS "${safeName}"`,
+          );
+          this.logger.warn(`Dropped orphaned database ${databaseName} after migration failure`);
+        } catch (dropErr) {
+          this.logger.error(`Failed to clean up orphaned database ${databaseName}: ${(dropErr as Error).message}`);
+        }
+      }
+
       throw error;
     }
   }

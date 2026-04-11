@@ -3,6 +3,7 @@ import {
   Get,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -11,7 +12,9 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { ReportsService } from './reports.service';
+import { ReportExportService } from './report-export.service';
 import { ReportQueryDto } from './dto/report-query.dto';
 import { TenantGuard } from '../../../shared/guards';
 import { AuthenticatedRequest } from '../../../shared/types';
@@ -21,7 +24,10 @@ import { AuthenticatedRequest } from '../../../shared/types';
 @UseGuards(TenantGuard)
 @Controller({ path: 'reports', version: '1' })
 export class ReportsController {
-  constructor(private readonly reportsService: ReportsService) {}
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly exportService: ReportExportService,
+  ) {}
 
   @Get('dashboard')
   @ApiOperation({ summary: 'ملخص لوحة التحكم' })
@@ -111,4 +117,124 @@ export class ReportsController {
       query,
     );
   }
+
+  /* ════════════════════════════════════════
+     EXPORT ENDPOINTS — PDF / CSV
+     ════════════════════════════════════════ */
+
+  @Get('revenue/export/pdf')
+  @ApiOperation({ summary: 'تصدير تقرير الإيرادات PDF' })
+  async exportRevenuePdf(
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+    @Query() query: ReportQueryDto,
+  ) {
+    const salonInfo = await req.tenantDb!.salonInfo.findFirst();
+    const buffer = await this.exportService.exportRevenuePdf(
+      req.tenantDb!,
+      query,
+      salonInfo?.nameAr || 'SERVIX',
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="revenue-report-${query.dateFrom}.pdf"`,
+    });
+    res.send(buffer);
+  }
+
+  @Get('revenue/export/csv')
+  @ApiOperation({ summary: 'تصدير تقرير الإيرادات Excel/CSV' })
+  async exportRevenueCsv(
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+    @Query() query: ReportQueryDto,
+  ) {
+    const buffer = await this.exportService.exportRevenueCsv(req.tenantDb!, query);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="revenue-report-${query.dateFrom}.csv"`,
+    });
+    res.send(buffer);
+  }
+
+  @Get('employees/export/pdf')
+  @ApiOperation({ summary: 'تصدير تقرير الموظفين PDF' })
+  async exportEmployeesPdf(
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+    @Query() query: ReportQueryDto,
+  ) {
+    const salonInfo = await req.tenantDb!.salonInfo.findFirst();
+    const buffer = await this.exportService.exportEmployeesPdf(
+      req.tenantDb!,
+      query,
+      salonInfo?.nameAr || 'SERVIX',
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="employees-report-${query.dateFrom}.pdf"`,
+    });
+    res.send(buffer);
+  }
+
+  @Get('employees/export/csv')
+  @ApiOperation({ summary: 'تصدير تقرير الموظفين Excel/CSV' })
+  async exportEmployeesCsv(
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+    @Query() query: ReportQueryDto,
+  ) {
+    const buffer = await this.exportService.exportEmployeesCsv(req.tenantDb!, query);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="employees-report-${query.dateFrom}.csv"`,
+    });
+    res.send(buffer);
+  }
+
+  @Get('services/export/csv')
+  @ApiOperation({ summary: 'تصدير تقرير الخدمات Excel/CSV' })
+  async exportServicesCsv(
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+    @Query() query: ReportQueryDto,
+  ) {
+    const buffer = await this.exportService.exportServicesCsv(req.tenantDb!, query);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="services-report-${query.dateFrom}.csv"`,
+    });
+    res.send(buffer);
+  }
+
+  @Get('expenses/export/csv')
+  @ApiOperation({ summary: 'تصدير تقرير المصروفات Excel/CSV' })
+  async exportExpensesCsv(
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+    @Query() query: ReportQueryDto,
+  ) {
+    const buffer = await this.exportService.exportExpensesCsv(req.tenantDb!, query);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="expenses-report-${query.dateFrom}.csv"`,
+    });
+    res.send(buffer);
+  }
+
+  @Get('clients/export/csv')
+  @ApiOperation({ summary: 'تصدير تقرير العملاء Excel/CSV' })
+  async exportClientsCsv(
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+    @Query() query: ReportQueryDto,
+  ) {
+    const buffer = await this.exportService.exportClientsCsv(req.tenantDb!, query);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="clients-report-${query.dateFrom}.csv"`,
+    });
+    res.send(buffer);
+  }
 }
+
