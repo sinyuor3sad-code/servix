@@ -24,9 +24,9 @@ export class OrderExpiryService {
     this.running = true;
 
     try {
-      // Get all active tenants
+      // Get all active tenants (skip platform admin — it has no selfOrder table)
       const tenants = await this.platformPrisma.tenant.findMany({
-        where: { status: 'active' },
+        where: { status: 'active', slug: { not: 'platform-admin' } },
         select: { id: true, databaseName: true, slug: true },
       });
 

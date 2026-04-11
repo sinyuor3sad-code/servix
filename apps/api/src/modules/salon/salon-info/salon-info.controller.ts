@@ -53,6 +53,16 @@ export class SalonInfoController {
     );
   }
 
+  @Get('branding')
+  @ApiOperation({ summary: 'الحصول على إعدادات الهوية البصرية' })
+  @ApiResponse({ status: 200, description: 'تم جلب إعدادات الهوية البصرية بنجاح' })
+  async getBranding(
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const info = await this.salonInfoService.get(req.tenantDb!);
+    return (info as any).branding ?? { theme: 'velvet', primaryColor: '#8B5CF6', logoUrl: null, mode: 'light' };
+  }
+
   @Put('branding')
   @ApiOperation({ summary: 'تحديث الهوية البصرية' })
   @ApiResponse({ status: 200, description: 'تم تحديث الهوية البصرية بنجاح' })

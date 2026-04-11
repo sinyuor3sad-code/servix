@@ -22,7 +22,7 @@ export default function BrandingPage() {
 
   const { data, isLoading } = useQuery<BrandingData>({
     queryKey: ['settings', 'branding'],
-    queryFn: () => api.get<BrandingData>('/settings/branding', accessToken!),
+    queryFn: () => api.get<BrandingData>('/salon/branding', accessToken!),
     enabled: !!accessToken,
   });
 
@@ -36,7 +36,7 @@ export default function BrandingPage() {
   const hasChanges = data?.theme !== selectedTheme || data?.primaryColor !== primaryColor || (data?.mode ?? 'light') !== mode;
 
   const mut = useMutation({
-    mutationFn: () => api.put('/settings/branding', { theme: selectedTheme, primaryColor, mode }, accessToken!),
+    mutationFn: () => api.put('/salon/branding', { theme: selectedTheme, primaryColor, mode }, accessToken!),
     onSuccess: () => { toast.success('✅ تم حفظ المظهر'); qc.invalidateQueries({ queryKey: ['settings', 'branding'] }); },
     onError: () => toast.error('خطأ في الحفظ'),
   });

@@ -133,7 +133,9 @@
       "Bash(scp:*)",
       "Bash(pnpm --filter api exec tsc --noEmit)",
       "Bash(npx jest:*)",
-      "Bash(npx prisma:*)"
+      "Bash(npx prisma:*)",
+      "Bash(echo \"exit=$?\")",
+      "Read(//tmp/**)"
     ]
   }
 }
