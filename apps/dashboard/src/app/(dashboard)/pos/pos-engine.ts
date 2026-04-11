@@ -75,6 +75,7 @@ export function usePOSEngine() {
   const [receiptPhone, setReceiptPhone] = useState('+966501234567');
   const [publicToken, setPublicToken] = useState<string | null>(null);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [selectedPayMethod, setSelectedPayMethod] = useState<string>('cash');
 
   const dSearch = useDeferredValue(svcSearch);
 
@@ -166,6 +167,7 @@ export function usePOSEngine() {
     setCart([]); setClient(null); setWalkName(''); setWalkPhone('');
     setWalkInMode(false); setGlobalDisc(''); setTipInput(''); setCustNote('');
     setSelfOrderId(null); setPublicToken(null); setShowQRModal(false);
+    setSelectedPayMethod('cash');
   }, []);
 
   /* ── Calculations ── */
@@ -307,7 +309,7 @@ export function usePOSEngine() {
     setFavIds, setShowFavs, setShowBundles, setReceiptLogo, setReceiptMsg, setReceiptPhone,
     cats, allSvcs, emps, cliResults, filtered, favSvcs,
     itemTotals, subtotal, cartCount, gDiscVal, afterDisc, tax, tip, total,
-    comms, totalComm, splitRem, canPay,
+    comms, totalComm, splitRem, canPay, selectedPayMethod, setSelectedPayMethod,
     addToCart, updateQty, removeItem, clearAll, addBundle, toggleFav,
     setItemEmp, setItemDisc, setItemNote,
     holdBill, recallBill, payMut, pay, paySplit, refMut,

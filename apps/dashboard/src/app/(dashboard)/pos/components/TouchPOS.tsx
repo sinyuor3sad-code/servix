@@ -113,9 +113,9 @@ export function TouchPOS({ e }: { e: E }) {
                 <div className={`flex items-baseline justify-between border-t ${brd(4)} pt-2`}><span className="text-[13px] font-bold text-[var(--foreground)]">الإجمالي</span><span className="text-[22px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)} <span className="text-[10px] font-semibold opacity-40">ر.س</span></span></div>
               </div>
               <label className={`flex items-center gap-2.5 rounded-xl px-3 py-2 cursor-pointer ${T} hover:${bg(3)}`}><div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${e.sendWA ? 'border-transparent' : brd(10)}`} style={e.sendWA ? accentBg : undefined}>{e.sendWA && <Check size={11} className="text-black" />}</div><input type="checkbox" checked={e.sendWA} onChange={ev => e.setSendWA(ev.target.checked)} className="sr-only" /><MessageCircle size={14} className="text-emerald-400" /><span className="text-[12px] text-[var(--muted-foreground)]">إرسال واتساب</span></label>
-              <div className="grid grid-cols-4 gap-2">{PAY.map(pm => (<button key={pm.id} onClick={() => e.pay(pm.id)} disabled={e.payMut.isPending || !e.canPay} className={`${BS} flex flex-col items-center gap-1.5 rounded-2xl border ${brd(4)} ${bg(2)} py-3.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-15 disabled:pointer-events-none`}><pm.icon size={20} strokeWidth={1.5} /><span className="text-[10px] font-bold">{pm.label}</span></button>))}</div>
-              <button onClick={() => { e.setSplits([{ method: 'cash', amount: 0 }, { method: 'card', amount: 0 }]); e.setPanel('split'); }} disabled={!e.canPay} className={`${B} flex w-full items-center justify-center gap-2 rounded-2xl border ${brd(4)} py-3 text-[12px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-15`}><Split size={14} /> دفع مقسّم</button>
-              <button onClick={() => e.pay('cash')} disabled={e.payMut.isPending || !e.canPay} className={`${B} relative flex h-16 w-full items-center justify-center gap-3 rounded-2xl text-[16px] font-black text-black shadow-xl disabled:opacity-15 disabled:pointer-events-none overflow-hidden`} style={e.canPay ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{e.payMut.isPending ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Receipt size={18} /> إصدار فاتورة — {fmt(e.total)}</>}</button>
+              <div className="grid grid-cols-4 gap-2">{PAY.map(pm => (<button key={pm.id} onClick={() => e.setSelectedPayMethod(pm.id)} disabled={e.payMut.isPending || !e.canPay} className={`${BS} flex flex-col items-center gap-1.5 rounded-2xl border ${brd(4)} py-3.5 disabled:opacity-15 disabled:pointer-events-none transition-all duration-150 ${e.selectedPayMethod === pm.id ? 'text-black ring-2 ring-[var(--brand-accent)]/40' : `${bg(2)} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}`} style={e.selectedPayMethod === pm.id ? { ...accentBg, borderColor: 'var(--brand-accent)' } : undefined}><pm.icon size={20} strokeWidth={1.5} /><span className="text-[10px] font-bold">{pm.label}</span></button>))}</div>
+              <button onClick={() => e.setPanel('split')} disabled={!e.canPay} className={`${B} flex w-full items-center justify-center gap-2 rounded-2xl border ${brd(4)} py-3 text-[12px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-15`}><Split size={14} /> دفع مقسّم</button>
+              <button onClick={() => e.pay(e.selectedPayMethod)} disabled={e.payMut.isPending || !e.canPay} className={`${B} relative flex h-16 w-full items-center justify-center gap-3 rounded-2xl text-[16px] font-black text-black shadow-xl disabled:opacity-15 disabled:pointer-events-none overflow-hidden`} style={e.canPay ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{e.payMut.isPending ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Receipt size={18} /> إصدار فاتورة — {fmt(e.total)}</>}</button>
             </div>
           )}
         </aside>
@@ -241,14 +241,15 @@ export function TouchPOS({ e }: { e: E }) {
                 <div className={`flex items-baseline justify-between border-t ${brd(4)} pt-1.5`}><span className="text-[13px] font-bold text-[var(--foreground)]">الإجمالي</span><span className="text-[20px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)} <span className="text-[9px] font-semibold opacity-40">ر.س</span></span></div>
               </div>
 
-              {/* Payment methods */}
+              {/* Payment methods - select only */}
               <div className="grid grid-cols-4 gap-2">
                 {PAY.map(pm => (
                   <button
                     key={pm.id}
-                    onClick={() => { setShowCart(false); e.pay(pm.id); }}
+                    onClick={() => e.setSelectedPayMethod(pm.id)}
                     disabled={e.payMut.isPending || !e.canPay}
-                    className={`${BS} flex flex-col items-center gap-1.5 rounded-xl border ${brd(4)} ${bg(2)} py-3 text-[var(--muted-foreground)] active:text-[var(--foreground)] disabled:opacity-15`}
+                    className={`${BS} flex flex-col items-center gap-1.5 rounded-xl border ${brd(4)} py-3 disabled:opacity-15 transition-all duration-150 ${e.selectedPayMethod === pm.id ? 'text-black ring-2 ring-[var(--brand-accent)]/40' : `${bg(2)} text-[var(--muted-foreground)] active:text-[var(--foreground)]`}`}
+                    style={e.selectedPayMethod === pm.id ? { ...accentBg, borderColor: 'var(--brand-accent)' } : undefined}
                   >
                     <pm.icon size={18} strokeWidth={1.5} />
                     <span className="text-[9px] font-bold">{pm.label}</span>
@@ -258,12 +259,12 @@ export function TouchPOS({ e }: { e: E }) {
 
               {/* Main pay button */}
               <button
-                onClick={() => { setShowCart(false); e.pay('cash'); }}
+                onClick={() => { setShowCart(false); e.pay(e.selectedPayMethod); }}
                 disabled={!e.canPay || e.payMut.isPending}
                 className={`${B} relative w-full rounded-xl py-4 text-[15px] font-black text-black shadow-lg disabled:opacity-20 overflow-hidden`}
                 style={e.canPay ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}
               >
-                {e.payMut.isPending ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black mx-auto block" /> : <>ادفع نقدي — {fmt(e.total)} ر.س</>}
+                {e.payMut.isPending ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black mx-auto block" /> : <>إصدار فاتورة — {fmt(e.total)} ر.س</>}
               </button>
             </div>
           </div>
