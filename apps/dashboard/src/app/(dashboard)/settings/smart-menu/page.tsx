@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, DragEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ArrowRight, Upload, Palette, Layout, MessageCircle,
-  MapPin, Image, Eye, Check, QrCode, Sparkles,
+  MapPin, Image as ImageIcon, Eye, Check, QrCode, Sparkles,
+  Building2, Trash2, Loader2, X, Type,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button, Spinner } from '@/components/ui';
@@ -16,6 +17,8 @@ import { MenuQRModal } from './MenuQRModal';
 
 /* ─── Types ─── */
 interface ThemeData {
+  nameAr: string;
+  nameEn: string | null;
   logoUrl: string | null;
   coverImageUrl: string | null;
   brandColorPreset: string;
@@ -37,10 +40,10 @@ const COLORS = [
 ];
 
 const LAYOUTS = [
-  { id: 'classic', label: 'كلاسيكي', desc: 'قائمة عمودية بسيطة',           icon: '📋' },
-  { id: 'cards',   label: 'بطاقات',  desc: 'شبكة بطاقات بعمودين',          icon: '🃏' },
-  { id: 'compact', label: 'مضغوط',   desc: 'فئات قابلة للطي (accordion)',  icon: '📑' },
-  { id: 'elegant', label: 'فاخر',    desc: 'غلاف كبير + تصميم VIP',       icon: '👑' },
+  { id: 'classic', label: 'كلاسيكي',  desc: 'تبويبات لزجة + تمرير ذكي',       icon: '📋', feature: 'Scroll-Spy' },
+  { id: 'cards',   label: 'مجلة',     desc: 'بطاقات بتصميم مجلة فاخر',       icon: '📖', feature: 'Magazine' },
+  { id: 'compact', label: 'سريع',     desc: 'بحث + شرائح تصنيف أفقية',        icon: '⚡', feature: 'Fast Search' },
+  { id: 'elegant', label: 'VIP',     desc: 'غلاف سينمائي + خطوط فاخرة',      icon: '👑', feature: 'Luxury' },
 ];
 
 export default function SmartMenuSettingsPage() {
@@ -53,6 +56,8 @@ export default function SmartMenuSettingsPage() {
   const { data, isLoading } = useQuery<ThemeData>({
     queryKey: ['settings', 'theme'],
     queryFn: () => api.get<ThemeData>('/salon', accessToken!).then((res: any) => ({
+      nameAr: res.nameAr ?? '',
+      nameEn: res.nameEn ?? null,
       logoUrl: res.logoUrl ?? null,
       coverImageUrl: res.coverImageUrl ?? null,
       brandColorPreset: res.brandColorPreset ?? 'purple',
@@ -65,14 +70,22 @@ export default function SmartMenuSettingsPage() {
   });
 
   /* ── State ── */
+  const [nameAr, setNameAr] = useState('');
+  const [nameEn, setNameEn] = useState('');
   const [color, setColor] = useState('purple');
   const [layout, setLayout] = useState('classic');
   const [welcome, setWelcome] = useState('');
   const [mapsUrl, setMapsUrl] = useState('');
   const [placeId, setPlaceId] = useState('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [dragLogo, setDragLogo] = useState(false);
+  const [dragCover, setDragCover] = useState(false);
 
   useEffect(() => {
     if (data) {
+      setNameAr(data.nameAr ?? '');
+      setNameEn(data.nameEn ?? '');
       setColor(data.brandColorPreset ?? 'purple');
       setLayout(data.themeLayout ?? 'classic');
       setWelcome(data.welcomeMessage ?? '');
@@ -82,6 +95,8 @@ export default function SmartMenuSettingsPage() {
   }, [data]);
 
   const hasChanges = data && (
+    nameAr !== (data.nameAr ?? '') ||
+    nameEn !== (data.nameEn ?? '') ||
     color !== data.brandColorPreset ||
     layout !== data.themeLayout ||
     welcome !== (data.welcomeMessage ?? '') ||
@@ -91,27 +106,48 @@ export default function SmartMenuSettingsPage() {
 
   /* ── Save ── */
   const saveMut = useMutation({
-    mutationFn: () => api.put('/salon/theme', {
-      brandColorPreset: color,
-      themeLayout: layout,
-      welcomeMessage: welcome || undefined,
-      googleMapsUrl: mapsUrl || undefined,
-      googlePlaceId: placeId || undefined,
-    }, accessToken!),
+    mutationFn: async () => {
+      const nameChanged =
+        nameAr !== (data?.nameAr ?? '') || nameEn !== (data?.nameEn ?? '');
+      /* Update name separately if changed */
+      if (nameChanged && nameAr.trim().length >= 2) {
+        await api.put(
+          '/salon',
+          { nameAr: nameAr.trim(), nameEn: nameEn.trim() || undefined },
+          accessToken!,
+        );
+      }
+      await api.put(
+        '/salon/theme',
+        {
+          brandColorPreset: color,
+          themeLayout: layout,
+          welcomeMessage: welcome || undefined,
+          googleMapsUrl: mapsUrl || undefined,
+          googlePlaceId: placeId || undefined,
+        },
+        accessToken!,
+      );
+    },
     onSuccess: () => {
       toast.success('✅ تم حفظ إعدادات المنيو');
       qc.invalidateQueries({ queryKey: ['settings', 'theme'] });
     },
-    onError: () => toast.error('خطأ في الحفظ'),
+    onError: (e: any) => toast.error(e?.message || 'خطأ في الحفظ'),
   });
 
   /* ── Upload ── */
   const handleUpload = async (type: 'logo' | 'cover', file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('يجب أن يكون الملف صورة');
+      return;
+    }
     const maxSize = type === 'logo' ? 2 : 5;
     if (file.size > maxSize * 1024 * 1024) {
       toast.error(`الملف أكبر من ${maxSize}MB`);
       return;
     }
+    if (type === 'logo') setUploadingLogo(true); else setUploadingCover(true);
     const formData = new FormData();
     formData.append('file', file);
     try {
@@ -128,6 +164,30 @@ export default function SmartMenuSettingsPage() {
       qc.invalidateQueries({ queryKey: ['settings', 'theme'] });
     } catch {
       toast.error(`فشل رفع ${type === 'logo' ? 'الشعار' : 'الغلاف'}`);
+    } finally {
+      if (type === 'logo') setUploadingLogo(false); else setUploadingCover(false);
+    }
+  };
+
+  const handleDrop = (type: 'logo' | 'cover') => (e: DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === 'logo') setDragLogo(false); else setDragCover(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleUpload(type, file);
+  };
+
+  const handleDelete = async (type: 'logo' | 'cover') => {
+    try {
+      await api.put(
+        '/salon/theme',
+        type === 'logo' ? { logoUrl: null } : { coverImageUrl: null },
+        accessToken!,
+      );
+      toast.success(`تم حذف ${type === 'logo' ? 'الشعار' : 'الغلاف'}`);
+      qc.invalidateQueries({ queryKey: ['settings', 'theme'] });
+    } catch {
+      toast.error('فشل الحذف');
     }
   };
 
@@ -184,49 +244,201 @@ export default function SmartMenuSettingsPage() {
         </div>
       </div>
 
-      {/* ─── 1. Logo ─── */}
+      {/* ─── 0. Salon Name ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-sky-500 to-blue-600 text-white flex items-center gap-2">
-          <Upload className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">شعار الصالون</span>
+        <div className="px-5 py-3 bg-gradient-to-l from-indigo-500 to-purple-600 text-white flex items-center gap-2">
+          <Building2 className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">اسم الصالون</span>
         </div>
-        <div className="p-5 space-y-3">
-          {data?.logoUrl && (
-            <div className="flex justify-center">
-              <img src={data.logoUrl} alt="شعار الصالون" className="h-24 w-24 object-contain rounded-2xl border-2 border-[var(--border)] shadow-lg" />
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-[var(--muted-foreground)]">يظهر في أعلى صفحة المنيو والفواتير</p>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold text-[var(--muted-foreground)]">
+                <Type className="h-3 w-3" />
+                الاسم بالعربية
+                <span className="text-red-500">*</span>
+              </label>
+              <input
+                value={nameAr}
+                onChange={e => setNameAr(e.target.value)}
+                placeholder="صالون الأنوثة"
+                maxLength={80}
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition"
+              />
             </div>
-          )}
-          <label className="flex h-28 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border)] bg-[var(--muted)]/30 transition-colors hover:border-[var(--brand-primary)] cursor-pointer">
-            <Upload className="mb-2 h-6 w-6 text-[var(--muted-foreground)] opacity-30" />
-            <p className="text-xs font-bold text-[var(--muted-foreground)]">{data?.logoUrl ? 'تغيير الشعار' : 'اضغطي لرفع الشعار'}</p>
-            <p className="text-[10px] text-[var(--muted-foreground)] mt-1">PNG, JPG بحد أقصى 2MB</p>
-            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => {
-              const file = e.target.files?.[0];
-              if (file) handleUpload('logo', file);
-            }} />
-          </label>
+            <div>
+              <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold text-[var(--muted-foreground)]">
+                <Type className="h-3 w-3" />
+                Name in English
+                <span className="text-[10px] opacity-60">(اختياري)</span>
+              </label>
+              <input
+                value={nameEn}
+                onChange={e => setNameEn(e.target.value)}
+                placeholder="Elegance Salon"
+                maxLength={80}
+                dir="ltr"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ─── 2. Cover Image ─── */}
+      {/* ─── 1. Logo — Premium Drag & Drop ─── */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-3 bg-gradient-to-l from-sky-500 to-blue-600 text-white flex items-center gap-2">
+          <Upload className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">شعار الصالون</span>
+        </div>
+        <div className="p-5">
+          {data?.logoUrl ? (
+            /* Preview card with actions */
+            <div className="group relative flex items-center gap-4 rounded-2xl border border-[var(--border)] bg-gradient-to-br from-sky-500/5 to-blue-600/5 p-4">
+              <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border-2 border-[var(--border)] bg-white shadow-lg">
+                <img src={data.logoUrl} alt="شعار" className="h-full w-full object-contain p-2" />
+                {uploadingLogo && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <Loader2 className="h-6 w-6 animate-spin text-white" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500">
+                    <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                  </div>
+                  <p className="text-sm font-black text-[var(--foreground)]">تم رفع الشعار</p>
+                </div>
+                <p className="mt-0.5 text-[11px] text-[var(--muted-foreground)]">يظهر في أعلى صفحة المنيو</p>
+                <div className="mt-3 flex items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-[11px] font-bold text-[var(--foreground)] transition hover:bg-[var(--muted)]">
+                    <Upload className="h-3 w-3" />
+                    تغيير
+                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload('logo', f); }} />
+                  </label>
+                  <button
+                    onClick={() => handleDelete('logo')}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-bold text-red-600 transition hover:bg-red-100 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-400"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    حذف
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Drag & drop zone */
+            <label
+              onDragOver={e => { e.preventDefault(); setDragLogo(true); }}
+              onDragLeave={() => setDragLogo(false)}
+              onDrop={handleDrop('logo')}
+              className={cn(
+                'relative flex h-44 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all cursor-pointer overflow-hidden',
+                dragLogo
+                  ? 'border-sky-500 bg-sky-500/10 scale-[1.01]'
+                  : 'border-[var(--border)] bg-gradient-to-br from-sky-500/5 to-blue-600/5 hover:border-sky-500/50',
+              )}
+            >
+              {uploadingLogo ? (
+                <>
+                  <Loader2 className="h-8 w-8 animate-spin text-sky-500" />
+                  <p className="text-xs font-black text-[var(--foreground)]">جارٍ الرفع...</p>
+                </>
+              ) : (
+                <>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-lg">
+                    <Upload className="h-6 w-6 text-white" />
+                  </div>
+                  <p className="text-sm font-black text-[var(--foreground)]">
+                    {dragLogo ? 'أفلتي الملف هنا' : 'اسحبي الشعار أو اضغطي للرفع'}
+                  </p>
+                  <p className="text-[10px] text-[var(--muted-foreground)]">
+                    PNG, JPG, WebP · حتى 2MB · مربّع مفضّل (512×512)
+                  </p>
+                </>
+              )}
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload('logo', f); }} />
+            </label>
+          )}
+        </div>
+      </div>
+
+      {/* ─── 2. Cover Image — Premium Drag & Drop ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
         <div className="px-5 py-3 bg-gradient-to-l from-orange-500 to-amber-600 text-white flex items-center gap-2">
-          <Image className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">صورة الغلاف</span>
+          <ImageIcon className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">صورة الغلاف</span>
         </div>
-        <div className="p-5 space-y-3">
-          {data?.coverImageUrl && (
-            <div className="flex justify-center">
-              <img src={data.coverImageUrl} alt="صورة الغلاف" className="h-40 w-full object-cover rounded-2xl border-2 border-[var(--border)] shadow-lg" />
+        <div className="p-5">
+          {data?.coverImageUrl ? (
+            /* Preview with overlay actions */
+            <div className="group relative overflow-hidden rounded-2xl border border-[var(--border)]">
+              <img src={data.coverImageUrl} alt="غلاف" className="h-48 w-full object-cover" />
+              {uploadingCover && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                  <Loader2 className="h-8 w-8 animate-spin text-white" />
+                </div>
+              )}
+              {/* Gradient overlay with actions */}
+              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4">
+                <div className="text-white">
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500">
+                      <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />
+                    </div>
+                    <p className="text-xs font-black">الغلاف نشط</p>
+                  </div>
+                  <p className="mt-0.5 text-[10px] opacity-80">يظهر خلف الشعار في صفحة المنيو</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-[11px] font-black text-[var(--foreground)] backdrop-blur shadow-lg transition hover:scale-[1.05]">
+                    <Upload className="h-3 w-3" />
+                    تغيير
+                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload('cover', f); }} />
+                  </label>
+                  <button
+                    onClick={() => handleDelete('cover')}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500 text-white shadow-lg transition hover:scale-[1.05]"
+                    aria-label="حذف"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
             </div>
+          ) : (
+            /* Drag & drop zone */
+            <label
+              onDragOver={e => { e.preventDefault(); setDragCover(true); }}
+              onDragLeave={() => setDragCover(false)}
+              onDrop={handleDrop('cover')}
+              className={cn(
+                'relative flex h-48 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all cursor-pointer overflow-hidden',
+                dragCover
+                  ? 'border-orange-500 bg-orange-500/10 scale-[1.01]'
+                  : 'border-[var(--border)] bg-gradient-to-br from-orange-500/5 to-amber-600/5 hover:border-orange-500/50',
+              )}
+            >
+              {uploadingCover ? (
+                <>
+                  <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+                  <p className="text-xs font-black text-[var(--foreground)]">جارٍ الرفع...</p>
+                </>
+              ) : (
+                <>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-600 shadow-lg">
+                    <ImageIcon className="h-6 w-6 text-white" />
+                  </div>
+                  <p className="text-sm font-black text-[var(--foreground)]">
+                    {dragCover ? 'أفلتي الصورة هنا' : 'اسحبي الغلاف أو اضغطي للرفع'}
+                  </p>
+                  <p className="text-[10px] text-[var(--muted-foreground)]">
+                    PNG, JPG, WebP · حتى 5MB · مقترح 1200×400
+                  </p>
+                </>
+              )}
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload('cover', f); }} />
+            </label>
           )}
-          <label className="flex h-32 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[var(--border)] bg-[var(--muted)]/30 transition-colors hover:border-[var(--brand-primary)] cursor-pointer">
-            <Image className="mb-2 h-6 w-6 text-[var(--muted-foreground)] opacity-30" />
-            <p className="text-xs font-bold text-[var(--muted-foreground)]">{data?.coverImageUrl ? 'تغيير صورة الغلاف' : 'اضغطي لرفع صورة الغلاف'}</p>
-            <p className="text-[10px] text-[var(--muted-foreground)] mt-1">PNG, JPG بحد أقصى 5MB — أبعاد مقترحة: 1200×400</p>
-            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => {
-              const file = e.target.files?.[0];
-              if (file) handleUpload('cover', file);
-            }} />
-          </label>
         </div>
       </div>
 
@@ -265,32 +477,48 @@ export default function SmartMenuSettingsPage() {
       {/* ─── 4. Layout ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
         <div className="px-5 py-3 bg-gradient-to-l from-emerald-500 to-green-600 text-white flex items-center gap-2">
-          <Layout className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">شكل المنيو</span>
+          <Layout className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">شكل المنيو · 4 تصاميم احترافية</span>
         </div>
         <div className="p-5">
-          <p className="text-xs text-[var(--muted-foreground)] mb-4">اختاري التصميم المناسب لصفحة الخدمات العامة</p>
+          <p className="text-xs text-[var(--muted-foreground)] mb-4">كل تصميم يقدّم تجربة مختلفة للعميل — اختاري ما يناسب هويّتك</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {LAYOUTS.map(l => (
-              <button
-                key={l.id}
-                onClick={() => setLayout(l.id)}
-                className={cn(
-                  'flex flex-col items-center gap-2 rounded-2xl border-2 p-4 transition-all hover:scale-[1.03]',
-                  layout === l.id
-                    ? 'border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] shadow-lg'
-                    : 'border-[var(--border)] hover:border-[var(--muted-foreground)]',
-                )}
-              >
-                <span className="text-3xl">{l.icon}</span>
-                <span className="text-sm font-bold text-[var(--foreground)]">{l.label}</span>
-                <span className="text-[10px] text-[var(--muted-foreground)] text-center leading-tight">{l.desc}</span>
-                {layout === l.id && (
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-primary)]">
-                    <Check className="h-3 w-3 text-white" />
-                  </div>
-                )}
-              </button>
-            ))}
+            {LAYOUTS.map(l => {
+              const isActive = layout === l.id;
+              return (
+                <button
+                  key={l.id}
+                  onClick={() => setLayout(l.id)}
+                  className={cn(
+                    'group relative flex flex-col items-center gap-2 rounded-2xl border-2 p-4 pt-5 transition-all hover:scale-[1.03] overflow-hidden',
+                    isActive
+                      ? 'border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] shadow-xl'
+                      : 'border-[var(--border)] hover:border-[var(--brand-primary)]/50',
+                  )}
+                >
+                  {/* Feature badge */}
+                  <span
+                    className={cn(
+                      'absolute top-2 end-2 rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-wider',
+                      isActive
+                        ? 'bg-[var(--brand-primary)] text-white'
+                        : 'bg-[var(--muted)] text-[var(--muted-foreground)]',
+                    )}
+                  >
+                    {l.feature}
+                  </span>
+
+                  <span className="text-3xl mt-1">{l.icon}</span>
+                  <span className="text-sm font-black text-[var(--foreground)]">{l.label}</span>
+                  <span className="text-[10px] text-[var(--muted-foreground)] text-center leading-tight min-h-[24px]">{l.desc}</span>
+
+                  {isActive && (
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-primary)] shadow-lg">
+                      <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
