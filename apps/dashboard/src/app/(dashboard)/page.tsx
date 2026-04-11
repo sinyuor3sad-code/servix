@@ -8,9 +8,21 @@ import {
   Bell, Heart, Plus, CreditCard, Scissors, Package,
   BarChart3, FileText, ChevronLeft, ChevronRight, Zap,
 } from 'lucide-react';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer,
+} from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboard.service';
 import type { DashboardStats } from '@/types';
+
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return 'صباح الخير';
+  if (h >= 12 && h < 17) return 'مساء الخير';
+  if (h >= 17 && h < 21) return 'مساء النور';
+  return 'أهلاً بك';
+}
 
 const TN: React.CSSProperties = { fontFeatureSettings: '"tnum" 1', fontVariantNumeric: 'tabular-nums' };
 
@@ -84,7 +96,7 @@ function KpiCard({ label, value, suffix, icon: Icon, change, up, accentClass }: 
 
 const WEEKDAYS_AR = ['سب', 'أح', 'إث', 'ثل', 'أر', 'خم', 'جم'];
 
-function MiniCalendar() {
+function MiniCalendar({ appointments = [] }: { appointments?: any[] }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const today = new Date();
 
@@ -97,8 +109,17 @@ function MiniCalendar() {
 
   const monthName = currentDate.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' });
 
-  // No busy days data yet — would come from API
-  const busyDays = useMemo(() => new Set<number>(), []);
+  // Derive busy days from real appointment data
+  const busyDays = useMemo(() => {
+    const days = new Set<number>();
+    appointments.forEach((apt) => {
+      const d = new Date(apt.date);
+      if (d.getMonth() === month && d.getFullYear() === year) {
+        days.add(d.getDate());
+      }
+    });
+    return days;
+  }, [appointments, month, year]);
 
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
@@ -198,8 +219,9 @@ const QUICK_LINKS = [
    ═══════════════════════════════════════════════════════════════ */
 
 export default function DashboardPage(): React.ReactElement {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const [ready, setReady] = useState(false);
+  const firstName = user?.fullName?.split(' ')[0] || '';
   useEffect(() => { setReady(true); }, []);
 
   const { data: stats } = useQuery<DashboardStats>({
@@ -216,6 +238,14 @@ export default function DashboardPage(): React.ReactElement {
   const totalCli  = stats?.totalClients ?? 0;
   const recentApts = stats?.recentAppointments ?? [];
   const monthApts = stats?.monthlyAppointments ?? 0;
+
+  const { data: employeesData } = useQuery({
+    queryKey: ['employees', 'dashboard-top5'],
+    queryFn: () => dashboardService.getEmployees({ limit: 5 }, accessToken!),
+    enabled: !!accessToken && totalEmp > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+  const topEmployees = employeesData?.items ?? [];
 
   const fade = (d: number): React.CSSProperties => ({
     opacity: ready ? 1 : 0,
@@ -234,7 +264,7 @@ export default function DashboardPage(): React.ReactElement {
               {new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
             <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-[var(--foreground)]">
-              صباح الخير 👋
+              {getGreeting()}{firstName ? ` ${firstName}` : ''} 👋
             </h1>
             <p className="mt-1 text-[14px] text-[var(--muted-foreground)]">إليك ملخص أداء صالونك اليوم</p>
           </div>
@@ -332,7 +362,7 @@ export default function DashboardPage(): React.ReactElement {
 
         {/* Mini Calendar */}
         <div className="lg:col-span-5">
-          <MiniCalendar />
+          <MiniCalendar appointments={recentApts} />
         </div>
       </section>
 
@@ -382,40 +412,117 @@ export default function DashboardPage(): React.ReactElement {
                 <Link href="/employees/new" className="mt-2 text-[12px] font-medium text-[var(--brand-primary)] hover:underline">أضف أول موظفة</Link>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-10 text-center">
-                <UserCheck size={32} className="mb-3 text-[var(--brand-primary)] opacity-60" />
-                <p className="text-[24px] font-extrabold text-[var(--foreground)]" style={TN}>{totalEmp}</p>
-                <p className="text-[12px] text-[var(--muted-foreground)]">موظفات في الفريق</p>
+              <div className="space-y-2">
+                {topEmployees.map((emp: any) => (
+                  <div key={emp.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-[var(--muted)]">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-dark)] text-[12px] font-bold text-white shadow-sm">
+                      {emp.fullName?.charAt(0) || '?'}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-bold text-[var(--foreground)] truncate">{emp.fullName}</p>
+                      <p className="text-[11px] text-[var(--muted-foreground)]">{emp.role === 'stylist' ? 'مصففة' : emp.role === 'makeup' ? 'مكياج' : emp.role === 'nails' ? 'أظافر' : emp.role}</p>
+                    </div>
+                    <span className="inline-flex h-2 w-2 rounded-full bg-[var(--success)] shadow-[0_0_6px_var(--success)]" title="متصلة" />
+                  </div>
+                ))}
+                {totalEmp > 5 && (
+                  <Link href="/employees" className="block text-center text-[12px] font-semibold text-[var(--brand-primary)] hover:underline pt-1">
+                    و {totalEmp - 5} موظفات أخرى
+                  </Link>
+                )}
               </div>
             )}
           </div>
         </Glass>
       </section>
 
-      {/* ── REVENUE + SERVICES — only show when there's actual data ── */}
-      {todayRev > 0 && (
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-12" style={fade(560)}>
-          <Glass className="lg:col-span-8">
-            <div className="p-6">
-              <h2 className="mb-5 text-[15px] font-bold text-[var(--foreground)]">إيرادات الأسبوع</h2>
+      {/* ── REVENUE CHART — always show ── */}
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-12" style={fade(560)}>
+        <Glass className="lg:col-span-8">
+          <div className="p-6">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-[15px] font-bold text-[var(--foreground)]">إيرادات الأسبوع</h2>
+              <Link href="/reports/revenue" className="text-[12px] font-semibold text-[var(--brand-primary)] hover:underline">عرض الكل</Link>
+            </div>
+            {stats?.revenueChart && stats.revenueChart.length > 0 ? (
+              <div className="h-[220px]" dir="ltr">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={stats.revenueChart.slice(-7)} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--brand-primary)" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="var(--brand-primary)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(v: string) => new Date(v).toLocaleDateString('ar-SA', { weekday: 'short' })}
+                      tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : String(v)}
+                      width={45}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'var(--card)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius)',
+                        fontSize: '13px',
+                        boxShadow: 'var(--shadow-md)',
+                      }}
+                      labelFormatter={(v: string) => new Date(v).toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'short' })}
+                      formatter={(value: number) => [`${value.toLocaleString('en')} SAR`, 'الإيراد']}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="var(--brand-primary)"
+                      strokeWidth={2.5}
+                      fill="url(#revGrad)"
+                      animationDuration={1200}
+                      animationEasing="ease-out"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
               <div className="flex flex-col items-center justify-center py-10 text-center">
                 <BarChart3 size={32} className="mb-3 text-[var(--muted-foreground)] opacity-40" />
-                <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">سيتم عرض الإيرادات عند بدء تسجيل المعاملات</p>
+                <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">سيظهر الرسم البياني عند بدء تسجيل المعاملات</p>
               </div>
-            </div>
-          </Glass>
+            )}
+          </div>
+        </Glass>
 
-          <Glass className="lg:col-span-4">
-            <div className="p-5">
-              <h2 className="mb-5 text-[15px] font-bold text-[var(--foreground)]">أكثر الخدمات طلباً</h2>
-              <div className="flex flex-col items-center justify-center py-10 text-center">
-                <Scissors size={32} className="mb-3 text-[var(--muted-foreground)] opacity-40" />
-                <p className="text-[13px] font-semibold text-[var(--muted-foreground)]">أضف خدماتك لتظهر الإحصائيات</p>
+        <Glass className="lg:col-span-4">
+          <div className="p-5">
+            <h2 className="mb-5 text-[15px] font-bold text-[var(--foreground)]">ملخص الأداء</h2>
+            <div className="space-y-4">
+              <div className="rounded-xl bg-[var(--primary-50)] p-4">
+                <p className="text-[11px] font-semibold text-[var(--muted-foreground)]">مواعيد الشهر</p>
+                <p className="mt-1 text-2xl font-extrabold text-[var(--foreground)]" style={TN}>{monthApts}</p>
+              </div>
+              <div className="rounded-xl bg-[var(--success-light)] p-4">
+                <p className="text-[11px] font-semibold text-[var(--muted-foreground)]">إيرادات الشهر</p>
+                <p className="mt-1 text-2xl font-extrabold text-[var(--success)]" style={TN}>{formatCurrency(monthRev)} <span className="text-xs font-semibold">SAR</span></p>
+              </div>
+              <div className="rounded-xl bg-[var(--info-light)] p-4">
+                <p className="text-[11px] font-semibold text-[var(--muted-foreground)]">متوسط الفاتورة</p>
+                <p className="mt-1 text-2xl font-extrabold text-[var(--info)]" style={TN}>
+                  {monthApts > 0 ? formatCurrency(Math.round(monthRev / monthApts)) : '0'} <span className="text-xs font-semibold">SAR</span>
+                </p>
               </div>
             </div>
-          </Glass>
-        </section>
-      )}
+          </div>
+        </Glass>
+      </section>
     </div>
   );
 }

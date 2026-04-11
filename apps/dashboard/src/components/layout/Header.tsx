@@ -96,13 +96,20 @@ export function Header({ onMenuToggle }: HeaderProps): React.ReactElement {
         )}
       </div>
 
-      {/* Search (desktop only) */}
+
+      {/* Search (desktop only) — navigates to clients on Enter */}
       <div className="hidden md:flex items-center">
         <div className="relative">
           <Search className="absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
           <input
             type="search"
-            placeholder="بحث..."
+            placeholder="بحث عن عميل أو موعد..."
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const q = (e.target as HTMLInputElement).value.trim();
+                if (q) router.push(`/clients?search=${encodeURIComponent(q)}`);
+              }
+            }}
             className={cn(
               'h-9 w-64 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-sunken)] ps-10 pe-3 text-sm text-[var(--foreground)]',
               'placeholder:text-[var(--muted-foreground)]/60',
