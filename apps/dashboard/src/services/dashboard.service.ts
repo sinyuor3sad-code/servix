@@ -294,11 +294,11 @@ export const dashboardService = {
 
   // ─── Feedback ───
   getFeedbacks: (params: ListParams & { minRating?: number; maxRating?: number; followUpStatus?: string; dateFrom?: string; dateTo?: string }, token: string) =>
-    api.get<PaginatedResponse<FeedbackItem>>(`/feedback${buildQuery(params)}`, token),
+    api.get<PaginatedResponse<FeedbackItem>>(`/salon/feedback${buildQuery(params)}`, token),
 
   getFeedbackSummary: (token: string) =>
-    api.get<FeedbackSummary>('/feedback/summary', token),
+    api.get<FeedbackSummary>('/salon/feedback/summary', token),
 
   updateFeedbackStatus: (id: string, status: string, token: string) =>
-    api.patch<unknown>(`/feedback/${id}/status`, { status }, token),
+    api.patch<unknown>(`/salon/feedback/${id}/status`, { status }, token),
 };

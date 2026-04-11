@@ -27,14 +27,14 @@ export default function WorkingHoursPage() {
 
   const { data, isLoading } = useQuery<DaySchedule[]>({
     queryKey: ['settings', 'working-hours'],
-    queryFn: () => api.get<DaySchedule[]>('/settings/working-hours', accessToken!),
+    queryFn: () => api.get<DaySchedule[]>('/salon/working-hours', accessToken!),
     enabled: !!accessToken,
   });
 
   useEffect(() => { if (data) setSchedule(data.map(d => ({ ...d, nameAr: DAYS[d.dayOfWeek] ?? '' }))); }, [data]);
 
   const mut = useMutation({
-    mutationFn: () => api.put('/settings/working-hours', { schedule }, accessToken!),
+    mutationFn: () => api.put('/salon/working-hours', { schedule }, accessToken!),
     onSuccess: () => { toast.success('✅ تم حفظ ساعات العمل'); qc.invalidateQueries({ queryKey: ['settings', 'working-hours'] }); },
     onError: () => toast.error('خطأ في الحفظ'),
   });

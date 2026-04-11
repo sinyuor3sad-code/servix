@@ -31,9 +31,9 @@ export default function UsersSettingsPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('');
 
-  const { data, isLoading } = useQuery<UsersData>({
+  const { data, isLoading } = useQuery<any>({
     queryKey: ['settings', 'users'],
-    queryFn: () => api.get<UsersData>('/settings/users', accessToken!),
+    queryFn: () => api.get<any>('/employees?limit=50', accessToken!),
     enabled: !!accessToken,
   });
 
@@ -43,8 +43,16 @@ export default function UsersSettingsPage() {
     onError: () => toast.error('خطأ في إرسال الدعوة'),
   });
 
-  const roles = data?.roles ?? [];
-  const users = data?.users ?? [];
+  const roles: Role[] = [];
+  const users: TenantUser[] = (data?.items ?? []).map((emp: any) => ({
+    id: emp.id,
+    fullName: emp.fullName,
+    email: emp.email || '',
+    phone: emp.phone || '',
+    roleName: emp.role || 'staff',
+    roleNameAr: emp.role === 'owner' ? 'مالك' : emp.role === 'manager' ? 'مديرة' : emp.role === 'receptionist' ? 'استقبال' : emp.role === 'cashier' ? 'كاشير' : 'موظفة',
+    status: emp.isActive ? 'active' as const : 'inactive' as const,
+  }));
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 

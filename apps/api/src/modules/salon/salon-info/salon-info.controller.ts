@@ -77,6 +77,22 @@ export class SalonInfoController {
     );
   }
 
+  @Get('working-hours')
+  @ApiOperation({ summary: 'الحصول على ساعات العمل' })
+  @ApiResponse({ status: 200, description: 'تم جلب ساعات العمل بنجاح' })
+  async getWorkingHours(
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const info = await this.salonInfoService.get(req.tenantDb!);
+    return {
+      workingDays: (info as any).workingDays ?? {},
+      openingTime: (info as any).openingTime ?? '09:00',
+      closingTime: (info as any).closingTime ?? '22:00',
+      slotDuration: (info as any).slotDuration ?? 30,
+      bufferTime: (info as any).bufferTime ?? 10,
+    };
+  }
+
   @Put('working-hours')
   @ApiOperation({ summary: 'تحديث ساعات العمل' })
   @ApiResponse({ status: 200, description: 'تم تحديث ساعات العمل بنجاح' })
