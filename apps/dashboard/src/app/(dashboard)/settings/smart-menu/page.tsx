@@ -6,12 +6,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ArrowRight, Upload, Palette, Layout, MessageCircle,
-  MapPin, Image, Eye, Check, QrCode,
+  MapPin, Image, Eye, Check, QrCode, Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button, Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
+import { MenuQRModal } from './MenuQRModal';
 
 /* ─── Types ─── */
 interface ThemeData {
@@ -44,8 +45,9 @@ const LAYOUTS = [
 
 export default function SmartMenuSettingsPage() {
   const router = useRouter();
-  const { accessToken } = useAuth();
+  const { accessToken, currentTenant } = useAuth();
   const qc = useQueryClient();
+  const [qrOpen, setQrOpen] = useState(false);
 
   /* ── Fetch ── */
   const { data, isLoading } = useQuery<ThemeData>({
@@ -146,6 +148,39 @@ export default function SmartMenuSettingsPage() {
             <h1 className="text-xl font-black">المنيو والعرض العام</h1>
             <p className="text-xs text-[var(--muted-foreground)]">تخصيص شكل المنيو الذكي والصفحة العامة</p>
           </div>
+        </div>
+      </div>
+
+      {/* ─── ⭐ Menu QR Code ─── */}
+      <div className="relative rounded-2xl overflow-hidden border border-[var(--border)] shadow-xl">
+        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 via-teal-500 to-emerald-600" />
+        <div className="absolute inset-0 opacity-20" style={{
+          backgroundImage: 'radial-gradient(circle at 20% 20%, white 1px, transparent 1px), radial-gradient(circle at 80% 60%, white 1px, transparent 1px)',
+          backgroundSize: '32px 32px',
+        }} />
+        <div className="relative p-6 text-white">
+          <div className="flex items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-xl shadow-lg ring-1 ring-white/20">
+              <QrCode className="h-7 w-7" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-base font-black">باركود المنيو الذكي</h2>
+                <Sparkles className="h-3.5 w-3.5 opacity-80" />
+              </div>
+              <p className="text-xs opacity-90 leading-relaxed">
+                أصدري باركود قابل للطباعة يعرض المنيو للعملاء عند مسحه بالهاتف
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setQrOpen(true)}
+            disabled={!currentTenant?.slug}
+            className="mt-5 w-full flex items-center justify-center gap-2 rounded-xl bg-white py-3.5 text-sm font-black text-teal-700 shadow-lg hover:scale-[1.01] active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <QrCode className="h-4 w-4" />
+            إصدار باركود المنيو
+          </button>
         </div>
       </div>
 
@@ -377,6 +412,14 @@ export default function SmartMenuSettingsPage() {
       <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !hasChanges} className="w-full py-3">
         {saveMut.isPending ? 'جارٍ الحفظ...' : hasChanges ? '💾 حفظ التغييرات' : '✅ محفوظ'}
       </Button>
+
+      {/* ─── QR Modal ─── */}
+      <MenuQRModal
+        isOpen={qrOpen}
+        onClose={() => setQrOpen(false)}
+        slug={currentTenant?.slug || ''}
+        salonName={currentTenant?.nameAr}
+      />
     </div>
   );
 }
