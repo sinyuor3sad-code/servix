@@ -42,6 +42,11 @@ export class ResponseTransformInterceptor<T>
           };
         }
 
+        // Skip wrapping plain strings (e.g., webhook challenge responses)
+        if (typeof data === 'string') {
+          return data as unknown as ApiResponse<T>;
+        }
+
         return {
           success: true,
           data,
