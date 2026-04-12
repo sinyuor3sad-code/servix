@@ -19,7 +19,7 @@ interface ConversationMessage {
 // ─────────────────── Constants ───────────────────
 
 const CLOUDFLARE_AI_BASE = 'https://api.cloudflare.com/client/v4/accounts';
-const CF_TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const CF_TEXT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const CF_WHISPER_MODEL = '@cf/openai/whisper';
 
 const CONVERSATION_CACHE_PREFIX = 'servix:wa_conv:';
@@ -75,21 +75,21 @@ export class GeminiService {
       'https://generativelanguage.googleapis.com/v1beta',
     );
 
-    // Determine provider
-    if (this.cfAccountId && this.cfToken) {
+    // Determine provider (Gemini preferred for quality, Cloudflare as fallback)
+    if (this.geminiApiKey) {
+      this.provider = 'gemini';
+      this.logger.log(
+        `🤖 AI initialized — provider: Google Gemini (via proxy)`,
+      );
+    } else if (this.cfAccountId && this.cfToken) {
       this.provider = 'cloudflare';
       this.logger.log(
         `🤖 AI initialized — provider: Cloudflare Workers AI, model: ${CF_TEXT_MODEL}`,
       );
-    } else if (this.geminiApiKey) {
-      this.provider = 'gemini';
-      this.logger.log(
-        `🤖 AI initialized — provider: Google Gemini`,
-      );
     } else {
       this.provider = 'none';
       this.logger.warn(
-        '⚠️ No AI provider configured — set CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_AI_TOKEN (recommended) or GEMINI_API_KEY',
+        '⚠️ No AI provider configured — set GEMINI_API_KEY (recommended) or CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_AI_TOKEN',
       );
     }
   }
@@ -192,7 +192,7 @@ export class GeminiService {
     maxTokens = 500,
     temperature = 0.7,
   ): Promise<string | null> {
-    const models = ['gemini-2.0-flash-lite', 'gemini-2.0-flash'];
+    const models = ['gemini-2.5-pro-preview-05-06', 'gemini-2.0-flash'];
 
     for (const model of models) {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
