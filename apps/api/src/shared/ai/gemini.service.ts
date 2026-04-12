@@ -16,8 +16,8 @@ interface ConversationMessage {
   text: string;
 }
 
-const GEMINI_MODELS = ['gemini-2.0-flash-lite', 'gemini-1.5-flash'];
-const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+const DEFAULT_GEMINI_MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash'];
+const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const CONVERSATION_CACHE_PREFIX = 'servix:wa_conv:';
 const CONVERSATION_TTL_SECONDS = 3600; // 1 hour — matches Meta's 24hr window but keeps memory lean
 const MAX_CONVERSATION_HISTORY = 20;
@@ -38,20 +38,34 @@ const RETRY_DELAY_MS = 5000; // 5 seconds
  * - Phone numbers are stripped entirely
  * - Only service/pricing/scheduling data is sent
  * - Real names are restored in the final response
+ *
+ * Region Support:
+ * - If the server is in an unsupported region (e.g. Saudi Arabia),
+ *   set GEMINI_BASE_URL to a proxy endpoint (e.g. Cloudflare Worker).
  */
 @Injectable()
 export class GeminiService {
   private readonly logger = new Logger(GeminiService.name);
   private readonly apiKey: string;
+  private readonly baseUrl: string;
+  private readonly models: string[];
 
   constructor(
     private readonly config: ConfigService,
     private readonly cache: CacheService,
   ) {
     this.apiKey = this.config.get<string>('GEMINI_API_KEY', '');
+    this.baseUrl = this.config.get<string>('GEMINI_BASE_URL', DEFAULT_GEMINI_BASE_URL);
+    const modelOverride = this.config.get<string>('GEMINI_MODEL', '');
+    this.models = modelOverride ? [modelOverride] : DEFAULT_GEMINI_MODELS;
+
     if (!this.apiKey) {
       this.logger.warn(
         '⚠️ GEMINI_API_KEY not configured — AI features disabled. Get a free key at https://aistudio.google.com/apikey',
+      );
+    } else {
+      this.logger.log(
+        `🤖 Gemini AI initialized — models: [${this.models.join(', ')}], baseUrl: ${this.baseUrl}`,
       );
     }
   }
@@ -102,9 +116,9 @@ export class GeminiService {
       let response: Response | null = null;
 
       // Try each model, with retry on 429
-      for (const model of GEMINI_MODELS) {
+      for (const model of this.models) {
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-          const url = `${GEMINI_BASE_URL}/models/${model}:generateContent?key=${this.apiKey}`;
+          const url = `${this.baseUrl}/models/${model}:generateContent?key=${this.apiKey}`;
 
           response = await fetch(url, {
             method: 'POST',
@@ -136,10 +150,10 @@ export class GeminiService {
         this.logger.warn(`Model ${model} failed, trying next...`);
       }
 
-      if (!response.ok) {
-        const errText = await response.text();
+      if (!response || !response.ok) {
+        const errText = response ? await response.text() : 'No response';
         this.logger.error(
-          `Gemini API error: ${response.status} ${errText}`,
+          `Gemini API error: ${response?.status} ${errText.substring(0, 200)}`,
         );
         return this.getFallbackResponse(salonContext?.salonName || 'الصالون');
       }
@@ -182,7 +196,7 @@ export class GeminiService {
     }
 
     try {
-      const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODELS[0]}:generateContent?key=${this.apiKey}`;
+      const url = `${this.baseUrl}/models/${this.models[0]}:generateContent?key=${this.apiKey}`;
       const base64Audio = audioBuffer.toString('base64');
 
       const response = await fetch(url, {
@@ -242,7 +256,7 @@ export class GeminiService {
     }
 
     try {
-      const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODELS[0]}:generateContent?key=${this.apiKey}`;
+      const url = `${this.baseUrl}/models/${this.models[0]}:generateContent?key=${this.apiKey}`;
       const base64Image = imageBuffer.toString('base64');
 
       const response = await fetch(url, {
@@ -329,9 +343,9 @@ export class GeminiService {
       let response: Response | null = null;
 
       // Try each model with retry on 429
-      for (const model of GEMINI_MODELS) {
+      for (const model of this.models) {
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-          const url = `${GEMINI_BASE_URL}/models/${model}:generateContent?key=${this.apiKey}`;
+          const url = `${this.baseUrl}/models/${model}:generateContent?key=${this.apiKey}`;
 
           response = await fetch(url, {
             method: 'POST',
