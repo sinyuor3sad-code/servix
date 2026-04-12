@@ -29,6 +29,7 @@ import {
   MessageCircle,
   PackageOpen,
   Star,
+  Bot,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -65,6 +66,7 @@ const navItems: NavItem[] = [
   { label: 'المخزون', href: '/dashboard/inventory', icon: Package, roles: ['owner', 'manager'] },
   { label: 'التسويق', href: '/dashboard/marketing', icon: Megaphone, roles: ['owner', 'manager'] },
   { label: 'التقييمات', href: '/dashboard/feedback', icon: Star, roles: ['owner', 'manager'] },
+  { label: 'المستشار الذكي', href: '/dashboard/ai-consultant', icon: Bot, roles: ['owner', 'manager'] },
   { label: 'التسعير', href: '/dashboard/pricing', icon: TrendingUp, roles: ['owner', 'manager'] },
   { label: 'واتساب', href: '/dashboard/settings/whatsapp', icon: MessageCircle, roles: ['owner', 'manager'] },
   { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt, comingSoon: true, roles: ['owner', 'manager'] },

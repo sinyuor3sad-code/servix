@@ -151,6 +151,8 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://app.servi-x.com,https://booking.servi-x.com,https://admin.servi-x.com,https://servi-x.com}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-servix-webhook-verify-2026}
     depends_on:
       postgres:
         condition: service_healthy
@@ -189,6 +191,8 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://app.servi-x.com,https://booking.servi-x.com,https://admin.servi-x.com,https://servi-x.com}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-servix-webhook-verify-2026}
     depends_on:
       postgres:
         condition: service_healthy

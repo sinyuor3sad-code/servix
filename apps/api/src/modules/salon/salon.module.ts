@@ -25,6 +25,7 @@ import { PackagesModule } from './packages/packages.module';
 import { DebtsModule } from './debts/debts.module';
 import { SelfOrdersModule } from './self-orders/self-orders.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { AiConsultantModule } from './ai-consultant/ai-consultant.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     DebtsModule,
     SelfOrdersModule,
     FeedbackModule,
+    AiConsultantModule,
   ],
 })
 export class SalonModule {}

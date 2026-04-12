@@ -11,6 +11,8 @@ import { EventsModule } from './shared/events';
 import { MailModule } from './shared/mail';
 import { SmsModule } from './shared/sms';
 import { WhatsAppModule } from './shared/whatsapp';
+import { AiModule } from './shared/ai';
+import { CalendarModule } from './shared/calendar';
 import { JobsModule } from './shared/jobs';
 // Sentry is optionally loaded via instrument.ts
 import { JwtAuthGuard, SubscriptionWriteGuard, RateLimitGuard } from './shared/guards';
@@ -53,6 +55,8 @@ import { winstonConfig } from './shared/logger/winston.config';
     MailModule,
     SmsModule,
     WhatsAppModule,
+    AiModule,
+    CalendarModule,
     JobsModule,
 
     AuthModule,

@@ -5,6 +5,27 @@ All notable changes to SERVIX will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added — WhatsApp AI Bot & Smart Consultant
+- **WhatsApp AI Bot** — Gemini-powered chatbot for customer booking, inquiries, and service info
+- **Voice Message Support** — Automatic transcription of WhatsApp voice notes via Gemini multimodal
+- **Image Understanding** — AI analyzes customer-sent photos in salon context
+- **Calendar Integration** — Auto-generated Google Calendar links with dual VALARM reminders (1hr + 24hr)
+- **AI Business Consultant** — In-dashboard AI advisor for salon managers (revenue analysis, employee performance, marketing ideas)
+- **Speech-to-Text Dashboard** — Voice input via Web Speech API (ar-SA) for consultant chat
+- **Text-to-Speech Dashboard** — AI responses can be read aloud via SpeechSynthesis API
+- **PDPL Compliance** — Client names/phones anonymized before sending to Gemini AI
+- **WhatsApp Settings Page** — Bot toggle, webhook config, test connection, 7-step setup guide
+- **Nginx Webhook Route** — Dedicated reverse proxy route for Meta callbacks (no auth, 20MB body)
+
+### Security
+- Webhook verify token loaded from environment variable (not hardcoded)
+- WhatsApp tokens stored per-tenant in isolated databases
+- Gemini API key server-side only (never exposed to frontend)
+- Client PII stripped from all AI requests (PDPL compliance)
+- Salon data cached in Redis (15min TTL) to reduce DB load
+
 ## [1.1.0] - 2026-04-11
 
 ### Added — Smart Menu & QR Invoice System

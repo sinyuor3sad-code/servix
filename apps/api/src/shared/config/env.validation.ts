@@ -23,4 +23,10 @@ export const AppConfigValidationSchema = Joi.object({
 
   // Google OAuth — optional; disabled when empty
   GOOGLE_CLIENT_ID: Joi.string().allow('').default(''),
+
+  // WhatsApp Webhook — verify token for Meta webhook registration
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN: Joi.string().allow('').default('servix-webhook-verify'),
+
+  // Gemini AI — optional; AI features disabled when empty
+  GEMINI_API_KEY: Joi.string().allow('').default(''),
 });

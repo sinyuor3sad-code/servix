@@ -16,6 +16,7 @@ import { CommitmentsService } from '../commitments/commitments.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { AuditService } from '../../../core/audit/audit.service';
 import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
+import { CalendarService } from '../../../shared/calendar/calendar.service';
 
 const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled', 'no_show'],
@@ -47,6 +48,7 @@ export class AppointmentsService {
     private readonly commitmentsService: CommitmentsService,
     private readonly inventoryService: InventoryService,
     private readonly auditService: AuditService,
+    private readonly calendarService: CalendarService,
   ) {}
   async findAll(
     db: TenantPrismaClient,
@@ -270,7 +272,44 @@ export class AppointmentsService {
       newValues: { date: dto.date, startTime: dto.startTime, employeeId: dto.employeeId },
     }).catch(() => {});
 
-    return appointment as unknown as Record<string, unknown>;
+    // Generate calendar URL for the appointment
+    let calendarUrl: string | undefined;
+    try {
+      const appt = appointment as Record<string, any>;
+      const apptDate = new Date(dto.date);
+      const [startH, startM] = dto.startTime.split(':').map(Number);
+      apptDate.setHours(startH, startM, 0, 0);
+
+      // Get salon info for location
+      const salonInfo = await db.salonInfo.findFirst();
+      const salonName = salonInfo?.nameAr || salonInfo?.nameEn || '';
+      const salonAddress = salonInfo?.address || salonInfo?.city || '';
+
+      // Build service names
+      const serviceNames = (appt.appointmentServices || [])
+        .map((as: any) => as.service?.nameAr || '')
+        .filter(Boolean)
+        .join(' + ');
+
+      const employeeName = appt.employee?.fullName || '';
+
+      calendarUrl = this.calendarService.generateAppointmentCalendarUrl({
+        serviceName: serviceNames || 'موعد',
+        employeeName,
+        salonName,
+        salonAddress,
+        startDate: apptDate,
+        durationMinutes: totalDuration,
+        price: totalPrice,
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to generate calendar URL: ${err}`);
+    }
+
+    return {
+      ...(appointment as Record<string, unknown>),
+      calendarUrl,
+    };
   }
 
   async findOne(

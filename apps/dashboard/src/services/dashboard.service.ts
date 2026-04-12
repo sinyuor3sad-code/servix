@@ -301,4 +301,8 @@ export const dashboardService = {
 
   updateFeedbackStatus: (id: string, status: string, token: string) =>
     api.patch<unknown>(`/salon/feedback/${id}/status`, { status }, token),
+
+  // ─── AI Consultant ───
+  askConsultant: (question: string, token: string) =>
+    api.post<{ answer: string }>('/salon/ai-consultant/ask', { question }, token),
 };
