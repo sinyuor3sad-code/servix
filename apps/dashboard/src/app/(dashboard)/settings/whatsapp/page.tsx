@@ -1,24 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import {
   MessageCircle,
-  Save,
   CheckCircle2,
   XCircle,
-  Phone,
-  Key,
-  ExternalLink,
-  Shield,
-  Zap,
-  HelpCircle,
   Bot,
-  Copy,
-  TestTube,
+  Shield,
   Loader2,
+  Unplug,
+  Smartphone,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboard.service';
@@ -30,23 +24,36 @@ import {
   CardContent,
   Button,
   Badge,
-  Input,
 } from '@/components/ui';
 
-const WEBHOOK_URL = 'https://api.servi-x.com/api/v1/webhooks/whatsapp';
-const VERIFY_TOKEN = 'servix-webhook-verify-2026';
+const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID || '';
+
+// Facebook Login for Business config ID (set after creating the config in Meta dashboard)
+const FB_CONFIG_ID = process.env.NEXT_PUBLIC_FB_CONFIG_ID || '';
+
+declare global {
+  interface Window {
+    FB: any;
+    fbAsyncInit: () => void;
+  }
+}
 
 export default function WhatsAppSettingsPage(): React.ReactElement {
   const { accessToken } = useAuth();
   const queryClient = useQueryClient();
 
-  const [phoneNumberId, setPhoneNumberId] = useState('');
-  const [accessTokenWa, setAccessTokenWa] = useState('');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [sdkLoaded, setSdkLoaded] = useState(false);
   const [botEnabled, setBotEnabled] = useState(true);
   const [welcomeMessage, setWelcomeMessage] = useState('أهلاً وسهلاً! كيف أقدر أساعدك؟ 💈');
-  const [isSaving, setIsSaving] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
+
+  // Captured from Embedded Signup message event
+  const [embeddedData, setEmbeddedData] = useState<{
+    phoneNumberId?: string;
+    wabaId?: string;
+  }>({});
 
   // Load existing settings
   const { data: settings, isLoading } = useQuery({
@@ -58,73 +65,204 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
         return {
           phoneNumberId: findKey('whatsapp_phone_number_id'),
           accessToken: findKey('whatsapp_access_token'),
+          displayPhone: findKey('whatsapp_display_phone'),
+          connectedAt: findKey('whatsapp_connected_at'),
           botEnabled: findKey('whatsapp_bot_enabled') !== 'false',
           welcomeMessage: findKey('whatsapp_welcome_message') || 'أهلاً وسهلاً! كيف أقدر أساعدك؟ 💈',
         };
       } catch {
-        return { phoneNumberId: '', accessToken: '', botEnabled: true, welcomeMessage: '' };
+        return { phoneNumberId: '', accessToken: '', displayPhone: '', connectedAt: '', botEnabled: true, welcomeMessage: '' };
       }
     },
     enabled: !!accessToken,
   });
 
+  const isConnected = !!(settings?.phoneNumberId && settings?.accessToken);
+
   useEffect(() => {
     if (settings) {
-      setPhoneNumberId(settings.phoneNumberId);
-      setAccessTokenWa(settings.accessToken);
       setBotEnabled(settings.botEnabled);
       setWelcomeMessage(settings.welcomeMessage);
     }
   }, [settings]);
 
-  const isConnected = !!(settings?.phoneNumberId && settings?.accessToken);
+  // Listen for Embedded Signup message events
+  const handleMessage = useCallback((event: MessageEvent) => {
+    if (
+      event.origin !== 'https://www.facebook.com' &&
+      event.origin !== 'https://web.facebook.com'
+    ) return;
 
-  const handleSave = async () => {
-    if (!accessToken) return;
-    setIsSaving(true);
     try {
-      await dashboardService.updateSetting('whatsapp_phone_number_id', phoneNumberId, accessToken);
-      await dashboardService.updateSetting('whatsapp_access_token', accessTokenWa, accessToken);
+      const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      if (data.type === 'WA_EMBEDDED_SIGNUP') {
+        if (data.event === 'FINISH') {
+          setEmbeddedData({
+            phoneNumberId: data.data?.phone_number_id,
+            wabaId: data.data?.waba_id,
+          });
+        } else if (data.event === 'CANCEL') {
+          setIsConnecting(false);
+          toast.info('تم إلغاء عملية الربط');
+        } else if (data.event === 'ERROR') {
+          setIsConnecting(false);
+          toast.error('حدث خطأ أثناء الربط');
+        }
+      }
+    } catch {
+      // Not a JSON message or not from Facebook
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [handleMessage]);
+
+  // Load Facebook SDK
+  useEffect(() => {
+    if (!META_APP_ID) return;
+
+    window.fbAsyncInit = function () {
+      window.FB.init({
+        appId: META_APP_ID,
+        autoLogAppEvents: true,
+        xfbml: true,
+        version: 'v21.0',
+      });
+      setSdkLoaded(true);
+    };
+
+    // Load SDK script if not already loaded
+    if (!document.getElementById('facebook-jssdk')) {
+      const script = document.createElement('script');
+      script.id = 'facebook-jssdk';
+      script.src = 'https://connect.facebook.net/en_US/sdk.js';
+      script.async = true;
+      script.defer = true;
+      script.crossOrigin = 'anonymous';
+      document.head.appendChild(script);
+    } else if (window.FB) {
+      setSdkLoaded(true);
+    }
+  }, []);
+
+  // Handle WhatsApp Connect via Embedded Signup
+  const handleConnect = () => {
+    if (!sdkLoaded || !window.FB) {
+      toast.error('جاري تحميل Facebook SDK...');
+      return;
+    }
+
+    setIsConnecting(true);
+
+    const loginOptions: any = {
+      response_type: 'code',
+      override_default_response_type: true,
+      scope: 'whatsapp_business_management,whatsapp_business_messaging',
+      extras: {
+        feature: 'whatsapp_embedded_signup',
+        sessionInfoVersion: 3,
+      },
+    };
+
+    // Use config_id if available
+    if (FB_CONFIG_ID) {
+      loginOptions.config_id = FB_CONFIG_ID;
+    }
+
+    window.FB.login(
+      async (response: any) => {
+        if (response.authResponse?.code) {
+          // We got the code! Now send it to our backend
+          try {
+            const res = await fetch(
+              `${process.env.NEXT_PUBLIC_API_URL}/salon/whatsapp/connect`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                  code: response.authResponse.code,
+                  phoneNumberId: embeddedData.phoneNumberId || '',
+                  wabaId: embeddedData.wabaId || '',
+                }),
+              },
+            );
+
+            const data = await res.json();
+
+            if (data?.success || data?.data?.success) {
+              const result = data?.data || data;
+              toast.success(`✅ تم ربط واتساب بنجاح! الرقم: ${result.displayPhone || ''}`);
+              queryClient.invalidateQueries({ queryKey: ['settings', 'whatsapp'] });
+            } else {
+              toast.error(data?.message || data?.data?.message || 'فشل ربط الواتساب');
+            }
+          } catch (err) {
+            toast.error('خطأ في الاتصال بالخادم');
+          }
+        } else {
+          toast.info('تم إلغاء عملية الربط');
+        }
+        setIsConnecting(false);
+      },
+      loginOptions,
+    );
+  };
+
+  // Handle disconnect
+  const handleDisconnect = async () => {
+    if (!confirm('هل أنت متأكد من فصل واتساب؟ سيتوقف البوت عن الرد على العملاء.')) return;
+
+    setIsDisconnecting(true);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/salon/whatsapp/disconnect`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+      if (res.ok) {
+        toast.success('تم فصل واتساب');
+        queryClient.invalidateQueries({ queryKey: ['settings', 'whatsapp'] });
+      }
+    } catch {
+      toast.error('فشل فصل الواتساب');
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  // Save bot preferences
+  const handleSavePrefs = async () => {
+    if (!accessToken) return;
+    setIsSavingPrefs(true);
+    try {
       await dashboardService.updateSetting('whatsapp_bot_enabled', botEnabled ? 'true' : 'false', accessToken);
       await dashboardService.updateSetting('whatsapp_welcome_message', welcomeMessage, accessToken);
       queryClient.invalidateQueries({ queryKey: ['settings', 'whatsapp'] });
-      toast.success('تم حفظ إعدادات واتساب بنجاح');
+      toast.success('تم حفظ الإعدادات');
     } catch {
       toast.error('فشل حفظ الإعدادات');
     } finally {
-      setIsSaving(false);
+      setIsSavingPrefs(false);
     }
   };
 
-  const handleTestConnection = async () => {
-    if (!phoneNumberId || !accessTokenWa) {
-      toast.error('يرجى إدخال Phone Number ID و Access Token أولاً');
-      return;
-    }
-    setIsTesting(true);
-    try {
-      const res = await fetch(
-        `https://graph.facebook.com/v21.0/${phoneNumberId}?access_token=${accessTokenWa}`,
-      );
-      if (res.ok) {
-        const data = await res.json();
-        toast.success(`✅ الاتصال ناجح! الرقم: ${data.display_phone_number || phoneNumberId}`);
-      } else {
-        toast.error('❌ فشل الاتصال — تأكد من صحة البيانات');
-      }
-    } catch {
-      toast.error('❌ خطأ في الاتصال');
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(label);
-    toast.success(`تم نسخ ${label}`);
-    setTimeout(() => setCopied(null), 2000);
-  };
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--brand-primary)]" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -145,14 +283,14 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
                   <XCircle className="h-6 w-6 text-amber-600" />
                 )}
               </div>
-              <div>
+              <div className="flex-1">
                 <p className={`font-bold ${isConnected ? 'text-emerald-800' : 'text-amber-800'}`}>
                   {isConnected ? '✅ واتساب متصل' : '⚠️ واتساب غير مربوط'}
                 </p>
                 <p className={`text-sm ${isConnected ? 'text-emerald-600' : 'text-amber-600'}`}>
                   {isConnected
-                    ? 'البوت الذكي يستقبل رسائل العملاء ويرد عليها تلقائياً'
-                    : 'قم بإدخال بيانات Meta Cloud API لتفعيل واتساب'
+                    ? `الرقم: ${settings?.displayPhone || settings?.phoneNumberId} — البوت يرد تلقائياً`
+                    : 'اضغط "ربط واتساب" للبدء — يأخذ أقل من دقيقة'
                   }
                 </p>
               </div>
@@ -164,151 +302,118 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
         </Card>
       </motion.div>
 
-      {/* Settings Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageCircle className="h-5 w-5 text-emerald-500" />
-            بيانات الربط
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div>
-            <label className="text-sm font-bold text-[var(--foreground)] mb-2 flex items-center gap-2">
-              <Phone className="h-4 w-4 text-[var(--muted-foreground)]" />
-              Phone Number ID
-            </label>
-            <Input
-              placeholder="مثال: 123456789012345"
-              value={phoneNumberId}
-              onChange={(e) => setPhoneNumberId(e.target.value)}
-              dir="ltr"
-            />
-            <p className="text-xs text-[var(--muted-foreground)] mt-1">
-              تجده في Meta Business → WhatsApp → Phone Numbers
-            </p>
-          </div>
-
-          <div>
-            <label className="text-sm font-bold text-[var(--foreground)] mb-2 flex items-center gap-2">
-              <Key className="h-4 w-4 text-[var(--muted-foreground)]" />
-              Access Token
-            </label>
-            <Input
-              type="password"
-              placeholder="EAAxxxxxxxx..."
-              value={accessTokenWa}
-              onChange={(e) => setAccessTokenWa(e.target.value)}
-              dir="ltr"
-            />
-            <p className="text-xs text-[var(--muted-foreground)] mt-1">
-              Permanent token من Meta Business → System Users
-            </p>
-          </div>
-
-          {/* Bot Toggle */}
-          <div className="flex items-center justify-between rounded-xl border border-[var(--border)] p-4">
-            <div className="flex items-center gap-3">
-              <Bot className="h-5 w-5 text-violet-500" />
-              <div>
-                <p className="text-sm font-bold text-[var(--foreground)]">البوت الذكي (AI)</p>
-                <p className="text-xs text-[var(--muted-foreground)]">رد تلقائي على رسائل العملاء عبر Gemini AI</p>
+      {/* Connect / Disconnect */}
+      {!isConnected ? (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <Card>
+            <CardContent className="p-8 text-center space-y-6">
+              <div className="flex justify-center">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg shadow-emerald-200">
+                  <Smartphone className="h-10 w-10 text-white" />
+                </div>
               </div>
-            </div>
-            <button
-              onClick={() => setBotEnabled(!botEnabled)}
-              className={`relative h-7 w-12 rounded-full transition-colors ${botEnabled ? 'bg-violet-500' : 'bg-gray-300'}`}
-            >
-              <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${botEnabled ? 'start-[calc(100%-1.625rem)]' : 'start-0.5'}`} />
-            </button>
-          </div>
 
-          {/* Welcome Message */}
-          <div>
-            <label className="text-sm font-bold text-[var(--foreground)] mb-2 flex items-center gap-2">
-              <MessageCircle className="h-4 w-4 text-[var(--muted-foreground)]" />
-              رسالة الترحيب (اختياري)
-            </label>
-            <textarea
-              className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:border-violet-400/50 focus:ring-2 focus:ring-violet-500/20 resize-none"
-              rows={3}
-              placeholder="أهلاً وسهلاً! كيف أقدر أساعدك؟"
-              value={welcomeMessage}
-              onChange={(e) => setWelcomeMessage(e.target.value)}
-            />
-          </div>
+              <div>
+                <h3 className="text-xl font-bold text-[var(--foreground)]">
+                  ربط واتساب بضغطة زر
+                </h3>
+                <p className="text-sm text-[var(--muted-foreground)] mt-2 max-w-md mx-auto">
+                  سجّل دخول بحساب Facebook → اختر رقم الصالون → جاهز!
+                  <br />
+                  البوت الذكي يرد على عملائك تلقائياً 24/7
+                </p>
+              </div>
 
-          <div className="flex gap-3 flex-wrap">
-            <Button
-              onClick={handleSave}
-              disabled={isSaving || !phoneNumberId || !accessTokenWa}
-            >
-              <Save className="h-4 w-4 me-2" />
-              {isSaving ? 'جارِ الحفظ...' : 'حفظ الإعدادات'}
-            </Button>
+              <Button
+                onClick={handleConnect}
+                disabled={isConnecting || !META_APP_ID}
+                size="lg"
+                className="bg-[#25D366] hover:bg-[#128C7E] text-white font-bold px-8 py-3 text-base gap-2"
+              >
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    جاري الربط...
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="h-5 w-5" />
+                    ربط واتساب
+                  </>
+                )}
+              </Button>
 
-            <Button
-              variant="outline"
-              onClick={handleTestConnection}
-              disabled={isTesting || !phoneNumberId || !accessTokenWa}
-            >
-              {isTesting ? (
-                <Loader2 className="h-4 w-4 me-2 animate-spin" />
-              ) : (
-                <TestTube className="h-4 w-4 me-2" />
+              {!META_APP_ID && (
+                <p className="text-xs text-red-500">
+                  ⚠️ META_APP_ID غير مُعيّن — تواصل مع الدعم الفني
+                </p>
               )}
-              {isTesting ? 'جارِ الاختبار...' : 'اختبار الاتصال'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </motion.div>
+      ) : (
+        <>
+          {/* Bot Settings */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bot className="h-5 w-5 text-violet-500" />
+                  إعدادات البوت
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* Bot Toggle */}
+                <div className="flex items-center justify-between rounded-xl border border-[var(--border)] p-4">
+                  <div className="flex items-center gap-3">
+                    <Bot className="h-5 w-5 text-violet-500" />
+                    <div>
+                      <p className="text-sm font-bold text-[var(--foreground)]">البوت الذكي (AI)</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">رد تلقائي على رسائل العملاء عبر Gemini AI</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setBotEnabled(!botEnabled)}
+                    className={`relative h-7 w-12 rounded-full transition-colors ${botEnabled ? 'bg-violet-500' : 'bg-gray-300'}`}
+                  >
+                    <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${botEnabled ? 'start-[calc(100%-1.625rem)]' : 'start-0.5'}`} />
+                  </button>
+                </div>
 
-      {/* Webhook Configuration */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="h-5 w-5 text-amber-500" />
-            إعدادات Webhook (للخطوة 5)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-[var(--muted-foreground)]">
-            انسخ هذه القيم وأدخلها في Meta Business → WhatsApp → Configuration → Webhook:
-          </p>
+                {/* Welcome Message */}
+                <div>
+                  <label className="text-sm font-bold text-[var(--foreground)] mb-2 flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4 text-[var(--muted-foreground)]" />
+                    رسالة الترحيب
+                  </label>
+                  <textarea
+                    className="w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:border-violet-400/50 focus:ring-2 focus:ring-violet-500/20 resize-none"
+                    rows={3}
+                    value={welcomeMessage}
+                    onChange={(e) => setWelcomeMessage(e.target.value)}
+                  />
+                </div>
 
-          {/* Callback URL */}
-          <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] p-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-[var(--muted-foreground)] mb-0.5">Callback URL</p>
-              <p className="text-sm font-mono text-[var(--foreground)] truncate" dir="ltr">{WEBHOOK_URL}</p>
-            </div>
-            <button
-              onClick={() => copyToClipboard(WEBHOOK_URL, 'Callback URL')}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] hover:bg-[var(--muted)] transition-colors shrink-0"
-            >
-              <Copy className={`h-4 w-4 ${copied === 'Callback URL' ? 'text-emerald-500' : 'text-[var(--muted-foreground)]'}`} />
-            </button>
-          </div>
+                <div className="flex gap-3 flex-wrap">
+                  <Button onClick={handleSavePrefs} disabled={isSavingPrefs}>
+                    {isSavingPrefs ? 'جاري الحفظ...' : 'حفظ الإعدادات'}
+                  </Button>
 
-          {/* Verify Token */}
-          <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] p-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-[var(--muted-foreground)] mb-0.5">Verify Token</p>
-              <p className="text-sm font-mono text-[var(--foreground)]" dir="ltr">{VERIFY_TOKEN}</p>
-            </div>
-            <button
-              onClick={() => copyToClipboard(VERIFY_TOKEN, 'Verify Token')}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] hover:bg-[var(--muted)] transition-colors shrink-0"
-            >
-              <Copy className={`h-4 w-4 ${copied === 'Verify Token' ? 'text-emerald-500' : 'text-[var(--muted-foreground)]'}`} />
-            </button>
-          </div>
-
-          <p className="text-xs text-[var(--muted-foreground)]">
-            ⚠️ تأكد من الاشتراك في: <strong>messages</strong> في Webhook Fields
-          </p>
-        </CardContent>
-      </Card>
+                  <Button
+                    variant="outline"
+                    onClick={handleDisconnect}
+                    disabled={isDisconnecting}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    <Unplug className="h-4 w-4 me-2" />
+                    {isDisconnecting ? 'جاري الفصل...' : 'فصل واتساب'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </>
+      )}
 
       {/* What WhatsApp Does */}
       <Card>
@@ -333,47 +438,6 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
                 <div>
                   <p className="text-sm font-bold text-[var(--foreground)]">{item.title}</p>
                   <p className="text-xs text-[var(--muted-foreground)]">{item.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Setup Guide */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <HelpCircle className="h-5 w-5 text-blue-500" />
-            كيف تربط واتساب؟ (7 خطوات)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {[
-              { step: 1, title: 'أنشئ حساب Meta Business (مجاني)', desc: 'business.facebook.com', link: 'https://business.facebook.com' },
-              { step: 2, title: 'أنشئ تطبيق في Meta Developers', desc: 'اختر نوع Business', link: 'https://developers.facebook.com/apps/create/' },
-              { step: 3, title: 'أضف WhatsApp إلى التطبيق', desc: 'من "Add Products" → WhatsApp → Setup' },
-              { step: 4, title: 'أضف رقم الصالون', desc: 'رقم جديد غير مسجل واتساب عادي' },
-              { step: 5, title: 'إعداد Webhook', desc: `الصق Callback URL و Verify Token الموضحين أعلاه ← اشترك في messages` },
-              { step: 6, title: 'انسخ Phone Number ID و Access Token', desc: 'من WhatsApp → API Setup في التطبيق' },
-              { step: 7, title: 'الصقها هنا واضغط "اختبار الاتصال" ✅', desc: 'في الحقول أعلاه' },
-            ].map((item) => (
-              <div key={item.step} className="flex items-start gap-3">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--brand-primary)] text-white text-xs font-bold shrink-0">
-                  {item.step}
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-[var(--foreground)]">{item.title}</p>
-                  <p className="text-xs text-[var(--muted-foreground)]">
-                    {item.desc}
-                    {item.link && (
-                      <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-[var(--brand-primary)] hover:underline mr-2 inline-flex items-center gap-0.5">
-                        <ExternalLink className="h-3 w-3" />
-                        زيارة
-                      </a>
-                    )}
-                  </p>
                 </div>
               </div>
             ))}

@@ -153,6 +153,8 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-servix-webhook-verify-2026}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -193,6 +195,8 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-servix-webhook-verify-2026}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -221,6 +225,7 @@ services:
       NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
       NEXT_PUBLIC_WS_URL: ${WS_URL:-https://api.servi-x.com}
       NEXT_PUBLIC_DASHBOARD_URL: https://app.servi-x.com
+      NEXT_PUBLIC_META_APP_ID: ${META_APP_ID:-}
     expose:
       - "3000"
     healthcheck:

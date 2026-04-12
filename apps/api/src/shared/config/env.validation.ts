@@ -29,4 +29,8 @@ export const AppConfigValidationSchema = Joi.object({
 
   // Gemini AI — optional; AI features disabled when empty
   GEMINI_API_KEY: Joi.string().allow('').default(''),
+
+  // Meta WhatsApp Embedded Signup — optional; needed for one-click WhatsApp connect
+  META_APP_ID: Joi.string().allow('').default(''),
+  META_APP_SECRET: Joi.string().allow('').default(''),
 });
