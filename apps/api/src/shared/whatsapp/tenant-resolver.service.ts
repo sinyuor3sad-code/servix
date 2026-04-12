@@ -115,7 +115,7 @@ export class TenantResolverService {
           if (waPhoneSetting?.value === phoneNumberId) {
             // Found the matching tenant — get the WhatsApp token too
             const waTokenSetting = await tenantClient.setting.findUnique({
-              where: { key: 'whatsapp_token' },
+              where: { key: 'whatsapp_access_token' },
             });
 
             const resolved: ResolvedTenant = {

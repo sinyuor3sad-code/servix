@@ -44,7 +44,7 @@ export class WhatsAppService {
     const body = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: to.replace(/^966/, ''),
+      to,
       type: 'text',
       text: { body: options.message },
     };
@@ -73,7 +73,6 @@ export class WhatsAppService {
     }
 
     const to = this.normalizePhone(options.to);
-    const toClean = to.replace(/^966/, '');
 
     const mediaFormData = new FormData();
     const blob = new Blob([new Uint8Array(options.document)], { type: 'application/pdf' });
@@ -101,7 +100,7 @@ export class WhatsAppService {
     const body = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: toClean,
+      to,
       type: 'document',
       document: {
         id: mediaId,
