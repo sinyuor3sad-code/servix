@@ -199,7 +199,7 @@ export class GeminiService {
         try {
           const url = `${this.geminiBaseUrl}/models/${model}:generateContent?key=${this.geminiApiKey}`;
 
-          this.logger.debug(`Gemini call: model=${model}, attempt=${attempt + 1}, maxTokens=${maxTokens}`);
+          this.logger.log(`Gemini call: model=${model}, attempt=${attempt + 1}, maxTokens=${maxTokens}`);
 
           const response = await fetch(url, {
             method: 'POST',
@@ -453,12 +453,15 @@ export class GeminiService {
     question: string,
     salonData: any,
   ): Promise<string> {
+    this.logger.log(`[Consultant] provider=${this.provider}, tenant=${tenantId}, question="${question.substring(0, 50)}"`);
+
     if (this.provider === 'none') {
       return 'خاصية المستشار الذكي تحتاج تفعيل إعدادات AI. راجع إعدادات المنصة.';
     }
 
     try {
       const systemPrompt = this.buildConsultantPrompt(salonData);
+      this.logger.log(`[Consultant] System prompt length: ${systemPrompt.length} chars`);
 
       if (this.provider === 'cloudflare') {
         const messages = [
@@ -466,20 +469,24 @@ export class GeminiService {
           { role: 'user', content: question },
         ];
         const result = await this.callCloudflare(messages, 1000);
+        this.logger.log(`[Consultant] Cloudflare result: ${result ? 'OK (' + result.length + ' chars)' : 'NULL'}`);
         return result || 'عذراً، حاول مرة ثانية.';
       }
 
-      // Gemini fallback
+      // Gemini
       const contents = [
         { role: 'user', parts: [{ text: systemPrompt }] },
         { role: 'model', parts: [{ text: 'فهمت بيانات الصالون. أنا جاهز لمساعدتك.' }] },
         { role: 'user', parts: [{ text: question }] },
       ];
+      this.logger.log(`[Consultant] Calling Gemini...`);
       const result = await this.callGemini(contents, 1000, 0.5);
+      this.logger.log(`[Consultant] Gemini result: ${result ? 'OK (' + result.length + ' chars)' : 'NULL — will return fallback'}`);
       return result || 'عذراً، حاول مرة ثانية.';
     } catch (err) {
       this.logger.error(
         `Consultant chat failed: ${(err as Error).message}`,
+        (err as Error).stack,
       );
       return 'عذراً، حدث خطأ تقني. حاول مرة ثانية.';
     }
