@@ -192,12 +192,14 @@ export class GeminiService {
     maxTokens = 500,
     temperature = 0.7,
   ): Promise<string | null> {
-    const models = ['gemini-2.5-pro-preview-05-06', 'gemini-2.0-flash'];
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
     for (const model of models) {
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
           const url = `${this.geminiBaseUrl}/models/${model}:generateContent?key=${this.geminiApiKey}`;
+
+          this.logger.debug(`Gemini call: model=${model}, attempt=${attempt + 1}, maxTokens=${maxTokens}`);
 
           const response = await fetch(url, {
             method: 'POST',
@@ -210,16 +212,31 @@ export class GeminiService {
 
           if (response.ok) {
             const data = (await response.json()) as any;
-            return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+            if (!text) {
+              this.logger.warn(
+                `Gemini ${model}: 200 OK but no text in response. Finish reason: ${data?.candidates?.[0]?.finishReason || 'unknown'}`,
+              );
+            }
+            return text;
           }
 
+          const errText = await response.text();
+          this.logger.error(
+            `Gemini ${model} error: ${response.status} — ${errText.substring(0, 300)}`,
+          );
+
           if (response.status === 429 && attempt < MAX_RETRIES) {
+            this.logger.warn(`Gemini ${model} rate limited (attempt ${attempt + 1}). Retrying in ${RETRY_DELAY_MS}ms...`);
             await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
             continue;
           }
 
           break; // Non-retryable error, try next model
-        } catch {
+        } catch (err) {
+          this.logger.error(
+            `Gemini ${model} fetch failed (attempt ${attempt + 1}): ${(err as Error).message}`,
+          );
           break;
         }
       }
