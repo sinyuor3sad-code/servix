@@ -16,11 +16,13 @@ interface ConversationMessage {
   text: string;
 }
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODELS = ['gemini-2.0-flash-lite', 'gemini-1.5-flash'];
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const CONVERSATION_CACHE_PREFIX = 'servix:wa_conv:';
 const CONVERSATION_TTL_SECONDS = 3600; // 1 hour — matches Meta's 24hr window but keeps memory lean
 const MAX_CONVERSATION_HISTORY = 20;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 5000; // 5 seconds
 
 /**
  * Gemini AI Service — Provides intelligent AI capabilities for SERVIX.
@@ -83,10 +85,8 @@ export class GeminiService {
     // 4. Add user message to history
     history.push({ role: 'user', text: userMessage });
 
-    // 5. Call Gemini API
+    // 5. Call Gemini API with model fallback
     try {
-      const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${this.apiKey}`;
-
       const contents = [
         { role: 'user', parts: [{ text: systemPrompt }] },
         {
@@ -99,17 +99,42 @@ export class GeminiService {
         })),
       ];
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents,
-          generationConfig: {
-            maxOutputTokens: 500,
-            temperature: 0.7,
-          },
-        }),
-      });
+      let response: Response | null = null;
+
+      // Try each model, with retry on 429
+      for (const model of GEMINI_MODELS) {
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          const url = `${GEMINI_BASE_URL}/models/${model}:generateContent?key=${this.apiKey}`;
+
+          response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents,
+              generationConfig: {
+                maxOutputTokens: 500,
+                temperature: 0.7,
+              },
+            }),
+          });
+
+          if (response.ok) break; // Success!
+
+          if (response.status === 429 && attempt < MAX_RETRIES) {
+            this.logger.warn(
+              `Gemini rate limited (model=${model}, attempt=${attempt + 1}/${MAX_RETRIES}). Retrying in ${RETRY_DELAY_MS}ms...`,
+            );
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+            continue;
+          }
+
+          // Non-429 error or max retries — try next model
+          break;
+        }
+
+        if (response?.ok) break; // Found a working model
+        this.logger.warn(`Model ${model} failed, trying next...`);
+      }
 
       if (!response.ok) {
         const errText = await response.text();
@@ -157,7 +182,7 @@ export class GeminiService {
     }
 
     try {
-      const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${this.apiKey}`;
+      const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODELS[0]}:generateContent?key=${this.apiKey}`;
       const base64Audio = audioBuffer.toString('base64');
 
       const response = await fetch(url, {
@@ -217,7 +242,7 @@ export class GeminiService {
     }
 
     try {
-      const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${this.apiKey}`;
+      const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODELS[0]}:generateContent?key=${this.apiKey}`;
       const base64Image = imageBuffer.toString('base64');
 
       const response = await fetch(url, {
@@ -284,32 +309,55 @@ export class GeminiService {
 
     try {
       const systemPrompt = this.buildConsultantPrompt(salonData);
-      const url = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${this.apiKey}`;
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            { role: 'user', parts: [{ text: systemPrompt }] },
-            {
-              role: 'model',
-              parts: [
-                { text: 'فهمت بيانات الصالون. أنا جاهز لمساعدتك.' },
-              ],
-            },
-            { role: 'user', parts: [{ text: question }] },
-          ],
-          generationConfig: {
-            maxOutputTokens: 1000,
-            temperature: 0.5,
+      const requestBody = {
+        contents: [
+          { role: 'user', parts: [{ text: systemPrompt }] },
+          {
+            role: 'model',
+            parts: [
+              { text: 'فهمت بيانات الصالون. أنا جاهز لمساعدتك.' },
+            ],
           },
-        }),
-      });
+          { role: 'user', parts: [{ text: question }] },
+        ],
+        generationConfig: {
+          maxOutputTokens: 1000,
+          temperature: 0.5,
+        },
+      };
 
-      if (!response.ok) {
+      let response: Response | null = null;
+
+      // Try each model with retry on 429
+      for (const model of GEMINI_MODELS) {
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          const url = `${GEMINI_BASE_URL}/models/${model}:generateContent?key=${this.apiKey}`;
+
+          response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+          });
+
+          if (response.ok) break;
+
+          if (response.status === 429 && attempt < MAX_RETRIES) {
+            this.logger.warn(
+              `Consultant rate limited (model=${model}, attempt=${attempt + 1}). Retrying in ${RETRY_DELAY_MS}ms...`,
+            );
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+            continue;
+          }
+          break;
+        }
+        if (response?.ok) break;
+        this.logger.warn(`Consultant model ${model} failed, trying next...`);
+      }
+
+      if (!response?.ok) {
+        const errText = response ? await response.text() : 'No response';
         this.logger.error(
-          `Gemini consultant error: ${response.status} ${await response.text()}`,
+          `Gemini consultant error: ${response?.status} ${errText.substring(0, 200)}`,
         );
         return 'عذراً، حدث خطأ. حاول مرة ثانية.';
       }
