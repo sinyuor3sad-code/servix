@@ -108,7 +108,14 @@ export class AiConsultantService {
     // ─── Batch 1: Salon info + Revenue this month ───
     this.logger.debug(`[AI-Data] Batch 1: salonInfo + thisMonthRevenue`);
     const [salonInfo, thisMonthRevenue] = await Promise.all([
-      db.salonInfo.findFirst(),
+      db.salonInfo.findFirst({
+        select: {
+          nameAr: true, nameEn: true, taglineAr: true, descriptionAr: true,
+          city: true, address: true, workingDays: true,
+          openingTime: true, closingTime: true, slotDuration: true,
+          taxPercentage: true,
+        },
+      }),
       db.invoice.aggregate({
         _sum: { total: true },
         _count: true,
@@ -200,20 +207,32 @@ export class AiConsultantService {
       }),
     ]);
 
-    // ─── Batch 7: Service names for top services ───
+    // ─── Batch 7: Service names for top services + ALL services catalog ───
     const serviceIds = topServices.map((s) => s.serviceId);
-    const services = serviceIds.length > 0
-      ? await db.service.findMany({
-          where: { id: { in: serviceIds } },
-          select: { id: true, nameAr: true, price: true },
-        })
-      : [];
+    const [topServiceDetails, allServices, serviceCategories] = await Promise.all([
+      serviceIds.length > 0
+        ? db.service.findMany({
+            where: { id: { in: serviceIds } },
+            select: { id: true, nameAr: true, price: true },
+          })
+        : Promise.resolve([]),
+      db.service.findMany({
+        where: { isActive: true },
+        select: { nameAr: true, price: true, duration: true, categoryId: true },
+        orderBy: { price: 'desc' },
+      }),
+      db.serviceCategory.findMany({
+        where: { isActive: true },
+        select: { id: true, nameAr: true },
+      }),
+    ]);
 
     this.logger.debug(`[AI-Data] All batches complete for ${tenantId}`);
 
     // ─── Process results ───
 
-    const serviceMap = new Map(services.map((s) => [s.id, s]));
+    const serviceMap = new Map(topServiceDetails.map((s) => [s.id, s]));
+    const categoryMap = new Map(serviceCategories.map((c) => [c.id, c]));
 
     // Peak hours distribution
     const hourDistribution: Record<string, number> = {};
@@ -243,40 +262,86 @@ export class AiConsultantService {
     const cancelledCount = (statusBreakdown['cancelled'] || 0) + (statusBreakdown['no_show'] || 0);
     const completedCount = statusBreakdown['completed'] || 0;
 
+    // Computed metrics
+    const thisMonthRevenueNum = Number(thisMonthRevenue._sum.total || 0);
+    const lastMonthRevenueNum = Number(lastMonthRevenue._sum.total || 0);
+    const thisMonthExpensesNum = Number(thisMonthExpenses._sum.amount || 0);
+    const avgTicketThisMonth = thisMonthRevenue._count > 0
+      ? Math.round(thisMonthRevenueNum / thisMonthRevenue._count)
+      : 0;
+    const avgTicketLastMonth = lastMonthRevenue._count > 0
+      ? Math.round(lastMonthRevenueNum / lastMonthRevenue._count)
+      : 0;
+    const revenuePerClient = totalClients > 0
+      ? Math.round(thisMonthRevenueNum / totalClients)
+      : 0;
+    const retentionRate = totalClients > 0
+      ? Math.round(((totalClients - inactiveClients) / totalClients) * 100)
+      : 0;
+
+    // All services grouped by category
+    const serviceCatalog = allServices.map((s) => ({
+      name: s.nameAr,
+      price: Number(s.price),
+      duration: s.duration,
+      category: categoryMap.get(s.categoryId)?.nameAr || 'عام',
+    }));
+
+    // Price analysis
+    const prices = allServices.map((s) => Number(s.price));
+    const avgPrice = prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
+    const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+    const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+
     const salonData: Record<string, unknown> = {
       salonName: salonInfo?.nameAr || salonInfo?.nameEn || 'الصالون',
+      city: salonInfo?.city || 'غير محدد',
+      address: salonInfo?.address || 'غير محدد',
+      tagline: salonInfo?.taglineAr || null,
+      description: salonInfo?.descriptionAr || null,
       workingHours: salonInfo
         ? `${salonInfo.openingTime} - ${salonInfo.closingTime}`
         : 'غير محدد',
+      workingDays: salonInfo?.workingDays || {},
+      slotDuration: salonInfo?.slotDuration || 30,
+      taxPercentage: salonInfo ? Number(salonInfo.taxPercentage) : 15,
 
       revenue: {
         today: Number(todayRevenue._sum.total || 0),
         todayInvoiceCount: todayRevenue._count,
-        thisMonth: Number(thisMonthRevenue._sum.total || 0),
+        thisMonth: thisMonthRevenueNum,
         thisMonthInvoiceCount: thisMonthRevenue._count,
-        lastMonth: Number(lastMonthRevenue._sum.total || 0),
+        lastMonth: lastMonthRevenueNum,
         lastMonthInvoiceCount: lastMonthRevenue._count,
-        growthPercent: lastMonthRevenue._sum.total
-          ? Math.round(
-              ((Number(thisMonthRevenue._sum.total || 0) -
-                Number(lastMonthRevenue._sum.total || 0)) /
-                Number(lastMonthRevenue._sum.total)) *
-                100,
-            )
+        growthPercent: lastMonthRevenueNum
+          ? Math.round(((thisMonthRevenueNum - lastMonthRevenueNum) / lastMonthRevenueNum) * 100)
           : null,
+        avgTicketThisMonth,
+        avgTicketLastMonth,
+        revenuePerClient,
       },
 
       clients: {
         total: totalClients,
         newThisMonth: newClientsThisMonth,
         inactivePlus30Days: inactiveClients,
+        retentionRate,
       },
 
-      topServices: topServices.map((s) => ({
+      topServicesThisMonth: topServices.map((s) => ({
         name: serviceMap.get(s.serviceId)?.nameAr || 'خدمة',
         price: Number(serviceMap.get(s.serviceId)?.price || 0),
         appointmentCount: s._count,
       })),
+
+      fullServiceCatalog: serviceCatalog,
+
+      priceAnalysis: {
+        avgPrice,
+        minPrice,
+        maxPrice,
+        totalServicesCount: allServices.length,
+      },
 
       employees: employeePerformance,
 
@@ -294,16 +359,17 @@ export class AiConsultantService {
       },
 
       expenses: {
-        totalThisMonth: Number(thisMonthExpenses._sum.amount || 0),
+        totalThisMonth: thisMonthExpensesNum,
         count: thisMonthExpenses._count,
       },
 
       peakHours: hourDistribution,
 
-      netProfit: {
-        thisMonth:
-          Number(thisMonthRevenue._sum.total || 0) -
-          Number(thisMonthExpenses._sum.amount || 0),
+      profitability: {
+        netProfitThisMonth: thisMonthRevenueNum - thisMonthExpensesNum,
+        profitMargin: thisMonthRevenueNum > 0
+          ? Math.round(((thisMonthRevenueNum - thisMonthExpensesNum) / thisMonthRevenueNum) * 100)
+          : 0,
       },
     };
 

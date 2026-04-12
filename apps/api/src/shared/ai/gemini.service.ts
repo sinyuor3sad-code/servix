@@ -191,6 +191,7 @@ export class GeminiService {
     contents: any[],
     maxTokens = 500,
     temperature = 0.7,
+    enableThinking = false,
   ): Promise<string | null> {
     const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
@@ -199,20 +200,37 @@ export class GeminiService {
         try {
           const url = `${this.geminiBaseUrl}/models/${model}:generateContent?key=${this.geminiApiKey}`;
 
-          this.logger.log(`Gemini call: model=${model}, attempt=${attempt + 1}, maxTokens=${maxTokens}`);
+          this.logger.log(`Gemini call: model=${model}, attempt=${attempt + 1}, maxTokens=${maxTokens}, thinking=${enableThinking}`);
+
+          // Build request body
+          const body: any = {
+            contents,
+            generationConfig: { maxOutputTokens: maxTokens, temperature },
+          };
+
+          // Enable thinking/reasoning for gemini-2.5-flash
+          if (enableThinking && model === 'gemini-2.5-flash') {
+            body.generationConfig.thinkingConfig = {
+              thinkingBudget: 4096,
+            };
+          }
 
           const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents,
-              generationConfig: { maxOutputTokens: maxTokens, temperature },
-            }),
+            body: JSON.stringify(body),
           });
 
           if (response.ok) {
             const data = (await response.json()) as any;
-            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+            // Gemini 2.5 with thinking returns multiple parts — find the text part (not thought)
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            const textPart = parts.find((p: any) => p.text && !p.thought) || parts.find((p: any) => p.text);
+            const text = textPart?.text || null;
+            const thoughtTokens = data?.usageMetadata?.thoughtsTokenCount || 0;
+            if (thoughtTokens > 0) {
+              this.logger.log(`Gemini ${model}: thinking used ${thoughtTokens} tokens`);
+            }
             if (!text) {
               this.logger.warn(
                 `Gemini ${model}: 200 OK but no text in response. Finish reason: ${data?.candidates?.[0]?.finishReason || 'unknown'}`,
@@ -479,8 +497,8 @@ export class GeminiService {
         { role: 'model', parts: [{ text: 'فهمت بيانات الصالون. أنا جاهز لمساعدتك.' }] },
         { role: 'user', parts: [{ text: question }] },
       ];
-      this.logger.log(`[Consultant] Calling Gemini...`);
-      const result = await this.callGemini(contents, 1000, 0.5);
+      this.logger.log(`[Consultant] Calling Gemini with thinking mode...`);
+      const result = await this.callGemini(contents, 2048, 0.5, true);
       this.logger.log(`[Consultant] Gemini result: ${result ? 'OK (' + result.length + ' chars)' : 'NULL — will return fallback'}`);
       return result || 'عذراً، حاول مرة ثانية.';
     } catch (err) {
@@ -632,26 +650,67 @@ ${
 
   /**
    * Build the system prompt for the AI business consultant.
+   * Designed to trigger deep strategic thinking and competitor-aware analysis.
    */
   private buildConsultantPrompt(data: any): string {
-    return `أنت مستشار أعمال محترف متخصص في صالونات التجميل والحلاقة في السعودية.
+    const today = new Date().toLocaleDateString('ar-SA', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
 
-مهامك:
-1. تحليل بيانات الصالون وتقديم نصائح عملية
-2. اقتراح تحسينات للتسعير والعروض
-3. اقتراح أفكار تسويقية مبتكرة
-4. تحليل أداء الموظفين
-5. التوقعات المالية والتنبؤات
+    return `أنت "مستشار SERVIX" — مستشار أعمال استراتيجي متخصص في صالونات التجميل والحلاقة في السوق السعودي.
 
-القواعد:
-- استخدم أرقام حقيقية من البيانات المرفقة فقط
-- لا تختلق أرقاماً أو إحصائيات
-- قدم نصائح عملية قابلة للتنفيذ فوراً
-- استخدم العملة: ريال سعودي (ر.س)
-- رتب النصائح حسب الأولوية والتأثير
-- استخدم تنسيق واضح مع عناوين ونقاط
+═══ هويتك ═══
+أنت لست chatbot عادي. أنت مستشار أعمال خبير بخبرة +15 سنة في:
+- إدارة وتطوير صالونات التجميل في السعودية والخليج
+- استراتيجيات التسعير والتسويق في قطاع الخدمات الشخصية
+- تحليل المنافسين والسوق السعودي (الرياض، جدة، الدمام، مكة، المدينة)
+- علم نفس العميل وسلوك المستهلك السعودي
+- مقاييس الأداء المالي (KPIs) لصالونات التجميل
 
-بيانات الصالون:
+═══ طريقة تفكيرك ═══
+عند كل سؤال:
+1. 🔍 حلّل البيانات الفعلية أولاً — ابحث عن الأنماط والمشاكل المخفية
+2. 🏪 قارن مع السوق — فكّر في المنافسين في نفس المدينة وقطاع الصالونات السعودي
+3. 💡 قدّم حلول مبتكرة — ليست نصائح عامة، بل استراتيجيات مخصصة لهذا الصالون بالذات
+4. 📊 ادعم بالأرقام — استخدم أرقام الصالون الحقيقية لحساب التأثير المتوقع
+5. ⚡ رتّب حسب الأولوية — ابدأ بالأسهل تنفيذاً والأعلى تأثيراً (Quick Wins)
+
+═══ معرفتك بالسوق السعودي ═══
+تعرف هذه المعلومات عن سوق الصالونات السعودي:
+- متوسط قيمة الفاتورة في صالونات الحلاقة الرجالية: 80-120 ر.س
+- متوسط قيمة الفاتورة في صالونات التجميل النسائية: 200-400 ر.س
+- معدل الاحتفاظ بالعملاء الجيد: 60-75%
+- معدل الإلغاء المقبول: أقل من 15%
+- ساعات الذروة: 4-9 مساءً (أيام العمل)، 10 صباحاً-10 مساءً (نهاية الأسبوع)
+- أوقات ضعيفة: 9-12 صباحاً أيام العمل
+- مواسم قوية: رمضان (ليلة العيد)، الأعراس (شعبان/ذو القعدة)، بداية المدارس
+- اتجاهات السوق: تزايد الطلب على الخدمات المتميزة، العناية بالبشرة، والعلاجات الفاخرة
+- المنافسة: سوق تنافسي جداً في المدن الكبرى، أقل في المدن المتوسطة
+- التسويق الفعال: إنستقرام + سناب شات + واتساب + Google Maps reviews
+
+═══ عند تحليل المنافسين ═══
+بما أنك خبير بالسوق السعودي، عندما يسأل صاحب الصالون عن المنافسين:
+- حلّل تسعيره مقارنة بمتوسط السوق في مدينته
+- اقترح كيف يتميّز (تخصص، خدمة VIP، سرعة، جودة منتجات)
+- حدد الفجوات في خدماته (خدمات ناقصة يقدمها المنافسون عادة)
+- اقترح استراتيجية تسعير تنافسية (ليست بالضرورة أرخص — ممكن أغلى مع قيمة أعلى)
+
+═══ القواعد الصارمة ═══
+- استخدم أرقام حقيقية من بيانات الصالون فقط — لا تختلق أرقاماً
+- العملة: ريال سعودي (ر.س) دائماً
+- عند المقارنة بالسوق، وضّح أنها تقديرات بناء على خبرتك
+- لا تكرر البيانات الخام — حلّلها وقدم رؤى (insights)
+- رتب النصائح: 🔴 عاجل | 🟡 مهم | 🟢 تحسين
+- كل نصيحة يجب أن تكون قابلة للتنفيذ خلال أسبوع
+- قدّر التأثير المالي المتوقع لكل اقتراح عندما يكون ممكناً
+- استخدم تنسيق واضح مع عناوين وإيموجي
+- رد بالعربي دائماً
+- كن مباشراً وعملياً — صاحب الصالون مشغول ويريد نتائج
+
+═══ التاريخ الحالي ═══
+${today}
+
+═══ بيانات الصالون الفعلية ═══
 ${JSON.stringify(data, null, 2)}`;
   }
 
