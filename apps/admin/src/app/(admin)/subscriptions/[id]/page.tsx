@@ -318,6 +318,7 @@ export default function SubscriptionDetailPage() {
             <QuickAction icon={<CalendarPlus size={18} />} label="تمديد التجربة" color="#A78BFA" onClick={() => setShowExtend(true)} disabled={sub.status !== 'trial'} />
             {(sub.status === 'active' || sub.status === 'trial') ? (
               <>
+                {sub.status === 'trial' && <QuickAction icon={<Play size={18} />} label="تفعيل الاشتراك" color="#34D399" onClick={() => setShowStatus('activate')} />}
                 <QuickAction icon={<Pause size={18} />} label="تعليق" color="#FBBF24" onClick={() => setShowStatus('suspend')} />
                 <QuickAction icon={<XCircle size={18} />} label="إلغاء" color="#F87171" onClick={() => setShowStatus('cancel')} />
               </>
