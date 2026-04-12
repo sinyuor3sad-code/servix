@@ -13,12 +13,14 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AiConsultantService } from './ai-consultant.service';
-import { TenantGuard } from '../../../shared/guards';
+import { TenantGuard, FeatureGuard } from '../../../shared/guards';
+import { RequireFeature } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('المستشار الذكي - AI Consultant')
 @ApiBearerAuth()
-@UseGuards(TenantGuard)
+@UseGuards(TenantGuard, FeatureGuard)
+@RequireFeature('ai-consultant')
 @Controller({ path: 'salon/ai-consultant', version: '1' })
 export class AiConsultantController {
   constructor(private readonly consultantService: AiConsultantService) {}

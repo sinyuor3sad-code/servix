@@ -3,6 +3,7 @@ import { WhatsAppService, WhatsAppCredentials } from './whatsapp.service';
 import { TenantResolverService } from './tenant-resolver.service';
 import { GeminiService } from '../ai/gemini.service';
 import { CalendarService } from '../calendar/calendar.service';
+import { FeaturesService } from '../../core/features/features.service';
 
 // ─────────────────── Types ───────────────────
 
@@ -38,6 +39,7 @@ export class WhatsAppBotService {
     private readonly tenantResolver: TenantResolverService,
     private readonly gemini: GeminiService,
     private readonly calendar: CalendarService,
+    private readonly features: FeaturesService,
   ) {}
 
   /**
@@ -63,6 +65,20 @@ export class WhatsAppBotService {
     this.logger.log(
       `🏪 Resolved tenant: ${tenant.salonName} (${tenant.id}) for phoneNumberId ${msg.phoneNumberId}`,
     );
+
+    // 1.5 Check if tenant has 'whatsapp-bot' feature enabled
+    const featureCheck = await this.features.isFeatureEnabled(tenant.id, 'whatsapp-bot');
+    if (!featureCheck.isEnabled) {
+      this.logger.log(
+        `⛔ WhatsApp bot disabled for tenant ${tenant.salonName} — feature 'whatsapp-bot' not in plan`,
+      );
+      // Send a polite fallback message
+      await this.whatsapp.send(
+        { to: msg.from, message: 'أهلاً بك! للتواصل معنا يرجى الاتصال مباشرة. 🙏' },
+        tenant.credentials,
+      );
+      return;
+    }
 
     // 2. Gather salon context for AI
     const salonContext = await this.tenantResolver.getSalonContext(
