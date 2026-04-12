@@ -47,6 +47,9 @@ export class AiConsultantService {
   /**
    * Gather comprehensive salon data for AI context.
    * Cached in Redis for 15 minutes to avoid repeated DB queries.
+   *
+   * Queries are batched sequentially (2 at a time) to respect
+   * the Prisma connection_limit=2 per tenant and avoid pool deadlocks.
    */
   async gatherSalonData(
     tenantId: string,
@@ -67,261 +70,253 @@ export class AiConsultantService {
 
     this.logger.log(`Gathering salon data for tenant: ${tenantId}`);
 
+    // Wrap everything in a 20-second timeout to prevent indefinite hanging
+    const timeoutMs = 20_000;
+    const dataPromise = this._gatherSalonDataInternal(tenantId, databaseName, cacheKey);
+    const timeoutPromise = new Promise<Record<string, unknown>>((_, reject) =>
+      setTimeout(() => reject(new Error(`Salon data gathering timed out after ${timeoutMs}ms`)), timeoutMs),
+    );
+
     try {
-      const db = this.tenantFactory.getTenantClient(databaseName);
-      const now = new Date();
-      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-      // Run all queries in parallel
-      const [
-        salonInfo,
-        // Revenue
-        thisMonthRevenue,
-        lastMonthRevenue,
-        todayRevenue,
-        // Clients
-        totalClients,
-        newClientsThisMonth,
-        inactiveClients,
-        // Services (top 10)
-        topServices,
-        // Employees
-        employees,
-        // Appointment stats
-        appointmentStats,
-        // Expenses
-        thisMonthExpenses,
-        // Peak hours
-        peakHours,
-      ] = await Promise.all([
-        // Salon info
-        db.salonInfo.findFirst(),
-
-        // Revenue this month
-        db.invoice.aggregate({
-          _sum: { total: true },
-          _count: true,
-          where: {
-            status: 'paid',
-            createdAt: { gte: firstOfMonth },
-          },
-        }),
-
-        // Revenue last month
-        db.invoice.aggregate({
-          _sum: { total: true },
-          _count: true,
-          where: {
-            status: 'paid',
-            createdAt: { gte: firstOfLastMonth, lt: firstOfMonth },
-          },
-        }),
-
-        // Revenue today
-        db.invoice.aggregate({
-          _sum: { total: true },
-          _count: true,
-          where: {
-            status: 'paid',
-            createdAt: { gte: today },
-          },
-        }),
-
-        // Total active clients
-        db.client.count({ where: { isActive: true } }),
-
-        // New clients this month
-        db.client.count({
-          where: { createdAt: { gte: firstOfMonth } },
-        }),
-
-        // Inactive clients (30+ days without visit)
-        db.client.count({
-          where: {
-            isActive: true,
-            lastVisitAt: { lt: thirtyDaysAgo },
-          },
-        }),
-
-        // Top 10 services by appointment count this month
-        db.appointmentService.groupBy({
-          by: ['serviceId'],
-          _count: true,
-          orderBy: { _count: { serviceId: 'desc' } },
-          take: 10,
-          where: {
-            appointment: {
-              date: { gte: firstOfMonth },
-              status: { notIn: ['cancelled', 'no_show'] },
-            },
-          },
-        }),
-
-        // All active employees with appointment count this month
-        db.employee.findMany({
-          where: { isActive: true },
-          select: {
-            id: true,
-            fullName: true,
-            role: true,
-            appointments: {
-              where: {
-                date: { gte: firstOfMonth },
-                status: { notIn: ['cancelled', 'no_show'] },
-              },
-              select: { totalPrice: true },
-            },
-          },
-        }),
-
-        // Appointment status distribution this month
-        db.appointment.groupBy({
-          by: ['status'],
-          _count: true,
-          where: { date: { gte: firstOfMonth } },
-        }),
-
-        // Total expenses this month
-        db.expense.aggregate({
-          _sum: { amount: true },
-          _count: true,
-          where: { date: { gte: firstOfMonth } },
-        }),
-
-        // Appointments grouped by hour (peak hours analysis)
-        db.appointment.findMany({
-          where: {
-            date: { gte: firstOfMonth },
-            status: { notIn: ['cancelled', 'no_show'] },
-          },
-          select: { startTime: true },
-        }),
-      ]);
-
-      // ─── Process results ───
-
-      // Get service names for top services
-      const serviceIds = topServices.map((s) => s.serviceId);
-      const services = serviceIds.length > 0
-        ? await db.service.findMany({
-            where: { id: { in: serviceIds } },
-            select: { id: true, nameAr: true, price: true },
-          })
-        : [];
-
-      const serviceMap = new Map(services.map((s) => [s.id, s]));
-
-      // Peak hours distribution
-      const hourDistribution: Record<string, number> = {};
-      for (const appt of peakHours) {
-        const hour = appt.startTime.split(':')[0];
-        hourDistribution[hour] = (hourDistribution[hour] || 0) + 1;
-      }
-
-      // Employee performance (no client PII, just stats)
-      const employeePerformance = employees.map((emp) => ({
-        name: emp.fullName,
-        role: emp.role,
-        appointmentsThisMonth: emp.appointments.length,
-        revenueThisMonth: emp.appointments.reduce(
-          (sum, a) => sum + Number(a.totalPrice),
-          0,
-        ),
-      }));
-
-      // Appointment status breakdown
-      const statusBreakdown: Record<string, number> = {};
-      for (const stat of appointmentStats) {
-        statusBreakdown[stat.status] = stat._count;
-      }
-
-      const totalAppointments = Object.values(statusBreakdown).reduce((a, b) => a + b, 0);
-      const cancelledCount = (statusBreakdown['cancelled'] || 0) + (statusBreakdown['no_show'] || 0);
-      const completedCount = statusBreakdown['completed'] || 0;
-
-      const salonData: Record<string, unknown> = {
-        salonName: salonInfo?.nameAr || salonInfo?.nameEn || 'الصالون',
-        workingHours: salonInfo
-          ? `${salonInfo.openingTime} - ${salonInfo.closingTime}`
-          : 'غير محدد',
-
-        revenue: {
-          today: Number(todayRevenue._sum.total || 0),
-          todayInvoiceCount: todayRevenue._count,
-          thisMonth: Number(thisMonthRevenue._sum.total || 0),
-          thisMonthInvoiceCount: thisMonthRevenue._count,
-          lastMonth: Number(lastMonthRevenue._sum.total || 0),
-          lastMonthInvoiceCount: lastMonthRevenue._count,
-          growthPercent: lastMonthRevenue._sum.total
-            ? Math.round(
-                ((Number(thisMonthRevenue._sum.total || 0) -
-                  Number(lastMonthRevenue._sum.total || 0)) /
-                  Number(lastMonthRevenue._sum.total)) *
-                  100,
-              )
-            : null,
-        },
-
-        clients: {
-          total: totalClients,
-          newThisMonth: newClientsThisMonth,
-          inactivePlus30Days: inactiveClients,
-        },
-
-        topServices: topServices.map((s) => ({
-          name: serviceMap.get(s.serviceId)?.nameAr || 'خدمة',
-          price: Number(serviceMap.get(s.serviceId)?.price || 0),
-          appointmentCount: s._count,
-        })),
-
-        employees: employeePerformance,
-
-        appointments: {
-          totalThisMonth: totalAppointments,
-          completed: completedCount,
-          cancelled: cancelledCount,
-          completionRate: totalAppointments
-            ? Math.round((completedCount / totalAppointments) * 100)
-            : 0,
-          cancellationRate: totalAppointments
-            ? Math.round((cancelledCount / totalAppointments) * 100)
-            : 0,
-          statusBreakdown,
-        },
-
-        expenses: {
-          totalThisMonth: Number(thisMonthExpenses._sum.amount || 0),
-          count: thisMonthExpenses._count,
-        },
-
-        peakHours: hourDistribution,
-
-        netProfit: {
-          thisMonth:
-            Number(thisMonthRevenue._sum.total || 0) -
-            Number(thisMonthExpenses._sum.amount || 0),
-        },
-      };
-
-      // Cache the result
-      try {
-        await this.cache.setSettings(cacheKey, {
-          data: JSON.stringify(salonData),
-        });
-      } catch {
-        // Cache write failed — non-fatal
-      }
-
-      return salonData;
+      return await Promise.race([dataPromise, timeoutPromise]);
     } catch (err) {
       this.logger.error(
         `Failed to gather salon data for ${tenantId}: ${(err as Error).message}`,
         (err as Error).stack,
       );
-      return { error: 'فشل في جمع بيانات الصالون' };
+      // Return minimal data so the AI can still respond
+      return { salonName: 'الصالون', error: 'فشل في جمع بيانات الصالون — سيتم الرد بدون بيانات تفصيلية' };
     }
+  }
+
+  /**
+   * Internal implementation — runs queries in small sequential batches
+   * to avoid exhausting the tenant connection pool (connection_limit=2).
+   */
+  private async _gatherSalonDataInternal(
+    tenantId: string,
+    databaseName: string,
+    cacheKey: string,
+  ): Promise<Record<string, unknown>> {
+    const db = this.tenantFactory.getTenantClient(databaseName);
+    const now = new Date();
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // ─── Batch 1: Salon info + Revenue this month ───
+    this.logger.debug(`[AI-Data] Batch 1: salonInfo + thisMonthRevenue`);
+    const [salonInfo, thisMonthRevenue] = await Promise.all([
+      db.salonInfo.findFirst(),
+      db.invoice.aggregate({
+        _sum: { total: true },
+        _count: true,
+        where: { status: 'paid', createdAt: { gte: firstOfMonth } },
+      }),
+    ]);
+
+    // ─── Batch 2: Revenue last month + today ───
+    this.logger.debug(`[AI-Data] Batch 2: lastMonthRevenue + todayRevenue`);
+    const [lastMonthRevenue, todayRevenue] = await Promise.all([
+      db.invoice.aggregate({
+        _sum: { total: true },
+        _count: true,
+        where: { status: 'paid', createdAt: { gte: firstOfLastMonth, lt: firstOfMonth } },
+      }),
+      db.invoice.aggregate({
+        _sum: { total: true },
+        _count: true,
+        where: { status: 'paid', createdAt: { gte: today } },
+      }),
+    ]);
+
+    // ─── Batch 3: Client counts ───
+    this.logger.debug(`[AI-Data] Batch 3: client counts`);
+    const [totalClients, newClientsThisMonth] = await Promise.all([
+      db.client.count({ where: { isActive: true } }),
+      db.client.count({ where: { createdAt: { gte: firstOfMonth } } }),
+    ]);
+
+    // ─── Batch 4: Inactive clients + top services ───
+    this.logger.debug(`[AI-Data] Batch 4: inactiveClients + topServices`);
+    const [inactiveClients, topServices] = await Promise.all([
+      db.client.count({
+        where: { isActive: true, lastVisitAt: { lt: thirtyDaysAgo } },
+      }),
+      db.appointmentService.groupBy({
+        by: ['serviceId'],
+        _count: true,
+        orderBy: { _count: { serviceId: 'desc' } },
+        take: 10,
+        where: {
+          appointment: {
+            date: { gte: firstOfMonth },
+            status: { notIn: ['cancelled', 'no_show'] },
+          },
+        },
+      }),
+    ]);
+
+    // ─── Batch 5: Employees + appointment stats ───
+    this.logger.debug(`[AI-Data] Batch 5: employees + appointmentStats`);
+    const [employees, appointmentStats] = await Promise.all([
+      db.employee.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          fullName: true,
+          role: true,
+          appointments: {
+            where: {
+              date: { gte: firstOfMonth },
+              status: { notIn: ['cancelled', 'no_show'] },
+            },
+            select: { totalPrice: true },
+          },
+        },
+      }),
+      db.appointment.groupBy({
+        by: ['status'],
+        _count: true,
+        where: { date: { gte: firstOfMonth } },
+      }),
+    ]);
+
+    // ─── Batch 6: Expenses + peak hours ───
+    this.logger.debug(`[AI-Data] Batch 6: expenses + peakHours`);
+    const [thisMonthExpenses, peakHours] = await Promise.all([
+      db.expense.aggregate({
+        _sum: { amount: true },
+        _count: true,
+        where: { date: { gte: firstOfMonth } },
+      }),
+      db.appointment.findMany({
+        where: {
+          date: { gte: firstOfMonth },
+          status: { notIn: ['cancelled', 'no_show'] },
+        },
+        select: { startTime: true },
+      }),
+    ]);
+
+    // ─── Batch 7: Service names for top services ───
+    const serviceIds = topServices.map((s) => s.serviceId);
+    const services = serviceIds.length > 0
+      ? await db.service.findMany({
+          where: { id: { in: serviceIds } },
+          select: { id: true, nameAr: true, price: true },
+        })
+      : [];
+
+    this.logger.debug(`[AI-Data] All batches complete for ${tenantId}`);
+
+    // ─── Process results ───
+
+    const serviceMap = new Map(services.map((s) => [s.id, s]));
+
+    // Peak hours distribution
+    const hourDistribution: Record<string, number> = {};
+    for (const appt of peakHours) {
+      const hour = appt.startTime.split(':')[0];
+      hourDistribution[hour] = (hourDistribution[hour] || 0) + 1;
+    }
+
+    // Employee performance (no client PII, just stats)
+    const employeePerformance = employees.map((emp) => ({
+      name: emp.fullName,
+      role: emp.role,
+      appointmentsThisMonth: emp.appointments.length,
+      revenueThisMonth: emp.appointments.reduce(
+        (sum, a) => sum + Number(a.totalPrice),
+        0,
+      ),
+    }));
+
+    // Appointment status breakdown
+    const statusBreakdown: Record<string, number> = {};
+    for (const stat of appointmentStats) {
+      statusBreakdown[stat.status] = stat._count;
+    }
+
+    const totalAppointments = Object.values(statusBreakdown).reduce((a, b) => a + b, 0);
+    const cancelledCount = (statusBreakdown['cancelled'] || 0) + (statusBreakdown['no_show'] || 0);
+    const completedCount = statusBreakdown['completed'] || 0;
+
+    const salonData: Record<string, unknown> = {
+      salonName: salonInfo?.nameAr || salonInfo?.nameEn || 'الصالون',
+      workingHours: salonInfo
+        ? `${salonInfo.openingTime} - ${salonInfo.closingTime}`
+        : 'غير محدد',
+
+      revenue: {
+        today: Number(todayRevenue._sum.total || 0),
+        todayInvoiceCount: todayRevenue._count,
+        thisMonth: Number(thisMonthRevenue._sum.total || 0),
+        thisMonthInvoiceCount: thisMonthRevenue._count,
+        lastMonth: Number(lastMonthRevenue._sum.total || 0),
+        lastMonthInvoiceCount: lastMonthRevenue._count,
+        growthPercent: lastMonthRevenue._sum.total
+          ? Math.round(
+              ((Number(thisMonthRevenue._sum.total || 0) -
+                Number(lastMonthRevenue._sum.total || 0)) /
+                Number(lastMonthRevenue._sum.total)) *
+                100,
+            )
+          : null,
+      },
+
+      clients: {
+        total: totalClients,
+        newThisMonth: newClientsThisMonth,
+        inactivePlus30Days: inactiveClients,
+      },
+
+      topServices: topServices.map((s) => ({
+        name: serviceMap.get(s.serviceId)?.nameAr || 'خدمة',
+        price: Number(serviceMap.get(s.serviceId)?.price || 0),
+        appointmentCount: s._count,
+      })),
+
+      employees: employeePerformance,
+
+      appointments: {
+        totalThisMonth: totalAppointments,
+        completed: completedCount,
+        cancelled: cancelledCount,
+        completionRate: totalAppointments
+          ? Math.round((completedCount / totalAppointments) * 100)
+          : 0,
+        cancellationRate: totalAppointments
+          ? Math.round((cancelledCount / totalAppointments) * 100)
+          : 0,
+        statusBreakdown,
+      },
+
+      expenses: {
+        totalThisMonth: Number(thisMonthExpenses._sum.amount || 0),
+        count: thisMonthExpenses._count,
+      },
+
+      peakHours: hourDistribution,
+
+      netProfit: {
+        thisMonth:
+          Number(thisMonthRevenue._sum.total || 0) -
+          Number(thisMonthExpenses._sum.amount || 0),
+      },
+    };
+
+    // Cache the result
+    try {
+      await this.cache.setSettings(cacheKey, {
+        data: JSON.stringify(salonData),
+      });
+    } catch {
+      // Cache write failed — non-fatal
+    }
+
+    this.logger.log(`Salon data gathered successfully for ${tenantId}`);
+    return salonData;
   }
 }

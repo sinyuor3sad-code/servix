@@ -75,7 +75,7 @@ export class TenantClientFactory implements OnModuleDestroy {
     const url = new URL(baseUrl);
     url.pathname = `/${databaseName}`;
     // Limit connections per tenant to avoid exhausting PgBouncer
-    url.searchParams.set('connection_limit', '2');
+    url.searchParams.set('connection_limit', '5');
     url.searchParams.set('pool_timeout', '30');
     return url.toString();
   }
