@@ -16,58 +16,216 @@ interface ConversationMessage {
   text: string;
 }
 
-const DEFAULT_GEMINI_MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash'];
-const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+// ─────────────────── Constants ───────────────────
+
+const CLOUDFLARE_AI_BASE = 'https://api.cloudflare.com/client/v4/accounts';
+const CF_TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const CF_WHISPER_MODEL = '@cf/openai/whisper';
+
 const CONVERSATION_CACHE_PREFIX = 'servix:wa_conv:';
-const CONVERSATION_TTL_SECONDS = 3600; // 1 hour — matches Meta's 24hr window but keeps memory lean
+const CONVERSATION_TTL_SECONDS = 3600;
 const MAX_CONVERSATION_HISTORY = 20;
 const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 5000; // 5 seconds
+const RETRY_DELAY_MS = 3000;
 
 /**
- * Gemini AI Service — Provides intelligent AI capabilities for SERVIX.
+ * AI Service — Provides intelligent AI capabilities for SERVIX.
+ *
+ * Provider: Cloudflare Workers AI (primary, works globally)
+ * Fallback: Google Gemini (optional, if configured)
  *
  * Features:
  * - chat(): Smart receptionist for WhatsApp customer interactions
- * - transcribeAudio(): Convert voice messages to text via Gemini multimodal
+ * - transcribeAudio(): Convert voice messages to text
  * - describeImage(): Analyze images sent by customers
  * - consultantChat(): AI business consultant for salon managers
  *
  * Privacy (PDPL):
- * - Client names are anonymized before sending to Gemini
+ * - Client names are anonymized before sending to AI
  * - Phone numbers are stripped entirely
  * - Only service/pricing/scheduling data is sent
  * - Real names are restored in the final response
- *
- * Region Support:
- * - If the server is in an unsupported region (e.g. Saudi Arabia),
- *   set GEMINI_BASE_URL to a proxy endpoint (e.g. Cloudflare Worker).
  */
 @Injectable()
 export class GeminiService {
   private readonly logger = new Logger(GeminiService.name);
-  private readonly apiKey: string;
-  private readonly baseUrl: string;
-  private readonly models: string[];
+
+  // Cloudflare Workers AI (primary)
+  private readonly cfAccountId: string;
+  private readonly cfToken: string;
+
+  // Google Gemini (fallback)
+  private readonly geminiApiKey: string;
+  private readonly geminiBaseUrl: string;
+
+  private readonly provider: 'cloudflare' | 'gemini' | 'none';
 
   constructor(
     private readonly config: ConfigService,
     private readonly cache: CacheService,
   ) {
-    this.apiKey = this.config.get<string>('GEMINI_API_KEY', '');
-    this.baseUrl = this.config.get<string>('GEMINI_BASE_URL', DEFAULT_GEMINI_BASE_URL);
-    const modelOverride = this.config.get<string>('GEMINI_MODEL', '');
-    this.models = modelOverride ? [modelOverride] : DEFAULT_GEMINI_MODELS;
+    // Cloudflare Workers AI config
+    this.cfAccountId = this.config.get<string>('CLOUDFLARE_ACCOUNT_ID', '');
+    this.cfToken = this.config.get<string>('CLOUDFLARE_AI_TOKEN', '');
 
-    if (!this.apiKey) {
-      this.logger.warn(
-        '⚠️ GEMINI_API_KEY not configured — AI features disabled. Get a free key at https://aistudio.google.com/apikey',
+    // Google Gemini config (fallback)
+    this.geminiApiKey = this.config.get<string>('GEMINI_API_KEY', '');
+    this.geminiBaseUrl = this.config.get<string>(
+      'GEMINI_BASE_URL',
+      'https://generativelanguage.googleapis.com/v1beta',
+    );
+
+    // Determine provider
+    if (this.cfAccountId && this.cfToken) {
+      this.provider = 'cloudflare';
+      this.logger.log(
+        `🤖 AI initialized — provider: Cloudflare Workers AI, model: ${CF_TEXT_MODEL}`,
+      );
+    } else if (this.geminiApiKey) {
+      this.provider = 'gemini';
+      this.logger.log(
+        `🤖 AI initialized — provider: Google Gemini`,
       );
     } else {
-      this.logger.log(
-        `🤖 Gemini AI initialized — models: [${this.models.join(', ')}], baseUrl: ${this.baseUrl}`,
+      this.provider = 'none';
+      this.logger.warn(
+        '⚠️ No AI provider configured — set CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_AI_TOKEN (recommended) or GEMINI_API_KEY',
       );
     }
+  }
+
+  // ═══════════════════════════════════════════
+  // Core: Cloudflare Workers AI API
+  // ═══════════════════════════════════════════
+
+  /**
+   * Call Cloudflare Workers AI text model.
+   */
+  private async callCloudflare(
+    messages: Array<{ role: string; content: string }>,
+    maxTokens = 500,
+  ): Promise<string | null> {
+    const url = `${CLOUDFLARE_AI_BASE}/${this.cfAccountId}/ai/run/${CF_TEXT_MODEL}`;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.cfToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ messages, max_tokens: maxTokens }),
+        });
+
+        if (response.ok) {
+          const data = (await response.json()) as any;
+          return data?.result?.response || null;
+        }
+
+        if (response.status === 429 && attempt < MAX_RETRIES) {
+          this.logger.warn(
+            `Cloudflare AI rate limited (attempt ${attempt + 1}). Retrying in ${RETRY_DELAY_MS}ms...`,
+          );
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+          continue;
+        }
+
+        const errText = await response.text();
+        this.logger.error(
+          `Cloudflare AI error: ${response.status} ${errText.substring(0, 200)}`,
+        );
+        return null;
+      } catch (err) {
+        this.logger.error(
+          `Cloudflare AI fetch failed: ${(err as Error).message}`,
+        );
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Call Cloudflare Whisper model for audio transcription.
+   */
+  private async callCloudflareWhisper(audioBuffer: Buffer): Promise<string> {
+    const url = `${CLOUDFLARE_AI_BASE}/${this.cfAccountId}/ai/run/${CF_WHISPER_MODEL}`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.cfToken}`,
+          'Content-Type': 'application/octet-stream',
+        },
+        body: new Uint8Array(audioBuffer),
+      });
+
+      if (!response.ok) {
+        this.logger.error(
+          `Cloudflare Whisper error: ${response.status}`,
+        );
+        return '';
+      }
+
+      const data = (await response.json()) as any;
+      return data?.result?.text || '';
+    } catch (err) {
+      this.logger.error(
+        `Whisper transcription failed: ${(err as Error).message}`,
+      );
+      return '';
+    }
+  }
+
+  // ═══════════════════════════════════════════
+  // Core: Google Gemini API (fallback)
+  // ═══════════════════════════════════════════
+
+  /**
+   * Call Google Gemini API with retry.
+   */
+  private async callGemini(
+    contents: any[],
+    maxTokens = 500,
+    temperature = 0.7,
+  ): Promise<string | null> {
+    const models = ['gemini-2.0-flash-lite', 'gemini-2.0-flash'];
+
+    for (const model of models) {
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const url = `${this.geminiBaseUrl}/models/${model}:generateContent?key=${this.geminiApiKey}`;
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents,
+              generationConfig: { maxOutputTokens: maxTokens, temperature },
+            }),
+          });
+
+          if (response.ok) {
+            const data = (await response.json()) as any;
+            return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+          }
+
+          if (response.status === 429 && attempt < MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+            continue;
+          }
+
+          break; // Non-retryable error, try next model
+        } catch {
+          break;
+        }
+      }
+    }
+
+    return null;
   }
 
   // ═══════════════════════════════════════════
@@ -79,95 +237,60 @@ export class GeminiService {
    * Maintains conversation history per user per tenant in Redis.
    */
   async chat(options: GeminiChatOptions): Promise<string> {
-    if (!this.apiKey) {
+    if (this.provider === 'none') {
       return this.getFallbackResponse(options.salonContext?.salonName || 'الصالون');
     }
 
     const { tenantId, userPhone, userMessage, salonContext } = options;
     const historyKey = `${CONVERSATION_CACHE_PREFIX}${tenantId}:${userPhone}`;
 
-    // 1. Anonymize context before sending to Gemini (PDPL compliance)
+    // 1. Anonymize context (PDPL compliance)
     const { anonymizedContext, clientRealName } =
       this.anonymizeContext(salonContext);
 
     // 2. Retrieve conversation history from Redis
     const history = await this.getConversationHistory(historyKey);
 
-    // 3. Build system prompt with salon data
+    // 3. Build system prompt
     const systemPrompt = this.buildReceptionistPrompt(anonymizedContext);
 
     // 4. Add user message to history
     history.push({ role: 'user', text: userMessage });
 
-    // 5. Call Gemini API with model fallback
+    // 5. Call AI
+    let reply: string | null = null;
+
     try {
-      const contents = [
-        { role: 'user', parts: [{ text: systemPrompt }] },
-        {
-          role: 'model',
-          parts: [{ text: 'فهمت، أنا جاهز لمساعدة عملاء الصالون.' }],
-        },
-        ...history.map((h) => ({
-          role: h.role === 'user' ? 'user' : 'model',
-          parts: [{ text: h.text }],
-        })),
-      ];
-
-      let response: Response | null = null;
-
-      // Try each model, with retry on 429
-      for (const model of this.models) {
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-          const url = `${this.baseUrl}/models/${model}:generateContent?key=${this.apiKey}`;
-
-          response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents,
-              generationConfig: {
-                maxOutputTokens: 500,
-                temperature: 0.7,
-              },
-            }),
-          });
-
-          if (response.ok) break; // Success!
-
-          if (response.status === 429 && attempt < MAX_RETRIES) {
-            this.logger.warn(
-              `Gemini rate limited (model=${model}, attempt=${attempt + 1}/${MAX_RETRIES}). Retrying in ${RETRY_DELAY_MS}ms...`,
-            );
-            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
-            continue;
-          }
-
-          // Non-429 error or max retries — try next model
-          break;
-        }
-
-        if (response?.ok) break; // Found a working model
-        this.logger.warn(`Model ${model} failed, trying next...`);
+      if (this.provider === 'cloudflare') {
+        const messages = [
+          { role: 'system', content: systemPrompt },
+          ...history.map((h) => ({
+            role: h.role === 'user' ? 'user' : 'assistant',
+            content: h.text,
+          })),
+        ];
+        reply = await this.callCloudflare(messages, 500);
+      } else {
+        const contents = [
+          { role: 'user', parts: [{ text: systemPrompt }] },
+          { role: 'model', parts: [{ text: 'فهمت، أنا جاهز لمساعدة عملاء الصالون.' }] },
+          ...history.map((h) => ({
+            role: h.role === 'user' ? 'user' : 'model',
+            parts: [{ text: h.text }],
+          })),
+        ];
+        reply = await this.callGemini(contents);
       }
 
-      if (!response || !response.ok) {
-        const errText = response ? await response.text() : 'No response';
-        this.logger.error(
-          `Gemini API error: ${response?.status} ${errText.substring(0, 200)}`,
-        );
+      if (!reply) {
         return this.getFallbackResponse(salonContext?.salonName || 'الصالون');
       }
 
-      const data = (await response.json()) as any;
-      const rawReply =
-        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        'عذراً، ما قدرت أفهم. جرب مرة ثانية.';
-
-      // 6. Personalize response — restore real client name
-      const reply = this.personalizeResponse(rawReply, clientRealName);
+      // 6. Personalize response
+      reply = this.personalizeResponse(reply, clientRealName);
 
       // 7. Save updated history to Redis
-      history.push({ role: 'model', text: rawReply });
+      history.push({ role: 'model', text: reply });
       if (history.length > MAX_CONVERSATION_HISTORY) {
         history.splice(0, history.length - MAX_CONVERSATION_HISTORY);
       }
@@ -176,7 +299,7 @@ export class GeminiService {
       return reply;
     } catch (err) {
       this.logger.error(
-        `Gemini chat failed: ${(err as Error).message}`,
+        `Chat failed: ${(err as Error).message}`,
         (err as Error).stack,
       );
       return this.getFallbackResponse(salonContext?.salonName || 'الصالون');
@@ -188,15 +311,24 @@ export class GeminiService {
   // ═══════════════════════════════════════════
 
   /**
-   * Transcribe a voice message (OGG/audio) to text using Gemini multimodal.
+   * Transcribe a voice message to text.
    */
   async transcribeAudio(audioBuffer: Buffer): Promise<string> {
-    if (!this.apiKey) {
-      return '';
-    }
+    if (this.provider === 'none') return '';
 
     try {
-      const url = `${this.baseUrl}/models/${this.models[0]}:generateContent?key=${this.apiKey}`;
+      if (this.provider === 'cloudflare') {
+        const text = await this.callCloudflareWhisper(audioBuffer);
+        if (text) {
+          this.logger.log(
+            `🎤 Audio transcribed (${audioBuffer.length} bytes → "${text.substring(0, 50)}...")`,
+          );
+        }
+        return text;
+      }
+
+      // Gemini fallback
+      const url = `${this.geminiBaseUrl}/models/gemini-2.0-flash-lite:generateContent?key=${this.geminiApiKey}`;
       const base64Audio = audioBuffer.toString('base64');
 
       const response = await fetch(url, {
@@ -206,35 +338,22 @@ export class GeminiService {
           contents: [
             {
               parts: [
-                {
-                  text: 'حوّل هذا المقطع الصوتي لنص. أرجع النص فقط بدون أي إضافات أو شرح.',
-                },
-                {
-                  inlineData: {
-                    mimeType: 'audio/ogg',
-                    data: base64Audio,
-                  },
-                },
+                { text: 'حوّل هذا المقطع الصوتي لنص. أرجع النص فقط بدون أي إضافات أو شرح.' },
+                { inlineData: { mimeType: 'audio/ogg', data: base64Audio } },
               ],
             },
           ],
         }),
       });
 
-      if (!response.ok) {
-        this.logger.error(
-          `Gemini transcribe error: ${response.status} ${await response.text()}`,
-        );
-        return '';
-      }
+      if (!response.ok) return '';
 
       const data = (await response.json()) as any;
-      const transcript =
-        data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       this.logger.log(
-        `🎤 Audio transcribed (${audioBuffer.length} bytes → ${transcript.length} chars)`,
+        `🎤 Audio transcribed (${audioBuffer.length} bytes → "${text.substring(0, 50)}...")`,
       );
-      return transcript;
+      return text;
     } catch (err) {
       this.logger.error(
         `Audio transcription failed: ${(err as Error).message}`,
@@ -248,15 +367,30 @@ export class GeminiService {
   // ═══════════════════════════════════════════
 
   /**
-   * Describe/analyze an image sent by a customer in salon context.
+   * Describe/analyze an image sent by a customer.
    */
   async describeImage(imageBuffer: Buffer): Promise<string> {
-    if (!this.apiKey) {
-      return 'أرسل العميل صورة';
-    }
+    if (this.provider === 'none') return 'أرسل العميل صورة';
 
     try {
-      const url = `${this.baseUrl}/models/${this.models[0]}:generateContent?key=${this.apiKey}`;
+      if (this.provider === 'cloudflare') {
+        // Use text model to explain that an image was received
+        // (Cloudflare vision models have limited availability)
+        const result = await this.callCloudflare([
+          {
+            role: 'system',
+            content: 'أنت موظف استقبال صالون. العميل أرسل صورة. أخبره إنك شفت الصورة واسأله وش يبي بالضبط.',
+          },
+          {
+            role: 'user',
+            content: 'أرسلت صورة',
+          },
+        ], 200);
+        return result || 'أرسل العميل صورة';
+      }
+
+      // Gemini fallback (supports vision)
+      const url = `${this.geminiBaseUrl}/models/gemini-2.0-flash-lite:generateContent?key=${this.geminiApiKey}`;
       const base64Image = imageBuffer.toString('base64');
 
       const response = await fetch(url, {
@@ -266,32 +400,18 @@ export class GeminiService {
           contents: [
             {
               parts: [
-                {
-                  text: 'العميل أرسل هذه الصورة في محادثة صالون حلاقة/تجميل. وصف ماذا يريد العميل بناءً على الصورة. لو فيها قصة شعر أو تسريحة، حدد نوعها. أجب باختصار.',
-                },
-                {
-                  inlineData: {
-                    mimeType: 'image/jpeg',
-                    data: base64Image,
-                  },
-                },
+                { text: 'العميل أرسل هذه الصورة في محادثة صالون حلاقة/تجميل. وصف ماذا يريد العميل بناءً على الصورة. لو فيها قصة شعر أو تسريحة، حدد نوعها. أجب باختصار.' },
+                { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
               ],
             },
           ],
         }),
       });
 
-      if (!response.ok) {
-        this.logger.error(
-          `Gemini image error: ${response.status} ${await response.text()}`,
-        );
-        return 'أرسل العميل صورة';
-      }
+      if (!response.ok) return 'أرسل العميل صورة';
 
       const data = (await response.json()) as any;
-      const description =
-        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        'أرسل العميل صورة';
+      const description = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'أرسل العميل صورة';
       this.logger.log(
         `📷 Image described (${imageBuffer.length} bytes → "${description.substring(0, 50)}...")`,
       );
@@ -310,77 +430,36 @@ export class GeminiService {
 
   /**
    * AI business consultant for salon managers.
-   * Answers questions about revenue, performance, marketing, etc.
    */
   async consultantChat(
     tenantId: string,
     question: string,
     salonData: any,
   ): Promise<string> {
-    if (!this.apiKey) {
-      return 'خاصية المستشار الذكي تحتاج تفعيل مفتاح Gemini API. راجع إعدادات المنصة.';
+    if (this.provider === 'none') {
+      return 'خاصية المستشار الذكي تحتاج تفعيل إعدادات AI. راجع إعدادات المنصة.';
     }
 
     try {
       const systemPrompt = this.buildConsultantPrompt(salonData);
-      const requestBody = {
-        contents: [
-          { role: 'user', parts: [{ text: systemPrompt }] },
-          {
-            role: 'model',
-            parts: [
-              { text: 'فهمت بيانات الصالون. أنا جاهز لمساعدتك.' },
-            ],
-          },
-          { role: 'user', parts: [{ text: question }] },
-        ],
-        generationConfig: {
-          maxOutputTokens: 1000,
-          temperature: 0.5,
-        },
-      };
 
-      let response: Response | null = null;
-
-      // Try each model with retry on 429
-      for (const model of this.models) {
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-          const url = `${this.baseUrl}/models/${model}:generateContent?key=${this.apiKey}`;
-
-          response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-          });
-
-          if (response.ok) break;
-
-          if (response.status === 429 && attempt < MAX_RETRIES) {
-            this.logger.warn(
-              `Consultant rate limited (model=${model}, attempt=${attempt + 1}). Retrying in ${RETRY_DELAY_MS}ms...`,
-            );
-            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
-            continue;
-          }
-          break;
-        }
-        if (response?.ok) break;
-        this.logger.warn(`Consultant model ${model} failed, trying next...`);
+      if (this.provider === 'cloudflare') {
+        const messages = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: question },
+        ];
+        const result = await this.callCloudflare(messages, 1000);
+        return result || 'عذراً، حاول مرة ثانية.';
       }
 
-      if (!response?.ok) {
-        const errText = response ? await response.text() : 'No response';
-        this.logger.error(
-          `Gemini consultant error: ${response?.status} ${errText.substring(0, 200)}`,
-        );
-        return 'عذراً، حدث خطأ. حاول مرة ثانية.';
-      }
-
-      const data = (await response.json()) as any;
-      return (
-        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        'عذراً، حاول مرة ثانية.'
-      );
+      // Gemini fallback
+      const contents = [
+        { role: 'user', parts: [{ text: systemPrompt }] },
+        { role: 'model', parts: [{ text: 'فهمت بيانات الصالون. أنا جاهز لمساعدتك.' }] },
+        { role: 'user', parts: [{ text: question }] },
+      ];
+      const result = await this.callGemini(contents, 1000, 0.5);
+      return result || 'عذراً، حاول مرة ثانية.';
     } catch (err) {
       this.logger.error(
         `Consultant chat failed: ${(err as Error).message}`,
@@ -394,7 +473,7 @@ export class GeminiService {
   // ═══════════════════════════════════════════
 
   /**
-   * Anonymize context before sending to Gemini AI.
+   * Anonymize context before sending to AI.
    * - Replace client real names with "العميل"
    * - Strip phone numbers entirely
    * - Keep only service/pricing/scheduling data
@@ -440,7 +519,6 @@ export class GeminiService {
     if (!clientRealName) return response;
 
     // Replace generic "العميل" with real name only if it makes sense
-    // Use first occurrence to maintain natural tone
     return response.replace(/العميل/g, clientRealName);
   }
 
@@ -558,7 +636,7 @@ ${JSON.stringify(data, null, 2)}`;
   // ═══════════════════════════════════════════
 
   /**
-   * Fallback response when Gemini is unavailable or unconfigured.
+   * Fallback response when AI is unavailable.
    */
   private getFallbackResponse(salonName: string): string {
     return `أهلاً بك في ${salonName}! 💜\n\nعذراً، المساعد الذكي غير متاح حالياً.\nللمساعدة الفورية، يرجى الاتصال بنا مباشرة. 🙏`;
