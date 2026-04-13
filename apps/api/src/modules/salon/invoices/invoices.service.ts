@@ -498,7 +498,7 @@ export class InvoicesService {
     }
 
     const now = new Date();
-    if (now < coupon.validFrom || now > coupon.validUntil) {
+    if (now < coupon.validFrom || (coupon.validUntil && now > coupon.validUntil)) {
       throw new BadRequestException('الكوبون منتهي الصلاحية أو لم يبدأ بعد');
     }
     if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
