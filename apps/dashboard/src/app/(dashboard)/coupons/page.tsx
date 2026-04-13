@@ -167,7 +167,7 @@ export default function CouponsPage() {
                   {/* Dates */}
                   <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]">
                     <Clock className="h-3 w-3" />
-                    <span dir="ltr" className="tabular-nums">{new Date(coupon.startDate).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' })} ← {new Date(coupon.endDate).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    <span dir="ltr" className="tabular-nums">{new Date(coupon.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → {new Date(coupon.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                   </div>
                 </div>
               </div>

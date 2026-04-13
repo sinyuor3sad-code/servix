@@ -34,10 +34,10 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 /* ── Format date to Arabic display ── */
-function formatDateAr(dateStr: string): string {
+function formatDate(dateStr: string): string {
   if (!dateStr) return '';
-  return new Date(dateStr).toLocaleDateString('ar-SA', {
-    year: 'numeric', month: 'long', day: 'numeric',
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric',
   });
 }
 
@@ -102,8 +102,8 @@ export default function NewCouponPage() {
             {watch('code') || 'CODE'}
           </div>
           {watchedStartDate && (
-            <div className="text-[10px] text-white/30 mt-3">
-              {formatDateAr(watchedStartDate)} {watch('endDate') ? `← ${formatDateAr(watch('endDate'))}` : ''}
+            <div className="text-[10px] text-white/30 mt-3" dir="ltr">
+              {formatDate(watchedStartDate)} {watch('endDate') ? `→ ${formatDate(watch('endDate'))}` : ''}
             </div>
           )}
           <div className="border-t border-dashed border-white/10 mt-4 pt-2 text-[10px] text-white/25 uppercase tracking-widest">
@@ -195,10 +195,7 @@ export default function NewCouponPage() {
               <CalendarDays className="h-3 w-3" /> تاريخ البدء
             </label>
             <input {...register('startDate')} type="date" dir="ltr" min={today()}
-              className={inputClass} />
-            {watchedStartDate && (
-              <p className="text-[10px] text-[var(--brand-primary)] mt-1 font-medium">{formatDateAr(watchedStartDate)}</p>
-            )}
+              className={cn(inputClass, 'text-right')} />
             {errors.startDate && <p className="text-red-500 text-[10px] mt-1">{errors.startDate.message}</p>}
           </div>
           <div>
@@ -206,10 +203,7 @@ export default function NewCouponPage() {
               <CalendarDays className="h-3 w-3" /> تاريخ الانتهاء
             </label>
             <input {...register('endDate')} type="date" dir="ltr" min={watchedStartDate || today()}
-              className={inputClass} />
-            {watch('endDate') && (
-              <p className="text-[10px] text-[var(--brand-primary)] mt-1 font-medium">{formatDateAr(watch('endDate'))}</p>
-            )}
+              className={cn(inputClass, 'text-right')} />
             {errors.endDate && <p className="text-red-500 text-[10px] mt-1">{errors.endDate.message}</p>}
           </div>
         </div>
