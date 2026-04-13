@@ -75,6 +75,7 @@ export function usePOSEngine() {
   const [receiptPhone, setReceiptPhone] = useState('+966501234567');
   const [publicToken, setPublicToken] = useState<string | null>(null);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [lastPaidTotal, setLastPaidTotal] = useState(0);
   const [selectedPayMethod, setSelectedPayMethod] = useState<string>('cash');
   const [couponCode, setCouponCode] = useState('');
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -331,6 +332,8 @@ export function usePOSEngine() {
       // Extract publicToken from the payment result
       const payRes = inv._paymentResult as Record<string, unknown> | undefined;
       const token = payRes?.publicToken as string | undefined;
+      // Save total BEFORE clearing cart (so QR modal can display it)
+      setLastPaidTotal(total);
       if (token) {
         setPublicToken(token);
         setShowQRModal(true);
@@ -371,7 +374,7 @@ export function usePOSEngine() {
     setItemEmp, setItemDisc, setItemNote,
     holdBill, recallBill, payMut, pay, paySplit, refMut,
     selfOrderId, setSelfOrderId,
-    publicToken, setPublicToken, showQRModal, setShowQRModal,
+    publicToken, setPublicToken, showQRModal, setShowQRModal, lastPaidTotal,
   };
 }
 

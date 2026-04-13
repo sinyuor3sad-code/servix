@@ -184,7 +184,7 @@ export function DesktopPOS({ e }: { e: E }) {
       <QRSuccessModal
         isOpen={e.showQRModal}
         onClose={() => { e.setShowQRModal(false); e.clearAll(); }}
-        invoiceTotal={e.total || 0}
+        invoiceTotal={e.lastPaidTotal}
         publicToken={e.publicToken}
         tenantSlug={currentTenant?.slug || ''}
       />
