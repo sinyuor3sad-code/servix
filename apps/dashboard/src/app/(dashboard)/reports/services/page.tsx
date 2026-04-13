@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ArrowRight, Scissors, TrendingUp, Hash, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
@@ -41,10 +41,11 @@ export default function ServicesReportPage() {
   const [sortBy, setSortBy] = useState<SortBy>('revenue');
   const dateRange = useMemo(() => getDateRange(period), [period]);
 
-  const { data, isLoading } = useQuery<ServiceReportItem[]>({
+  const { data, isLoading, isFetching } = useQuery<ServiceReportItem[]>({
     queryKey: ['reports', 'services', dateRange.from, dateRange.to],
     queryFn: () => api.get<ServiceReportItem[]>(`/reports/services?dateFrom=${dateRange.from}&dateTo=${dateRange.to}`, accessToken!),
     enabled: !!accessToken, staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   const items = data ?? [];
@@ -55,10 +56,10 @@ export default function ServicesReportPage() {
     sortBy === 'revenue' ? b.revenue - a.revenue : b.bookingsCount - a.bookingsCount
   ), [items, sortBy]);
 
-  if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
+  if (isLoading && !data) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
+    <div className={cn('p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8 transition-opacity duration-300', isFetching ? 'opacity-60' : 'opacity-100')}>
       {/* ══════ Header ══════ */}
       <div className="relative rounded-3xl overflow-hidden bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900 p-8">
         <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-amber-500/20 to-transparent rounded-full blur-3xl" />

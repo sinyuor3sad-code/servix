@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ArrowRight, Wallet, TrendingDown, PieChart, DollarSign, Building, Zap, ShoppingBag, Megaphone, HelpCircle, ArrowUpRight, ArrowDownRight, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
@@ -48,15 +48,17 @@ export default function ExpensesReportPage() {
   const [period, setPeriod] = useState<Period>('month');
   const dateRange = useMemo(() => getDateRange(period), [period]);
 
-  const { data: expData, isLoading } = useQuery<ExpensesResult>({
+  const { data: expData, isLoading, isFetching } = useQuery<ExpensesResult>({
     queryKey: ['reports', 'expenses', dateRange.from, dateRange.to],
     queryFn: () => api.get<ExpensesResult>(`/reports/expenses?dateFrom=${dateRange.from}&dateTo=${dateRange.to}`, accessToken!),
     enabled: !!accessToken, staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
   const { data: revData } = useQuery<RevenueResult>({
     queryKey: ['reports', 'revenue', dateRange.from, dateRange.to],
     queryFn: () => api.get<RevenueResult>(`/reports/revenue?dateFrom=${dateRange.from}&dateTo=${dateRange.to}`, accessToken!),
     enabled: !!accessToken, staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   const expenses = expData ?? EMPTY_EXP;
@@ -67,10 +69,10 @@ export default function ExpensesReportPage() {
   const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
   const maxCat = Math.max(...(expenses.items?.map(c => c.total) ?? [1]));
 
-  if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
+  if (isLoading && !expData) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
+    <div className={cn('p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8 transition-opacity duration-300', isFetching ? 'opacity-60' : 'opacity-100')}>
       {/* ══════ Header ══════ */}
       <div className="relative rounded-3xl overflow-hidden bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900 p-8">
         <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-emerald-500/15 to-transparent rounded-full blur-3xl" />

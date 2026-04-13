@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ArrowRight, Calendar, CheckCircle2, XCircle, AlertTriangle, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
@@ -34,10 +34,11 @@ export default function AppointmentsReportPage() {
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
 
-  const { data, isLoading } = useQuery<ApptReport>({
+  const { data, isLoading, isFetching } = useQuery<ApptReport>({
     queryKey: ['reports', 'appointments', dateFrom, dateTo],
     queryFn: () => api.get<ApptReport>(`/reports/appointments?dateFrom=${dateFrom}&dateTo=${dateTo}`, accessToken!),
     enabled: !!accessToken, staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   const r = data ?? EMPTY;
@@ -52,10 +53,10 @@ export default function AppointmentsReportPage() {
     key, value, ...(STATUS_META[key] || { label: key, color: 'text-slate-500', bg: 'bg-slate-400' }),
   })).sort((a, b) => b.value - a.value);
 
-  if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
+  if (isLoading && !data) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
+    <div className={cn('p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8 transition-opacity duration-300', isFetching ? 'opacity-60' : 'opacity-100')}>
       {/* ══════ Header ══════ */}
       <div className="relative rounded-3xl overflow-hidden bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900 p-8">
         <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-blue-500/20 to-transparent rounded-full blur-3xl" />

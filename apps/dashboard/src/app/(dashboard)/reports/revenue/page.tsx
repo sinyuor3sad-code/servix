@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ArrowRight, TrendingUp, DollarSign, BarChart3, Receipt, ArrowUpRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
@@ -45,20 +45,21 @@ export default function RevenueReportPage() {
     return getDateRange(period);
   }, [period, customFrom, customTo]);
 
-  const { data, isLoading } = useQuery<RevenueData>({
+  const { data, isLoading, isFetching } = useQuery<RevenueData>({
     queryKey: ['reports', 'revenue', dateRange.from, dateRange.to],
     queryFn: () => api.get<RevenueData>(`/reports/revenue?dateFrom=${dateRange.from}&dateTo=${dateRange.to}`, accessToken!),
     enabled: !!accessToken, staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   const report = data ?? EMPTY;
   const avgTicket = report.totalCount > 0 ? Math.round(report.totalRevenue / report.totalCount) : 0;
   const maxRev = Math.max(...(report.items?.map(d => d.revenue) ?? [0]));
 
-  if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
+  if (isLoading && !data) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
+    <div className={cn('p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8 transition-opacity duration-300', isFetching ? 'opacity-60' : 'opacity-100')}>
       {/* ══════ Header ══════ */}
       <div className="relative rounded-3xl overflow-hidden bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900 p-8">
         <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-emerald-500/20 to-transparent rounded-full blur-3xl" />
