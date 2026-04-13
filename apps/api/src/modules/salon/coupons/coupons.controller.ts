@@ -169,4 +169,18 @@ export class CouponsController {
       message: result.message,
     };
   }
+
+  @Post('cleanup')
+  @ApiOperation({ summary: 'تنظيف الكوبونات', description: 'حذف الكوبونات المنتهية تلقائياً (بعد 24 ساعة)' })
+  @ApiResponse({ status: 200, description: 'تم التنظيف' })
+  async cleanup(
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Record<string, unknown>> {
+    const deleted = await this.couponsService.cleanupExpired(req.tenantDb!);
+    return {
+      success: true,
+      data: { deletedCount: deleted },
+      message: deleted > 0 ? `تم حذف ${deleted} كوبون منتهي` : 'لا توجد كوبونات للحذف',
+    };
+  }
 }

@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsInt,
   IsDateString,
+  IsBoolean,
   Min,
   MaxLength,
 } from 'class-validator';
@@ -49,20 +50,25 @@ export class CreateCouponDto {
   @Min(0, { message: 'الحد الأقصى للخصم يجب ألا يكون سالباً' })
   maxDiscount?: number;
 
-  @ApiPropertyOptional({ description: 'الحد الأقصى للاستخدام', example: 100 })
+  @ApiPropertyOptional({ description: 'الحد الأقصى للاستخدام (فارغ = بلا حد)', example: 100 })
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'الحد الأقصى للاستخدام يجب أن يكون عدداً صحيحاً' })
   @Min(1, { message: 'الحد الأقصى للاستخدام يجب أن يكون 1 على الأقل' })
   usageLimit?: number;
 
-  @ApiProperty({ description: 'تاريخ البداية', example: '2026-01-01' })
+  @ApiProperty({ description: 'تاريخ البداية', example: '2026-01-01T09:00:00.000Z' })
   @IsDateString({}, { message: 'تاريخ البداية يجب أن يكون تاريخاً صالحاً' })
   @IsNotEmpty({ message: 'تاريخ البداية مطلوب' })
   validFrom: string;
 
-  @ApiProperty({ description: 'تاريخ الانتهاء', example: '2026-12-31' })
+  @ApiPropertyOptional({ description: 'تاريخ الانتهاء (فارغ = مفتوح)', example: '2026-12-31T23:59:00.000Z' })
+  @IsOptional()
   @IsDateString({}, { message: 'تاريخ الانتهاء يجب أن يكون تاريخاً صالحاً' })
-  @IsNotEmpty({ message: 'تاريخ الانتهاء مطلوب' })
-  validUntil: string;
+  validUntil?: string;
+
+  @ApiPropertyOptional({ description: 'حذف تلقائي بعد 24 ساعة من الانتهاء', example: false })
+  @IsOptional()
+  @IsBoolean({ message: 'الحذف التلقائي يجب أن يكون صح أو خطأ' })
+  autoDelete?: boolean;
 }

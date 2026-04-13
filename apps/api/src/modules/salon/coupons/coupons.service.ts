@@ -55,9 +55,10 @@ export class CouponsService {
         value: dto.value,
         minOrder: dto.minOrder,
         maxDiscount: dto.maxDiscount,
-        usageLimit: dto.usageLimit,
+        usageLimit: dto.usageLimit ?? null,
         validFrom: new Date(dto.validFrom),
-        validUntil: new Date(dto.validUntil),
+        validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
+        autoDelete: dto.autoDelete ?? false,
       },
     });
 
@@ -141,7 +142,7 @@ export class CouponsService {
     if (now < coupon.validFrom) {
       return { valid: false, discountAmount: 0, message: 'الكوبون لم يبدأ بعد' };
     }
-    if (now > coupon.validUntil) {
+    if (coupon.validUntil && now > coupon.validUntil) {
       return { valid: false, discountAmount: 0, message: 'الكوبون منتهي الصلاحية' };
     }
 
@@ -193,5 +194,44 @@ export class CouponsService {
     });
 
     return result;
+  }
+
+  /**
+   * Auto-delete expired/exhausted coupons that have autoDelete=true
+   * and have been expired or reached usage limit for over 24 hours.
+   */
+  async cleanupExpired(db: TenantPrismaClient): Promise<number> {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    // Find coupons eligible for auto-deletion
+    const candidates = await db.coupon.findMany({
+      where: {
+        autoDelete: true,
+        OR: [
+          // Expired by time (validUntil passed 24h ago)
+          { validUntil: { lt: twentyFourHoursAgo } },
+          // Exhausted by usage AND updated 24h ago
+          {
+            usageLimit: { not: null },
+            updatedAt: { lt: twentyFourHoursAgo },
+          },
+        ],
+      },
+    });
+
+    // Filter exhausted ones (where usedCount >= usageLimit)
+    const toDelete = candidates.filter(c => {
+      const isExpired = c.validUntil && c.validUntil < twentyFourHoursAgo;
+      const isExhausted = c.usageLimit !== null && c.usedCount >= c.usageLimit;
+      return isExpired || isExhausted;
+    });
+
+    if (toDelete.length === 0) return 0;
+
+    await db.coupon.deleteMany({
+      where: { id: { in: toDelete.map(c => c.id) } },
+    });
+
+    return toDelete.length;
   }
 }

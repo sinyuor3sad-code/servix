@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Percent, DollarSign, Tag, Clock, Users, Ticket, Copy, CheckCircle2, Trash2 } from 'lucide-react';
+import { Plus, Percent, DollarSign, Tag, Clock, Users, Ticket, Copy, CheckCircle2, Trash2, Infinity, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button, Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,20 +13,23 @@ import { toast } from 'sonner';
 
 interface Coupon {
   id: string; code: string; type: 'percentage' | 'fixed'; value: number;
-  minOrder: number; usageLimit: number; usedCount: number;
-  validFrom: string; validUntil: string; isActive: boolean;
+  minOrder: number; usageLimit: number | null; usedCount: number;
+  validFrom: string; validUntil: string | null; isActive: boolean;
+  autoDelete: boolean;
 }
 
-type CStatus = 'active' | 'expired' | 'disabled';
+type CStatus = 'active' | 'expired' | 'disabled' | 'exhausted';
 function getCouponStatus(c: Coupon): CStatus {
   if (!c.isActive) return 'disabled';
-  if (new Date(c.validUntil) < new Date()) return 'expired';
+  if (c.validUntil && new Date(c.validUntil) < new Date()) return 'expired';
+  if (c.usageLimit !== null && c.usedCount >= c.usageLimit) return 'exhausted';
   return 'active';
 }
 
 const STATUS_STYLE: Record<CStatus, { label: string; color: string; bg: string }> = {
   active: { label: 'نشط', color: 'text-emerald-600', bg: 'bg-emerald-500/10 border-emerald-500/20' },
   expired: { label: 'منتهي', color: 'text-red-500', bg: 'bg-red-500/10 border-red-500/20' },
+  exhausted: { label: 'نفد', color: 'text-amber-500', bg: 'bg-amber-500/10 border-amber-500/20' },
   disabled: { label: 'معطّل', color: 'text-[var(--muted-foreground)]', bg: 'bg-[var(--muted)] border-[var(--border)]' },
 };
 
@@ -62,6 +65,26 @@ export default function CouponsPage() {
     onError: () => toast.error('خطأ في حذف الكوبون'),
   });
 
+  const cleanupMut = useMutation({
+    mutationFn: () => api.post<{ deletedCount: number }>('/coupons/cleanup', {}, accessToken!),
+    onSuccess: (res) => {
+      const count = (res as unknown as { deletedCount: number })?.deletedCount ?? 0;
+      if (count > 0) {
+        toast.success(`تم حذف ${count} كوبون منتهي`);
+        qc.invalidateQueries({ queryKey: ['coupons'] });
+      } else {
+        toast.info('لا توجد كوبونات للحذف التلقائي');
+      }
+    },
+    onError: () => toast.error('خطأ في التنظيف'),
+  });
+
+  const formatDT = (dtStr: string) => {
+    const d = new Date(dtStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
@@ -81,9 +104,20 @@ export default function CouponsPage() {
                 <p className="text-xs text-white/40 mt-0.5">إدارة أكواد الخصم والعروض</p>
               </div>
             </div>
-            <Link href="/coupons/new">
-              <Button size="sm" className="gap-1.5 bg-white/10 border border-white/20 text-white hover:bg-white/20"><Plus className="h-3.5 w-3.5" /> إضافة كوبون</Button>
-            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => cleanupMut.mutate()}
+                disabled={cleanupMut.isPending}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 transition text-[11px] font-bold disabled:opacity-30"
+                title="حذف الكوبونات المنتهية تلقائياً"
+              >
+                <RefreshCw className={cn('h-3 w-3', cleanupMut.isPending && 'animate-spin')} />
+                تنظيف تلقائي
+              </button>
+              <Link href="/coupons/new">
+                <Button size="sm" className="gap-1.5 bg-white/10 border border-white/20 text-white hover:bg-white/20"><Plus className="h-3.5 w-3.5" /> إضافة كوبون</Button>
+              </Link>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-8">
@@ -128,11 +162,12 @@ export default function CouponsPage() {
             const st = getCouponStatus(coupon);
             const style = STATUS_STYLE[st];
             const isPercent = coupon.type === 'percentage';
+            const isOpenCoupon = !coupon.validUntil && coupon.usageLimit === null;
             const usagePct = coupon.usageLimit && coupon.usageLimit > 0 ? Math.round((coupon.usedCount / coupon.usageLimit) * 100) : 0;
 
             return (
               <div key={coupon.id} className={cn('rounded-2xl border bg-[var(--card)] overflow-hidden transition-all hover:shadow-md', st === 'disabled' && 'opacity-50')}>
-                {/* Coupon Header - Clean Ticket Style */}
+                {/* Coupon Header */}
                 <div className="relative p-5 border-b border-[var(--border)] bg-[var(--muted)]/30">
                   <div className="flex items-center justify-between">
                     <div>
@@ -146,9 +181,21 @@ export default function CouponsPage() {
                         {isPercent ? `${coupon.value}%` : `${coupon.value} SAR`}
                       </div>
                     </div>
-                    <span className={cn('px-2.5 py-1 rounded-lg border text-[10px] font-bold', style.bg, style.color)}>
-                      {style.label}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={cn('px-2.5 py-1 rounded-lg border text-[10px] font-bold', style.bg, style.color)}>
+                        {style.label}
+                      </span>
+                      {isOpenCoupon && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[9px] font-bold border border-emerald-500/20 flex items-center gap-0.5">
+                          <Infinity className="h-2.5 w-2.5" /> مفتوح
+                        </span>
+                      )}
+                      {coupon.autoDelete && (
+                        <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 text-[9px] font-bold border border-red-500/20 flex items-center gap-0.5">
+                          <Trash2 className="h-2.5 w-2.5" /> حذف تلقائي
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -172,7 +219,8 @@ export default function CouponsPage() {
                       <span className="font-bold tabular-nums">{coupon.usedCount} / {coupon.usageLimit ?? '∞'}</span>
                     </div>
                     <div className="h-1.5 rounded-full bg-[var(--muted)] overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-l from-[var(--brand-primary)] to-[var(--brand-primary)]/50" style={{ width: `${usagePct}%` }} />
+                      <div className={cn('h-full rounded-full', isOpenCoupon ? 'bg-emerald-400' : 'bg-gradient-to-l from-[var(--brand-primary)] to-[var(--brand-primary)]/50')}
+                        style={{ width: isOpenCoupon ? `${Math.min(coupon.usedCount * 5, 100)}%` : `${usagePct}%` }} />
                     </div>
                   </div>
 
@@ -180,7 +228,13 @@ export default function CouponsPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]">
                       <Clock className="h-3 w-3" />
-                      <span dir="ltr" className="tabular-nums">{new Date(coupon.validFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → {new Date(coupon.validUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      {isOpenCoupon ? (
+                        <span className="font-bold text-emerald-500">مفتوح — بدون انتهاء</span>
+                      ) : (
+                        <span dir="ltr" className="tabular-nums">
+                          {formatDT(coupon.validFrom)} → {coupon.validUntil ? formatDT(coupon.validUntil) : '∞'}
+                        </span>
+                      )}
                     </div>
                     {deleting === coupon.id ? (
                       <div className="flex items-center gap-1">

@@ -665,8 +665,9 @@ model Coupon {
   usageLimit  Int?       @map("usage_limit")
   usedCount   Int        @default(0) @map("used_count")
   validFrom   DateTime   @map("valid_from") @db.Timestamptz()
-  validUntil  DateTime   @map("valid_until") @db.Timestamptz()
+  validUntil  DateTime?  @map("valid_until") @db.Timestamptz()
   isActive    Boolean    @default(true) @map("is_active")
+  autoDelete  Boolean    @default(false) @map("auto_delete")
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
 
