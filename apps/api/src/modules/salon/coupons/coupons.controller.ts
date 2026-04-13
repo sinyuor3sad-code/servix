@@ -71,6 +71,60 @@ export class CouponsController {
     };
   }
 
+  // ═══ Named POST routes MUST come BEFORE :id routes ═══
+
+  @Post('validate')
+  @ApiOperation({ summary: 'التحقق من كوبون', description: 'التحقق من صلاحية كود كوبون' })
+  @ApiResponse({ status: 200, description: 'تم التحقق من الكوبون' })
+  async validate(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: ValidateCouponDto,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.couponsService.validate(
+      req.tenantDb!,
+      dto,
+    );
+    return {
+      success: true,
+      data: result,
+      message: result.message,
+    };
+  }
+
+  @Post('redeem')
+  @ApiOperation({ summary: 'استخدام كوبون', description: 'التحقق من الكوبون وتسجيل استخدامه' })
+  @ApiResponse({ status: 200, description: 'تم استخدام الكوبون' })
+  async redeem(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: ValidateCouponDto,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.couponsService.redeem(
+      req.tenantDb!,
+      dto,
+    );
+    return {
+      success: true,
+      data: result,
+      message: result.message,
+    };
+  }
+
+  @Post('cleanup')
+  @ApiOperation({ summary: 'تنظيف الكوبونات', description: 'حذف الكوبونات المنتهية تلقائياً (بعد 24 ساعة)' })
+  @ApiResponse({ status: 200, description: 'تم التنظيف' })
+  async cleanup(
+    @Req() req: AuthenticatedRequest,
+  ): Promise<Record<string, unknown>> {
+    const deleted = await this.couponsService.cleanupExpired(req.tenantDb!);
+    return {
+      success: true,
+      data: { deletedCount: deleted },
+      message: deleted > 0 ? `تم حذف ${deleted} كوبون منتهي` : 'لا توجد كوبونات للحذف',
+    };
+  }
+
+  // ═══ Parameterized :id routes AFTER named routes ═══
+
   @Get(':id')
   @ApiOperation({ summary: 'تفاصيل الكوبون', description: 'عرض بيانات كوبون محدد' })
   @ApiParam({ name: 'id', description: 'معرّف الكوبون' })
@@ -131,56 +185,6 @@ export class CouponsController {
       success: true,
       data,
       message: 'تم حذف الكوبون بنجاح',
-    };
-  }
-
-  @Post('validate')
-  @ApiOperation({ summary: 'التحقق من كوبون', description: 'التحقق من صلاحية كود كوبون' })
-  @ApiResponse({ status: 200, description: 'تم التحقق من الكوبون' })
-  async validate(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: ValidateCouponDto,
-  ): Promise<Record<string, unknown>> {
-    const result = await this.couponsService.validate(
-      req.tenantDb!,
-      dto,
-    );
-    return {
-      success: true,
-      data: result,
-      message: result.message,
-    };
-  }
-
-  @Post('redeem')
-  @ApiOperation({ summary: 'استخدام كوبون', description: 'التحقق من الكوبون وتسجيل استخدامه' })
-  @ApiResponse({ status: 200, description: 'تم استخدام الكوبون' })
-  async redeem(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: ValidateCouponDto,
-  ): Promise<Record<string, unknown>> {
-    const result = await this.couponsService.redeem(
-      req.tenantDb!,
-      dto,
-    );
-    return {
-      success: true,
-      data: result,
-      message: result.message,
-    };
-  }
-
-  @Post('cleanup')
-  @ApiOperation({ summary: 'تنظيف الكوبونات', description: 'حذف الكوبونات المنتهية تلقائياً (بعد 24 ساعة)' })
-  @ApiResponse({ status: 200, description: 'تم التنظيف' })
-  async cleanup(
-    @Req() req: AuthenticatedRequest,
-  ): Promise<Record<string, unknown>> {
-    const deleted = await this.couponsService.cleanupExpired(req.tenantDb!);
-    return {
-      success: true,
-      data: { deletedCount: deleted },
-      message: deleted > 0 ? `تم حذف ${deleted} كوبون منتهي` : 'لا توجد كوبونات للحذف',
     };
   }
 }
