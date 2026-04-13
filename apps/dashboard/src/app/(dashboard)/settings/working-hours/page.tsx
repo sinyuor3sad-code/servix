@@ -19,19 +19,63 @@ const defaultSchedule: DaySchedule[] = Array.from({ length: 7 }, (_, i) => ({
   dayOfWeek: i, nameAr: DAYS[i], isOpen: i !== 6, startTime: '09:00', endTime: '21:00',
 }));
 
+/**
+ * The API returns either:
+ *   - DaySchedule[]  (if previously saved from this page)
+ *   - { workingDays: Record<string, boolean>, openingTime, closingTime, ... }  (legacy format)
+ * We normalise both into DaySchedule[].
+ */
+function normaliseSchedule(raw: unknown): DaySchedule[] {
+  // Already an array — perfect
+  if (Array.isArray(raw)) {
+    return raw.map((d: any) => ({
+      dayOfWeek: d.dayOfWeek ?? 0,
+      nameAr: DAYS[d.dayOfWeek] ?? '',
+      isOpen: d.isOpen ?? true,
+      startTime: d.startTime ?? '09:00',
+      endTime: d.endTime ?? '21:00',
+    }));
+  }
+
+  // Legacy object format
+  if (raw && typeof raw === 'object') {
+    const obj = raw as any;
+    const workingDays: Record<string, boolean> = obj.workingDays ?? {};
+    const openTime = obj.openingTime ?? '09:00';
+    const closeTime = obj.closingTime ?? '21:00';
+
+    return Array.from({ length: 7 }, (_, i) => {
+      // workingDays may be keyed by day number or day name
+      const isOpen = workingDays[String(i)] ?? workingDays[DAY_EN[i]] ?? (i !== 6);
+      return {
+        dayOfWeek: i,
+        nameAr: DAYS[i],
+        isOpen: Boolean(isOpen),
+        startTime: openTime,
+        endTime: closeTime,
+      };
+    });
+  }
+
+  // Fallback
+  return defaultSchedule;
+}
+
 export default function WorkingHoursPage() {
   const router = useRouter();
   const { accessToken } = useAuth();
   const qc = useQueryClient();
   const [schedule, setSchedule] = useState<DaySchedule[]>(defaultSchedule);
 
-  const { data, isLoading } = useQuery<DaySchedule[]>({
+  const { data, isLoading } = useQuery<unknown>({
     queryKey: ['settings', 'working-hours'],
-    queryFn: () => api.get<DaySchedule[]>('/salon/working-hours', accessToken!),
+    queryFn: () => api.get<unknown>('/salon/working-hours', accessToken!),
     enabled: !!accessToken,
   });
 
-  useEffect(() => { if (data) setSchedule(data.map(d => ({ ...d, nameAr: DAYS[d.dayOfWeek] ?? '' }))); }, [data]);
+  useEffect(() => {
+    if (data) setSchedule(normaliseSchedule(data));
+  }, [data]);
 
   const mut = useMutation({
     mutationFn: () => api.put('/salon/working-hours', { schedule }, accessToken!),
@@ -56,7 +100,8 @@ export default function WorkingHoursPage() {
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
         <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
-          <Clock className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">جدول العمل الأسبوعي</span>
+          <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center"><Clock className="h-3.5 w-3.5 text-amber-600" /></div>
+          <span className="text-xs font-bold">جدول العمل الأسبوعي</span>
         </div>
         <div className="divide-y divide-[var(--border)]">
           {schedule.map((day, i) => (
@@ -80,7 +125,7 @@ export default function WorkingHoursPage() {
                     className="px-2.5 py-1.5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-sm text-center w-24 outline-none focus:border-[var(--brand-primary)] tabular-nums" />
                 </div>
               ) : (
-                <span className="text-xs font-bold text-red-400 bg-red-50 px-2.5 py-1 rounded-lg">مغلق</span>
+                <span className="text-xs font-bold text-red-400 bg-red-500/10 px-2.5 py-1 rounded-lg">مغلق</span>
               )}
             </div>
           ))}

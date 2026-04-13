@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 
 const GROUPS = [
   {
-    title: 'الحجز الإلكتروني', desc: 'إعدادات صفحة الحجز العامة', icon: Globe, gradient: 'from-violet-500 to-purple-600',
+    title: 'الحجز الإلكتروني', desc: 'إعدادات صفحة الحجز العامة', icon: Globe, accentBg: 'bg-violet-500/10', accentText: 'text-violet-600',
     keys: [
       { key: 'online_booking_enabled', label: 'تفعيل الحجز الإلكتروني', type: 'toggle' as const },
       { key: 'auto_confirm_booking', label: 'تأكيد الحجز تلقائياً', type: 'toggle' as const },
@@ -25,7 +25,7 @@ const GROUPS = [
     ],
   },
   {
-    title: 'وضع الإجازة', desc: 'إيقاف استقبال الحجوزات مؤقتاً', icon: Palmtree, gradient: 'from-amber-500 to-orange-600',
+    title: 'وضع الإجازة', desc: 'إيقاف استقبال الحجوزات مؤقتاً', icon: Palmtree, accentBg: 'bg-amber-500/10', accentText: 'text-amber-600',
     keys: [
       { key: 'vacation_mode', label: 'تفعيل وضع الإجازة', type: 'toggle' as const },
       { key: 'vacation_message_ar', label: 'رسالة الإجازة', type: 'text' as const },
@@ -34,7 +34,7 @@ const GROUPS = [
     ],
   },
   {
-    title: 'قنوات التواصل', desc: 'الرسائل التلقائية والإشعارات', icon: MessageCircle, gradient: 'from-emerald-500 to-teal-600',
+    title: 'قنوات التواصل', desc: 'الرسائل التلقائية والإشعارات', icon: MessageCircle, accentBg: 'bg-emerald-500/10', accentText: 'text-emerald-600',
     keys: [
       { key: 'whatsapp_enabled', label: 'تفعيل واتساب', type: 'toggle' as const },
       { key: 'whatsapp_token', label: 'توكن واتساب', desc: 'من Meta for Developers', type: 'text' as const },
@@ -48,7 +48,7 @@ const GROUPS = [
     ],
   },
   {
-    title: 'المزايا والخصومات', desc: 'برنامج الولاء والكوبونات', icon: Gift, gradient: 'from-rose-500 to-pink-600',
+    title: 'المزايا والخصومات', desc: 'برنامج الولاء والكوبونات', icon: Gift, accentBg: 'bg-rose-500/10', accentText: 'text-rose-600',
     keys: [
       { key: 'loyalty_enabled', label: 'برنامج الولاء', type: 'toggle' as const },
       { key: 'coupons_enabled', label: 'الكوبونات', type: 'toggle' as const },
@@ -104,12 +104,14 @@ export default function TogglesPage() {
         const Icon = group.icon;
         return (
           <div key={group.title} className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-            <div className={cn('px-5 py-4 bg-gradient-to-l text-white', group.gradient)}>
-              <div className="flex items-center gap-2">
-                <Icon className="h-5 w-5 opacity-70" />
+            <div className="px-5 py-4 border-b border-[var(--border)]">
+              <div className="flex items-center gap-3">
+                <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center', group.accentBg)}>
+                  <Icon className={cn('h-4 w-4', group.accentText)} />
+                </div>
                 <div>
                   <h3 className="text-sm font-bold">{group.title}</h3>
-                  <p className="text-[10px] opacity-70">{group.desc}</p>
+                  <p className="text-[10px] text-[var(--muted-foreground)]">{group.desc}</p>
                 </div>
               </div>
             </div>
