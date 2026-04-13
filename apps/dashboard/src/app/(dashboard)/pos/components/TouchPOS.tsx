@@ -7,7 +7,7 @@ import {
   ShoppingCart, Receipt,
   Printer, MessageCircle,
   X, User, Phone, Users, UserPlus,
-  Pause, Play, RotateCcw, Split, Percent, Heart, Package,
+  Pause, Play, RotateCcw, Split, Percent, Heart, Package, Ticket,
   CircleDollarSign, Wifi, WifiOff,
   Check, ArrowLeft, ClipboardCheck,
 } from 'lucide-react';
@@ -104,10 +104,21 @@ export function TouchPOS({ e }: { e: E }) {
                 <div className="flex flex-1 items-center gap-1.5"><Percent size={12} className="shrink-0 text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} /><input type="number" value={e.globalDisc} onChange={ev => e.setGlobalDisc(ev.target.value)} placeholder="خصم" className={`w-16 rounded-xl border ${brd(6)} ${bg(3)} px-3 py-2.5 text-[12px] text-center text-[var(--foreground)] focus:outline-none ${T}`} style={TN} /><div className={`flex overflow-hidden rounded-xl border ${brd(6)}`}><button onClick={() => e.setGlobalDiscType('fixed')} className={`${BS} px-3 py-2.5 text-[10px] font-bold ${e.globalDiscType === 'fixed' ? 'text-black' : 'text-[var(--muted-foreground)]'}`} style={e.globalDiscType === 'fixed' ? accentBg : undefined}>ر.س</button><button onClick={() => e.setGlobalDiscType('percentage')} className={`${BS} px-3 py-2.5 text-[10px] font-bold ${e.globalDiscType === 'percentage' ? 'text-black' : 'text-[var(--muted-foreground)]'}`} style={e.globalDiscType === 'percentage' ? accentBg : undefined}>%</button></div></div>
                 <div className="flex items-center gap-1.5"><Heart size={12} className="shrink-0 text-pink-400" style={{ opacity: 0.5 }} /><input type="number" value={e.tipInput} onChange={ev => e.setTipInput(ev.target.value)} placeholder="إكرامية" className={`w-16 rounded-xl border ${brd(6)} ${bg(3)} px-3 py-2.5 text-[12px] text-center text-[var(--foreground)] focus:outline-none ${T}`} style={TN} /></div>
               </div>
+              {/* Coupon */}
+              <div className="flex items-center gap-1.5">
+                <Ticket size={12} className="shrink-0 text-[var(--brand-primary)]" style={{ opacity: 0.5 }} />
+                <input value={e.couponCode} onChange={ev => e.setCouponCode(ev.target.value.toUpperCase())} disabled={e.couponApplied} placeholder="كود كوبون" dir="ltr" className={`flex-1 rounded-xl border ${brd(6)} ${bg(3)} px-3 py-2.5 text-[12px] font-mono font-bold tracking-wider text-center text-[var(--foreground)] placeholder:font-normal placeholder:tracking-normal focus:outline-none ${T} ${e.couponApplied ? 'opacity-50' : ''}`} onKeyDown={ev => ev.key === 'Enter' && e.applyCoupon()} />
+                {e.couponApplied ? (
+                  <button onClick={e.removeCoupon} className={`${BS} rounded-xl px-3 py-2.5 text-[10px] font-bold text-red-400 hover:bg-red-500/10`}><X size={12} /></button>
+                ) : (
+                  <button onClick={e.applyCoupon} disabled={!e.couponCode.trim() || e.couponMut.isPending} className={`${BS} rounded-xl px-4 py-2.5 text-[10px] font-bold disabled:opacity-30 ${T}`} style={accentColor}>{e.couponMut.isPending ? '...' : 'تطبيق'}</button>
+                )}
+              </div>
               {e.comms.length > 0 && <div className="flex items-center justify-between rounded-xl bg-emerald-500/5 px-3 py-2"><div className="flex items-center gap-1.5"><CircleDollarSign size={12} className="text-emerald-400" /><span className="text-[11px] font-bold text-emerald-400">العمولات</span></div><span className="text-[12px] font-black text-emerald-400" style={TN}>{fmt(e.totalComm)}</span></div>}
               <div className={`space-y-1.5 rounded-2xl ${bg(2)} p-3.5`}>
                 <div className="flex justify-between text-[12px]"><span className="text-[var(--muted-foreground)]">المجموع الفرعي</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.subtotal)}</span></div>
                 {e.gDiscVal > 0 && <div className="flex justify-between text-[12px]"><span className="text-emerald-400">الخصم</span><span className="font-semibold text-emerald-400" style={TN}>-{fmt(e.gDiscVal)}</span></div>}
+                {e.couponDiscount > 0 && <div className="flex justify-between text-[12px]"><span className="text-[var(--brand-primary)]"><Ticket size={10} className="inline me-0.5" />كوبون</span><span className="font-semibold text-[var(--brand-primary)]" style={TN}>-{fmt(e.couponDiscount)}</span></div>}
                 <div className="flex justify-between text-[12px]"><span className="text-[var(--muted-foreground)]">ضريبة 15%</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.tax)}</span></div>
                 {e.tip > 0 && <div className="flex justify-between text-[12px]"><span className="text-pink-400">إكرامية</span><span className="font-semibold text-pink-400" style={TN}>{fmt(e.tip)}</span></div>}
                 <div className={`flex items-baseline justify-between border-t ${brd(4)} pt-2`}><span className="text-[13px] font-bold text-[var(--foreground)]">الإجمالي</span><span className="text-[22px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)} <span className="text-[10px] font-semibold opacity-40">ر.س</span></span></div>

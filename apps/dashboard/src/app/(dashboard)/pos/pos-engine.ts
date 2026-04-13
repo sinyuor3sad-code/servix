@@ -76,6 +76,10 @@ export function usePOSEngine() {
   const [publicToken, setPublicToken] = useState<string | null>(null);
   const [showQRModal, setShowQRModal] = useState(false);
   const [selectedPayMethod, setSelectedPayMethod] = useState<string>('cash');
+  const [couponCode, setCouponCode] = useState('');
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponApplied, setCouponApplied] = useState(false);
+  const [couponMsg, setCouponMsg] = useState('');
 
   const dSearch = useDeferredValue(svcSearch);
 
@@ -168,6 +172,7 @@ export function usePOSEngine() {
     setWalkInMode(false); setGlobalDisc(''); setTipInput(''); setCustNote('');
     setSelfOrderId(null); setPublicToken(null); setShowQRModal(false);
     setSelectedPayMethod('cash');
+    setCouponCode(''); setCouponDiscount(0); setCouponApplied(false); setCouponMsg('');
   }, []);
 
   /* ── Calculations ── */
@@ -187,9 +192,41 @@ export function usePOSEngine() {
   }, [globalDisc, globalDiscType, subtotal]);
 
   const afterDisc = Math.max(0, subtotal - gDiscVal);
-  const tax = afterDisc * TAX;
+  const afterCoupon = Math.max(0, afterDisc - couponDiscount);
+  const tax = afterCoupon * TAX;
   const tip = useMemo(() => { const v = parseFloat(tipInput); return isNaN(v) || v < 0 ? 0 : v; }, [tipInput]);
-  const total = afterDisc + tax + tip;
+  const total = afterCoupon + tax + tip;
+
+  /* ── Coupon validation ── */
+  const couponMut = useMutation({
+    mutationFn: async (code: string) => {
+      if (isDev(accessToken)) return { valid: true, discountAmount: 10, message: 'كوبون تجريبي' };
+      return api.post<{ valid: boolean; discountAmount: number; message: string }>('/coupons/validate', { code: code.toUpperCase(), orderAmount: afterDisc }, accessToken!);
+    },
+    onSuccess: (res) => {
+      if (res.valid) {
+        setCouponDiscount(res.discountAmount);
+        setCouponApplied(true);
+        setCouponMsg(res.message);
+        toast.success(res.message);
+      } else {
+        setCouponDiscount(0);
+        setCouponApplied(false);
+        setCouponMsg(res.message);
+        toast.error(res.message);
+      }
+    },
+    onError: () => { toast.error('خطأ في التحقق من الكوبون'); },
+  });
+
+  const applyCoupon = useCallback(() => {
+    if (!couponCode.trim()) return;
+    couponMut.mutate(couponCode.trim());
+  }, [couponCode, couponMut]);
+
+  const removeCoupon = useCallback(() => {
+    setCouponCode(''); setCouponDiscount(0); setCouponApplied(false); setCouponMsg('');
+  }, []);
 
   /* ── Commission ── */
   const comms = useMemo(() => {
@@ -302,11 +339,13 @@ export function usePOSEngine() {
     walkName, walkPhone, walkInMode, sendWA, sendMail,
     panel, held, splits, refId, refReason,
     online, favIds, showFavs, showBundles, receiptLogo, receiptMsg, receiptPhone,
+    couponCode, couponDiscount, couponApplied, couponMsg,
     setCart, setSelCat, setSvcSearch, setCliSearch, setClient, setDefEmployee,
     setGlobalDisc, setGlobalDiscType, setTipInput, setCustNote,
     setWalkName, setWalkPhone, setWalkInMode, setSendWA, setSendMail,
     setPanel, setHeld, setSplits, setRefId, setRefReason,
     setFavIds, setShowFavs, setShowBundles, setReceiptLogo, setReceiptMsg, setReceiptPhone,
+    setCouponCode, applyCoupon, removeCoupon, couponMut,
     cats, allSvcs, emps, cliResults, filtered, favSvcs,
     itemTotals, subtotal, cartCount, gDiscVal, afterDisc, tax, tip, total,
     comms, totalComm, splitRem, canPay, selectedPayMethod, setSelectedPayMethod,
