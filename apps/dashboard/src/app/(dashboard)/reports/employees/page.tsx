@@ -8,13 +8,12 @@ import { Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 
-interface EmpPerf { id: string; fullName: string; appointments: number; revenue: number; averageRating: number; }
-interface EmpReport { totalEmployees: number; averageRating: number; employees: EmpPerf[]; }
-
-const EMPTY: EmpReport = {
-  totalEmployees: 0, averageRating: 0,
-  employees: [],
-};
+/* ═══════════════ Backend shape ═══════════════ */
+interface EmployeeReportItem {
+  employee: { id: string; fullName: string; role: string };
+  appointmentsCount: number;
+  revenue: number;
+}
 
 function Stars({ rating }: { rating: number }) {
   return (
@@ -22,7 +21,6 @@ function Stars({ rating }: { rating: number }) {
       {[1, 2, 3, 4, 5].map(i => (
         <Star key={i} className={cn('h-3 w-3', i <= Math.round(rating) ? 'fill-amber-400 text-amber-400' : 'text-[var(--border)]')} />
       ))}
-      <span className="text-[10px] font-bold text-[var(--muted-foreground)] mr-1 tabular-nums">{rating}</span>
     </div>
   );
 }
@@ -35,16 +33,17 @@ export default function EmployeesReportPage() {
   const dateFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   const dateTo = now.toISOString().split('T')[0];
 
-  const { data, isLoading } = useQuery<EmpReport>({
+  const { data, isLoading } = useQuery<EmployeeReportItem[]>({
     queryKey: ['reports', 'employees'],
-    queryFn: () => api.get<EmpReport>(`/reports/employees?dateFrom=${dateFrom}&dateTo=${dateTo}`, accessToken!),
+    queryFn: () => api.get<EmployeeReportItem[]>(`/reports/employees?dateFrom=${dateFrom}&dateTo=${dateTo}`, accessToken!),
     enabled: !!accessToken, staleTime: 5 * 60 * 1000,
   });
 
-  const r = data ?? EMPTY;
-  const sorted = [...r.employees].sort((a, b) => b.revenue - a.revenue);
+  const employees = data ?? [];
+  const sorted = [...employees].sort((a, b) => b.revenue - a.revenue);
+  const totalRevenue = sorted.reduce((s, e) => s + e.revenue, 0);
   const maxRev = Math.max(...sorted.map(e => e.revenue), 1);
-  const maxAppt = Math.max(...sorted.map(e => e.appointments), 1);
+  const maxAppt = Math.max(...sorted.map(e => e.appointmentsCount), 1);
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
@@ -66,18 +65,18 @@ export default function EmployeesReportPage() {
         <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 p-5 text-white">
           <UserCog className="h-5 w-5 mb-2 opacity-60" />
           <p className="text-xs opacity-70">إجمالي الموظفات</p>
-          <p className="text-3xl font-black mt-1">{r.totalEmployees}</p>
-        </div>
-        <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 p-5 text-white">
-          <Star className="h-5 w-5 mb-2 opacity-60" />
-          <p className="text-xs opacity-70">متوسط التقييم</p>
-          <p className="text-3xl font-black mt-1 tabular-nums">{r.averageRating} <span className="text-base font-medium opacity-70">/ 5</span></p>
+          <p className="text-3xl font-black mt-1">{sorted.length}</p>
         </div>
         <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-5 text-white">
           <TrendingUp className="h-5 w-5 mb-2 opacity-60" />
           <p className="text-xs opacity-70">إجمالي الإيرادات</p>
-          <p className="text-3xl font-black mt-1 tabular-nums" dir="ltr">{sorted.reduce((s, e) => s + e.revenue, 0).toLocaleString('en')}</p>
+          <p className="text-3xl font-black mt-1 tabular-nums" dir="ltr">{totalRevenue.toLocaleString('en')}</p>
           <p className="text-[10px] opacity-50">SAR</p>
+        </div>
+        <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 p-5 text-white">
+          <Trophy className="h-5 w-5 mb-2 opacity-60" />
+          <p className="text-xs opacity-70">إجمالي المواعيد</p>
+          <p className="text-3xl font-black mt-1">{sorted.reduce((s, e) => s + e.appointmentsCount, 0)}</p>
         </div>
       </div>
 
@@ -86,47 +85,46 @@ export default function EmployeesReportPage() {
         <div className="px-5 py-4 border-b border-[var(--border)]">
           <h3 className="text-sm font-bold flex items-center gap-2"><Trophy className="h-4 w-4 text-amber-500" /> ترتيب الموظفات حسب الإيرادات</h3>
         </div>
-        <div className="divide-y divide-[var(--border)]">
-          {sorted.map((emp, i) => {
-            const revPct = Math.round((emp.revenue / maxRev) * 100);
-            const medals = ['🥇', '🥈', '🥉'];
-
-            return (
-              <div key={emp.id} className="p-5 hover:bg-[var(--muted)]/20 transition">
-                <div className="flex items-center gap-4 mb-3">
-                  {/* Rank */}
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--brand-primary)]/10 to-[var(--brand-primary)]/5 flex items-center justify-center text-lg font-black flex-shrink-0">
-                    {medals[i] || <span className="text-xs text-[var(--muted-foreground)]">{i + 1}</span>}
+        {sorted.length > 0 ? (
+          <div className="divide-y divide-[var(--border)]">
+            {sorted.map((item, i) => {
+              const revPct = Math.round((item.revenue / maxRev) * 100);
+              const medals = ['🥇', '🥈', '🥉'];
+              return (
+                <div key={item.employee.id} className="p-5 hover:bg-[var(--muted)]/20 transition">
+                  <div className="flex items-center gap-4 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--brand-primary)]/10 to-[var(--brand-primary)]/5 flex items-center justify-center text-lg font-black flex-shrink-0">
+                      {medals[i] || <span className="text-xs text-[var(--muted-foreground)]">{i + 1}</span>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-bold text-[var(--foreground)]">{item.employee.fullName}</span>
+                    </div>
+                    <div className="text-left flex-shrink-0">
+                      <div className="text-lg font-black tabular-nums text-[var(--foreground)]" dir="ltr">{item.revenue.toLocaleString('en')}</div>
+                      <p className="text-[10px] text-[var(--muted-foreground)]">SAR · {item.appointmentsCount} موعد</p>
+                    </div>
                   </div>
-                  {/* Name + Rating */}
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm font-bold text-[var(--foreground)]">{emp.fullName}</span>
-                    <div className="mt-0.5"><Stars rating={emp.averageRating} /></div>
+                  {/* Revenue Bar */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-bold text-[var(--muted-foreground)] w-14">الإيرادات</span>
+                    <div className="flex-1 h-2 rounded-full bg-[var(--muted)] overflow-hidden">
+                      <div className="h-full rounded-full bg-gradient-to-l from-emerald-500 to-emerald-400 transition-all" style={{ width: `${revPct}%` }} />
+                    </div>
                   </div>
-                  {/* Revenue */}
-                  <div className="text-left flex-shrink-0">
-                    <div className="text-lg font-black tabular-nums text-[var(--foreground)]" dir="ltr">{emp.revenue.toLocaleString('en')}</div>
-                    <p className="text-[10px] text-[var(--muted-foreground)]">SAR · {emp.appointments} موعد</p>
-                  </div>
-                </div>
-                {/* Revenue Bar */}
-                <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-bold text-[var(--muted-foreground)] w-14">الإيرادات</span>
-                  <div className="flex-1 h-2 rounded-full bg-[var(--muted)] overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-to-l from-emerald-500 to-emerald-400 transition-all" style={{ width: `${revPct}%` }} />
-                  </div>
-                </div>
-                {/* Appointments Bar */}
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[9px] font-bold text-[var(--muted-foreground)] w-14">المواعيد</span>
-                  <div className="flex-1 h-2 rounded-full bg-[var(--muted)] overflow-hidden">
-                    <div className="h-full rounded-full bg-gradient-to-l from-violet-500 to-violet-400 transition-all" style={{ width: `${Math.round((emp.appointments / maxAppt) * 100)}%` }} />
+                  {/* Appointments Bar */}
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[9px] font-bold text-[var(--muted-foreground)] w-14">المواعيد</span>
+                    <div className="flex-1 h-2 rounded-full bg-[var(--muted)] overflow-hidden">
+                      <div className="h-full rounded-full bg-gradient-to-l from-violet-500 to-violet-400 transition-all" style={{ width: `${Math.round((item.appointmentsCount / maxAppt) * 100)}%` }} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-center py-12 text-sm text-[var(--muted-foreground)]">لا توجد بيانات موظفات</p>
+        )}
       </div>
     </div>
   );

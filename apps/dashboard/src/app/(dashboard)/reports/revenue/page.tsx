@@ -3,22 +3,15 @@
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, TrendingUp, TrendingDown, Receipt, DollarSign, BarChart3, Calendar } from 'lucide-react';
-import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, AreaChart, Area,
-} from 'recharts';
+import { ArrowRight, TrendingUp, DollarSign, BarChart3, Receipt } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button, Spinner } from '@/components/ui';
+import { Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 
-interface RevenueData {
-  totalRevenue: number;
-  totalInvoices: number;
-  averageTicket: number;
-  dailyRevenue: { date: string; revenue: number }[];
-  serviceBreakdown: { serviceName: string; count: number; revenue: number }[];
-}
+/* ═══════════════ Backend shape ═══════════════ */
+interface RevenueItem { period: string; revenue: number; count: number; }
+interface RevenueData { items: RevenueItem[]; totalRevenue: number; totalCount: number; }
 
 type Period = 'today' | 'week' | 'month' | 'year' | 'all';
 
@@ -34,32 +27,18 @@ function getDateRange(period: Period): { from: string; to: string } {
   const now = new Date();
   const to = now.toISOString().split('T')[0];
   let from: Date;
-
   switch (period) {
-    case 'today':
-      from = new Date(now); from.setHours(0,0,0,0); break;
-    case 'week':
-      from = new Date(now); from.setDate(now.getDate() - 7); break;
-    case 'month':
-      from = new Date(now.getFullYear(), now.getMonth(), 1); break;
-    case 'year':
-      from = new Date(now.getFullYear(), 0, 1); break;
-    case 'all':
-      from = new Date(2020, 0, 1); break;
-    default:
-      from = new Date(now.getFullYear(), now.getMonth(), 1);
+    case 'today': from = new Date(now); from.setHours(0, 0, 0, 0); break;
+    case 'week': from = new Date(now); from.setDate(now.getDate() - 7); break;
+    case 'month': from = new Date(now.getFullYear(), now.getMonth(), 1); break;
+    case 'year': from = new Date(now.getFullYear(), 0, 1); break;
+    case 'all': from = new Date(2020, 0, 1); break;
+    default: from = new Date(now.getFullYear(), now.getMonth(), 1);
   }
-
   return { from: from.toISOString().split('T')[0], to };
 }
 
-const EMPTY: RevenueData = {
-  totalRevenue: 0,
-  totalInvoices: 0,
-  averageTicket: 0,
-  dailyRevenue: [],
-  serviceBreakdown: [],
-};
+const EMPTY: RevenueData = { items: [], totalRevenue: 0, totalCount: 0 };
 
 export default function RevenueReportPage() {
   const router = useRouter();
@@ -81,8 +60,8 @@ export default function RevenueReportPage() {
   });
 
   const report = data ?? EMPTY;
-  const maxRev = Math.max(...(report.dailyRevenue?.map(d => d.revenue) ?? [0]));
-  const totalSvcRevenue = report.serviceBreakdown?.reduce((s, r) => s + r.revenue, 0) || 1;
+  const avgTicket = report.totalCount > 0 ? Math.round(report.totalRevenue / report.totalCount) : 0;
+  const maxRev = Math.max(...(report.items?.map(d => d.revenue) ?? [0]));
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
@@ -131,29 +110,27 @@ export default function RevenueReportPage() {
         <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 p-5 text-white">
           <Receipt className="h-5 w-5 mb-2 opacity-60" />
           <p className="text-xs opacity-70">عدد الفواتير</p>
-          <p className="text-3xl font-black mt-1">{report.totalInvoices.toLocaleString('en')}</p>
+          <p className="text-3xl font-black mt-1">{report.totalCount.toLocaleString('en')}</p>
           <p className="text-[10px] opacity-60 mt-0.5">فاتورة</p>
         </div>
         <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 p-5 text-white">
           <TrendingUp className="h-5 w-5 mb-2 opacity-60" />
           <p className="text-xs opacity-70">متوسط الفاتورة</p>
-          <p className="text-3xl font-black mt-1 tabular-nums" dir="ltr">{report.averageTicket.toLocaleString('en', { maximumFractionDigits: 0 })}</p>
+          <p className="text-3xl font-black mt-1 tabular-nums" dir="ltr">{avgTicket.toLocaleString('en')}</p>
           <p className="text-[10px] opacity-60 mt-0.5">SAR</p>
         </div>
       </div>
 
       {/* Revenue Chart */}
-      {report.dailyRevenue && report.dailyRevenue.length > 0 && (
+      {report.items && report.items.length > 0 && (
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
           <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
-            <h3 className="text-sm font-bold flex items-center gap-2"><BarChart3 className="h-4 w-4 text-[var(--brand-primary)]" /> الإيرادات اليومية</h3>
+            <h3 className="text-sm font-bold flex items-center gap-2"><BarChart3 className="h-4 w-4 text-[var(--brand-primary)]" /> الإيرادات حسب الفترة</h3>
           </div>
           <div className="p-5">
-            {/* Mini Bar Chart */}
             <div className="flex items-end gap-1 h-40 mb-3">
-              {report.dailyRevenue.map((dp, i) => {
+              {report.items.map((dp, i) => {
                 const pct = maxRev > 0 ? (dp.revenue / maxRev) * 100 : 0;
-                const d = new Date(dp.date);
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
                     <span className="text-[8px] font-bold text-[var(--muted-foreground)] opacity-0 group-hover:opacity-100 transition tabular-nums" dir="ltr">
@@ -162,55 +139,28 @@ export default function RevenueReportPage() {
                     <div className="w-full rounded-t-lg bg-gradient-to-t from-[var(--brand-primary)] to-[var(--brand-primary)]/50 group-hover:from-[var(--brand-primary)] group-hover:to-[var(--brand-primary)]/80 transition-all cursor-pointer"
                       style={{ height: `${Math.max(pct, 3)}%` }} />
                     <span className="text-[8px] text-[var(--muted-foreground)] tabular-nums" dir="ltr">
-                      {d.toLocaleDateString('en', { month: '2-digit', day: '2-digit' })}
+                      {dp.period.length > 7 ? dp.period.slice(5) : dp.period}
                     </span>
                   </div>
                 );
               })}
             </div>
-            {/* Summary below chart */}
             <div className="flex items-center justify-between px-2 py-2 rounded-xl bg-[var(--muted)]/40 text-[11px]">
-              <span className="text-[var(--muted-foreground)]">أعلى يوم: <strong className="text-[var(--foreground)]" dir="ltr">{maxRev.toLocaleString('en')} SAR</strong></span>
-              <span className="text-[var(--muted-foreground)]">المتوسط: <strong className="text-[var(--foreground)]" dir="ltr">{Math.round(report.dailyRevenue.reduce((s, d) => s + d.revenue, 0) / report.dailyRevenue.length).toLocaleString('en')} SAR</strong></span>
+              <span className="text-[var(--muted-foreground)]">أعلى فترة: <strong className="text-[var(--foreground)]" dir="ltr">{maxRev.toLocaleString('en')} SAR</strong></span>
+              <span className="text-[var(--muted-foreground)]">المتوسط: <strong className="text-[var(--foreground)]" dir="ltr">{report.items.length > 0 ? Math.round(report.totalRevenue / report.items.length).toLocaleString('en') : 0} SAR</strong></span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Service Breakdown */}
-      {report.serviceBreakdown && report.serviceBreakdown.length > 0 && (
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[var(--border)]">
-            <h3 className="text-sm font-bold">🏆 الأكثر إيراداً</h3>
+      {/* Empty State */}
+      {(!report.items || report.items.length === 0) && (
+        <div className="text-center py-20">
+          <div className="w-20 h-20 rounded-3xl bg-[var(--muted)] flex items-center justify-center mx-auto mb-4">
+            <BarChart3 className="h-10 w-10 text-[var(--muted-foreground)] opacity-30" />
           </div>
-          <div className="divide-y divide-[var(--border)]">
-            {[...report.serviceBreakdown].sort((a, b) => b.revenue - a.revenue).map((svc, i) => {
-              const pct = Math.round((svc.revenue / totalSvcRevenue) * 100);
-              const medals = ['🥇', '🥈', '🥉'];
-              return (
-                <div key={svc.serviceName} className="px-5 py-3">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{medals[i] || `${i + 1}.`}</span>
-                      <span className="text-sm font-bold text-[var(--foreground)]">{svc.serviceName}</span>
-                      <span className="text-[10px] text-[var(--muted-foreground)] px-1.5 py-0.5 rounded-md bg-[var(--muted)]">{svc.count} مرة</span>
-                    </div>
-                    <div className="text-left">
-                      <span className="text-sm font-black tabular-nums text-[var(--foreground)]" dir="ltr">{svc.revenue.toLocaleString('en')}</span>
-                      <span className="text-[10px] text-[var(--muted-foreground)] mr-1">SAR</span>
-                    </div>
-                  </div>
-                  {/* Progress bar */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-[var(--muted)] overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-l from-[var(--brand-primary)] to-[var(--brand-primary)]/60 transition-all" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="text-[9px] font-bold text-[var(--muted-foreground)] tabular-nums w-8 text-left">{pct}%</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <p className="font-bold text-lg">لا توجد إيرادات في هذه الفترة</p>
+          <p className="text-sm text-[var(--muted-foreground)] mt-1">جرّب فترة أخرى</p>
         </div>
       )}
     </div>

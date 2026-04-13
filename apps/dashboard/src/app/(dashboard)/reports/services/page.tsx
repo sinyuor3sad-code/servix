@@ -3,29 +3,21 @@
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, Scissors, TrendingUp, Clock, Hash, Star, BarChart3 } from 'lucide-react';
+import { ArrowRight, Scissors, TrendingUp, Clock, Hash, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 
-interface ServicesReport {
-  totalServices: number;
-  totalBookings: number;
-  totalRevenue: number;
-  averageDuration: number;
-  serviceBreakdown: {
-    serviceId: string;
-    serviceName: string;
-    categoryName: string;
-    count: number;
-    revenue: number;
-    avgDuration: number;
-  }[];
+/* ═══════════════ Backend shape ═══════════════ */
+interface ServiceReportItem {
+  service: { id: string; nameAr: string; nameEn?: string; price: number };
+  bookingsCount: number;
+  revenue: number;
 }
 
 type Period = 'week' | 'month' | 'year' | 'all';
-type SortBy = 'revenue' | 'count' | 'duration';
+type SortBy = 'revenue' | 'count';
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: 'week', label: 'الأسبوع' },
@@ -48,11 +40,6 @@ function getDateRange(period: Period): { from: string; to: string } {
   return { from: from.toISOString().split('T')[0], to };
 }
 
-const EMPTY: ServicesReport = {
-  totalServices: 0, totalBookings: 0, totalRevenue: 0, averageDuration: 0,
-  serviceBreakdown: [],
-};
-
 export default function ServicesReportPage() {
   const router = useRouter();
   const { accessToken } = useAuth();
@@ -61,24 +48,24 @@ export default function ServicesReportPage() {
 
   const dateRange = useMemo(() => getDateRange(period), [period]);
 
-  const { data, isLoading } = useQuery<ServicesReport>({
+  const { data, isLoading } = useQuery<ServiceReportItem[]>({
     queryKey: ['reports', 'services', dateRange.from, dateRange.to],
-    queryFn: () => api.get<ServicesReport>(`/reports/services?dateFrom=${dateRange.from}&dateTo=${dateRange.to}`, accessToken!),
+    queryFn: () => api.get<ServiceReportItem[]>(`/reports/services?dateFrom=${dateRange.from}&dateTo=${dateRange.to}`, accessToken!),
     enabled: !!accessToken,
     staleTime: 5 * 60 * 1000,
   });
 
-  const report = data ?? EMPTY;
-  const maxRevenue = Math.max(...(report.serviceBreakdown?.map(s => s.revenue) ?? [1]));
+  const items = data ?? [];
+  const totalRevenue = items.reduce((s, i) => s + i.revenue, 0);
+  const totalBookings = items.reduce((s, i) => s + i.bookingsCount, 0);
+  const maxRevenue = Math.max(...items.map(s => s.revenue), 1);
 
   const sorted = useMemo(() => {
-    if (!report.serviceBreakdown) return [];
-    return [...report.serviceBreakdown].sort((a, b) => {
+    return [...items].sort((a, b) => {
       if (sortBy === 'revenue') return b.revenue - a.revenue;
-      if (sortBy === 'count') return b.count - a.count;
-      return b.avgDuration - a.avgDuration;
+      return b.bookingsCount - a.bookingsCount;
     });
-  }, [report.serviceBreakdown, sortBy]);
+  }, [items, sortBy]);
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
@@ -107,28 +94,22 @@ export default function ServicesReportPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 p-4 text-white">
           <Scissors className="h-4 w-4 mb-1.5 opacity-60" />
           <p className="text-[10px] opacity-70">إجمالي الخدمات</p>
-          <p className="text-2xl font-black mt-0.5">{report.totalServices}</p>
+          <p className="text-2xl font-black mt-0.5">{items.length}</p>
         </div>
         <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-4 text-white">
           <TrendingUp className="h-4 w-4 mb-1.5 opacity-60" />
           <p className="text-[10px] opacity-70">الإيرادات</p>
-          <p className="text-2xl font-black mt-0.5 tabular-nums" dir="ltr">{report.totalRevenue.toLocaleString('en')}</p>
+          <p className="text-2xl font-black mt-0.5 tabular-nums" dir="ltr">{totalRevenue.toLocaleString('en')}</p>
           <p className="text-[9px] opacity-50">SAR</p>
         </div>
         <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 p-4 text-white">
           <Hash className="h-4 w-4 mb-1.5 opacity-60" />
           <p className="text-[10px] opacity-70">عدد الحجوزات</p>
-          <p className="text-2xl font-black mt-0.5">{report.totalBookings}</p>
-        </div>
-        <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 p-4 text-white">
-          <Clock className="h-4 w-4 mb-1.5 opacity-60" />
-          <p className="text-[10px] opacity-70">متوسط المدة</p>
-          <p className="text-2xl font-black mt-0.5">{report.averageDuration}</p>
-          <p className="text-[9px] opacity-50">دقيقة</p>
+          <p className="text-2xl font-black mt-0.5">{totalBookings}</p>
         </div>
       </div>
 
@@ -138,7 +119,6 @@ export default function ServicesReportPage() {
         {[
           { key: 'revenue' as SortBy, label: 'الإيراد' },
           { key: 'count' as SortBy, label: 'الطلب' },
-          { key: 'duration' as SortBy, label: 'المدة' },
         ].map(s => (
           <button key={s.key} onClick={() => setSortBy(s.key)}
             className={cn('px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all',
@@ -159,24 +139,24 @@ export default function ServicesReportPage() {
           <p className="text-center py-12 text-sm text-[var(--muted-foreground)]">لا توجد بيانات في هذه الفترة</p>
         ) : (
           <div className="divide-y divide-[var(--border)]">
-            {sorted.map((svc, i) => {
-              const pct = maxRevenue > 0 ? (svc.revenue / maxRevenue) * 100 : 0;
+            {sorted.map((item, i) => {
+              const pct = maxRevenue > 0 ? (item.revenue / maxRevenue) * 100 : 0;
               const medals = ['🥇', '🥈', '🥉'];
               return (
-                <div key={svc.serviceId} className="px-5 py-3.5 hover:bg-[var(--muted)]/30 transition">
+                <div key={item.service.id} className="px-5 py-3.5 hover:bg-[var(--muted)]/30 transition">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2.5">
                       <span className="text-sm w-6 text-center">{medals[i] || `${i + 1}`}</span>
                       <div>
-                        <p className="text-sm font-bold text-[var(--foreground)]">{svc.serviceName}</p>
-                        <p className="text-[10px] text-[var(--muted-foreground)]">{svc.categoryName} · {svc.avgDuration} دقيقة</p>
+                        <p className="text-sm font-bold text-[var(--foreground)]">{item.service.nameAr}</p>
+                        {item.service.nameEn && <p className="text-[10px] text-[var(--muted-foreground)]">{item.service.nameEn}</p>}
                       </div>
                     </div>
                     <div className="text-left">
                       <p className="text-sm font-black tabular-nums text-[var(--foreground)]" dir="ltr">
-                        {svc.revenue.toLocaleString('en')} <span className="text-[10px] font-normal text-[var(--muted-foreground)]">SAR</span>
+                        {item.revenue.toLocaleString('en')} <span className="text-[10px] font-normal text-[var(--muted-foreground)]">SAR</span>
                       </p>
-                      <p className="text-[10px] text-[var(--muted-foreground)]">{svc.count} مرة</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)]">{item.bookingsCount} مرة</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
