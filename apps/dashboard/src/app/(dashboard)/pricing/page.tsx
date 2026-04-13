@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
+import { useRouter } from 'next/navigation';
 import {
   TrendingUp,
   Plus,
@@ -11,6 +12,7 @@ import {
   Moon,
   Sun,
   CalendarDays,
+  ArrowRight,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboard.service';
@@ -45,6 +47,7 @@ function formatMultiplier(m: number): string {
 
 export default function PricingPage(): React.ReactElement {
   const { accessToken } = useAuth();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [newRule, setNewRule] = useState({
@@ -78,6 +81,9 @@ export default function PricingPage(): React.ReactElement {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center gap-3 mb-2">
+        <button onClick={() => router.push('/settings')} className="p-2 rounded-xl border border-[var(--border)] hover:bg-[var(--muted)] transition"><ArrowRight className="h-4 w-4" /></button>
+      </div>
       <PageHeader
         title="التسعير الديناميكي"
         description="إدارة قواعد التسعير الذكي — ذروة، صلاة، عطلات"
@@ -90,11 +96,11 @@ export default function PricingPage(): React.ReactElement {
       />
 
       {/* Info Card */}
-      <Card className="border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50">
+      <Card className="border-[var(--border)]">
         <CardContent className="p-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-100">
-              <Zap className="h-5 w-5 text-[var(--brand-primary)]" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10">
+              <Zap className="h-5 w-5 text-violet-600" />
             </div>
             <div>
               <p className="font-medium text-[var(--foreground)]">كيف يعمل التسعير الديناميكي؟</p>
