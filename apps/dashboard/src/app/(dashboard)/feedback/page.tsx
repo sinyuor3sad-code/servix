@@ -136,79 +136,72 @@ export default function FeedbackPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
-      {/* ═══ Header ═══ */}
-      <div>
-        <h1 className="text-2xl font-black text-[var(--foreground)]">تقييمات العملاء ⭐</h1>
-        <p className="text-sm text-[var(--muted-foreground)] mt-0.5">آراء العملاء وملاحظاتهم</p>
-      </div>
-
-      {/* ═══ Summary Stats ═══ */}
-      {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Avg Rating */}
-          <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 p-4 text-white">
-            <div className="flex items-center gap-1.5 mb-2 opacity-70">
-              <Star className="h-4 w-4" />
-              <span className="text-[10px] font-bold">متوسط التقييم</span>
+      {/* ═══ Hero Header ═══ */}
+      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900 p-8">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-amber-500/15 to-transparent rounded-full blur-3xl" />
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+        <div className="relative z-10">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
+              <Star className="h-6 w-6 text-white/80" />
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black tabular-nums">{summary.avgRating}</span>
-              <span className="text-sm opacity-60">/ 5</span>
-            </div>
-            <div className="mt-1">
-              <MiniStars rating={Math.round(summary.avgRating)} size={12} />
+            <div>
+              <h1 className="text-2xl font-black text-white tracking-tight">تقييمات العملاء</h1>
+              <p className="text-sm text-white/40 mt-0.5">آراء العملاء وملاحظاتهم</p>
             </div>
           </div>
 
-          {/* This Month */}
-          <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 p-4 text-white">
-            <div className="flex items-center gap-1.5 mb-2 opacity-70">
-              <Calendar className="h-4 w-4" />
-              <span className="text-[10px] font-bold">تقييمات الشهر</span>
+          {/* KPIs */}
+          {summary && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-8">
+              <div className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08]">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><Star className="h-3 w-3 text-white/50" /></div>
+                  <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">متوسط التقييم</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-white tabular-nums">{summary.avgRating}</span>
+                  <span className="text-xs text-white/30">/ 5</span>
+                </div>
+                <div className="mt-1.5"><MiniStars rating={Math.round(summary.avgRating)} size={12} /></div>
+              </div>
+              <div className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08]">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><Calendar className="h-3 w-3 text-white/50" /></div>
+                  <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">تقييمات الشهر</span>
+                </div>
+                <p className="text-2xl font-black text-white tabular-nums">{summary.thisMonthCount}</p>
+                <div className="flex items-center gap-1 mt-1 text-[10px] text-white/30">
+                  {monthChangePercent > 0 ? <><TrendingUp className="h-3 w-3" /><span className="font-bold">↑{monthChangePercent}%</span></> : monthChangePercent < 0 ? <><TrendingDown className="h-3 w-3" /><span className="font-bold">↓{Math.abs(monthChangePercent)}%</span></> : <span>—</span>}
+                </div>
+              </div>
+              <div className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08]">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><ThumbsUp className="h-3 w-3 text-white/50" /></div>
+                  <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">نسبة الرضا</span>
+                </div>
+                <p className="text-2xl font-black text-white tabular-nums">{summary.satisfactionRate}%</p>
+                <p className="text-[10px] text-white/20 mt-1">تقييمات 4-5 نجوم</p>
+              </div>
+              <div className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08]">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><MousePointerClick className="h-3 w-3 text-white/50" /></div>
+                  <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">نقرات Google</span>
+                </div>
+                <p className="text-2xl font-black text-white tabular-nums">{summary.googleClickRate}%</p>
+                <p className="text-[10px] text-white/20 mt-1">{summary.googleClickTotal} من {summary.googlePromptTotal} عُرض عليهم</p>
+              </div>
             </div>
-            <div className="text-3xl font-black tabular-nums">{summary.thisMonthCount}</div>
-            <div className="flex items-center gap-1 mt-1 text-[10px]">
-              {monthChangePercent > 0 ? (
-                <><TrendingUp className="h-3 w-3" /><span className="font-bold">↑{monthChangePercent}%</span></>
-              ) : monthChangePercent < 0 ? (
-                <><TrendingDown className="h-3 w-3" /><span className="font-bold">↓{Math.abs(monthChangePercent)}%</span></>
-              ) : (
-                <span className="opacity-50">—</span>
-              )}
-              <span className="opacity-50">مقارنة بالشهر الماضي</span>
-            </div>
-          </div>
-
-          {/* Satisfaction Rate */}
-          <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-4 text-white">
-            <div className="flex items-center gap-1.5 mb-2 opacity-70">
-              <ThumbsUp className="h-4 w-4" />
-              <span className="text-[10px] font-bold">نسبة الرضا</span>
-            </div>
-            <div className="text-3xl font-black tabular-nums">{summary.satisfactionRate}%</div>
-            <p className="text-[10px] opacity-50 mt-1">تقييمات 4-5 نجوم</p>
-          </div>
-
-          {/* Google Clicks */}
-          <div className="rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 p-4 text-white">
-            <div className="flex items-center gap-1.5 mb-2 opacity-70">
-              <MousePointerClick className="h-4 w-4" />
-              <span className="text-[10px] font-bold">نقرات Google</span>
-            </div>
-            <div className="text-3xl font-black tabular-nums">{summary.googleClickRate}%</div>
-            <p className="text-[10px] opacity-50 mt-1">
-              {summary.googleClickTotal} من {summary.googlePromptTotal} عُرض عليهم
-            </p>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* ═══ Star Distribution ═══ */}
       {summary && summary.totalCount > 0 && (
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart className="h-4 w-4 text-[var(--brand-primary)]" />
-            <span className="text-xs font-bold text-[var(--muted-foreground)]">توزيع النجوم</span>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center"><BarChart className="h-4 w-4 text-amber-600" /></div>
+            <span className="text-sm font-bold">توزيع النجوم</span>
           </div>
           <div className="space-y-2">
             {[5, 4, 3, 2, 1].map((star) => {
@@ -252,9 +245,9 @@ export default function FeedbackPage() {
                 key={sf.value}
                 onClick={() => { setStarFilter(sf.value); setPage(1); }}
                 className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-bold transition-all',
+                  'rounded-xl px-4 py-2 text-xs font-bold transition-all duration-300',
                   starFilter === sf.value
-                    ? 'bg-[var(--brand-primary)] text-white shadow-sm'
+                    ? 'bg-[var(--foreground)] text-[var(--background)] shadow-md'
                     : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
                 )}
               >

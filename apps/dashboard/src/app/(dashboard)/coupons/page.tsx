@@ -54,33 +54,49 @@ export default function CouponsPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-black text-[var(--foreground)]">الكوبونات</h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-0.5">إدارة أكواد الخصم والعروض</p>
-        </div>
-        <Link href="/coupons/new">
-          <Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" /> إضافة كوبون</Button>
-        </Link>
-      </div>
+      {/* Hero Header */}
+      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900 p-8">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-fuchsia-500/15 to-transparent rounded-full blur-3xl" />
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+        <div className="relative z-10">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
+                <Tag className="h-6 w-6 text-white/80" />
+              </div>
+              <div>
+                <h1 className="text-xl font-black text-white tracking-tight">الكوبونات</h1>
+                <p className="text-xs text-white/40 mt-0.5">إدارة أكواد الخصم والعروض</p>
+              </div>
+            </div>
+            <Link href="/coupons/new">
+              <Button size="sm" className="gap-1.5 bg-white/10 border border-white/20 text-white hover:bg-white/20"><Plus className="h-3.5 w-3.5" /> إضافة كوبون</Button>
+            </Link>
+          </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <div className="rounded-2xl bg-gradient-to-br from-fuchsia-500 to-pink-600 p-4 text-white">
-          <Tag className="h-5 w-5 mb-2 opacity-60" />
-          <div className="text-2xl font-black">{coupons.length}</div>
-          <p className="text-[11px] opacity-70">إجمالي الكوبونات</p>
-        </div>
-        <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-4 text-white">
-          <CheckCircle2 className="h-5 w-5 mb-2 opacity-60" />
-          <div className="text-2xl font-black">{coupons.filter(c => getCouponStatus(c) === 'active').length}</div>
-          <p className="text-[11px] opacity-70">نشطة</p>
-        </div>
-        <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 p-4 text-white hidden sm:block">
-          <Users className="h-5 w-5 mb-2 opacity-60" />
-          <div className="text-2xl font-black">{coupons.reduce((s, c) => s + c.currentUses, 0)}</div>
-          <p className="text-[11px] opacity-70">مرات الاستخدام</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-8">
+            <div className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08]">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><Tag className="h-3 w-3 text-white/50" /></div>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">إجمالي الكوبونات</span>
+              </div>
+              <p className="text-2xl font-black text-white tabular-nums">{coupons.length}</p>
+            </div>
+            <div className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08]">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><CheckCircle2 className="h-3 w-3 text-white/50" /></div>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">نشطة</span>
+              </div>
+              <p className="text-2xl font-black text-white tabular-nums">{coupons.filter(c => getCouponStatus(c) === 'active').length}</p>
+            </div>
+            <div className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08] hidden sm:block">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><Users className="h-3 w-3 text-white/50" /></div>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">مرات الاستخدام</span>
+              </div>
+              <p className="text-2xl font-black text-white tabular-nums">{coupons.reduce((s, c) => s + c.currentUses, 0)}</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -104,15 +120,17 @@ export default function CouponsPage() {
 
             return (
               <div key={coupon.id} className={cn('rounded-2xl border bg-[var(--card)] overflow-hidden transition-all hover:shadow-md', st === 'disabled' && 'opacity-50')}>
-                {/* Coupon Header - Ticket Style */}
-                <div className={cn('relative p-5', isPercent ? 'bg-gradient-to-l from-fuchsia-500 to-pink-600' : 'bg-gradient-to-l from-violet-500 to-purple-600')}>
-                  <div className="flex items-center justify-between text-white">
+                {/* Coupon Header - Clean Ticket Style */}
+                <div className="relative p-5 border-b border-[var(--border)] bg-[var(--muted)]/30">
+                  <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        {isPercent ? <Percent className="h-4 w-4 opacity-70" /> : <DollarSign className="h-4 w-4 opacity-70" />}
-                        <span className="text-xs font-bold opacity-70">{isPercent ? 'خصم نسبي' : 'خصم ثابت'}</span>
+                        <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center', isPercent ? 'bg-fuchsia-500/10 text-fuchsia-600' : 'bg-violet-500/10 text-violet-600')}>
+                          {isPercent ? <Percent className="h-4 w-4" /> : <DollarSign className="h-4 w-4" />}
+                        </div>
+                        <span className="text-[10px] font-bold text-[var(--muted-foreground)]">{isPercent ? 'خصم نسبي' : 'خصم ثابت'}</span>
                       </div>
-                      <div className="text-3xl font-black tabular-nums" dir="ltr">
+                      <div className="text-2xl font-black tabular-nums text-[var(--foreground)]" dir="ltr">
                         {isPercent ? `${coupon.value}%` : `${coupon.value} SAR`}
                       </div>
                     </div>
@@ -120,8 +138,6 @@ export default function CouponsPage() {
                       {style.label}
                     </span>
                   </div>
-                  {/* Dashed divider - ticket effect */}
-                  <div className="absolute bottom-0 left-0 right-0 border-b-2 border-dashed border-white/20" />
                 </div>
 
                 {/* Coupon Body */}

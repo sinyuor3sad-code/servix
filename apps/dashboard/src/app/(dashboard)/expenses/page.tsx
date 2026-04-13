@@ -149,57 +149,73 @@ export default function ExpensesPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-black text-[var(--foreground)]">المصروفات والديون</h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-0.5">إدارة المصروفات ورواتب الموظفات والديون</p>
-        </div>
-        <div className="flex gap-2">
-          {tab === 'emp_debts' && (
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setDebtForm({ targetId: '', amount: '', description: '', type: 'advance', date: new Date().toISOString().split('T')[0] }); setNewDebtOpen('employee'); }}>
-              <Plus className="h-3.5 w-3.5" /> سلفة جديدة
-            </Button>
-          )}
-          {tab === 'client_debts' && (
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setDebtForm({ targetId: '', amount: '', description: '', type: 'advance', date: new Date().toISOString().split('T')[0] }); setNewDebtOpen('client'); }}>
-              <Plus className="h-3.5 w-3.5" /> دين جديد
-            </Button>
-          )}
-          <Link href="/expenses/new">
-            <Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" /> إضافة مصروف</Button>
-          </Link>
-        </div>
-      </div>
+      {/* Hero Header */}
+      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900 p-8">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-red-500/15 to-transparent rounded-full blur-3xl" />
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+        <div className="relative z-10">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/10">
+                <Wallet className="h-6 w-6 text-white/80" />
+              </div>
+              <div>
+                <h1 className="text-xl font-black text-white tracking-tight">المصروفات والديون</h1>
+                <p className="text-xs text-white/40 mt-0.5">إدارة المصروفات ورواتب الموظفات والديون</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {tab === 'emp_debts' && (
+                <Button size="sm" variant="outline" className="gap-1.5 border-white/20 text-white hover:bg-white/10" onClick={() => { setDebtForm({ targetId: '', amount: '', description: '', type: 'advance', date: new Date().toISOString().split('T')[0] }); setNewDebtOpen('employee'); }}>
+                  <Plus className="h-3.5 w-3.5" /> سلفة جديدة
+                </Button>
+              )}
+              {tab === 'client_debts' && (
+                <Button size="sm" variant="outline" className="gap-1.5 border-white/20 text-white hover:bg-white/10" onClick={() => { setDebtForm({ targetId: '', amount: '', description: '', type: 'advance', date: new Date().toISOString().split('T')[0] }); setNewDebtOpen('client'); }}>
+                  <Plus className="h-3.5 w-3.5" /> دين جديد
+                </Button>
+              )}
+              <Link href="/expenses/new">
+                <Button size="sm" className="gap-1.5 bg-white/10 border border-white/20 text-white hover:bg-white/20"><Plus className="h-3.5 w-3.5" /> إضافة مصروف</Button>
+              </Link>
+            </div>
+          </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 p-4 text-white">
-          <TrendingDown className="h-5 w-5 mb-1.5 opacity-60" />
-          <p className="text-[10px] opacity-70">إجمالي المصروفات</p>
-          <p className="text-xl font-black tabular-nums mt-0.5" dir="ltr">{totalExp.toLocaleString('en')} <span className="text-[9px] font-medium opacity-60">SAR</span></p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-8">
+            <div className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08]">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><TrendingDown className="h-3 w-3 text-white/50" /></div>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">إجمالي المصروفات</span>
+              </div>
+              <p className="text-2xl font-black text-white tabular-nums" dir="ltr">{totalExp.toLocaleString('en')}</p>
+              <p className="text-[10px] text-white/20">SAR</p>
+            </div>
+            <div className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08]">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><Users className="h-3 w-3 text-white/50" /></div>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">رواتب الموظفات</span>
+              </div>
+              <p className="text-2xl font-black text-white tabular-nums" dir="ltr">{salaryTotal.toLocaleString('en')}</p>
+              <p className="text-[10px] text-white/20">SAR</p>
+            </div>
+            <button onClick={() => setTab('emp_debts')} className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08] text-right hover:bg-white/[0.09] transition-all">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><UserCheck className="h-3 w-3 text-white/50" /></div>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">ديون الموظفات</span>
+              </div>
+              <p className="text-2xl font-black text-white tabular-nums" dir="ltr">{(debtSummary?.employeeTotalDebt ?? 0).toLocaleString('en')}</p>
+              <p className="text-[10px] text-white/20">SAR</p>
+            </button>
+            <button onClick={() => setTab('client_debts')} className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-4 border border-white/[0.08] text-right hover:bg-white/[0.09] transition-all">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><CreditCard className="h-3 w-3 text-white/50" /></div>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">ديون العملاء</span>
+              </div>
+              <p className="text-2xl font-black text-white tabular-nums" dir="ltr">{(debtSummary?.clientTotalDebt ?? 0).toLocaleString('en')}</p>
+              <p className="text-[10px] text-white/20">SAR</p>
+            </button>
+          </div>
         </div>
-        <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 p-4 text-white">
-          <Users className="h-5 w-5 mb-1.5 opacity-60" />
-          <p className="text-[10px] opacity-70">رواتب الموظفات</p>
-          <p className="text-xl font-black tabular-nums mt-0.5" dir="ltr">{salaryTotal.toLocaleString('en')} <span className="text-[9px] font-medium opacity-60">SAR</span></p>
-        </div>
-        <button onClick={() => setTab('emp_debts')} className="rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 p-4 text-white text-right hover:scale-[1.02] transition-transform">
-          <UserCheck className="h-5 w-5 mb-1.5 opacity-60" />
-          <p className="text-[10px] opacity-70">ديون الموظفات</p>
-          <p className="text-xl font-black tabular-nums mt-0.5" dir="ltr">
-            {(debtSummary?.employeeTotalDebt ?? 0).toLocaleString('en')} <span className="text-[9px] font-medium opacity-60">SAR</span>
-          </p>
-          {(debtSummary?.employeeDebtCount ?? 0) > 0 && <p className="text-[10px] opacity-80 mt-0.5">{debtSummary!.employeeDebtCount} دين معلق</p>}
-        </button>
-        <button onClick={() => setTab('client_debts')} className="rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 p-4 text-white text-right hover:scale-[1.02] transition-transform">
-          <CreditCard className="h-5 w-5 mb-1.5 opacity-60" />
-          <p className="text-[10px] opacity-70">ديون العملاء</p>
-          <p className="text-xl font-black tabular-nums mt-0.5" dir="ltr">
-            {(debtSummary?.clientTotalDebt ?? 0).toLocaleString('en')} <span className="text-[9px] font-medium opacity-60">SAR</span>
-          </p>
-          {(debtSummary?.clientDebtCount ?? 0) > 0 && <p className="text-[10px] opacity-80 mt-0.5">{debtSummary!.clientDebtCount} دين معلق</p>}
-        </button>
       </div>
 
       {/* Tabs */}
@@ -304,7 +320,7 @@ export default function ExpensesPage() {
             <>
               {/* Pending */}
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-                <div className="px-5 py-3 bg-gradient-to-l from-amber-500 to-orange-600 text-white flex items-center justify-between">
+                <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between">
                   <span className="text-xs font-bold">⏳ ديون معلقة ({empDebtsPending.length})</span>
                   <span className="text-sm font-black tabular-nums" dir="ltr">{empDebtsPending.reduce((s, d) => s + d.amount, 0).toLocaleString('en')} SAR</span>
                 </div>
@@ -345,7 +361,7 @@ export default function ExpensesPage() {
               {/* Paid */}
               {empDebtsPaid.length > 0 && (
                 <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-                  <div className="px-5 py-3 bg-gradient-to-l from-emerald-500 to-teal-600 text-white">
+                  <div className="px-5 py-3 border-b border-[var(--border)]">
                     <span className="text-xs font-bold">✅ مسددة ({empDebtsPaid.length})</span>
                   </div>
                   <div className="divide-y divide-[var(--border)]">
@@ -376,7 +392,7 @@ export default function ExpensesPage() {
           ) : (
             <>
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-                <div className="px-5 py-3 bg-gradient-to-l from-sky-500 to-blue-600 text-white flex items-center justify-between">
+                <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between">
                   <span className="text-xs font-bold">⏳ ديون معلقة ({clientDebtsPending.length})</span>
                   <span className="text-sm font-black tabular-nums" dir="ltr">{clientDebtsPending.reduce((s, d) => s + d.amount, 0).toLocaleString('en')} SAR</span>
                 </div>
@@ -418,7 +434,7 @@ export default function ExpensesPage() {
 
               {clientDebtsPaid.length > 0 && (
                 <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-                  <div className="px-5 py-3 bg-gradient-to-l from-emerald-500 to-teal-600 text-white">
+                  <div className="px-5 py-3 border-b border-[var(--border)]">
                     <span className="text-xs font-bold">✅ مسددة ({clientDebtsPaid.length})</span>
                   </div>
                   <div className="divide-y divide-[var(--border)]">
