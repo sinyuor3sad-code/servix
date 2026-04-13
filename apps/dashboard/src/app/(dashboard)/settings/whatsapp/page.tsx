@@ -26,10 +26,10 @@ import {
   Badge,
 } from '@/components/ui';
 
-const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID || '';
+const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID || '939601825381781';
 
-// Facebook Login for Business config ID (set after creating the config in Meta dashboard)
-const FB_CONFIG_ID = process.env.NEXT_PUBLIC_FB_CONFIG_ID || '';
+// Facebook Login for Business config ID for WhatsApp Embedded Signup
+const FB_CONFIG_ID = process.env.NEXT_PUBLIC_FB_CONFIG_ID || '1614290979791301';
 
 declare global {
   interface Window {
