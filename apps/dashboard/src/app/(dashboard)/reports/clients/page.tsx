@@ -3,13 +3,13 @@
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Users, UserPlus, Repeat, Crown, Phone } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 
 interface ClientsResult {
-  newClients: number;
-  returningClients: number;
+  newClients: number; returningClients: number;
   topClients: { id: string; fullName: string; phone: string; totalVisits: number; totalSpent: number }[];
 }
 const EMPTY: ClientsResult = { newClients: 0, returningClients: 0, topClients: [] };
@@ -36,75 +36,84 @@ export default function ClientsReportPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <button onClick={() => router.push('/reports')} className="w-10 h-10 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--muted)] flex items-center justify-center transition-colors">
-          <ArrowRight className="h-4 w-4 text-[var(--muted-foreground)]" />
-        </button>
-        <div>
-          <h1 className="text-xl font-black tracking-tight">تقرير العملاء</h1>
-          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">تحليل بيانات العملاء والولاء</p>
+      {/* ══════ Header ══════ */}
+      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900 p-8">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-bl from-violet-500/20 to-transparent rounded-full blur-3xl" />
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+        <div className="relative z-10">
+          <div className="flex items-center gap-4">
+            <button onClick={() => router.push('/reports')} className="w-10 h-10 rounded-xl bg-white/10 border border-white/10 hover:bg-white/20 flex items-center justify-center transition-all">
+              <ArrowRight className="h-4 w-4 text-white/60" />
+            </button>
+            <div>
+              <h1 className="text-xl font-black text-white tracking-tight">تقرير العملاء</h1>
+              <p className="text-xs text-white/40 mt-0.5">تحليل بيانات العملاء والولاء</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
+            {[
+              { label: 'عملاء جدد هذا الشهر', value: report.newClients, icon: UserPlus },
+              { label: 'عملاء عائدون', value: report.returningClients, icon: Repeat },
+              { label: 'معدل العودة', value: `${returningRate}%`, icon: Users },
+            ].map((kpi, i) => {
+              const Icon = kpi.icon;
+              return (
+                <div key={i} className="bg-white/[0.06] backdrop-blur-md rounded-2xl p-5 border border-white/[0.08]">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center"><Icon className="h-3.5 w-3.5 text-white/50" /></div>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-white/30">{kpi.label}</span>
+                  </div>
+                  <p className="text-3xl font-black text-white tabular-nums">{kpi.value}</p>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      {/* KPI Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-[var(--border)] rounded-2xl overflow-hidden">
-        {[
-          { label: 'عملاء جدد هذا الشهر', value: report.newClients, icon: UserPlus },
-          { label: 'عملاء عائدون', value: report.returningClients, icon: Repeat },
-          { label: 'معدل العودة', value: `${returningRate}%`, icon: Users },
-        ].map((kpi, i) => {
-          const Icon = kpi.icon;
-          return (
-            <div key={i} className="bg-[var(--card)] p-6">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-[var(--muted)] flex items-center justify-center">
-                  <Icon className="h-4 w-4 text-[var(--muted-foreground)]" />
-                </div>
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">{kpi.label}</span>
-              </div>
-              <p className="text-3xl font-black tabular-nums text-[var(--foreground)]">{kpi.value}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Top Clients Table */}
+      {/* ══════ Top Clients ══════ */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-6 py-4 border-b border-[var(--border)] flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[var(--muted)] flex items-center justify-center">
-            <Crown className="h-4 w-4 text-[var(--muted-foreground)]" />
+        <div className="px-6 py-5 border-b border-[var(--border)] flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
+            <Crown className="h-4 w-4 text-amber-600" />
           </div>
-          <h3 className="text-sm font-bold">أفضل العملاء</h3>
+          <div>
+            <h3 className="text-sm font-bold">أفضل العملاء</h3>
+            <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">حسب إجمالي الإنفاق</p>
+          </div>
         </div>
         {report.topClients.length > 0 ? (
           <div className="divide-y divide-[var(--border)]">
             {report.topClients.map((c, i) => {
               const pct = Math.round((c.totalSpent / maxSpent) * 100);
               return (
-                <div key={c.id} className="px-6 py-4 hover:bg-[var(--muted)]/20 transition-colors">
+                <div key={c.id} className="px-6 py-5 hover:bg-[var(--muted)]/20 transition-colors group">
                   <div className="flex items-center gap-4">
-                    {/* Rank */}
-                    <div className="w-9 h-9 rounded-lg bg-[var(--muted)] flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-black text-[var(--muted-foreground)]">{i + 1}</span>
+                    <div className={cn(
+                      'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-xs font-black transition-all duration-300',
+                      i === 0 ? 'bg-amber-500/10 text-amber-600' :
+                      i === 1 ? 'bg-slate-400/10 text-slate-500' :
+                      i === 2 ? 'bg-orange-500/10 text-orange-600' :
+                      'bg-[var(--muted)] text-[var(--muted-foreground)]'
+                    )}>
+                      {i + 1}
                     </div>
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-sm font-bold text-[var(--foreground)]">{c.fullName}</span>
-                        <span className="text-[10px] text-[var(--muted-foreground)] px-2 py-0.5 rounded-md bg-[var(--muted)]">{c.totalVisits} زيارة</span>
+                        <span className="text-[9px] text-[var(--muted-foreground)] px-2 py-0.5 rounded-lg bg-[var(--muted)] tabular-nums">{c.totalVisits} زيارة</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Phone className="h-3 w-3 text-[var(--muted-foreground)]" />
                         <span className="text-[11px] text-[var(--muted-foreground)] tabular-nums" dir="ltr">{c.phone}</span>
                       </div>
-                      <div className="mt-2.5 h-1 rounded-full bg-[var(--muted)] overflow-hidden">
-                        <div className="h-full rounded-full bg-[var(--foreground)]/12 transition-all duration-500" style={{ width: `${pct}%` }} />
+                      <div className="mt-3 h-1 rounded-full bg-[var(--muted)] overflow-hidden">
+                        <div className="h-full rounded-full bg-gradient-to-l from-violet-500/30 to-violet-400/10 transition-all duration-700" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
-                    {/* Spent */}
                     <div className="text-left flex-shrink-0">
-                      <span className="text-lg font-black tabular-nums text-[var(--foreground)]" dir="ltr">{c.totalSpent.toLocaleString('en')}</span>
+                      <span className="text-xl font-black tabular-nums text-[var(--foreground)]" dir="ltr">{c.totalSpent.toLocaleString('en')}</span>
                       <p className="text-[10px] text-[var(--muted-foreground)]">SAR</p>
                     </div>
                   </div>
@@ -113,11 +122,11 @@ export default function ClientsReportPage() {
             })}
           </div>
         ) : (
-          <div className="p-16 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-[var(--muted)] flex items-center justify-center mx-auto mb-3">
-              <Users className="h-7 w-7 text-[var(--muted-foreground)]/30" />
+          <div className="p-20 text-center">
+            <div className="w-16 h-16 rounded-3xl bg-[var(--muted)] flex items-center justify-center mx-auto mb-4">
+              <Users className="h-8 w-8 text-[var(--muted-foreground)]/20" />
             </div>
-            <p className="font-bold text-[var(--foreground)]">لا توجد بيانات عملاء</p>
+            <p className="font-bold text-lg">لا توجد بيانات عملاء</p>
           </div>
         )}
       </div>
