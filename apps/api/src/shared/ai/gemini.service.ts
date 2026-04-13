@@ -75,21 +75,21 @@ export class GeminiService {
       'https://generativelanguage.googleapis.com/v1beta',
     );
 
-    // Determine provider (Gemini preferred for quality, Cloudflare as fallback)
-    if (this.geminiApiKey) {
-      this.provider = 'gemini';
-      this.logger.log(
-        `🤖 AI initialized — provider: Google Gemini (via proxy)`,
-      );
-    } else if (this.cfAccountId && this.cfToken) {
+    // Determine provider (Cloudflare preferred — free & works globally, Gemini as fallback)
+    if (this.cfAccountId && this.cfToken) {
       this.provider = 'cloudflare';
       this.logger.log(
         `🤖 AI initialized — provider: Cloudflare Workers AI, model: ${CF_TEXT_MODEL}`,
       );
+    } else if (this.geminiApiKey) {
+      this.provider = 'gemini';
+      this.logger.log(
+        `🤖 AI initialized — provider: Google Gemini (via proxy)`,
+      );
     } else {
       this.provider = 'none';
       this.logger.warn(
-        '⚠️ No AI provider configured — set GEMINI_API_KEY (recommended) or CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_AI_TOKEN',
+        '⚠️ No AI provider configured — set CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_AI_TOKEN (recommended) or GEMINI_API_KEY',
       );
     }
   }
