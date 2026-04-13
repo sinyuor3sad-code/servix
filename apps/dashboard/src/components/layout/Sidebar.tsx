@@ -45,30 +45,30 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   // ── Core Operations ──
-  { label: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard, roles: ['owner', 'manager', 'receptionist', 'staff'] },
-  { label: 'المواعيد', href: '/dashboard/appointments', icon: Calendar, roles: ['owner', 'manager', 'receptionist'] },
-  { label: 'العملاء', href: '/dashboard/clients', icon: Users, roles: ['owner', 'manager', 'receptionist'] },
-  { label: 'الموظفات', href: '/dashboard/employees', icon: UserCog, roles: ['owner', 'manager'] },
-  { label: 'الحضور', href: '/dashboard/attendance', icon: ClipboardCheck, roles: ['owner', 'manager'] },
-  { label: 'الخدمات', href: '/dashboard/services', icon: Scissors, roles: ['owner', 'manager'] },
+  { label: 'الرئيسية', href: '/', icon: LayoutDashboard, roles: ['owner', 'manager', 'receptionist', 'staff'] },
+  { label: 'المواعيد', href: '/appointments', icon: Calendar, roles: ['owner', 'manager', 'receptionist'] },
+  { label: 'العملاء', href: '/clients', icon: Users, roles: ['owner', 'manager', 'receptionist'] },
+  { label: 'الموظفات', href: '/employees', icon: UserCog, roles: ['owner', 'manager'] },
+  { label: 'الحضور', href: '/attendance', icon: ClipboardCheck, roles: ['owner', 'manager'] },
+  { label: 'الخدمات', href: '/services', icon: Scissors, roles: ['owner', 'manager'] },
   // ── POS & Sales ──
-  { label: 'الكاشير', href: '/dashboard/pos', icon: CreditCard, roles: 'all' },
-  { label: 'كاشير سريع', href: '/dashboard/pos/quick', icon: TabletSmartphone, roles: 'all' },
+  { label: 'الكاشير', href: '/pos', icon: CreditCard, roles: 'all' },
+  { label: 'كاشير سريع', href: '/pos/quick', icon: TabletSmartphone, roles: 'all' },
   // ── Business Intelligence ──
-  { label: 'التقارير', href: '/dashboard/reports', icon: BarChart3, roles: ['owner', 'manager'] },
-  { label: 'الكوبونات', href: '/dashboard/coupons', icon: Ticket, roles: ['owner', 'manager'] },
-  { label: 'الولاء', href: '/dashboard/loyalty', icon: Heart, roles: ['owner', 'manager'] },
-  { label: 'المصروفات', href: '/dashboard/expenses', icon: Wallet, roles: ['owner', 'manager'] },
+  { label: 'التقارير', href: '/reports', icon: BarChart3, roles: ['owner', 'manager'] },
+  { label: 'الكوبونات', href: '/coupons', icon: Ticket, roles: ['owner', 'manager'] },
+  { label: 'الولاء', href: '/loyalty', icon: Heart, roles: ['owner', 'manager'] },
+  { label: 'المصروفات', href: '/expenses', icon: Wallet, roles: ['owner', 'manager'] },
   // ── Management ──
-  { label: 'المخزون', href: '/dashboard/inventory', icon: Package, roles: ['owner', 'manager'] },
-  { label: 'التقييمات', href: '/dashboard/feedback', icon: Star, roles: ['owner', 'manager'] },
-  { label: 'المستشار الذكي', href: '/dashboard/ai-consultant', icon: Bot, roles: ['owner', 'manager'] },
-  { label: 'الفواتير', href: '/dashboard/invoices', icon: FileText, roles: ['owner', 'manager', 'cashier'] },
-  { label: 'الإعدادات', href: '/dashboard/settings', icon: Settings, roles: ['owner', 'manager'] },
+  { label: 'المخزون', href: '/inventory', icon: Package, roles: ['owner', 'manager'] },
+  { label: 'التقييمات', href: '/feedback', icon: Star, roles: ['owner', 'manager'] },
+  { label: 'المستشار الذكي', href: '/ai-consultant', icon: Bot, roles: ['owner', 'manager'] },
+  { label: 'الفواتير', href: '/invoices', icon: FileText, roles: ['owner', 'manager', 'cashier'] },
+  { label: 'الإعدادات', href: '/settings', icon: Settings, roles: ['owner', 'manager'] },
   // ── Coming Soon ──
-  { label: 'الورديات', href: '/dashboard/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
-  { label: 'واتساب', href: '/dashboard/settings/whatsapp', icon: MessageCircle, comingSoon: true, roles: ['owner', 'manager'] },
-  { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt, comingSoon: true, roles: ['owner', 'manager'] },
+  { label: 'الورديات', href: '/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
+  { label: 'واتساب', href: '/settings/whatsapp', icon: MessageCircle, comingSoon: true, roles: ['owner', 'manager'] },
+  { label: 'ZATCA', href: '/zatca', icon: Receipt, comingSoon: true, roles: ['owner', 'manager'] },
 ];
 
 interface SidebarProps {
@@ -77,7 +77,7 @@ interface SidebarProps {
 }
 
 function isActiveRoute(pathname: string, href: string): boolean {
-  if (href === '/dashboard') return pathname === '/dashboard';
+  if (href === '/') return pathname === '/';
   return pathname.startsWith(href);
 }
 
@@ -121,7 +121,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
     <div className="flex h-full flex-col">
       {/* Logo area — premium with subtle brand glow */}
       <div className="flex h-[var(--header-height)] items-center justify-between border-b border-[var(--border)]/60 px-4">
-        <Link href="/dashboard" className="flex items-center gap-3 group">
+        <Link href="/" className="flex items-center gap-3 group">
           <div className={cn(
             'flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] font-bold text-lg text-white',
             'bg-gradient-to-br from-[var(--brand-primary)] to-[var(--brand-primary-dark)]',

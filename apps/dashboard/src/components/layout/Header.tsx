@@ -182,11 +182,11 @@ export function Header({ onMenuToggle }: HeaderProps): React.ReactElement {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => router.push('/dashboard/settings/account')}>
+          <DropdownMenuItem onClick={() => router.push('/settings/account')}>
             <User className="h-4 w-4" />
             الملف الشخصي
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/dashboard/settings')}>
+          <DropdownMenuItem onClick={() => router.push('/settings')}>
             <Settings className="h-4 w-4" />
             الإعدادات
           </DropdownMenuItem>

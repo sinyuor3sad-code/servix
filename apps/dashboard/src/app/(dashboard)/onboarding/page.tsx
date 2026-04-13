@@ -227,7 +227,7 @@ export default function OnboardingPage(): React.ReactElement {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       toast.success('تم إعداد صالونك بنجاح!');
-      router.push('/dashboard');
+      router.push('/');
     },
     onError: () => toast.error('حدث خطأ'),
   });
