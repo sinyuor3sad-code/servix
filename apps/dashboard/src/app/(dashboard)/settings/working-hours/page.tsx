@@ -55,7 +55,7 @@ export default function WorkingHoursPage() {
       </div>
 
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-amber-500 to-orange-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Clock className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">جدول العمل الأسبوعي</span>
         </div>
         <div className="divide-y divide-[var(--border)]">

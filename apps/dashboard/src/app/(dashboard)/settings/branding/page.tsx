@@ -55,7 +55,7 @@ export default function BrandingPage() {
 
       {/* Theme Selector */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-fuchsia-500 to-pink-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Palette className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">ثيم لوحة التحكم</span>
         </div>
         <div className="p-5">
@@ -65,7 +65,7 @@ export default function BrandingPage() {
 
       {/* Primary Color */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-violet-500 to-purple-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Paintbrush className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">اللون الرئيسي</span>
         </div>
         <div className="p-5">
@@ -86,7 +86,7 @@ export default function BrandingPage() {
 
       {/* Logo */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-sky-500 to-blue-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Upload className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">الشعار</span>
         </div>
         <div className="p-5">

@@ -69,8 +69,8 @@ export default function SalonSettingsPage() {
       <form onSubmit={handleSubmit(d => mut.mutate(d))} className="space-y-5">
         {/* Section: Name */}
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-          <div className="px-5 py-3 bg-gradient-to-l from-sky-500 to-blue-600 text-white flex items-center gap-2">
-            <Building2 className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">اسم الصالون</span>
+          <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center"><Building2 className="h-3.5 w-3.5 text-blue-600" /></div><span className="text-xs font-bold">اسم الصالون</span>
           </div>
           <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -87,8 +87,8 @@ export default function SalonSettingsPage() {
 
         {/* Section: Contact */}
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-          <div className="px-5 py-3 bg-gradient-to-l from-emerald-500 to-teal-600 text-white flex items-center gap-2">
-            <Phone className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">التواصل</span>
+          <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center"><Phone className="h-3.5 w-3.5 text-emerald-600" /></div><span className="text-xs font-bold">التواصل</span>
           </div>
           <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -106,8 +106,8 @@ export default function SalonSettingsPage() {
 
         {/* Section: Location */}
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-          <div className="px-5 py-3 bg-gradient-to-l from-amber-500 to-orange-600 text-white flex items-center gap-2">
-            <MapPin className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">الموقع</span>
+          <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center"><MapPin className="h-3.5 w-3.5 text-amber-600" /></div><span className="text-xs font-bold">الموقع</span>
           </div>
           <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

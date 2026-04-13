@@ -201,8 +201,8 @@ export default function SmartMenuSettingsPage() {
           <ArrowRight className="h-4 w-4" />
         </button>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center">
-            <QrCode className="h-5 w-5 text-white" />
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+            <QrCode className="h-5 w-5 text-cyan-600" />
           </div>
           <div>
             <h1 className="text-xl font-black">المنيو والعرض العام</h1>
@@ -213,22 +213,20 @@ export default function SmartMenuSettingsPage() {
 
       {/* ─── ⭐ Menu QR Code ─── */}
       <div className="relative rounded-2xl overflow-hidden border border-[var(--border)] shadow-xl">
-        <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 via-teal-500 to-emerald-600" />
-        <div className="absolute inset-0 opacity-20" style={{
-          backgroundImage: 'radial-gradient(circle at 20% 20%, white 1px, transparent 1px), radial-gradient(circle at 80% 60%, white 1px, transparent 1px)',
-          backgroundSize: '32px 32px',
-        }} />
+        <div className="absolute inset-0 bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900" />
+        <div className="absolute top-0 right-0 w-60 h-60 bg-gradient-to-bl from-cyan-500/15 to-transparent rounded-full blur-3xl" />
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
         <div className="relative p-6 text-white">
           <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-xl shadow-lg ring-1 ring-white/20">
-              <QrCode className="h-7 w-7" />
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-xl shadow-lg ring-1 ring-white/10">
+              <QrCode className="h-7 w-7 text-white/80" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <h2 className="text-base font-black">باركود المنيو الذكي</h2>
-                <Sparkles className="h-3.5 w-3.5 opacity-80" />
+                <Sparkles className="h-3.5 w-3.5 opacity-50" />
               </div>
-              <p className="text-xs opacity-90 leading-relaxed">
+              <p className="text-xs text-white/40 leading-relaxed">
                 أصدري باركود قابل للطباعة يعرض المنيو للعملاء عند مسحه بالهاتف
               </p>
             </div>
@@ -236,7 +234,7 @@ export default function SmartMenuSettingsPage() {
           <button
             onClick={() => setQrOpen(true)}
             disabled={!currentTenant?.slug}
-            className="mt-5 w-full flex items-center justify-center gap-2 rounded-xl bg-white py-3.5 text-sm font-black text-teal-700 shadow-lg hover:scale-[1.01] active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="mt-5 w-full flex items-center justify-center gap-2 rounded-xl bg-white/10 border border-white/20 py-3.5 text-sm font-black text-white shadow-lg hover:bg-white/15 active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <QrCode className="h-4 w-4" />
             إصدار باركود المنيو
@@ -246,7 +244,7 @@ export default function SmartMenuSettingsPage() {
 
       {/* ─── 0. Salon Name ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-indigo-500 to-purple-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Building2 className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">اسم الصالون</span>
         </div>
         <div className="p-5 space-y-4">
@@ -287,7 +285,7 @@ export default function SmartMenuSettingsPage() {
 
       {/* ─── 1. Logo — Premium Drag & Drop ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-sky-500 to-blue-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Upload className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">شعار الصالون</span>
         </div>
         <div className="p-5">
@@ -346,8 +344,8 @@ export default function SmartMenuSettingsPage() {
                 </>
               ) : (
                 <>
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-lg">
-                    <Upload className="h-6 w-6 text-white" />
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-500/10 shadow-lg">
+                    <Upload className="h-6 w-6 text-sky-600" />
                   </div>
                   <p className="text-sm font-black text-[var(--foreground)]">
                     {dragLogo ? 'أفلتي الملف هنا' : 'اسحبي الشعار أو اضغطي للرفع'}
@@ -365,7 +363,7 @@ export default function SmartMenuSettingsPage() {
 
       {/* ─── 2. Cover Image — Premium Drag & Drop ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-orange-500 to-amber-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <ImageIcon className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">صورة الغلاف</span>
         </div>
         <div className="p-5">
@@ -425,8 +423,8 @@ export default function SmartMenuSettingsPage() {
                 </>
               ) : (
                 <>
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-amber-600 shadow-lg">
-                    <ImageIcon className="h-6 w-6 text-white" />
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 shadow-lg">
+                    <ImageIcon className="h-6 w-6 text-amber-600" />
                   </div>
                   <p className="text-sm font-black text-[var(--foreground)]">
                     {dragCover ? 'أفلتي الصورة هنا' : 'اسحبي الغلاف أو اضغطي للرفع'}
@@ -444,7 +442,7 @@ export default function SmartMenuSettingsPage() {
 
       {/* ─── 3. Brand Color ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-violet-500 to-purple-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Palette className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">لون العلامة التجارية</span>
         </div>
         <div className="p-5">
@@ -476,7 +474,7 @@ export default function SmartMenuSettingsPage() {
 
       {/* ─── 4. Layout ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-emerald-500 to-green-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Layout className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">شكل المنيو · 4 تصاميم احترافية</span>
         </div>
         <div className="p-5">
@@ -525,7 +523,7 @@ export default function SmartMenuSettingsPage() {
 
       {/* ─── 5. Welcome Message ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-pink-500 to-rose-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <MessageCircle className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">رسالة الترحيب</span>
         </div>
         <div className="p-5 space-y-3">
@@ -544,7 +542,7 @@ export default function SmartMenuSettingsPage() {
 
       {/* ─── 6. Google Maps ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-red-500 to-rose-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <MapPin className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">الموقع على الخريطة</span>
         </div>
         <div className="p-5 space-y-3">
@@ -574,7 +572,7 @@ export default function SmartMenuSettingsPage() {
 
       {/* ─── Preview ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-gray-600 to-gray-800 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Eye className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">معاينة</span>
         </div>
         <div className="p-5">

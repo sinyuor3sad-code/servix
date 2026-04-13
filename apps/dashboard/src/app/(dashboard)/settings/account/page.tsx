@@ -60,7 +60,7 @@ export default function AccountSettingsPage() {
 
       {/* Export */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-sky-500 to-blue-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Download className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">تصدير البيانات</span>
         </div>
         <div className="p-5">
@@ -74,7 +74,7 @@ export default function AccountSettingsPage() {
 
       {/* Danger Zone */}
       <div className="rounded-2xl border-2 border-red-200 bg-red-50/50 overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-red-500 to-rose-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">المنطقة الخطرة</span>
         </div>
         <div className="p-5">

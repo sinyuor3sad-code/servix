@@ -68,7 +68,7 @@ export default function UsersSettingsPage() {
 
       {/* Invite */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-emerald-500 to-teal-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <UserPlus className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">دعوة مستخدم جديد</span>
         </div>
         <div className="p-5 flex flex-col sm:flex-row gap-3 items-end">
@@ -92,7 +92,7 @@ export default function UsersSettingsPage() {
 
       {/* Team */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 bg-gradient-to-l from-violet-500 to-purple-600 text-white flex items-center gap-2">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
           <Shield className="h-4 w-4 opacity-70" /><span className="text-xs font-bold">الفريق ({users.length})</span>
         </div>
         {users.length === 0 ? (

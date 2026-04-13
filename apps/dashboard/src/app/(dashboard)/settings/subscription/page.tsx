@@ -31,9 +31,9 @@ const FEATURES = [
 ];
 
 const PLANS = [
-  { key: 'basic', nameAr: 'أساسي', price: 199, gradient: 'from-slate-500 to-gray-600', desc: 'للصالونات الصغيرة' },
-  { key: 'pro', nameAr: 'احترافي', price: 399, gradient: 'from-violet-500 to-purple-600', desc: 'للصالونات المتوسطة', popular: true },
-  { key: 'premium', nameAr: 'مميز', price: 699, gradient: 'from-amber-500 to-orange-600', desc: 'للصالونات الكبيرة' },
+  { key: 'basic', nameAr: 'أساسي', price: 199, accentColor: 'bg-slate-500/10 text-slate-600', desc: 'للصالونات الصغيرة' },
+  { key: 'pro', nameAr: 'احترافي', price: 399, accentColor: 'bg-violet-500/10 text-violet-600', desc: 'للصالونات المتوسطة', popular: true },
+  { key: 'premium', nameAr: 'مميز', price: 699, accentColor: 'bg-amber-500/10 text-amber-600', desc: 'للصالونات الكبيرة' },
 ];
 
 const placeholder: SubscriptionData = {
@@ -82,22 +82,23 @@ export default function SubscriptionPage() {
       </div>
 
       {/* Current Plan Hero */}
-      <div className="rounded-2xl bg-gradient-to-l from-indigo-500 to-blue-600 p-6 text-white relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.1),transparent)]" />
+      <div className="rounded-2xl bg-gradient-to-bl from-slate-900 via-slate-800 to-slate-900 p-6 text-white relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-60 h-60 bg-gradient-to-bl from-indigo-500/15 to-transparent rounded-full blur-3xl" />
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
         <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Crown className="h-5 w-5 opacity-70" />
-              <span className="text-xs opacity-60">خطتك الحالية</span>
+              <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center"><Crown className="h-4 w-4 text-white/60" /></div>
+              <span className="text-[10px] uppercase tracking-[0.15em] text-white/30">خطتك الحالية</span>
             </div>
-            <h2 className="text-3xl font-black">{sub.plan.nameAr}</h2>
+            <h2 className="text-3xl font-black text-white">{sub.plan.nameAr}</h2>
             <div className="flex items-center gap-3 mt-2">
               <span className={cn('px-2 py-0.5 rounded-lg border text-[10px] font-bold', st.bg, st.color)}>{st.label}</span>
-              <span className="text-sm opacity-70 tabular-nums" dir="ltr">
+              <span className="text-sm text-white/40 tabular-nums" dir="ltr">
                 {sub.plan.price.toLocaleString('en')} SAR / {sub.plan.billingCycle === 'monthly' ? 'شهرياً' : 'سنوياً'}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 mt-2 text-[11px] opacity-60">
+            <div className="flex items-center gap-1.5 mt-2 text-[11px] text-white/25">
               <Calendar className="h-3.5 w-3.5" />
               <span>التجديد: </span>
               <span className="tabular-nums" dir="ltr">{new Date(sub.renewalDate).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
@@ -143,16 +144,16 @@ export default function SubscriptionPage() {
         {PLANS.map(plan => (
           <div key={plan.key} className={cn('rounded-2xl border overflow-hidden transition-all hover:shadow-lg', plan.popular ? 'border-[var(--brand-primary)] ring-2 ring-[var(--brand-primary)]/20' : 'border-[var(--border)]')}>
             {/* Plan Header */}
-            <div className={cn('bg-gradient-to-l text-white p-5 text-center relative', plan.gradient)}>
+            <div className="p-5 text-center border-b border-[var(--border)] bg-[var(--card)]">
               {plan.popular && (
-                <span className="absolute top-2 left-2 bg-white/20 text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                <span className="inline-flex items-center gap-1 bg-violet-500/10 text-violet-600 text-[9px] font-bold px-2.5 py-1 rounded-full mb-2">
                   <Sparkles className="h-3 w-3" /> الأكثر شيوعاً
                 </span>
               )}
-              <h3 className="text-lg font-black mt-1">{plan.nameAr}</h3>
-              <p className="text-[10px] opacity-60">{plan.desc}</p>
-              <p className="text-3xl font-black mt-2 tabular-nums" dir="ltr">{plan.price}</p>
-              <p className="text-[10px] opacity-60">SAR / شهرياً</p>
+              <h3 className="text-lg font-black text-[var(--foreground)] mt-1">{plan.nameAr}</h3>
+              <p className="text-[10px] text-[var(--muted-foreground)]">{plan.desc}</p>
+              <p className="text-3xl font-black mt-2 tabular-nums text-[var(--foreground)]" dir="ltr">{plan.price}</p>
+              <p className="text-[10px] text-[var(--muted-foreground)]">SAR / شهرياً</p>
             </div>
             {/* Features */}
             <div className="p-4 bg-[var(--card)]">
