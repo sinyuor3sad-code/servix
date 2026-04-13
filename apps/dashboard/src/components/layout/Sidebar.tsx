@@ -257,14 +257,14 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps): React.Reac
         />
       )}
 
-      {/* Mobile Sidebar — slides in from the right (RTL start) */}
+      {/* Mobile Sidebar — slides in from the right (RTL) */}
       <aside
         className={cn(
-          'fixed inset-y-0 end-0 z-50 w-[280px] max-w-[85vw]',
-          'border-s border-[var(--border)]/60 glass-panel',
+          'fixed inset-y-0 start-0 z-50 w-[280px] max-w-[85vw]',
+          'border-e border-[var(--border)]/60 glass-panel',
           'shadow-[var(--shadow-2xl)]',
           'transition-transform duration-300 ease-[var(--ease-out-expo)] md:hidden',
-          mobileOpen ? 'translate-x-0' : 'translate-x-full rtl:-translate-x-full'
+          mobileOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full'
         )}
       >
         {sidebarContent}
