@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { Plus, Percent, DollarSign, Tag, Clock, Users, Ticket, Copy, CheckCircle2 } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plus, Percent, DollarSign, Tag, Clock, Users, Ticket, Copy, CheckCircle2, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button, Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -32,8 +32,10 @@ const STATUS_STYLE: Record<CStatus, { label: string; color: string; bg: string }
 
 export default function CouponsPage() {
   const { accessToken } = useAuth();
+  const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [copied, setCopied] = useState('');
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['coupons', page],
@@ -49,6 +51,16 @@ export default function CouponsPage() {
     toast.success('تم نسخ الكود');
     setTimeout(() => setCopied(''), 2000);
   };
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/coupons/${id}`, accessToken!),
+    onSuccess: () => {
+      toast.success('تم حذف الكوبون');
+      qc.invalidateQueries({ queryKey: ['coupons'] });
+      setDeleting(null);
+    },
+    onError: () => toast.error('خطأ في حذف الكوبون'),
+  });
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
@@ -164,10 +176,29 @@ export default function CouponsPage() {
                     </div>
                   </div>
 
-                  {/* Dates */}
-                  <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]">
-                    <Clock className="h-3 w-3" />
-                    <span dir="ltr" className="tabular-nums">{new Date(coupon.validFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → {new Date(coupon.validUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  {/* Dates + Delete */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]">
+                      <Clock className="h-3 w-3" />
+                      <span dir="ltr" className="tabular-nums">{new Date(coupon.validFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → {new Date(coupon.validUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    </div>
+                    {deleting === coupon.id ? (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => deleteMut.mutate(coupon.id)} disabled={deleteMut.isPending}
+                          className="px-2 py-1 rounded-lg bg-red-500/10 text-red-500 text-[10px] font-bold hover:bg-red-500/20 transition">
+                          {deleteMut.isPending ? '...' : 'تأكيد'}
+                        </button>
+                        <button onClick={() => setDeleting(null)}
+                          className="px-2 py-1 rounded-lg text-[10px] font-bold text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition">
+                          إلغاء
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setDeleting(coupon.id)}
+                        className="p-1.5 rounded-lg text-[var(--muted-foreground)] hover:text-red-500 hover:bg-red-500/10 transition">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
