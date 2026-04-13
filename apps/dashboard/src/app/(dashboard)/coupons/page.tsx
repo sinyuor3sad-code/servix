@@ -12,15 +12,15 @@ import type { PaginatedResponse } from '@/types';
 import { toast } from 'sonner';
 
 interface Coupon {
-  id: string; code: string; type: 'percentage' | 'fixed_amount'; value: number;
-  minOrderAmount: number; maxUses: number; currentUses: number;
-  startDate: string; endDate: string; isActive: boolean;
+  id: string; code: string; type: 'percentage' | 'fixed'; value: number;
+  minOrder: number; usageLimit: number; usedCount: number;
+  validFrom: string; validUntil: string; isActive: boolean;
 }
 
 type CStatus = 'active' | 'expired' | 'disabled';
 function getCouponStatus(c: Coupon): CStatus {
   if (!c.isActive) return 'disabled';
-  if (new Date(c.endDate) < new Date()) return 'expired';
+  if (new Date(c.validUntil) < new Date()) return 'expired';
   return 'active';
 }
 
@@ -94,7 +94,7 @@ export default function CouponsPage() {
                 <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center"><Users className="h-3 w-3 text-white/50" /></div>
                 <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-white/30">مرات الاستخدام</span>
               </div>
-              <p className="text-2xl font-black text-white tabular-nums">{coupons.reduce((s, c) => s + c.currentUses, 0)}</p>
+              <p className="text-2xl font-black text-white tabular-nums">{coupons.reduce((s, c) => s + c.usedCount, 0)}</p>
             </div>
           </div>
         </div>
@@ -116,7 +116,7 @@ export default function CouponsPage() {
             const st = getCouponStatus(coupon);
             const style = STATUS_STYLE[st];
             const isPercent = coupon.type === 'percentage';
-            const usagePct = coupon.maxUses > 0 ? Math.round((coupon.currentUses / coupon.maxUses) * 100) : 0;
+            const usagePct = coupon.usageLimit && coupon.usageLimit > 0 ? Math.round((coupon.usedCount / coupon.usageLimit) * 100) : 0;
 
             return (
               <div key={coupon.id} className={cn('rounded-2xl border bg-[var(--card)] overflow-hidden transition-all hover:shadow-md', st === 'disabled' && 'opacity-50')}>
@@ -157,7 +157,7 @@ export default function CouponsPage() {
                   <div>
                     <div className="flex justify-between text-[10px] mb-1">
                       <span className="text-[var(--muted-foreground)]">الاستخدام</span>
-                      <span className="font-bold tabular-nums">{coupon.currentUses} / {coupon.maxUses}</span>
+                      <span className="font-bold tabular-nums">{coupon.usedCount} / {coupon.usageLimit ?? '∞'}</span>
                     </div>
                     <div className="h-1.5 rounded-full bg-[var(--muted)] overflow-hidden">
                       <div className="h-full rounded-full bg-gradient-to-l from-[var(--brand-primary)] to-[var(--brand-primary)]/50" style={{ width: `${usagePct}%` }} />
@@ -167,7 +167,7 @@ export default function CouponsPage() {
                   {/* Dates */}
                   <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]">
                     <Clock className="h-3 w-3" />
-                    <span dir="ltr" className="tabular-nums">{new Date(coupon.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → {new Date(coupon.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    <span dir="ltr" className="tabular-nums">{new Date(coupon.validFrom).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → {new Date(coupon.validUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                   </div>
                 </div>
               </div>

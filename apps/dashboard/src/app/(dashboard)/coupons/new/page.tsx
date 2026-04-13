@@ -17,18 +17,18 @@ const today = () => new Date().toISOString().split('T')[0];
 
 const schema = z.object({
   code: z.string().min(3, 'الكود 3 أحرف على الأقل').max(20).regex(/^[A-Z0-9_-]+$/i, 'أحرف إنجليزية وأرقام فقط'),
-  type: z.enum(['percentage', 'fixed_amount'], { required_error: 'اختاري النوع' }),
+  type: z.enum(['percentage', 'fixed'], { required_error: 'اختاري النوع' }),
   value: z.coerce.number().min(1, 'القيمة مطلوبة'),
-  minOrderAmount: z.coerce.number().min(0).optional(),
-  maxUses: z.coerce.number().min(1, 'مرة واحدة على الأقل'),
-  startDate: z.string().min(1, 'تاريخ البدء مطلوب'),
-  endDate: z.string().min(1, 'تاريخ الانتهاء مطلوب'),
-}).refine(d => d.startDate >= today(), {
+  minOrder: z.coerce.number().min(0).optional(),
+  usageLimit: z.coerce.number().min(1, 'مرة واحدة على الأقل'),
+  validFrom: z.string().min(1, 'تاريخ البدء مطلوب'),
+  validUntil: z.string().min(1, 'تاريخ الانتهاء مطلوب'),
+}).refine(d => d.validFrom >= today(), {
   message: 'لا يمكن اختيار تاريخ في الماضي',
-  path: ['startDate'],
-}).refine(d => d.endDate >= d.startDate, {
+  path: ['validFrom'],
+}).refine(d => d.validUntil >= d.validFrom, {
   message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البدء',
-  path: ['endDate'],
+  path: ['validUntil'],
 });
 
 type FormData = z.infer<typeof schema>;
@@ -50,13 +50,13 @@ export default function NewCouponPage() {
     resolver: zodResolver(schema),
     defaultValues: {
       code: '', type: 'percentage', value: 0,
-      minOrderAmount: 0, maxUses: 100,
-      startDate: today(), endDate: '',
+      minOrder: 0, usageLimit: 100,
+      validFrom: today(), validUntil: '',
     },
   });
 
   const selectedType = watch('type');
-  const watchedStartDate = watch('startDate');
+  const watchedStartDate = watch('validFrom');
 
   const mut = useMutation({
     mutationFn: (data: FormData) => api.post('/coupons', data, accessToken!),
@@ -103,7 +103,7 @@ export default function NewCouponPage() {
           </div>
           {watchedStartDate && (
             <div className="text-[10px] text-white/30 mt-3" dir="ltr">
-              {formatDate(watchedStartDate)} {watch('endDate') ? `→ ${formatDate(watch('endDate'))}` : ''}
+              {formatDate(watchedStartDate)} {watch('validUntil') ? `→ ${formatDate(watch('validUntil'))}` : ''}
             </div>
           )}
           <div className="border-t border-dashed border-white/10 mt-4 pt-2 text-[10px] text-white/25 uppercase tracking-widest">
@@ -141,13 +141,13 @@ export default function NewCouponPage() {
                 <p className="text-[10px] text-[var(--muted-foreground)]">مثال: 20% خصم</p>
               </div>
             </button>
-            <button type="button" onClick={() => setValue('type', 'fixed_amount')}
+            <button type="button" onClick={() => setValue('type', 'fixed')}
               className={cn('flex items-center gap-3 p-4 rounded-2xl border-2 transition-all',
-                selectedType === 'fixed_amount'
+                selectedType === 'fixed'
                   ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)]/5'
                   : 'border-[var(--border)] hover:border-[var(--brand-primary)]/30')}>
               <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center',
-                selectedType === 'fixed_amount' ? 'bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]')}>
+                selectedType === 'fixed' ? 'bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]')}>
                 <DollarSign className="h-5 w-5" />
               </div>
               <div className="text-right">
@@ -173,7 +173,7 @@ export default function NewCouponPage() {
             <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
               <ShoppingBag className="h-3 w-3" /> الحد الأدنى للطلب (ر.س)
             </label>
-            <input {...register('minOrderAmount')} type="number" inputMode="decimal" dir="ltr" placeholder="0"
+            <input {...register('minOrder')} type="number" inputMode="decimal" dir="ltr" placeholder="0"
               className={cn(inputClass, 'text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')} />
           </div>
         </div>
@@ -183,9 +183,9 @@ export default function NewCouponPage() {
           <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
             <Repeat className="h-3 w-3" /> الحد الأقصى للاستخدام
           </label>
-          <input {...register('maxUses')} type="number" inputMode="numeric" dir="ltr" placeholder="100"
+          <input {...register('usageLimit')} type="number" inputMode="numeric" dir="ltr" placeholder="100"
             className={cn(inputClass, 'text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')} />
-          {errors.maxUses && <p className="text-red-500 text-[10px] mt-1">{errors.maxUses.message}</p>}
+          {errors.usageLimit && <p className="text-red-500 text-[10px] mt-1">{errors.usageLimit.message}</p>}
         </div>
 
         {/* Dates — with min restriction (no past dates) */}
@@ -194,17 +194,17 @@ export default function NewCouponPage() {
             <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
               <CalendarDays className="h-3 w-3" /> تاريخ البدء
             </label>
-            <input {...register('startDate')} type="date" dir="ltr" min={today()}
+            <input {...register('validFrom')} type="date" dir="ltr" min={today()}
               className={cn(inputClass, 'text-right')} />
-            {errors.startDate && <p className="text-red-500 text-[10px] mt-1">{errors.startDate.message}</p>}
+            {errors.validFrom && <p className="text-red-500 text-[10px] mt-1">{errors.validFrom.message}</p>}
           </div>
           <div>
             <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
               <CalendarDays className="h-3 w-3" /> تاريخ الانتهاء
             </label>
-            <input {...register('endDate')} type="date" dir="ltr" min={watchedStartDate || today()}
+            <input {...register('validUntil')} type="date" dir="ltr" min={watchedStartDate || today()}
               className={cn(inputClass, 'text-right')} />
-            {errors.endDate && <p className="text-red-500 text-[10px] mt-1">{errors.endDate.message}</p>}
+            {errors.validUntil && <p className="text-red-500 text-[10px] mt-1">{errors.validUntil.message}</p>}
           </div>
         </div>
 
