@@ -665,6 +665,29 @@ h2 { letter-spacing: -0.015em; }
 .animate-scale-in    { animation: scaleIn 0.3s var(--ease-out-expo) forwards; }
 .animate-cinematic   { animation: cinematic-reveal 0.5s var(--ease-out-expo) forwards; }
 
+/* Premium skeleton shimmer — instant page shell feel */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: var(--muted);
+  border-radius: var(--radius);
+}
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--surface-elevated) 40%,
+    var(--surface-elevated) 60%,
+    transparent 100%
+  );
+  opacity: 0.5;
+  animation: shimmer 1.8s ease-in-out infinite;
+  animation-delay: inherit;
+}
+
 /* Staggered children animation — premium feel */
 .animate-stagger > * {
   opacity: 0;

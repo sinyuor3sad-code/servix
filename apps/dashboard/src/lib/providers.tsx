@@ -16,7 +16,8 @@ export function Providers({ children }: ProvidersProps) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 60 * 1000,
+            staleTime: 5 * 60 * 1000,   // 5 min — revisited pages load instantly from cache
+            gcTime: 10 * 60 * 1000,      // 10 min — keep unused data in memory longer
             refetchOnWindowFocus: false,
             retry: 1,
           },
