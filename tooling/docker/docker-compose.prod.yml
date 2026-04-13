@@ -152,6 +152,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://app.servi-x.com,https://booking.servi-x.com,https://admin.servi-x.com,https://servi-x.com}
       SENTRY_DSN: ${SENTRY_DSN:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_AI_TOKEN: ${CLOUDFLARE_AI_TOKEN:-}
       WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-servix-webhook-verify-2026}
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
@@ -194,6 +196,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://app.servi-x.com,https://booking.servi-x.com,https://admin.servi-x.com,https://servi-x.com}
       SENTRY_DSN: ${SENTRY_DSN:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_AI_TOKEN: ${CLOUDFLARE_AI_TOKEN:-}
       WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-servix-webhook-verify-2026}
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
