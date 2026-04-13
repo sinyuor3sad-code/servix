@@ -301,7 +301,15 @@ export function usePOSEngine() {
           employeeId: i.employeeId || fallbackEmpId,
         })),
       }, accessToken!);
+      // Apply global manual discount
       if (gDiscVal > 0) await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: gDiscVal }, accessToken!);
+      // Redeem coupon (validate + increment usedCount atomically)
+      if (couponApplied && couponCode.trim() && couponDiscount > 0) {
+        try {
+          await api.post('/coupons/redeem', { code: couponCode.trim().toUpperCase(), orderAmount: afterDisc }, accessToken!);
+          await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: couponDiscount }, accessToken!);
+        } catch { /* coupon might be exhausted by now, invoice still goes through */ }
+      }
       let paymentResult: Record<string, unknown> | undefined;
       if (method === 'split') { for (const e of splits) { if (e.amount > 0) paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: e.amount, method: (e.method === 'apple_pay' ? 'card' : e.method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>; } }
       else paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: total, method: (method === 'apple_pay' ? 'card' : method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>;

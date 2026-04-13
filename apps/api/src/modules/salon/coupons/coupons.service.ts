@@ -174,4 +174,24 @@ export class CouponsService {
       message: `الكوبون صالح. قيمة الخصم: ${discountAmount.toFixed(2)} ر.س`,
     };
   }
+
+  /**
+   * Redeem a coupon: validate + increment usedCount atomically.
+   * Called when an invoice is actually paid, not just previewed.
+   */
+  async redeem(
+    db: TenantPrismaClient,
+    dto: ValidateCouponDto,
+  ): Promise<CouponValidationResult> {
+    const result = await this.validate(db, dto);
+    if (!result.valid) return result;
+
+    // Atomically increment usedCount
+    await db.coupon.update({
+      where: { code: dto.code.toUpperCase() },
+      data: { usedCount: { increment: 1 } },
+    });
+
+    return result;
+  }
 }

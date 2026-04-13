@@ -151,4 +151,22 @@ export class CouponsController {
       message: result.message,
     };
   }
+
+  @Post('redeem')
+  @ApiOperation({ summary: 'استخدام كوبون', description: 'التحقق من الكوبون وتسجيل استخدامه' })
+  @ApiResponse({ status: 200, description: 'تم استخدام الكوبون' })
+  async redeem(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: ValidateCouponDto,
+  ): Promise<Record<string, unknown>> {
+    const result = await this.couponsService.redeem(
+      req.tenantDb!,
+      dto,
+    );
+    return {
+      success: true,
+      data: result,
+      message: result.message,
+    };
+  }
 }
