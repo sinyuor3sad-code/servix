@@ -153,16 +153,52 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Decode JWT payload without external libs.
+ * Returns the expiry timestamp (seconds) or null.
+ */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1]));
+    return payload.exp ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Proactively refresh the token if it's about to expire (within 30s).
+ * This prevents 401 errors from ever reaching the console.
+ */
+async function ensureFreshToken(token: string | undefined): Promise<string | undefined> {
+  if (!token) return token;
+  const exp = getTokenExpiry(token);
+  if (!exp) return token;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  // If token expires in less than 30 seconds, refresh proactively
+  if (exp - nowSec < 30) {
+    const newToken = await tryRefreshToken();
+    return newToken ?? token;
+  }
+  return token;
+}
+
 async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers = {}, token } = options;
+  const { method = 'GET', body, headers = {} } = options;
+
+  // Proactively refresh token before sending request (prevents 401 console errors)
+  const activeToken = await ensureFreshToken(options.token);
 
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...headers,
   };
 
-  if (token) {
-    requestHeaders['Authorization'] = `Bearer ${token}`;
+  if (activeToken) {
+    requestHeaders['Authorization'] = `Bearer ${activeToken}`;
   }
 
   const response = await fetch(`${API_BASE}${endpoint}`, {
