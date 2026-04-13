@@ -243,12 +243,29 @@ export function TouchPOS({ e }: { e: E }) {
               })}
             </div>
 
+            {/* Coupon + Discount */}
+            <div className="px-4 pt-2 space-y-2">
+              {/* Coupon input */}
+              <div className="flex items-center gap-2">
+                <Ticket size={14} className="shrink-0 text-[var(--brand-primary)]" style={{ opacity: 0.5 }} />
+                <input value={e.couponCode} onChange={ev => e.setCouponCode(ev.target.value.toUpperCase())} disabled={e.couponApplied} placeholder="كود كوبون" dir="ltr" className={`flex-1 rounded-xl border ${brd(6)} ${bg(3)} px-3 py-2.5 text-[13px] font-mono font-bold tracking-wider text-center text-[var(--foreground)] placeholder:font-normal placeholder:tracking-normal focus:outline-none ${T} ${e.couponApplied ? 'opacity-50' : ''}`} onKeyDown={ev => ev.key === 'Enter' && e.applyCoupon()} />
+                {e.couponApplied ? (
+                  <button onClick={e.removeCoupon} className={`${BS} rounded-xl px-3 py-2.5 text-[11px] font-bold text-red-400 hover:bg-red-500/10`}><X size={14} /></button>
+                ) : (
+                  <button onClick={e.applyCoupon} disabled={!e.couponCode.trim() || e.couponMut.isPending} className={`${BS} rounded-xl px-4 py-2.5 text-[11px] font-bold disabled:opacity-30 ${T}`} style={accentColor}>{e.couponMut.isPending ? '...' : 'تطبيق'}</button>
+                )}
+              </div>
+            </div>
+
             {/* Summary + Payment */}
-            <div className="p-4 pt-0 space-y-3">
+            <div className="p-4 pt-2 space-y-3">
               {/* Financial summary */}
               <div className={`rounded-xl ${bg(2)} p-3 space-y-1.5`}>
                 <div className="flex justify-between text-[12px]"><span className="text-[var(--muted-foreground)]">المجموع الفرعي</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.subtotal)}</span></div>
+                {e.gDiscVal > 0 && <div className="flex justify-between text-[12px]"><span className="text-emerald-400">الخصم</span><span className="font-semibold text-emerald-400" style={TN}>-{fmt(e.gDiscVal)}</span></div>}
+                {e.couponDiscount > 0 && <div className="flex justify-between text-[12px]"><span className="text-[var(--brand-primary)]"><Ticket size={10} className="inline me-0.5" />كوبون</span><span className="font-semibold text-[var(--brand-primary)]" style={TN}>-{fmt(e.couponDiscount)}</span></div>}
                 <div className="flex justify-between text-[12px]"><span className="text-[var(--muted-foreground)]">ضريبة 15%</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.tax)}</span></div>
+                {e.tip > 0 && <div className="flex justify-between text-[12px]"><span className="text-pink-400">إكرامية</span><span className="font-semibold text-pink-400" style={TN}>{fmt(e.tip)}</span></div>}
                 <div className={`flex items-baseline justify-between border-t ${brd(4)} pt-1.5`}><span className="text-[13px] font-bold text-[var(--foreground)]">الإجمالي</span><span className="text-[20px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)} <span className="text-[9px] font-semibold opacity-40">ر.س</span></span></div>
               </div>
 
