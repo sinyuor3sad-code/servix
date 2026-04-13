@@ -51,9 +51,6 @@ const navItems: NavItem[] = [
   { label: 'الموظفات', href: '/employees', icon: UserCog, roles: ['owner', 'manager'] },
   { label: 'الحضور', href: '/attendance', icon: ClipboardCheck, roles: ['owner', 'manager'] },
   { label: 'الخدمات', href: '/services', icon: Scissors, roles: ['owner', 'manager'] },
-  // ── POS & Sales ──
-  { label: 'الكاشير', href: '/pos', icon: CreditCard, roles: 'all' },
-  { label: 'كاشير سريع', href: '/pos/quick', icon: TabletSmartphone, roles: 'all' },
   // ── Business Intelligence ──
   { label: 'التقارير', href: '/reports', icon: BarChart3, roles: ['owner', 'manager'] },
   { label: 'الكوبونات', href: '/coupons', icon: Ticket, roles: ['owner', 'manager'] },
@@ -64,6 +61,9 @@ const navItems: NavItem[] = [
   { label: 'التقييمات', href: '/feedback', icon: Star, roles: ['owner', 'manager'] },
   { label: 'المستشار الذكي', href: '/ai-consultant', icon: Bot, roles: ['owner', 'manager'] },
   { label: 'الفواتير', href: '/invoices', icon: FileText, roles: ['owner', 'manager', 'cashier'] },
+  // ── POS & Settings ──
+  { label: 'الكاشير', href: '/pos', icon: CreditCard, roles: 'all' },
+  { label: 'كاشير سريع', href: '/pos/quick', icon: TabletSmartphone, roles: 'all' },
   { label: 'الإعدادات', href: '/settings', icon: Settings, roles: ['owner', 'manager'] },
   // ── Coming Soon ──
   { label: 'الورديات', href: '/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
