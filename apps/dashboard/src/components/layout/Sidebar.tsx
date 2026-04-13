@@ -60,14 +60,14 @@ const navItems: NavItem[] = [
   { label: 'الولاء', href: '/dashboard/loyalty', icon: Heart, roles: ['owner', 'manager'] },
   { label: 'المصروفات', href: '/dashboard/expenses', icon: Wallet, roles: ['owner', 'manager'] },
   // ── Management ──
-  { label: 'الإعدادات', href: '/dashboard/settings', icon: Settings, roles: ['owner', 'manager'] },
   { label: 'المخزون', href: '/dashboard/inventory', icon: Package, roles: ['owner', 'manager'] },
   { label: 'التقييمات', href: '/dashboard/feedback', icon: Star, roles: ['owner', 'manager'] },
   { label: 'المستشار الذكي', href: '/dashboard/ai-consultant', icon: Bot, roles: ['owner', 'manager'] },
-  { label: 'واتساب', href: '/dashboard/settings/whatsapp', icon: MessageCircle, roles: ['owner', 'manager'] },
-  // ── End Section ──
   { label: 'الفواتير', href: '/dashboard/invoices', icon: FileText, roles: ['owner', 'manager', 'cashier'] },
+  { label: 'الإعدادات', href: '/dashboard/settings', icon: Settings, roles: ['owner', 'manager'] },
+  // ── Coming Soon ──
   { label: 'الورديات', href: '/dashboard/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
+  { label: 'واتساب', href: '/dashboard/settings/whatsapp', icon: MessageCircle, comingSoon: true, roles: ['owner', 'manager'] },
   { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt, comingSoon: true, roles: ['owner', 'manager'] },
 ];
 
