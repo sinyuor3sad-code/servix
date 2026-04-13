@@ -190,44 +190,46 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
       loginOptions.config_id = FB_CONFIG_ID;
     }
 
-    // FB.login MUST be called synchronously from click handler (no await before it)
+    // FB.login callback MUST be a regular function (not async)
     window.FB.login(
-      async (response: any) => {
+      (response: any) => {
         if (response.authResponse?.code) {
-          // We got the code! Now send it to our backend
-          try {
-            const res = await fetch(
-              `${process.env.NEXT_PUBLIC_API_URL}/salon/whatsapp/connect`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${accessToken}`,
-                },
-                body: JSON.stringify({
-                  code: response.authResponse.code,
-                  phoneNumberId: embeddedData.phoneNumberId || '',
-                  wabaId: embeddedData.wabaId || '',
-                }),
+          // Send code to backend (fire async inside regular callback)
+          fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/salon/whatsapp/connect`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`,
               },
-            );
-
-            const data = await res.json();
-
-            if (data?.success || data?.data?.success) {
-              const result = data?.data || data;
-              toast.success(`✅ تم ربط واتساب بنجاح! الرقم: ${result.displayPhone || ''}`);
-              queryClient.invalidateQueries({ queryKey: ['settings', 'whatsapp'] });
-            } else {
-              toast.error(data?.message || data?.data?.message || 'فشل ربط الواتساب');
-            }
-          } catch (err) {
-            toast.error('خطأ في الاتصال بالخادم');
-          }
+              body: JSON.stringify({
+                code: response.authResponse.code,
+                phoneNumberId: embeddedData.phoneNumberId || '',
+                wabaId: embeddedData.wabaId || '',
+              }),
+            },
+          )
+            .then((res) => res.json())
+            .then((data) => {
+              if (data?.success || data?.data?.success) {
+                const result = data?.data || data;
+                toast.success(`✅ تم ربط واتساب بنجاح! الرقم: ${result.displayPhone || ''}`);
+                queryClient.invalidateQueries({ queryKey: ['settings', 'whatsapp'] });
+              } else {
+                toast.error(data?.message || data?.data?.message || 'فشل ربط الواتساب');
+              }
+            })
+            .catch(() => {
+              toast.error('خطأ في الاتصال بالخادم');
+            })
+            .finally(() => {
+              setIsConnecting(false);
+            });
         } else {
           toast.info('تم إلغاء عملية الربط');
+          setIsConnecting(false);
         }
-        setIsConnecting(false);
       },
       loginOptions,
     );
