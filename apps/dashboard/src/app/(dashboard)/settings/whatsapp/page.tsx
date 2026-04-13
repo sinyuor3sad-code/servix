@@ -139,19 +139,38 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
       script.id = 'facebook-jssdk';
       script.src = 'https://connect.facebook.net/en_US/sdk.js';
       script.async = true;
-      script.defer = true;
       script.crossOrigin = 'anonymous';
       document.head.appendChild(script);
     } else if (window.FB) {
-      setSdkLoaded(true);
+      // SDK already loaded (e.g. navigated back to this page)
+      if (!sdkLoaded) {
+        window.FB.init({
+          appId: META_APP_ID,
+          autoLogAppEvents: true,
+          xfbml: true,
+          version: 'v21.0',
+        });
+        setSdkLoaded(true);
+      }
     }
   }, []);
 
   // Handle WhatsApp Connect via Embedded Signup
   const handleConnect = () => {
-    if (!sdkLoaded || !window.FB) {
-      toast.error('جاري تحميل Facebook SDK...');
+    // If SDK not loaded yet, init it now synchronously
+    if (!window.FB) {
+      toast.error('Facebook SDK لم يتم تحميله — أعد تحميل الصفحة');
       return;
+    }
+
+    if (!sdkLoaded) {
+      window.FB.init({
+        appId: META_APP_ID,
+        autoLogAppEvents: true,
+        xfbml: true,
+        version: 'v21.0',
+      });
+      setSdkLoaded(true);
     }
 
     setIsConnecting(true);
@@ -171,6 +190,7 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
       loginOptions.config_id = FB_CONFIG_ID;
     }
 
+    // FB.login MUST be called synchronously from click handler (no await before it)
     window.FB.login(
       async (response: any) => {
         if (response.authResponse?.code) {
