@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Building2, Palette, Clock, Users, Bell, CreditCard, SlidersHorizontal, UserCog, ChevronLeft, QrCode } from 'lucide-react';
+import { Building2, Palette, Clock, Users, Bell, CreditCard, SlidersHorizontal, UserCog, ChevronLeft, QrCode, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const CARDS = [
@@ -13,6 +13,7 @@ const CARDS = [
   { title: 'المستخدمين',     desc: 'الأدوار والصلاحيات',          href: '/settings/users',         icon: Users,             gradient: 'from-emerald-500 to-teal-600' },
   { title: 'الإشعارات',      desc: 'التنبيهات والإشعارات',        href: '/settings/notifications', icon: Bell,              gradient: 'from-rose-500 to-red-600' },
   { title: 'الاشتراك',       desc: 'الخطة الحالية والترقية',       href: '/settings/subscription',  icon: CreditCard,        gradient: 'from-indigo-500 to-blue-600' },
+  { title: 'التسعير الديناميكي', desc: 'قواعد الذروة والعطلات والصلاة', href: '/settings/pricing',       icon: TrendingUp,        gradient: 'from-lime-500 to-emerald-600' },
   { title: 'الحساب',         desc: 'البيانات وإدارة الحساب',       href: '/settings/account',       icon: UserCog,           gradient: 'from-slate-500 to-gray-600' },
 ];
 

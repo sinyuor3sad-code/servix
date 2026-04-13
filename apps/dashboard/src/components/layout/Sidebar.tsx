@@ -23,11 +23,8 @@ import {
   TabletSmartphone,
   Package,
   Clock,
-  Megaphone,
-  TrendingUp,
   Receipt,
   MessageCircle,
-  PackageOpen,
   Star,
   Bot,
 } from 'lucide-react';
@@ -47,28 +44,30 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  // ── Core Operations ──
   { label: 'الرئيسية', href: '/dashboard', icon: LayoutDashboard, roles: ['owner', 'manager', 'receptionist', 'staff'] },
   { label: 'المواعيد', href: '/dashboard/appointments', icon: Calendar, roles: ['owner', 'manager', 'receptionist'] },
   { label: 'العملاء', href: '/dashboard/clients', icon: Users, roles: ['owner', 'manager', 'receptionist'] },
   { label: 'الموظفات', href: '/dashboard/employees', icon: UserCog, roles: ['owner', 'manager'] },
   { label: 'الحضور', href: '/dashboard/attendance', icon: ClipboardCheck, roles: ['owner', 'manager'] },
   { label: 'الخدمات', href: '/dashboard/services', icon: Scissors, roles: ['owner', 'manager'] },
+  // ── POS & Sales ──
   { label: 'الكاشير', href: '/dashboard/pos', icon: CreditCard, roles: 'all' },
   { label: 'كاشير سريع', href: '/dashboard/pos/quick', icon: TabletSmartphone, roles: 'all' },
-  { label: 'الفواتير', href: '/dashboard/invoices', icon: FileText, roles: ['owner', 'manager', 'cashier'] },
+  // ── Business Intelligence ──
   { label: 'التقارير', href: '/dashboard/reports', icon: BarChart3, roles: ['owner', 'manager'] },
   { label: 'الكوبونات', href: '/dashboard/coupons', icon: Ticket, roles: ['owner', 'manager'] },
   { label: 'الولاء', href: '/dashboard/loyalty', icon: Heart, roles: ['owner', 'manager'] },
   { label: 'المصروفات', href: '/dashboard/expenses', icon: Wallet, roles: ['owner', 'manager'] },
+  // ── Management ──
   { label: 'الإعدادات', href: '/dashboard/settings', icon: Settings, roles: ['owner', 'manager'] },
-  { label: 'الباقات', href: '/dashboard/packages', icon: PackageOpen, roles: ['owner', 'manager'] },
-  { label: 'الورديات', href: '/dashboard/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
   { label: 'المخزون', href: '/dashboard/inventory', icon: Package, roles: ['owner', 'manager'] },
-  { label: 'التسويق', href: '/dashboard/marketing', icon: Megaphone, roles: ['owner', 'manager'] },
   { label: 'التقييمات', href: '/dashboard/feedback', icon: Star, roles: ['owner', 'manager'] },
   { label: 'المستشار الذكي', href: '/dashboard/ai-consultant', icon: Bot, roles: ['owner', 'manager'] },
-  { label: 'التسعير', href: '/dashboard/pricing', icon: TrendingUp, roles: ['owner', 'manager'] },
   { label: 'واتساب', href: '/dashboard/settings/whatsapp', icon: MessageCircle, roles: ['owner', 'manager'] },
+  // ── End Section ──
+  { label: 'الفواتير', href: '/dashboard/invoices', icon: FileText, roles: ['owner', 'manager', 'cashier'] },
+  { label: 'الورديات', href: '/dashboard/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
   { label: 'ZATCA', href: '/dashboard/zatca', icon: Receipt, comingSoon: true, roles: ['owner', 'manager'] },
 ];
 
