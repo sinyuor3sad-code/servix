@@ -33,12 +33,32 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-/* ── Format date to Arabic display ── */
+/* ── Format date to English display ── */
 function formatDate(dateStr: string): string {
   if (!dateStr) return '';
   return new Date(dateStr).toLocaleDateString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric',
   });
+}
+
+/* ── Arabic numerals → English numerals converter ── */
+const ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
+const PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+function toEnglishDigits(str: string): string {
+  let result = str;
+  for (let i = 0; i < 10; i++) {
+    result = result.replace(new RegExp(ARABIC_DIGITS[i], 'g'), String(i));
+    result = result.replace(new RegExp(PERSIAN_DIGITS[i], 'g'), String(i));
+  }
+  // Keep only digits and decimal point
+  return result.replace(/[^0-9.]/g, '');
+}
+
+function handleNumericInput(e: React.FormEvent<HTMLInputElement>) {
+  const input = e.currentTarget;
+  const pos = input.selectionStart ?? 0;
+  input.value = toEnglishDigits(input.value);
+  input.setSelectionRange(pos, pos);
 }
 
 export default function NewCouponPage() {
@@ -49,8 +69,7 @@ export default function NewCouponPage() {
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      code: '', type: 'percentage', value: 0,
-      minOrder: 0, usageLimit: 100,
+      code: '', type: 'percentage',
       validFrom: today(), validUntil: '',
     },
   });
@@ -165,16 +184,18 @@ export default function NewCouponPage() {
               {selectedType === 'percentage' ? <Percent className="h-3 w-3" /> : <DollarSign className="h-3 w-3" />}
               القيمة {selectedType === 'percentage' ? '(%)' : '(ر.س)'}
             </label>
-            <input {...register('value')} type="number" inputMode="decimal" dir="ltr" placeholder="0"
-              className={cn(inputClass, 'text-2xl font-black text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')} />
+            <input {...register('value')} type="text" inputMode="decimal" dir="ltr" placeholder="10"
+              onInput={handleNumericInput}
+              className={cn(inputClass, 'text-2xl font-black text-center')} />
             {errors.value && <p className="text-red-500 text-[10px] mt-1">{errors.value.message}</p>}
           </div>
           <div>
             <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
               <ShoppingBag className="h-3 w-3" /> الحد الأدنى للطلب (ر.س)
             </label>
-            <input {...register('minOrder')} type="number" inputMode="decimal" dir="ltr" placeholder="0"
-              className={cn(inputClass, 'text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')} />
+            <input {...register('minOrder')} type="text" inputMode="decimal" dir="ltr" placeholder="0"
+              onInput={handleNumericInput}
+              className={cn(inputClass, 'text-center')} />
           </div>
         </div>
 
@@ -183,8 +204,9 @@ export default function NewCouponPage() {
           <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
             <Repeat className="h-3 w-3" /> الحد الأقصى للاستخدام
           </label>
-          <input {...register('usageLimit')} type="number" inputMode="numeric" dir="ltr" placeholder="100"
-            className={cn(inputClass, 'text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')} />
+          <input {...register('usageLimit')} type="text" inputMode="numeric" dir="ltr" placeholder="100"
+            onInput={handleNumericInput}
+            className={cn(inputClass, 'text-center')} />
           {errors.usageLimit && <p className="text-red-500 text-[10px] mt-1">{errors.usageLimit.message}</p>}
         </div>
 
