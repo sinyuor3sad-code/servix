@@ -6,11 +6,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowRight, Percent, DollarSign, Ticket } from 'lucide-react';
+import { ArrowRight, Percent, DollarSign, Ticket, CalendarDays, Hash, Repeat, ShoppingBag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
+
+/* ── Today string (YYYY-MM-DD) for min-date restriction ── */
+const today = () => new Date().toISOString().split('T')[0];
 
 const schema = z.object({
   code: z.string().min(3, 'الكود 3 أحرف على الأقل').max(20).regex(/^[A-Z0-9_-]+$/i, 'أحرف إنجليزية وأرقام فقط'),
@@ -20,8 +23,23 @@ const schema = z.object({
   maxUses: z.coerce.number().min(1, 'مرة واحدة على الأقل'),
   startDate: z.string().min(1, 'تاريخ البدء مطلوب'),
   endDate: z.string().min(1, 'تاريخ الانتهاء مطلوب'),
+}).refine(d => d.startDate >= today(), {
+  message: 'لا يمكن اختيار تاريخ في الماضي',
+  path: ['startDate'],
+}).refine(d => d.endDate >= d.startDate, {
+  message: 'تاريخ الانتهاء يجب أن يكون بعد تاريخ البدء',
+  path: ['endDate'],
 });
+
 type FormData = z.infer<typeof schema>;
+
+/* ── Format date to Arabic display ── */
+function formatDateAr(dateStr: string): string {
+  if (!dateStr) return '';
+  return new Date(dateStr).toLocaleDateString('ar-SA', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+}
 
 export default function NewCouponPage() {
   const router = useRouter();
@@ -30,45 +48,65 @@ export default function NewCouponPage() {
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { code: '', type: 'percentage', value: 0, minOrderAmount: 0, maxUses: 100, startDate: new Date().toISOString().split('T')[0], endDate: '' },
+    defaultValues: {
+      code: '', type: 'percentage', value: 0,
+      minOrderAmount: 0, maxUses: 100,
+      startDate: today(), endDate: '',
+    },
   });
 
   const selectedType = watch('type');
+  const watchedStartDate = watch('startDate');
 
   const mut = useMutation({
     mutationFn: (data: FormData) => api.post('/coupons', data, accessToken!),
-    onSuccess: () => { toast.success('🎟️ تم إنشاء الكوبون'); qc.invalidateQueries({ queryKey: ['coupons'] }); router.push('/coupons'); },
+    onSuccess: () => {
+      toast.success('تم إنشاء الكوبون بنجاح');
+      qc.invalidateQueries({ queryKey: ['coupons'] });
+      router.push('/coupons');
+    },
     onError: () => toast.error('خطأ في إنشاء الكوبون'),
   });
 
-  const inputClass = "w-full px-4 py-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] text-sm focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition-all";
+  const inputClass = cn(
+    'w-full px-4 py-3 rounded-2xl border border-[var(--border)]',
+    'bg-[var(--card)] text-sm text-[var(--foreground)]',
+    'focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20',
+    'outline-none transition-all placeholder:text-[var(--muted-foreground)]/50',
+  );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <button onClick={() => router.push('/coupons')} className="p-2 rounded-xl border border-[var(--border)] hover:bg-[var(--muted)] transition">
           <ArrowRight className="h-4 w-4" />
         </button>
         <div>
-          <h1 className="text-xl font-black">كوبون جديد</h1>
+          <h1 className="text-xl font-black text-[var(--foreground)]">كوبون جديد</h1>
           <p className="text-xs text-[var(--muted-foreground)]">إنشاء كوبون خصم جديد</p>
         </div>
       </div>
 
-      {/* Preview Card */}
-      <div className={cn('rounded-2xl p-6 text-white text-center relative overflow-hidden',
-        selectedType === 'percentage' ? 'bg-gradient-to-l from-fuchsia-500 to-pink-600' : 'bg-gradient-to-l from-violet-500 to-purple-600')}>
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_20%_80%,rgba(255,255,255,0.1),transparent)]" />
+      {/* Preview Card — clean dark style */}
+      <div className="rounded-2xl bg-slate-900 p-6 text-white text-center relative overflow-hidden border border-slate-700/50">
+        <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
         <div className="relative z-10">
-          <Ticket className="h-8 w-8 mx-auto mb-2 opacity-60" />
+          <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center mx-auto mb-3">
+            <Ticket className="h-5 w-5 text-white/60" />
+          </div>
           <div className="text-4xl font-black tabular-nums" dir="ltr">
             {watch('value') || 0}{selectedType === 'percentage' ? '%' : ' SAR'}
           </div>
-          <div className="font-mono text-lg font-bold mt-2 tracking-widest opacity-80">
+          <div className="font-mono text-lg font-bold mt-2 tracking-widest text-white/70">
             {watch('code') || 'CODE'}
           </div>
-          <div className="border-t border-dashed border-white/20 mt-4 pt-3 text-[11px] opacity-60">
+          {watchedStartDate && (
+            <div className="text-[10px] text-white/30 mt-3">
+              {formatDateAr(watchedStartDate)} {watch('endDate') ? `← ${formatDateAr(watch('endDate'))}` : ''}
+            </div>
+          )}
+          <div className="border-t border-dashed border-white/10 mt-4 pt-2 text-[10px] text-white/25 uppercase tracking-widest">
             معاينة الكوبون
           </div>
         </div>
@@ -77,32 +115,44 @@ export default function NewCouponPage() {
       <form onSubmit={handleSubmit(d => mut.mutate(d))} className="space-y-5">
         {/* Code */}
         <div>
-          <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">كود الكوبون</label>
+          <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
+            <Hash className="h-3 w-3" /> كود الكوبون
+          </label>
           <input {...register('code')} dir="ltr" placeholder="SUMMER2026" style={{ textTransform: 'uppercase' }}
             className={cn(inputClass, 'font-mono text-lg font-bold tracking-wider text-center')} />
           {errors.code && <p className="text-red-500 text-[10px] mt-1">{errors.code.message}</p>}
         </div>
 
-        {/* Type Selection - Visual */}
+        {/* Type Selection — bordered, not gradient */}
         <div>
           <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-2 block">نوع الخصم</label>
           <div className="grid grid-cols-2 gap-3">
             <button type="button" onClick={() => setValue('type', 'percentage')}
               className={cn('flex items-center gap-3 p-4 rounded-2xl border-2 transition-all',
-                selectedType === 'percentage' ? 'bg-gradient-to-l from-fuchsia-500 to-pink-600 text-white border-transparent' : 'border-[var(--border)] hover:border-fuchsia-300')}>
-              <Percent className="h-6 w-6" />
+                selectedType === 'percentage'
+                  ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)]/5'
+                  : 'border-[var(--border)] hover:border-[var(--brand-primary)]/30')}>
+              <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center',
+                selectedType === 'percentage' ? 'bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]')}>
+                <Percent className="h-5 w-5" />
+              </div>
               <div className="text-right">
-                <p className="text-sm font-bold">نسبة مئوية</p>
-                <p className="text-[10px] opacity-70">مثال: 20% خصم</p>
+                <p className="text-sm font-bold text-[var(--foreground)]">نسبة مئوية</p>
+                <p className="text-[10px] text-[var(--muted-foreground)]">مثال: 20% خصم</p>
               </div>
             </button>
             <button type="button" onClick={() => setValue('type', 'fixed_amount')}
               className={cn('flex items-center gap-3 p-4 rounded-2xl border-2 transition-all',
-                selectedType === 'fixed_amount' ? 'bg-gradient-to-l from-violet-500 to-purple-600 text-white border-transparent' : 'border-[var(--border)] hover:border-violet-300')}>
-              <DollarSign className="h-6 w-6" />
+                selectedType === 'fixed_amount'
+                  ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)]/5'
+                  : 'border-[var(--border)] hover:border-[var(--brand-primary)]/30')}>
+              <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center',
+                selectedType === 'fixed_amount' ? 'bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]')}>
+                <DollarSign className="h-5 w-5" />
+              </div>
               <div className="text-right">
-                <p className="text-sm font-bold">مبلغ ثابت</p>
-                <p className="text-[10px] opacity-70">مثال: 50 SAR</p>
+                <p className="text-sm font-bold text-[var(--foreground)]">مبلغ ثابت</p>
+                <p className="text-[10px] text-[var(--muted-foreground)]">مثال: 50 ر.س</p>
               </div>
             </button>
           </div>
@@ -111,15 +161,18 @@ export default function NewCouponPage() {
         {/* Value + Min Order */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">
-              القيمة {selectedType === 'percentage' ? '(%)' : '(SAR)'}
+            <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
+              {selectedType === 'percentage' ? <Percent className="h-3 w-3" /> : <DollarSign className="h-3 w-3" />}
+              القيمة {selectedType === 'percentage' ? '(%)' : '(ر.س)'}
             </label>
             <input {...register('value')} type="number" inputMode="decimal" dir="ltr" placeholder="0"
               className={cn(inputClass, 'text-2xl font-black text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')} />
             {errors.value && <p className="text-red-500 text-[10px] mt-1">{errors.value.message}</p>}
           </div>
           <div>
-            <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">الحد الأدنى للطلب (SAR)</label>
+            <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
+              <ShoppingBag className="h-3 w-3" /> الحد الأدنى للطلب (ر.س)
+            </label>
             <input {...register('minOrderAmount')} type="number" inputMode="decimal" dir="ltr" placeholder="0"
               className={cn(inputClass, 'text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')} />
           </div>
@@ -127,22 +180,36 @@ export default function NewCouponPage() {
 
         {/* Max Uses */}
         <div>
-          <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">الحد الأقصى للاستخدام</label>
+          <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
+            <Repeat className="h-3 w-3" /> الحد الأقصى للاستخدام
+          </label>
           <input {...register('maxUses')} type="number" inputMode="numeric" dir="ltr" placeholder="100"
             className={cn(inputClass, 'text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none')} />
           {errors.maxUses && <p className="text-red-500 text-[10px] mt-1">{errors.maxUses.message}</p>}
         </div>
 
-        {/* Dates */}
+        {/* Dates — with min restriction (no past dates) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">تاريخ البدء</label>
-            <input {...register('startDate')} type="date" dir="ltr" className={inputClass} />
+            <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
+              <CalendarDays className="h-3 w-3" /> تاريخ البدء
+            </label>
+            <input {...register('startDate')} type="date" dir="ltr" min={today()}
+              className={inputClass} />
+            {watchedStartDate && (
+              <p className="text-[10px] text-[var(--brand-primary)] mt-1 font-medium">{formatDateAr(watchedStartDate)}</p>
+            )}
             {errors.startDate && <p className="text-red-500 text-[10px] mt-1">{errors.startDate.message}</p>}
           </div>
           <div>
-            <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">تاريخ الانتهاء</label>
-            <input {...register('endDate')} type="date" dir="ltr" className={inputClass} />
+            <label className="flex items-center gap-2 text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5">
+              <CalendarDays className="h-3 w-3" /> تاريخ الانتهاء
+            </label>
+            <input {...register('endDate')} type="date" dir="ltr" min={watchedStartDate || today()}
+              className={inputClass} />
+            {watch('endDate') && (
+              <p className="text-[10px] text-[var(--brand-primary)] mt-1 font-medium">{formatDateAr(watch('endDate'))}</p>
+            )}
             {errors.endDate && <p className="text-red-500 text-[10px] mt-1">{errors.endDate.message}</p>}
           </div>
         </div>
@@ -150,7 +217,7 @@ export default function NewCouponPage() {
         {/* Actions */}
         <div className="flex items-center gap-3 pt-2">
           <Button type="submit" disabled={mut.isPending} className="flex-1 py-3">
-            {mut.isPending ? 'جارٍ الإنشاء...' : '🎟️ إنشاء الكوبون'}
+            {mut.isPending ? 'جارٍ الإنشاء...' : 'إنشاء الكوبون'}
           </Button>
           <Button type="button" variant="outline" onClick={() => router.push('/coupons')}>إلغاء</Button>
         </div>

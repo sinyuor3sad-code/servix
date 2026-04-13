@@ -25,9 +25,9 @@ function getCouponStatus(c: Coupon): CStatus {
 }
 
 const STATUS_STYLE: Record<CStatus, { label: string; color: string; bg: string }> = {
-  active: { label: 'نشط', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-  expired: { label: 'منتهي', color: 'text-red-600', bg: 'bg-red-50 border-red-200' },
-  disabled: { label: 'معطّل', color: 'text-slate-500', bg: 'bg-slate-50 border-slate-200' },
+  active: { label: 'نشط', color: 'text-emerald-600', bg: 'bg-emerald-500/10 border-emerald-500/20' },
+  expired: { label: 'منتهي', color: 'text-red-500', bg: 'bg-red-500/10 border-red-500/20' },
+  disabled: { label: 'معطّل', color: 'text-[var(--muted-foreground)]', bg: 'bg-[var(--muted)] border-[var(--border)]' },
 };
 
 export default function CouponsPage() {
@@ -167,7 +167,7 @@ export default function CouponsPage() {
                   {/* Dates */}
                   <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]">
                     <Clock className="h-3 w-3" />
-                    <span dir="ltr" className="tabular-nums">{new Date(coupon.startDate).toLocaleDateString('en', { month: 'short', day: 'numeric' })} → {new Date(coupon.endDate).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    <span dir="ltr" className="tabular-nums">{new Date(coupon.startDate).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' })} ← {new Date(coupon.endDate).toLocaleDateString('ar-SA', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                   </div>
                 </div>
               </div>
