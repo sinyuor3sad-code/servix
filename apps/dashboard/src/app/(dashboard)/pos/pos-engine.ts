@@ -194,8 +194,8 @@ export function usePOSEngine() {
   const afterDisc = Math.max(0, subtotal - gDiscVal);
   const afterCoupon = Math.max(0, afterDisc - couponDiscount);
   const tax = afterCoupon * TAX;
-  const tip = useMemo(() => { const v = parseFloat(tipInput); return isNaN(v) || v < 0 ? 0 : v; }, [tipInput]);
-  const total = afterCoupon + tax + tip;
+  const tip = 0;
+  const total = afterCoupon + tax;
 
   /* ── Coupon validation ── */
   const couponMut = useMutation({
@@ -227,6 +227,16 @@ export function usePOSEngine() {
   const removeCoupon = useCallback(() => {
     setCouponCode(''); setCouponDiscount(0); setCouponApplied(false); setCouponMsg('');
   }, []);
+
+  // Auto-apply coupon after 500ms debounce when code is >= 3 chars
+  useEffect(() => {
+    if (couponApplied || couponCode.trim().length < 3) return;
+    const timer = setTimeout(() => {
+      couponMut.mutate(couponCode.trim());
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couponCode]);
 
   /* ── Commission ── */
   const comms = useMemo(() => {
