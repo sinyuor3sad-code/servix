@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { DollarSign, Calendar, Users, UserCog, TrendingUp, ChevronLeft, BarChart3, PieChart, Activity, Scissors, Wallet } from 'lucide-react';
+import { DollarSign, Calendar, Users, UserCog, TrendingUp, ChevronLeft, BarChart3, Scissors, Wallet, ArrowUpRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,43 +13,35 @@ import type { DashboardStats } from '@/types';
 const REPORT_CARDS = [
   {
     title: 'الإيرادات',
-    desc: 'يومية · شهرية · سنوية',
+    desc: 'تحليل مالي شامل — يومي · شهري · سنوي',
     href: '/reports/revenue',
     icon: DollarSign,
     statKey: 'monthlyRevenue' as keyof DashboardStats,
     format: (v: number) => `${v.toLocaleString('en')} SAR`,
-    gradient: 'from-emerald-500 to-teal-600',
-    iconBg: 'bg-emerald-400/20',
   },
   {
     title: 'المواعيد',
-    desc: 'الحجوزات والجدولة',
+    desc: 'الحجوزات والجدولة والحالات',
     href: '/reports/appointments',
     icon: Calendar,
     statKey: 'monthlyAppointments' as keyof DashboardStats,
     format: (v: number) => `${v} موعد`,
-    gradient: 'from-violet-500 to-purple-600',
-    iconBg: 'bg-violet-400/20',
   },
   {
     title: 'العملاء',
-    desc: 'الزيارات والولاء',
+    desc: 'الزيارات والولاء وأفضل العملاء',
     href: '/reports/clients',
     icon: Users,
     statKey: 'totalClients' as keyof DashboardStats,
     format: (v: number) => `${v} عميل`,
-    gradient: 'from-sky-500 to-blue-600',
-    iconBg: 'bg-sky-400/20',
   },
   {
     title: 'الموظفات',
-    desc: 'الأداء والإنتاجية',
+    desc: 'الأداء والإنتاجية والتقييم',
     href: '/reports/employees',
     icon: UserCog,
     statKey: 'totalEmployees' as keyof DashboardStats,
     format: (v: number) => `${v} موظفة`,
-    gradient: 'from-rose-500 to-pink-600',
-    iconBg: 'bg-rose-400/20',
   },
   {
     title: 'الخدمات',
@@ -57,19 +49,15 @@ const REPORT_CARDS = [
     href: '/reports/services',
     icon: Scissors,
     statKey: 'totalClients' as keyof DashboardStats,
-    format: () => 'تفاصيل ←',
-    gradient: 'from-amber-500 to-orange-600',
-    iconBg: 'bg-amber-400/20',
+    format: () => 'عرض التفاصيل',
   },
   {
     title: 'المصروفات والأرباح',
-    desc: 'تحليل مالي شامل',
+    desc: 'تحليل مالي — إيرادات مقابل مصروفات',
     href: '/reports/expenses',
     icon: Wallet,
     statKey: 'monthlyRevenue' as keyof DashboardStats,
-    format: () => 'تفاصيل ←',
-    gradient: 'from-slate-600 to-zinc-700',
-    iconBg: 'bg-slate-400/20',
+    format: () => 'عرض التفاصيل',
   },
 ];
 
@@ -86,57 +74,64 @@ export default function ReportsPage() {
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-black text-[var(--foreground)]">التقارير</h1>
-        <p className="text-sm text-[var(--muted-foreground)] mt-0.5">تحليلات شاملة لأداء الصالون</p>
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-[var(--foreground)] flex items-center justify-center">
+          <BarChart3 className="h-6 w-6 text-[var(--background)]" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-[var(--foreground)]">التقارير</h1>
+          <p className="text-sm text-[var(--muted-foreground)]">تحليلات شاملة لأداء الصالون</p>
+        </div>
       </div>
 
-      {/* Quick Stats Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-4">
-          <p className="text-[10px] font-bold text-[var(--muted-foreground)] uppercase tracking-wider">إيرادات اليوم</p>
-          <p className="text-xl font-black text-[var(--foreground)] mt-1 tabular-nums" dir="ltr">{(stats?.todayRevenue ?? 0).toLocaleString('en')} <span className="text-[10px] font-medium text-[var(--muted-foreground)]">SAR</span></p>
-        </div>
-        <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-4">
-          <p className="text-[10px] font-bold text-[var(--muted-foreground)] uppercase tracking-wider">إيرادات الشهر</p>
-          <p className="text-xl font-black text-[var(--foreground)] mt-1 tabular-nums" dir="ltr">{(stats?.monthlyRevenue ?? 0).toLocaleString('en')} <span className="text-[10px] font-medium text-[var(--muted-foreground)]">SAR</span></p>
-        </div>
-        <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-4">
-          <p className="text-[10px] font-bold text-[var(--muted-foreground)] uppercase tracking-wider">مواعيد اليوم</p>
-          <p className="text-xl font-black text-[var(--foreground)] mt-1">{stats?.todayAppointments ?? 0}</p>
-        </div>
-        <div className="rounded-2xl bg-[var(--card)] border border-[var(--border)] p-4">
-          <p className="text-[10px] font-bold text-[var(--muted-foreground)] uppercase tracking-wider">إجمالي العملاء</p>
-          <p className="text-xl font-black text-[var(--foreground)] mt-1">{stats?.totalClients ?? 0}</p>
-        </div>
+      {/* KPI Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-[var(--border)] rounded-2xl overflow-hidden">
+        {[
+          { label: 'إيرادات اليوم', value: stats?.todayRevenue ?? 0, suffix: 'SAR', mono: true },
+          { label: 'مواعيد اليوم', value: stats?.todayAppointments ?? 0, suffix: '', mono: false },
+          { label: 'إيرادات الشهر', value: stats?.monthlyRevenue ?? 0, suffix: 'SAR', mono: true },
+          { label: 'إجمالي العملاء', value: stats?.totalClients ?? 0, suffix: '', mono: false },
+        ].map((kpi, i) => (
+          <div key={i} className="bg-[var(--card)] p-5 flex flex-col justify-between min-h-[100px]">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-2">{kpi.label}</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className={cn('text-2xl font-black text-[var(--foreground)]', kpi.mono && 'tabular-nums')} dir="ltr">
+                {kpi.value.toLocaleString('en')}
+              </span>
+              {kpi.suffix && <span className="text-[10px] font-medium text-[var(--muted-foreground)]">{kpi.suffix}</span>}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Report Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {REPORT_CARDS.map(card => {
           const Icon = card.icon;
           const val = Number(stats?.[card.statKey] ?? 0);
 
           return (
             <Link key={card.href} href={card.href}>
-              <div className={cn('group relative rounded-2xl overflow-hidden bg-gradient-to-l text-white p-6 transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer', card.gradient)}>
-                <div className="absolute top-0 left-0 w-full h-full bg-black/5" />
-                <div className="relative z-10">
-                  <div className="flex items-start justify-between">
-                    <div className={cn('w-12 h-12 rounded-2xl flex items-center justify-center', card.iconBg)}>
-                      <Icon className="h-6 w-6 text-white" />
-                    </div>
-                    <ChevronLeft className="h-5 w-5 opacity-40 group-hover:opacity-100 group-hover:-translate-x-1 transition-all" />
+              <div className="group relative rounded-2xl overflow-hidden border border-[var(--border)] bg-[var(--card)] p-6 transition-all duration-300 hover:border-[var(--foreground)]/20 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-0.5 cursor-pointer h-full">
+                {/* Subtle top accent line */}
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-l from-transparent via-[var(--foreground)]/10 to-transparent group-hover:via-[var(--foreground)]/30 transition-all duration-500" />
+
+                <div className="flex items-start justify-between mb-5">
+                  <div className="w-11 h-11 rounded-xl bg-[var(--muted)] flex items-center justify-center group-hover:bg-[var(--foreground)] transition-colors duration-300">
+                    <Icon className="h-5 w-5 text-[var(--muted-foreground)] group-hover:text-[var(--background)] transition-colors duration-300" />
                   </div>
-                  <div className="mt-4">
-                    <h3 className="text-lg font-black">{card.title}</h3>
-                    <p className="text-xs opacity-70 mt-0.5">{card.desc}</p>
-                  </div>
-                  <div className="mt-4 flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 opacity-60" />
-                    <span className="text-xl font-black tabular-nums">{card.format(val)}</span>
+                  <ArrowUpRight className="h-4 w-4 text-[var(--muted-foreground)] opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
+                </div>
+
+                <h3 className="text-base font-bold text-[var(--foreground)] mb-1">{card.title}</h3>
+                <p className="text-[11px] text-[var(--muted-foreground)] leading-relaxed mb-4">{card.desc}</p>
+
+                <div className="pt-4 border-t border-[var(--border)]">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
+                    <span className="text-sm font-bold tabular-nums text-[var(--foreground)]">{card.format(val)}</span>
                   </div>
                 </div>
               </div>
@@ -147,23 +142,39 @@ export default function ReportsPage() {
 
       {/* Revenue Chart Preview */}
       {stats?.revenueChart && stats.revenueChart.length > 0 && (
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold">📊 إيرادات هذا الأسبوع</h3>
-            <Link href="/reports/revenue" className="text-[10px] font-bold text-[var(--brand-primary)] hover:underline">عرض الكل ←</Link>
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-[var(--muted)] flex items-center justify-center">
+                <BarChart3 className="h-4 w-4 text-[var(--muted-foreground)]" />
+              </div>
+              <h3 className="text-sm font-bold text-[var(--foreground)]">إيرادات آخر 7 أيام</h3>
+            </div>
+            <Link href="/reports/revenue" className="text-[11px] font-bold text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors flex items-center gap-1">
+              عرض الكل <ChevronLeft className="h-3 w-3" />
+            </Link>
           </div>
-          <div className="flex items-end gap-1.5 h-28">
-            {stats.revenueChart.slice(-7).map((dp, i) => {
-              const max = Math.max(...stats.revenueChart.slice(-7).map(d => d.revenue));
-              const pct = max > 0 ? (dp.revenue / max) * 100 : 0;
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-[9px] font-bold text-[var(--muted-foreground)] tabular-nums" dir="ltr">{dp.revenue > 0 ? dp.revenue.toLocaleString('en') : ''}</span>
-                  <div className="w-full rounded-t-lg bg-gradient-to-t from-[var(--brand-primary)] to-[var(--brand-primary)]/60 transition-all" style={{ height: `${Math.max(pct, 4)}%` }} />
-                  <span className="text-[8px] text-[var(--muted-foreground)]">{new Date(dp.date).toLocaleDateString('en', { weekday: 'short' })}</span>
-                </div>
-              );
-            })}
+          <div className="p-6">
+            <div className="flex items-end gap-2 h-32">
+              {stats.revenueChart.slice(-7).map((dp, i) => {
+                const max = Math.max(...stats.revenueChart.slice(-7).map(d => d.revenue));
+                const pct = max > 0 ? (dp.revenue / max) * 100 : 0;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1.5 group">
+                    <span className="text-[9px] font-bold text-[var(--muted-foreground)] opacity-0 group-hover:opacity-100 transition-opacity tabular-nums" dir="ltr">
+                      {dp.revenue > 0 ? dp.revenue.toLocaleString('en') : ''}
+                    </span>
+                    <div
+                      className="w-full rounded-md bg-[var(--foreground)]/8 group-hover:bg-[var(--foreground)]/15 transition-all duration-300 cursor-pointer"
+                      style={{ height: `${Math.max(pct, 4)}%` }}
+                    />
+                    <span className="text-[9px] text-[var(--muted-foreground)]">
+                      {new Date(dp.date).toLocaleDateString('en', { weekday: 'short' })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

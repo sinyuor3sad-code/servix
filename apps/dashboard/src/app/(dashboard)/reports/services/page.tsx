@@ -3,13 +3,12 @@
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, Scissors, TrendingUp, Clock, Hash, BarChart3 } from 'lucide-react';
+import { ArrowRight, Scissors, TrendingUp, Hash, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 
-/* ═══════════════ Backend shape ═══════════════ */
 interface ServiceReportItem {
   service: { id: string; nameAr: string; nameEn?: string; price: number };
   bookingsCount: number;
@@ -45,14 +44,12 @@ export default function ServicesReportPage() {
   const { accessToken } = useAuth();
   const [period, setPeriod] = useState<Period>('month');
   const [sortBy, setSortBy] = useState<SortBy>('revenue');
-
   const dateRange = useMemo(() => getDateRange(period), [period]);
 
   const { data, isLoading } = useQuery<ServiceReportItem[]>({
     queryKey: ['reports', 'services', dateRange.from, dateRange.to],
     queryFn: () => api.get<ServiceReportItem[]>(`/reports/services?dateFrom=${dateRange.from}&dateTo=${dateRange.to}`, accessToken!),
-    enabled: !!accessToken,
-    staleTime: 5 * 60 * 1000,
+    enabled: !!accessToken, staleTime: 5 * 60 * 1000,
   });
 
   const items = data ?? [];
@@ -60,93 +57,98 @@ export default function ServicesReportPage() {
   const totalBookings = items.reduce((s, i) => s + i.bookingsCount, 0);
   const maxRevenue = Math.max(...items.map(s => s.revenue), 1);
 
-  const sorted = useMemo(() => {
-    return [...items].sort((a, b) => {
-      if (sortBy === 'revenue') return b.revenue - a.revenue;
-      return b.bookingsCount - a.bookingsCount;
-    });
-  }, [items, sortBy]);
+  const sorted = useMemo(() => [...items].sort((a, b) =>
+    sortBy === 'revenue' ? b.revenue - a.revenue : b.bookingsCount - a.bookingsCount
+  ), [items, sortBy]);
 
   if (isLoading) return <div className="flex min-h-[60vh] items-center justify-center"><Spinner size="lg" /></div>;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-8">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <button onClick={() => router.push('/reports')} className="p-2 rounded-xl border border-[var(--border)] hover:bg-[var(--muted)] transition">
-          <ArrowRight className="h-4 w-4" />
+      <div className="flex items-center gap-4">
+        <button onClick={() => router.push('/reports')} className="w-10 h-10 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--muted)] flex items-center justify-center transition-colors">
+          <ArrowRight className="h-4 w-4 text-[var(--muted-foreground)]" />
         </button>
         <div>
-          <h1 className="text-xl font-black">تقرير الخدمات</h1>
-          <p className="text-xs text-[var(--muted-foreground)]">الأكثر طلباً والأعلى إيراداً</p>
+          <h1 className="text-xl font-black tracking-tight">تقرير الخدمات</h1>
+          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">الأكثر طلباً والأعلى إيراداً</p>
         </div>
       </div>
 
-      {/* Period Tabs */}
-      <div className="flex gap-1.5">
-        {PERIODS.map(p => (
-          <button key={p.key} onClick={() => setPeriod(p.key)}
-            className={cn('px-4 py-2.5 rounded-xl text-[11px] font-bold border-2 transition-all',
-              period === p.key ? 'bg-[var(--foreground)] text-[var(--background)] border-[var(--foreground)]' : 'border-[var(--border)] hover:border-[var(--foreground)]/30')}>
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 p-4 text-white">
-          <Scissors className="h-4 w-4 mb-1.5 opacity-60" />
-          <p className="text-[10px] opacity-70">إجمالي الخدمات</p>
-          <p className="text-2xl font-black mt-0.5">{items.length}</p>
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-6">
+        <div className="flex bg-[var(--muted)] rounded-xl p-1">
+          {PERIODS.map(p => (
+            <button key={p.key} onClick={() => setPeriod(p.key)}
+              className={cn('px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200',
+                period === p.key ? 'bg-[var(--foreground)] text-[var(--background)] shadow-sm' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]')}>
+              {p.label}
+            </button>
+          ))}
         </div>
-        <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-4 text-white">
-          <TrendingUp className="h-4 w-4 mb-1.5 opacity-60" />
-          <p className="text-[10px] opacity-70">الإيرادات</p>
-          <p className="text-2xl font-black mt-0.5 tabular-nums" dir="ltr">{totalRevenue.toLocaleString('en')}</p>
-          <p className="text-[9px] opacity-50">SAR</p>
-        </div>
-        <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 p-4 text-white">
-          <Hash className="h-4 w-4 mb-1.5 opacity-60" />
-          <p className="text-[10px] opacity-70">عدد الحجوزات</p>
-          <p className="text-2xl font-black mt-0.5">{totalBookings}</p>
+        <div className="flex bg-[var(--muted)] rounded-xl p-1">
+          {[{ key: 'revenue' as SortBy, label: 'الإيراد' }, { key: 'count' as SortBy, label: 'الطلب' }].map(s => (
+            <button key={s.key} onClick={() => setSortBy(s.key)}
+              className={cn('px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200',
+                sortBy === s.key ? 'bg-[var(--foreground)] text-[var(--background)] shadow-sm' : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]')}>
+              {s.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Sort Tabs */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-[var(--muted-foreground)]">ترتيب حسب:</span>
+      {/* KPI Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-[var(--border)] rounded-2xl overflow-hidden">
         {[
-          { key: 'revenue' as SortBy, label: 'الإيراد' },
-          { key: 'count' as SortBy, label: 'الطلب' },
-        ].map(s => (
-          <button key={s.key} onClick={() => setSortBy(s.key)}
-            className={cn('px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all',
-              sortBy === s.key ? 'bg-[var(--brand-primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]')}>
-            {s.label}
-          </button>
-        ))}
+          { label: 'إجمالي الخدمات', value: items.length, icon: Scissors },
+          { label: 'الإيرادات', value: totalRevenue.toLocaleString('en'), suffix: 'SAR', icon: TrendingUp },
+          { label: 'عدد الحجوزات', value: totalBookings, icon: Hash },
+        ].map((kpi, i) => {
+          const Icon = kpi.icon;
+          return (
+            <div key={i} className="bg-[var(--card)] p-6">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-[var(--muted)] flex items-center justify-center">
+                  <Icon className="h-4 w-4 text-[var(--muted-foreground)]" />
+                </div>
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">{kpi.label}</span>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <p className="text-3xl font-black tabular-nums text-[var(--foreground)]" dir="ltr">{kpi.value}</p>
+                {kpi.suffix && <span className="text-[10px] text-[var(--muted-foreground)]">{kpi.suffix}</span>}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Services List */}
+      {/* Services Table */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-5 py-3 border-b border-[var(--border)] bg-[var(--muted)]/30">
-          <h3 className="text-xs font-bold text-[var(--muted-foreground)] flex items-center gap-2">
-            <BarChart3 className="h-3.5 w-3.5" /> تفصيل الخدمات ({sorted.length})
-          </h3>
+        <div className="px-6 py-4 border-b border-[var(--border)] flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-[var(--muted)] flex items-center justify-center">
+            <BarChart3 className="h-4 w-4 text-[var(--muted-foreground)]" />
+          </div>
+          <h3 className="text-sm font-bold">تفصيل الخدمات ({sorted.length})</h3>
         </div>
         {sorted.length === 0 ? (
-          <p className="text-center py-12 text-sm text-[var(--muted-foreground)]">لا توجد بيانات في هذه الفترة</p>
+          <div className="p-16 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-[var(--muted)] flex items-center justify-center mx-auto mb-3">
+              <Scissors className="h-7 w-7 text-[var(--muted-foreground)]/30" />
+            </div>
+            <p className="font-bold text-[var(--foreground)]">لا توجد بيانات في هذه الفترة</p>
+          </div>
         ) : (
           <div className="divide-y divide-[var(--border)]">
             {sorted.map((item, i) => {
               const pct = maxRevenue > 0 ? (item.revenue / maxRevenue) * 100 : 0;
-              const medals = ['🥇', '🥈', '🥉'];
               return (
-                <div key={item.service.id} className="px-5 py-3.5 hover:bg-[var(--muted)]/30 transition">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-sm w-6 text-center">{medals[i] || `${i + 1}`}</span>
+                <div key={item.service.id} className="px-6 py-4 hover:bg-[var(--muted)]/20 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-[var(--muted)] flex items-center justify-center flex-shrink-0">
+                        <span className="text-[10px] font-black text-[var(--muted-foreground)]">{i + 1}</span>
+                      </div>
                       <div>
                         <p className="text-sm font-bold text-[var(--foreground)]">{item.service.nameAr}</p>
                         {item.service.nameEn && <p className="text-[10px] text-[var(--muted-foreground)]">{item.service.nameEn}</p>}
@@ -159,9 +161,9 @@ export default function ServicesReportPage() {
                       <p className="text-[10px] text-[var(--muted-foreground)]">{item.bookingsCount} مرة</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-[var(--muted)] overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-l from-[var(--brand-primary)] to-[var(--brand-primary)]/50 transition-all" style={{ width: `${pct}%` }} />
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-1 rounded-full bg-[var(--muted)] overflow-hidden">
+                      <div className="h-full rounded-full bg-[var(--foreground)]/12 transition-all duration-500" style={{ width: `${pct}%` }} />
                     </div>
                     <span className="text-[9px] font-bold text-[var(--muted-foreground)] tabular-nums w-8 text-left">{Math.round(pct)}%</span>
                   </div>
