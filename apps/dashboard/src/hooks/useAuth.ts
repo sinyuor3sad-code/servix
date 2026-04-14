@@ -100,6 +100,50 @@ export function useAuth() {
     return () => window.removeEventListener('servix:token-refresh', handler);
   }, []);
 
+  // ── SECURITY: Force-logout when session mismatch detected ──
+  useEffect(() => {
+    const handler = () => {
+      storeLogout();
+      queryClient.clear();
+      window.location.href = '/login';
+    };
+    window.addEventListener('servix:force-logout', handler);
+    return () => window.removeEventListener('servix:force-logout', handler);
+  }, [storeLogout, queryClient]);
+
+  // ── SECURITY: Cross-tab session detection ──
+  // When another tab logs in as a different user, localStorage changes.
+  // We detect this and force-logout to prevent session leaking.
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key !== 'servix-auth') return;
+      const currentUserId = useAuthStore.getState().user?.id;
+      if (!currentUserId) return; // not logged in, nothing to protect
+
+      if (!e.newValue) {
+        // Another tab logged out — log out this tab too
+        storeLogout();
+        queryClient.clear();
+        window.location.href = '/login';
+        return;
+      }
+
+      try {
+        const newState = JSON.parse(e.newValue);
+        const newUserId = newState?.state?.user?.id;
+        if (newUserId && newUserId !== currentUserId) {
+          // Different user logged in on another tab — force logout this tab
+          console.warn('[SERVIX Security] Another user logged in — logging out this tab');
+          storeLogout();
+          queryClient.clear();
+          window.location.href = '/login';
+        }
+      } catch { /* ignore parse errors */ }
+    };
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [storeLogout, queryClient]);
+
   // ── Effective token: use zustand (if hydrated) or fallback to localStorage read ──
   const effectiveToken = accessToken || storedToken;
 

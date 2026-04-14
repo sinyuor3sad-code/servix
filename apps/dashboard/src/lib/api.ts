@@ -54,6 +54,7 @@ async function tryRefreshToken(): Promise<string | null> {
     if (!raw) return null;
     const stored = JSON.parse(raw);
     const refreshToken = stored?.state?.refreshToken;
+    const currentUserId = stored?.state?.user?.id;
     if (!refreshToken) return null;
 
     const res = await fetch(`${API_BASE}/auth/refresh`, {
@@ -74,6 +75,29 @@ async function tryRefreshToken(): Promise<string | null> {
     if (!newAccessToken) {
       processQueue(new Error('No access token in response'), null);
       return null;
+    }
+
+    // SECURITY: Verify the refreshed token belongs to the SAME user.
+    // If another user logged in on a different tab, the refresh token
+    // in localStorage now belongs to them. We must NOT inherit their session.
+    if (currentUserId) {
+      const tokenExp = getTokenExpiry(newAccessToken);
+      if (tokenExp) {
+        try {
+          const parts = newAccessToken.split('.');
+          if (parts.length === 3) {
+            const payload = JSON.parse(atob(parts[1]));
+            if (payload.sub && payload.sub !== currentUserId) {
+              // Different user! Force logout this tab.
+              console.warn('[SERVIX Security] Session mismatch detected — forcing logout');
+              localStorage.removeItem('servix-auth');
+              window.dispatchEvent(new CustomEvent('servix:force-logout'));
+              processQueue(new Error('Session mismatch'), null);
+              return null;
+            }
+          }
+        } catch { /* token decode failed, continue */ }
+      }
     }
 
     // 1. Update localStorage directly (for next page load)
