@@ -12,6 +12,9 @@ const VALID_COLORS = [
 ] as const;
 
 const VALID_LAYOUTS = [
+  // New 5 layouts
+  'luxe', 'bloom', 'glamour', 'golden', 'banan',
+  // Legacy (backwards compatibility)
   'classic', 'cards', 'compact', 'elegant',
 ] as const;
 

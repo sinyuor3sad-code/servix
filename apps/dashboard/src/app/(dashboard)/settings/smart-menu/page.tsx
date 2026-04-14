@@ -480,7 +480,7 @@ export default function SmartMenuSettingsPage() {
         </div>
         <div className="p-5">
           <p className="text-xs text-[var(--muted-foreground)] mb-4">كل تصميم يقدّم تجربة مختلفة للعميل — اختاري ما يناسب هويّتك</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {LAYOUTS.map(l => {
               const isActive = layout === l.id;
               return (
