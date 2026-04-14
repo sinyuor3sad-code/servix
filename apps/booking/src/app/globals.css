@@ -419,51 +419,128 @@
 
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   LAYOUT-SPECIFIC SERVICE CARD STYLES
-   Each layout has a unique visual identity.
+   LAYOUT-SPECIFIC SERVICE CARD STYLES — 5 Premium Layouts
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Elegant / VIP ─────────────────────────────────────────────────────────── */
-.svc-elegant {
+/* ── 1. LUXE ROSE — Square cards with circular images ──────────────────────── */
+.svc-luxe {
   background: var(--color-surface);
   border: 1.5px solid var(--color-border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border-radius: 1.25rem;
+  padding: 1.25rem 1rem;
   transition: all 0.4s var(--ease-spring);
+  position: relative;
 }
-.svc-elegant:hover {
+.svc-luxe:hover {
   border-color: var(--color-primary);
-  box-shadow:
-    0 8px 32px var(--color-primary-shadow),
-    0 0 0 1px var(--color-primary-border);
+  box-shadow: 0 8px 32px var(--color-primary-shadow);
   transform: translateY(-4px);
 }
+.svc-luxe__badge {
+  position: absolute;
+  top: 0.75rem;
+  inset-inline-end: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+}
+.svc-luxe__ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 2px solid var(--color-primary);
+  opacity: 0.25;
+  transition: opacity 0.3s;
+  width: 108px;
+  height: 108px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.svc-luxe:hover .svc-luxe__ring { opacity: 0.6; }
 
-/* ── Magazine / Cards ──────────────────────────────────────────────────────── */
-.svc-magazine {
+/* ── 2. BLOOM — Horizontal cards with side circle ──────────────────────────── */
+.svc-bloom {
   background: var(--color-surface);
   border: 1.5px solid var(--color-border);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: all 0.4s var(--ease-spring);
+  border-radius: 1rem;
+  padding: 0.875rem 1rem;
+  transition: all 0.35s var(--ease-spring);
 }
-.svc-magazine:hover {
+.svc-bloom:hover {
   border-color: var(--color-primary);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
-  transform: translateY(-6px);
-}
-
-/* ── Compact / Fast ────────────────────────────────────────────────────────── */
-.svc-compact:hover {
-  border-color: var(--color-primary) !important;
-  box-shadow: 0 4px 16px var(--color-primary-shadow);
+  box-shadow: 0 6px 24px var(--color-primary-shadow);
   transform: translateY(-2px);
 }
 
-/* ── Classic ───────────────────────────────────────────────────────────────── */
-.svc-classic {
-  transition: all 0.3s var(--ease-spring);
+/* ── 3. GLAMOUR — 2-column grid with large circles ─────────────────────────── */
+.svc-glamour {
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: 1.5rem;
+  padding: 1.5rem 0.75rem 1.25rem;
+  transition: all 0.4s var(--ease-spring);
 }
-.svc-classic:hover {
-  border-color: var(--color-primary) !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  transform: translateY(-3px);
+.svc-glamour:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.08);
+  transform: translateY(-4px);
 }
+
+/* ── 4. GOLDEN GLOW — Dark luxury ──────────────────────────────────────────── */
+.svc-golden {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 0.875rem 1rem;
+  transition: all 0.35s var(--ease-spring);
+}
+.svc-golden:hover {
+  border-color: rgba(212, 175, 55, 0.4);
+  background: rgba(212, 175, 55, 0.06);
+  box-shadow: 0 8px 32px rgba(212, 175, 55, 0.1);
+  transform: translateY(-2px);
+}
+
+/* ── 5. BANAN — Natural centered circles ───────────────────────────────────── */
+.svc-banan {
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: 1.5rem;
+  padding: 1.5rem 1rem 1.25rem;
+  transition: all 0.4s var(--ease-spring);
+  position: relative;
+}
+.svc-banan:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 10px 32px var(--color-primary-shadow);
+  transform: translateY(-4px);
+}
+.svc-banan__ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+  border: 3px solid var(--color-primary);
+  opacity: 0.2;
+  transition: opacity 0.3s;
+  width: 122px;
+  height: 122px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.svc-banan:hover .svc-banan__ring { opacity: 0.5; }
+.svc-banan__btn {
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+  border: 2px solid var(--color-primary);
+}
+.svc-banan__btn:hover {
+  background: transparent;
+  color: var(--color-primary);
+}
+

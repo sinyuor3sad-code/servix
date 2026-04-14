@@ -1,12 +1,13 @@
 'use client';
 
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowRight, Sparkles, Clock, Tag } from 'lucide-react';
+import { ArrowRight, Sparkles, Clock, Tag, Upload, ImageIcon, X, Loader2 } from 'lucide-react';
 import { Button, Input, Textarea } from '@/components/ui';
 import { dashboardService } from '@/services/dashboard.service';
 import { useAuth } from '@/hooks/useAuth';
@@ -35,6 +36,10 @@ export default function NewServicePage() {
   const router = useRouter();
   const { accessToken } = useAuth();
   const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<F>({
     resolver: zodResolver(schema),
@@ -51,8 +56,49 @@ export default function NewServicePage() {
     enabled: !!accessToken,
   });
 
+  /* ── Image Upload ── */
+  const handleImageUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('يجب أن يكون الملف صورة');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('حجم الصورة أكبر من 2MB');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${API_BASE}/uploads/image`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: formData,
+      });
+      if (!res.ok) throw new Error('فشل');
+      const d = await res.json();
+      const url = d.data?.url || d.url;
+      setImageUrl(url);
+      toast.success('✅ تم رفع الصورة');
+    } catch {
+      toast.error('فشل رفع الصورة');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleImageUpload(file);
+  };
+
+  /* ── Submit ── */
   const mut = useMutation({
-    mutationFn: (d: F) => dashboardService.createService(d, accessToken!),
+    mutationFn: (d: F) => dashboardService.createService({ ...d, imageUrl: imageUrl || undefined } as any, accessToken!),
     onSuccess: () => { toast.success('✅ تم إضافة الخدمة'); qc.invalidateQueries({ queryKey: ['services'] }); router.push('/services'); },
     onError: () => toast.error('حدث خطأ'),
   });
@@ -132,6 +178,72 @@ export default function NewServicePage() {
               ))}
             </div>
           </div>
+        </section>
+
+        {/* 4. Service Image */}
+        <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-6 h-6 rounded-lg bg-[var(--brand-primary)] text-white flex items-center justify-center text-[10px] font-black">4</span>
+            <span className="text-xs font-bold">صورة الخدمة</span>
+            <span className="text-[10px] text-[var(--muted-foreground)]">(اختياري — تظهر في المنيو)</span>
+          </div>
+
+          {imageUrl ? (
+            /* Preview */
+            <div className="relative inline-block">
+              <img
+                src={imageUrl}
+                alt="صورة الخدمة"
+                className="w-28 h-28 rounded-2xl object-cover border-2 border-[var(--border)] shadow-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setImageUrl(null)}
+                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center shadow-md hover:bg-red-600 transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            /* Upload area */
+            <label
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              className={cn(
+                'flex flex-col items-center justify-center gap-2 py-8 rounded-xl border-2 border-dashed cursor-pointer transition-all',
+                dragOver
+                  ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)]/5'
+                  : 'border-[var(--border)] hover:border-[var(--brand-primary)]/40',
+                uploading && 'pointer-events-none opacity-60',
+              )}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="h-8 w-8 animate-spin text-[var(--brand-primary)]" />
+                  <span className="text-xs text-[var(--muted-foreground)]">جاري الرفع...</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-12 h-12 rounded-xl bg-[var(--brand-primary)]/10 flex items-center justify-center">
+                    <ImageIcon className="h-6 w-6 text-[var(--brand-primary)]" />
+                  </div>
+                  <span className="text-xs font-bold">اسحبي الصورة هنا أو اضغطي للرفع</span>
+                  <span className="text-[10px] text-[var(--muted-foreground)]">PNG, JPG, WEBP — حد أقصى 2MB</span>
+                </>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) handleImageUpload(f);
+                }}
+              />
+            </label>
+          )}
         </section>
 
         {/* Submit */}

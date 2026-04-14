@@ -40,10 +40,11 @@ const COLORS = [
 ];
 
 const LAYOUTS = [
-  { id: 'classic', label: 'كلاسيكي',  desc: 'تبويبات لزجة + تمرير ذكي',       icon: '📋', feature: 'Scroll-Spy' },
-  { id: 'cards',   label: 'مجلة',     desc: 'بطاقات بتصميم مجلة فاخر',       icon: '📖', feature: 'Magazine' },
-  { id: 'compact', label: 'سريع',     desc: 'بحث + شرائح تصنيف أفقية',        icon: '⚡', feature: 'Fast Search' },
-  { id: 'elegant', label: 'VIP',     desc: 'غلاف سينمائي + خطوط فاخرة',      icon: '👑', feature: 'Luxury' },
+  { id: 'luxe',    label: 'راقي',      desc: 'بطاقات مربعة بصور دائرية',         icon: '🌹', feature: 'Luxe Rose' },
+  { id: 'bloom',   label: 'عصري',      desc: 'تابات + بحث + بطاقات أفقية',        icon: '🌸', feature: 'Bloom' },
+  { id: 'glamour', label: 'ساحر',      desc: 'شبكة 2 أعمدة + دوائر كبيرة',       icon: '💎', feature: 'Glamour' },
+  { id: 'golden',  label: 'ذهبي VIP',  desc: 'خلفية داكنة + خطوط ذهبية فاخرة',    icon: '🖤', feature: 'Golden' },
+  { id: 'banan',   label: 'طبيعي',     desc: 'دوائر مركزية + لمسات نباتية',       icon: '🌿', feature: 'Banan' },
 ];
 
 export default function SmartMenuSettingsPage() {

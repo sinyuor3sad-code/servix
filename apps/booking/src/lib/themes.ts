@@ -62,7 +62,7 @@ export interface ResolvedTheme {
   /** Whether the manager has disabled seasonal overlays. */
   seasonalDisabledByOwner: boolean;
   /** Menu layout style chosen by the salon manager. */
-  themeLayout:  'classic' | 'cards' | 'compact' | 'elegant';
+  themeLayout:  'luxe' | 'bloom' | 'glamour' | 'golden' | 'banan';
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -185,7 +185,7 @@ export async function resolveTheme(slug: string): Promise<ResolvedTheme> {
   let primaryColor  = DEFAULT_PRIMARY;
   let accentColor:  string | null = null;
   let seasonalDisabledByOwner = false;
-  let themeLayout: ResolvedTheme['themeLayout'] = 'elegant';
+  let themeLayout: ResolvedTheme['themeLayout'] = 'bloom';
 
   try {
     const salon = await bookingApi.getSalonInfo(slug);
