@@ -174,7 +174,24 @@ export default function SmartMenuPage() {
   /* ── Theme CSS vars ── */
   const themeVars = data ? getThemeCSSVars(data.salon.brandColorPreset) : getThemeCSSVars('purple');
   const dark = data ? isDarkTheme(data.salon.brandColorPreset) : false;
-  const layout = data?.salon.themeLayout || 'classic';
+
+  /* Map new layout names (luxe/bloom/glamour/golden/banan) to internal order-page layouts */
+  const rawLayout = data?.salon.themeLayout || 'classic';
+  const layout = (() => {
+    switch (rawLayout) {
+      case 'golden':  return 'elegant';   // dark luxury → elegant
+      case 'glamour': return 'cards';     // 2-col grid  → magazine cards
+      case 'luxe':    return 'cards';     // square cards → magazine cards
+      case 'bloom':   return 'compact';   // horizontal + search → compact
+      case 'banan':   return 'classic';   // natural centered → classic
+      // Legacy names still work
+      case 'elegant': return 'elegant';
+      case 'cards':   return 'cards';
+      case 'compact': return 'compact';
+      case 'classic': return 'classic';
+      default:        return 'classic';
+    }
+  })();
 
   /* ── Name helpers ── */
   const sn = (s: { nameAr: string; nameEn: string | null }) =>

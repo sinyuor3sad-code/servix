@@ -476,11 +476,11 @@ export default function SmartMenuSettingsPage() {
       {/* ─── 4. Layout ─── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
         <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
-          <Layout className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">شكل المنيو · 4 تصاميم احترافية</span>
+          <Layout className="h-4 w-4 opacity-80" /><span className="text-xs font-bold">شكل المنيو · 5 تصاميم احترافية</span>
         </div>
         <div className="p-5">
           <p className="text-xs text-[var(--muted-foreground)] mb-4">كل تصميم يقدّم تجربة مختلفة للعميل — اختاري ما يناسب هويّتك</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {LAYOUTS.map(l => {
               const isActive = layout === l.id;
               return (
@@ -579,7 +579,7 @@ export default function SmartMenuSettingsPage() {
         <div className="p-5">
           <div className={cn(
             'relative rounded-2xl overflow-hidden border border-[var(--border)] min-h-[200px]',
-            layout === 'elegant' ? 'bg-gray-900' : 'bg-white',
+            layout === 'golden' ? 'bg-gray-900' : 'bg-white',
           )}>
             {/* Cover preview */}
             <div className="h-24 w-full opacity-30" style={{ background: COLORS.find(c => c.id === color)?.hex ?? '#7C3AED' }} />
@@ -599,7 +599,7 @@ export default function SmartMenuSettingsPage() {
               
               <h3 className={cn(
                 'text-sm font-black mt-3',
-                layout === 'elegant' ? 'text-white' : 'text-gray-900',
+                layout === 'golden' ? 'text-white' : 'text-gray-900',
               )}>
                 اسم الصالون
               </h3>
@@ -607,7 +607,7 @@ export default function SmartMenuSettingsPage() {
               {welcome && (
                 <p className={cn(
                   'text-[10px] mt-1',
-                  layout === 'elegant' ? 'text-gray-300' : 'text-gray-500',
+                  layout === 'golden' ? 'text-gray-300' : 'text-gray-500',
                 )}>
                   {welcome}
                 </p>
@@ -620,7 +620,7 @@ export default function SmartMenuSettingsPage() {
                     key={s}
                     className={cn(
                       'rounded-xl px-3 py-2 text-[9px] font-bold border',
-                      layout === 'elegant'
+                      layout === 'golden'
                         ? 'bg-gray-800 border-gray-700 text-gray-200'
                         : 'bg-gray-50 border-gray-200 text-gray-700',
                     )}
