@@ -15,6 +15,7 @@ export interface SalonInfo {
   primaryColor: string;
   secondaryColor: string | null;
   theme: string;
+  themeLayout: 'classic' | 'cards' | 'compact' | 'elegant';
   workingDays: Record<string, { open: boolean; start: string; end: string }>;
 }
 

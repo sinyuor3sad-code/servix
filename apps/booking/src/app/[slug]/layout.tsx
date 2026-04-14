@@ -36,6 +36,7 @@ export default async function SalonLayout({ params, children }: SalonLayoutProps
         id="salon-root"
         className="relative min-h-dvh"
         data-seasonal={resolved.seasonal?.id ?? undefined}
+        data-layout={resolved.themeLayout}
         suppressHydrationWarning
         style={{
           '--color-primary':        resolved.primaryColor,

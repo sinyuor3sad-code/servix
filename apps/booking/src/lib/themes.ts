@@ -61,6 +61,8 @@ export interface ResolvedTheme {
   seasonal:     SeasonalOverlay | null;
   /** Whether the manager has disabled seasonal overlays. */
   seasonalDisabledByOwner: boolean;
+  /** Menu layout style chosen by the salon manager. */
+  themeLayout:  'classic' | 'cards' | 'compact' | 'elegant';
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -183,11 +185,13 @@ export async function resolveTheme(slug: string): Promise<ResolvedTheme> {
   let primaryColor  = DEFAULT_PRIMARY;
   let accentColor:  string | null = null;
   let seasonalDisabledByOwner = false;
+  let themeLayout: ResolvedTheme['themeLayout'] = 'elegant';
 
   try {
     const salon = await bookingApi.getSalonInfo(slug);
     if (salon.primaryColor)   primaryColor = salon.primaryColor;
     if (salon.secondaryColor) accentColor  = salon.secondaryColor;
+    if (salon.themeLayout)    themeLayout  = salon.themeLayout;
     // TODO: read salon.settings.seasonal_themes_enabled when API supports it
   } catch {
     // Degrade gracefully — use defaults
@@ -205,7 +209,7 @@ export async function resolveTheme(slug: string): Promise<ResolvedTheme> {
     }
   }
 
-  return { primaryColor, accentColor, mode, seasonal, seasonalDisabledByOwner };
+  return { primaryColor, accentColor, mode, seasonal, seasonalDisabledByOwner, themeLayout };
 }
 
 /** Get a seasonal overlay by ID (for client components). */

@@ -2,19 +2,21 @@
  * SalonPage — app/[slug]/page.tsx  (Server Component)
  *
  * Public booking profile for a salon. Fully theme-aware via CSS variables.
+ * Now supports 4 layout variants: classic, cards, compact, elegant.
  *
  * Sections:
  *  1. BookingHero    — cover/logo/name/CTA  (+ AnnouncementBar inside)
- *  2. WorkingHours   — weekly schedule card
- *  3. Services       — category groups → ServiceCard grid
+ *  2. Services       — layout-aware service grid
+ *  3. WorkingHours   — weekly schedule card
  *  4. SalonFooter    — brand + social + "powered by"
  */
 
 import type { ReactElement } from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { Clock, Sparkles } from 'lucide-react';
+import { Clock, Sparkles, Search } from 'lucide-react';
 import { bookingApi, type SalonInfo, type ServiceCategory } from '@/lib/api';
+import { resolveTheme } from '@/lib/themes';
 import BookingHero from '@/components/booking-hero';
 import ServiceCard  from '@/components/service-card';
 import SalonFooter  from '@/components/salon-footer';
@@ -97,6 +99,8 @@ export default async function SalonPage({ params }: Props): Promise<ReactElement
     notFound();
   }
 
+  const resolved = await resolveTheme(slug);
+  const layout = resolved.themeLayout;
   const today        = getCurrentDay();
   const totalServices = categories.reduce((n, c) => n + c.services.length, 0);
 
@@ -104,6 +108,9 @@ export default async function SalonPage({ params }: Props): Promise<ReactElement
   const featuredServiceIds = new Set(
     categories.map(c => c.services[0]?.id).filter(Boolean),
   );
+
+  // Flatten all services for compact layout search
+  const allServices = categories.flatMap(c => c.services);
 
   return (
     <div
@@ -117,8 +124,196 @@ export default async function SalonPage({ params }: Props): Promise<ReactElement
         /* announcement can be fetched separately if the API supports it */
       />
 
-      {/* ── 2. Working Hours ────────────────────────────────────────────── */}
-      <section className="px-4 py-12 md:py-16">
+      {/* ── 2. Services ─────────────────────────────────────────────────── */}
+      {categories.length > 0 && (
+        <section
+          className="px-4 py-10 md:py-14"
+          style={{ background: layout === 'elegant' ? 'var(--color-bg)' : 'var(--color-bg-2)' }}
+        >
+          <div className={cn(
+            'mx-auto',
+            layout === 'compact' ? 'max-w-2xl' : 'max-w-5xl'
+          )}>
+
+            {/* Section heading */}
+            <div className="mb-8 text-center">
+              <div className="mb-2 flex items-center justify-center gap-2">
+                <Sparkles
+                  className="h-5 w-5"
+                  style={{ color: 'var(--color-primary)' }}
+                />
+                <h2
+                  className="font-heading text-2xl font-bold sm:text-3xl"
+                  style={{ color: 'var(--color-text)' }}
+                >
+                  خدماتنا
+                </h2>
+              </div>
+              {totalServices > 0 && (
+                <p
+                  className="text-sm"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
+                  {totalServices} خدمة متاحة للحجز
+                </p>
+              )}
+            </div>
+
+            {/* ─── Layout: Compact (Fast) ─── */}
+            {layout === 'compact' && (
+              <div className="space-y-6">
+                {/* Category pills */}
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+                  <span className="shrink-0 rounded-full px-4 py-2 text-xs font-bold"
+                    style={{ background: 'var(--color-primary)', color: 'var(--color-primary-fg)' }}>
+                    الكل
+                  </span>
+                  {categories.map(cat => (
+                    <span key={cat.id}
+                      className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition-colors"
+                      style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
+                      {cat.nameAr}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Service list */}
+                <div className="space-y-3">
+                  {allServices.map((service, idx) => (
+                    <ServiceCard
+                      key={service.id}
+                      service={service}
+                      slug={slug}
+                      layout="compact"
+                      featured={featuredServiceIds.has(service.id)}
+                      index={idx}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ─── Layout: Elegant (VIP) ─── */}
+            {layout === 'elegant' && (
+              <div className="space-y-10">
+                {categories.map((category) => (
+                  <div key={category.id}>
+                    {/* Category label */}
+                    <div className="mb-5 flex items-center gap-3">
+                      <span
+                        className="h-1 w-8 rounded-full"
+                        style={{ background: 'var(--color-primary)' }}
+                      />
+                      <h3
+                        className="font-heading text-lg font-semibold"
+                        style={{ color: 'var(--color-text)' }}
+                      >
+                        {category.nameAr}
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {category.services.map((service, idx) => (
+                        <ServiceCard
+                          key={service.id}
+                          service={service}
+                          slug={slug}
+                          layout="elegant"
+                          featured={idx === 0 && featuredServiceIds.has(service.id)}
+                          index={idx}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ─── Layout: Magazine (Cards) ─── */}
+            {layout === 'cards' && (
+              <div className="space-y-10">
+                {categories.map((category) => (
+                  <div key={category.id}>
+                    <div className="mb-5 flex items-center gap-3">
+                      <span className="h-1 w-8 rounded-full"
+                        style={{ background: 'var(--color-primary)' }} />
+                      <h3 className="font-heading text-lg font-semibold"
+                        style={{ color: 'var(--color-text)' }}>
+                        {category.nameAr}
+                      </h3>
+                      <span className="badge">{category.services.length}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      {category.services.map((service, idx) => (
+                        <ServiceCard
+                          key={service.id}
+                          service={service}
+                          slug={slug}
+                          layout="cards"
+                          featured={idx === 0 && featuredServiceIds.has(service.id)}
+                          index={idx}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ─── Layout: Classic ─── */}
+            {layout === 'classic' && (
+              <div className="space-y-10">
+                {/* Sticky category tabs */}
+                <div className="sticky top-0 z-30 -mx-4 px-4 py-3 backdrop-blur-xl"
+                  style={{ background: 'rgba(var(--color-bg-rgb, 244,244,245), 0.85)' }}>
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+                    {categories.map(cat => (
+                      <a key={cat.id}
+                        href={`#cat-${cat.id}`}
+                        className="shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition-colors hover:opacity-80"
+                        style={{ background: 'var(--color-primary-subtle)', color: 'var(--color-primary)', border: '1px solid var(--color-primary-border)' }}>
+                        {cat.nameAr}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+
+                {categories.map((category) => (
+                  <div key={category.id} id={`cat-${category.id}`} className="scroll-mt-16">
+                    <div className="mb-5 flex items-center gap-3">
+                      <span className="h-1 w-8 rounded-full"
+                        style={{ background: 'var(--color-primary)' }} />
+                      <h3 className="font-heading text-lg font-semibold"
+                        style={{ color: 'var(--color-text)' }}>
+                        {category.nameAr}
+                      </h3>
+                      <span className="badge">{category.services.length}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {category.services.map((service, idx) => (
+                        <ServiceCard
+                          key={service.id}
+                          service={service}
+                          slug={slug}
+                          layout="classic"
+                          featured={idx === 0 && featuredServiceIds.has(service.id)}
+                          index={idx}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+          </div>
+        </section>
+      )}
+
+      {/* ── 3. Working Hours ────────────────────────────────────────────── */}
+      <section className="px-4 py-10 md:py-14">
         <div className="mx-auto max-w-2xl">
 
           {/* Section heading */}
@@ -212,80 +407,6 @@ export default async function SalonPage({ params }: Props): Promise<ReactElement
           </div>
         </div>
       </section>
-
-      {/* ── 3. Services ─────────────────────────────────────────────────── */}
-      {categories.length > 0 && (
-        <section
-          className="px-4 py-12 md:py-16"
-          style={{ background: 'var(--color-bg-2)' }}
-        >
-          <div className="mx-auto max-w-5xl">
-
-            {/* Section heading */}
-            <div className="mb-10 text-center">
-              <div className="mb-3 flex items-center justify-center gap-2">
-                <Sparkles
-                  className="h-5 w-5"
-                  style={{ color: 'var(--color-primary)' }}
-                />
-                <h2
-                  className="font-heading text-2xl font-bold sm:text-3xl"
-                  style={{ color: 'var(--color-text)' }}
-                >
-                  خدماتنا
-                </h2>
-              </div>
-              {totalServices > 0 && (
-                <p
-                  className="text-sm"
-                  style={{ color: 'var(--color-text-muted)' }}
-                >
-                  {totalServices} خدمة متاحة للحجز
-                </p>
-              )}
-            </div>
-
-            {/* Categories */}
-            <div className="space-y-12">
-              {categories.map((category) => (
-                <div key={category.id}>
-
-                  {/* Category label */}
-                  <div className="mb-5 flex items-center gap-3">
-                    <span
-                      className="h-1 w-8 rounded-full"
-                      style={{ background: 'var(--color-primary)' }}
-                    />
-                    <h3
-                      className="font-heading text-lg font-semibold"
-                      style={{ color: 'var(--color-text)' }}
-                    >
-                      {category.nameAr}
-                    </h3>
-                    <span
-                      className="badge"
-                    >
-                      {category.services.length}
-                    </span>
-                  </div>
-
-                  {/* Service cards grid */}
-                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                    {category.services.map((service, idx) => (
-                      <ServiceCard
-                        key={service.id}
-                        service={service}
-                        slug={slug}
-                        featured={idx === 0 && featuredServiceIds.has(service.id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* ── 4. Footer ───────────────────────────────────────────────────── */}
       <SalonFooter salon={salon} />
