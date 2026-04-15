@@ -2,12 +2,14 @@ import { TenantResolverService } from './tenant-resolver.service';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { TenantClientFactory } from '../../shared/database/tenant-client.factory';
 import { CacheService } from '../../shared/cache/cache.service';
+import { EncryptionService } from '../encryption/encryption.service';
 
 describe('TenantResolverService', () => {
   let service: TenantResolverService;
   let mockPlatformDb: any;
   let mockTenantFactory: any;
   let mockCacheService: any;
+  let mockEncryptionService: any;
 
   beforeEach(() => {
     mockPlatformDb = {
@@ -58,10 +60,17 @@ describe('TenantResolverService', () => {
       setSettings: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockEncryptionService = {
+      encrypt: jest.fn((val: string) => `encrypted:${val}`),
+      decrypt: jest.fn((val: string) => val.startsWith('encrypted:') ? val.slice(10) : val),
+      isEnabled: true,
+    };
+
     service = new TenantResolverService(
       mockPlatformDb as unknown as PlatformPrismaClient,
       mockTenantFactory as unknown as TenantClientFactory,
       mockCacheService as unknown as CacheService,
+      mockEncryptionService as unknown as EncryptionService,
     );
   });
 

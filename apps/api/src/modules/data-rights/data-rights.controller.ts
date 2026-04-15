@@ -24,7 +24,7 @@ export class DataRightsController {
   @Get('my-data')
   async exportMyData(@Req() req: AuthenticatedRequest) {
     const userId = req.user.sub;
-    const tenantId = req.user.tenantId;
+    const tenantId = req.user.tenantId ?? '';
     this.logger.log(`Data export requested by user ${userId}`);
     return this.dataRightsService.exportAll(userId, tenantId);
   }
