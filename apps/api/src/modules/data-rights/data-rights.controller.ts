@@ -1,4 +1,13 @@
-import { Controller, Get, Patch, Delete, Body, Req, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Delete,
+  Body,
+  Req,
+  Logger,
+  BadRequestException,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DataRightsService } from './data-rights.service';
 import { AuthenticatedRequest } from '../../shared/types';
@@ -24,9 +33,9 @@ export class DataRightsController {
   @Get('my-data')
   async exportMyData(@Req() req: AuthenticatedRequest) {
     const userId = req.user.sub;
-    const tenantId = req.user.tenantId ?? '';
+    const tenantDb = req.tenantDb;
     this.logger.log(`Data export requested by user ${userId}`);
-    return this.dataRightsService.exportAll(userId, tenantId);
+    return this.dataRightsService.exportAll(userId, tenantDb ?? null);
   }
 
   /**
@@ -38,8 +47,12 @@ export class DataRightsController {
     @Body() body: { corrections: Record<string, any> },
   ) {
     const userId = req.user.sub;
+    const tenantDb = req.tenantDb;
+    if (!body.corrections || Object.keys(body.corrections).length === 0) {
+      throw new BadRequestException('لا توجد تعديلات مطلوبة');
+    }
     this.logger.log(`Data correction requested by user ${userId}`);
-    return this.dataRightsService.correct(userId, body.corrections);
+    return this.dataRightsService.correct(userId, body.corrections, tenantDb ?? null);
   }
 
   /**
@@ -49,7 +62,19 @@ export class DataRightsController {
   @Delete('my-data')
   async requestDeletion(@Req() req: AuthenticatedRequest) {
     const userId = req.user.sub;
+    const tenantDb = req.tenantDb;
     this.logger.log(`Data deletion requested by user ${userId}`);
-    return this.dataRightsService.requestDeletion(userId);
+    return this.dataRightsService.requestDeletion(userId, tenantDb ?? null);
+  }
+
+  /**
+   * Cancel a pending deletion request
+   */
+  @Patch('my-data/cancel-deletion')
+  async cancelDeletion(@Req() req: AuthenticatedRequest) {
+    const userId = req.user.sub;
+    const tenantDb = req.tenantDb;
+    this.logger.log(`Deletion cancellation requested by user ${userId}`);
+    return this.dataRightsService.cancelDeletion(userId, tenantDb ?? null);
   }
 }

@@ -27,6 +27,17 @@ describe('TenantResolverService', () => {
             { key: 'whatsapp_access_token', value: 'EAAxxxxxxxx' },
             { key: 'whatsapp_bot_enabled', value: 'true' },
           ]),
+          findUnique: jest.fn().mockImplementation(({ where }: { where: { key: string } }) => {
+            const settings: Record<string, string> = {
+              whatsapp_phone_number_id: '123456',
+              whatsapp_access_token: 'EAAxxxxxxxx',
+              whatsapp_bot_enabled: 'true',
+            };
+            if (settings[where.key]) {
+              return Promise.resolve({ key: where.key, value: settings[where.key] });
+            }
+            return Promise.resolve(null);
+          }),
         },
         salonInfo: {
           findFirst: jest.fn().mockResolvedValue({
@@ -84,7 +95,7 @@ describe('TenantResolverService', () => {
 
     it('should find the correct tenant by WhatsApp phone number ID', async () => {
       mockPlatformDb.tenant.findMany.mockResolvedValue([
-        { id: 'tenant-1', slug: 'salon-1', name: 'Salon 1', databaseName: 'salon_1', status: 'active' },
+        { id: 'tenant-1', slug: 'salon-1', nameAr: 'صالون 1', nameEn: 'Salon 1', databaseName: 'salon_1', status: 'active' },
       ]);
 
       const result = await service.resolveByPhoneNumberId('123456');
@@ -94,7 +105,7 @@ describe('TenantResolverService', () => {
 
     it('should NOT return a suspended tenant', async () => {
       mockPlatformDb.tenant.findMany.mockResolvedValue([
-        { id: 'tenant-suspended', slug: 'sus', name: 'Salon Suspended', databaseName: 'salon_s', status: 'suspended' },
+        { id: 'tenant-suspended', slug: 'sus', nameAr: 'صالون معلق', nameEn: 'Salon Suspended', databaseName: 'salon_s', status: 'suspended' },
       ]);
 
       const result = await service.resolveByPhoneNumberId('123456');
@@ -125,10 +136,10 @@ describe('TenantResolverService', () => {
       // Two different tenants resolve with separate calls
       mockPlatformDb.tenant.findMany
         .mockResolvedValueOnce([
-          { id: 'tenant-A', slug: 'a', databaseName: 'salon_a', status: 'active' },
+          { id: 'tenant-A', slug: 'a', nameAr: 'صالون أ', nameEn: 'Salon A', databaseName: 'salon_a', status: 'active' },
         ])
         .mockResolvedValueOnce([
-          { id: 'tenant-B', slug: 'b', databaseName: 'salon_b', status: 'active' },
+          { id: 'tenant-B', slug: 'b', nameAr: 'صالون ب', nameEn: 'Salon B', databaseName: 'salon_b', status: 'active' },
         ]);
 
       await service.resolveByPhoneNumberId('phone-A');

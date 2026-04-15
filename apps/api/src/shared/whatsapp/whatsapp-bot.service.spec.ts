@@ -4,6 +4,7 @@ import { WhatsAppService } from './whatsapp.service';
 import { TenantResolverService } from './tenant-resolver.service';
 import { GeminiService } from '../ai/gemini.service';
 import { CalendarService } from '../calendar/calendar.service';
+import { FeaturesService } from '../../core/features/features.service';
 
 describe('WhatsAppBotService', () => {
   let service: WhatsAppBotService;
@@ -11,6 +12,7 @@ describe('WhatsAppBotService', () => {
   let mockResolver: any;
   let mockGemini: any;
   let mockCalendar: any;
+  let mockFeatures: any;
 
   beforeEach(async () => {
     mockWhatsApp = {
@@ -40,6 +42,10 @@ describe('WhatsAppBotService', () => {
       generateAppointmentCalendarUrl: jest.fn().mockReturnValue('https://calendar.google.com/...'),
     };
 
+    mockFeatures = {
+      isFeatureEnabled: jest.fn().mockResolvedValue({ isEnabled: true }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WhatsAppBotService,
@@ -47,6 +53,7 @@ describe('WhatsAppBotService', () => {
         { provide: TenantResolverService, useValue: mockResolver },
         { provide: GeminiService, useValue: mockGemini },
         { provide: CalendarService, useValue: mockCalendar },
+        { provide: FeaturesService, useValue: mockFeatures },
       ],
     }).compile();
 
