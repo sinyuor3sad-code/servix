@@ -7,6 +7,7 @@ import {
   Logger,
   HttpCode,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Public } from '../decorators';
 import { WhatsAppBotService } from './whatsapp-bot.service';
 
@@ -14,7 +15,10 @@ import { WhatsAppBotService } from './whatsapp-bot.service';
 export class WhatsAppWebhookController {
   private readonly logger = new Logger(WhatsAppWebhookController.name);
 
-  constructor(private readonly botService: WhatsAppBotService) {}
+  constructor(
+    private readonly botService: WhatsAppBotService,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
    * GET — Meta Webhook Verification
@@ -28,8 +32,12 @@ export class WhatsAppWebhookController {
     @Query('hub.verify_token') token: string,
     @Query('hub.challenge') challenge: string,
   ): string {
-    const VERIFY_TOKEN =
-      process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || 'servix-webhook-verify';
+    const VERIFY_TOKEN = this.configService.get<string>('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
+
+    if (!VERIFY_TOKEN) {
+      this.logger.error('WHATSAPP_WEBHOOK_VERIFY_TOKEN is not configured');
+      return 'Forbidden';
+    }
 
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       this.logger.log('✅ WhatsApp Webhook verified successfully');

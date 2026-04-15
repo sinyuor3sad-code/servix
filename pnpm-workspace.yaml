@@ -5,6 +5,7 @@ packages:
   - "apps/booking"
   - "apps/landing"
   - "apps/admin"
+  - "apps/mobile"
 
   # ══════════════ Shared Packages ══════════════
   - "packages/database"

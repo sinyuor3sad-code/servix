@@ -38,9 +38,15 @@ const mockInventoryService = {
 };
 
 import { AuditService } from '../../../core/audit/audit.service';
+import { CalendarService } from '../../../shared/calendar/calendar.service';
 
 const mockAuditService = {
   log: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockCalendarService = {
+  generateIcsUrl: jest.fn().mockReturnValue('https://cal.example.com/test.ics'),
+  generateIcsContent: jest.fn().mockReturnValue('BEGIN:VCALENDAR...'),
 };
 
 describe('AppointmentsService', () => {
@@ -53,6 +59,7 @@ describe('AppointmentsService', () => {
         { provide: CommitmentsService, useValue: mockCommitmentsService },
         { provide: InventoryService, useValue: mockInventoryService },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: CalendarService, useValue: mockCalendarService },
       ],
     }).compile();
 

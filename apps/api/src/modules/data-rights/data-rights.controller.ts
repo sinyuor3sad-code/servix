@@ -1,6 +1,7 @@
-import { Controller, Get, Patch, Delete, Body, Logger } from '@nestjs/common';
+import { Controller, Get, Patch, Delete, Body, Req, Logger } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DataRightsService } from './data-rights.service';
+import { AuthenticatedRequest } from '../../shared/types';
 
 /**
  * PDPL (Personal Data Protection Law) Controller
@@ -21,9 +22,11 @@ export class DataRightsController {
    * Export all personal data for the requesting user (PDPL Art. 14)
    */
   @Get('my-data')
-  async exportMyData(@Body() body: { userId: string; tenantId: string }) {
-    this.logger.log(`Data export requested by user ${body.userId}`);
-    return this.dataRightsService.exportAll(body.userId, body.tenantId);
+  async exportMyData(@Req() req: AuthenticatedRequest) {
+    const userId = req.user.sub;
+    const tenantId = req.user.tenantId;
+    this.logger.log(`Data export requested by user ${userId}`);
+    return this.dataRightsService.exportAll(userId, tenantId);
   }
 
   /**
@@ -31,10 +34,12 @@ export class DataRightsController {
    */
   @Patch('my-data')
   async correctMyData(
-    @Body() body: { userId: string; corrections: Record<string, any> },
+    @Req() req: AuthenticatedRequest,
+    @Body() body: { corrections: Record<string, any> },
   ) {
-    this.logger.log(`Data correction requested by user ${body.userId}`);
-    return this.dataRightsService.correct(body.userId, body.corrections);
+    const userId = req.user.sub;
+    this.logger.log(`Data correction requested by user ${userId}`);
+    return this.dataRightsService.correct(userId, body.corrections);
   }
 
   /**
@@ -42,8 +47,9 @@ export class DataRightsController {
    * 30-day cooling period before actual deletion
    */
   @Delete('my-data')
-  async requestDeletion(@Body() body: { userId: string }) {
-    this.logger.log(`Data deletion requested by user ${body.userId}`);
-    return this.dataRightsService.requestDeletion(body.userId);
+  async requestDeletion(@Req() req: AuthenticatedRequest) {
+    const userId = req.user.sub;
+    this.logger.log(`Data deletion requested by user ${userId}`);
+    return this.dataRightsService.requestDeletion(userId);
   }
 }

@@ -12,6 +12,7 @@ import { TenantGuard } from '../../shared/guards';
 import { AuthenticatedRequest } from '../../shared/types';
 import { SettingsService } from '../../modules/salon/settings/settings.service';
 import { ConfigService } from '@nestjs/config';
+import { EncryptionService } from '../encryption/encryption.service';
 import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 class WhatsAppConnectDto {
@@ -38,6 +39,7 @@ export class WhatsAppConnectController {
   constructor(
     private readonly settingsService: SettingsService,
     private readonly configService: ConfigService,
+    private readonly encryptionService: EncryptionService,
   ) {}
 
   @Post('connect')
@@ -72,24 +74,27 @@ export class WhatsAppConnectController {
       }
 
       // Step 2: Register the phone number for Cloud API
-      try {
-        const registerUrl = `https://graph.facebook.com/v21.0/${dto.phoneNumberId}/register`;
-        const registerRes = await fetch(registerUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            pin: '123456',
-          }),
-        });
-        const registerData = await registerRes.json() as any;
-        this.logger.log(`Phone registration result: ${JSON.stringify(registerData)}`);
-      } catch (err) {
-        this.logger.warn(`Phone registration skipped: ${(err as Error).message}`);
-        // Non-fatal — phone may already be registered
+      const registrationPin = this.configService.get<string>('WHATSAPP_REGISTRATION_PIN');
+      if (registrationPin) {
+        try {
+          const registerUrl = `https://graph.facebook.com/v21.0/${dto.phoneNumberId}/register`;
+          const registerRes = await fetch(registerUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              pin: registrationPin,
+            }),
+          });
+          const registerData = await registerRes.json() as any;
+          this.logger.log(`Phone registration result: ${JSON.stringify(registerData)}`);
+        } catch (err) {
+          this.logger.warn(`Phone registration skipped: ${(err as Error).message}`);
+          // Non-fatal — phone may already be registered
+        }
       }
 
       // Step 3: Subscribe app to WABA webhooks (if wabaId provided)
@@ -124,15 +129,17 @@ export class WhatsAppConnectController {
         // Non-fatal
       }
 
-      // Step 5: Save all credentials to tenant settings
+      // Step 5: Encrypt token and save all credentials to tenant settings
       const db = req.tenantDb!;
       const userId = req.user.sub;
       const tenantId = req.tenant?.id;
 
+      const encryptedToken = this.encryptionService.encrypt(accessToken);
+
       await this.settingsService.updateBatch(db, {
         settings: [
           { key: 'whatsapp_phone_number_id', value: dto.phoneNumberId },
-          { key: 'whatsapp_access_token', value: accessToken },
+          { key: 'whatsapp_access_token', value: encryptedToken },
           { key: 'whatsapp_waba_id', value: dto.wabaId || '' },
           { key: 'whatsapp_display_phone', value: displayPhone },
           { key: 'whatsapp_bot_enabled', value: 'true' },
@@ -140,7 +147,7 @@ export class WhatsAppConnectController {
         ],
       }, userId, tenantId);
 
-      this.logger.log(`✅ WhatsApp connected for tenant ${tenantId} — phone: ${displayPhone}`);
+      this.logger.log(`WhatsApp connected for tenant ${tenantId} — phone: ${displayPhone}`);
 
       return {
         success: true,
@@ -172,7 +179,7 @@ export class WhatsAppConnectController {
       ],
     }, userId, tenantId);
 
-    this.logger.log(`❌ WhatsApp disconnected for tenant ${tenantId}`);
+    this.logger.log(`WhatsApp disconnected for tenant ${tenantId}`);
     return { success: true };
   }
 }

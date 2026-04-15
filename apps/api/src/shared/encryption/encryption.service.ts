@@ -25,8 +25,16 @@ export class EncryptionService {
 
   constructor() {
     const secret = process.env.ENCRYPTION_KEY;
+    const isProduction = process.env.NODE_ENV === 'production';
 
     if (!secret || secret.length < 32) {
+      if (isProduction) {
+        throw new Error(
+          'FATAL: ENCRYPTION_KEY is not set or too short (<32 chars). ' +
+          'Production requires ENCRYPTION_KEY for PDPL compliance. ' +
+          'Set ENCRYPTION_KEY in your environment or secrets manager.',
+        );
+      }
       this.logger.warn(
         'ENCRYPTION_KEY not set or too short (<32 chars) — encryption DISABLED. Set ENCRYPTION_KEY to enable.',
       );

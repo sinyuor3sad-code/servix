@@ -24,8 +24,22 @@ export const AppConfigValidationSchema = Joi.object({
   // Google OAuth — optional; disabled when empty
   GOOGLE_CLIENT_ID: Joi.string().allow('').default(''),
 
+  // Encryption — required in production for PDPL compliance (encrypts PII at rest)
+  ENCRYPTION_KEY: Joi.string().when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().allow('').default(''),
+  }),
+
   // WhatsApp Webhook — verify token for Meta webhook registration
-  WHATSAPP_WEBHOOK_VERIFY_TOKEN: Joi.string().allow('').default('servix-webhook-verify'),
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN: Joi.string().when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().required(),
+    otherwise: Joi.string().allow('').default(''),
+  }),
+
+  // WhatsApp phone registration PIN
+  WHATSAPP_REGISTRATION_PIN: Joi.string().allow('').default(''),
 
   // Gemini AI — optional; AI features disabled when empty
   GEMINI_API_KEY: Joi.string().allow('').default(''),

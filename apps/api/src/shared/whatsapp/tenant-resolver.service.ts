@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PlatformPrismaClient } from '../database/platform.client';
 import { TenantClientFactory } from '../database/tenant-client.factory';
 import { CacheService } from '../cache/cache.service';
+import { EncryptionService } from '../encryption/encryption.service';
 import { WhatsAppCredentials } from './whatsapp.service';
 
 // ─────────────────── Types ───────────────────
@@ -55,6 +56,7 @@ export class TenantResolverService {
     private readonly platformPrisma: PlatformPrismaClient,
     private readonly tenantFactory: TenantClientFactory,
     private readonly cache: CacheService,
+    private readonly encryptionService: EncryptionService,
   ) {}
 
   /**
@@ -113,10 +115,13 @@ export class TenantResolverService {
           });
 
           if (waPhoneSetting?.value === phoneNumberId) {
-            // Found the matching tenant — get the WhatsApp token too
+            // Found the matching tenant — get and decrypt the WhatsApp token
             const waTokenSetting = await tenantClient.setting.findUnique({
               where: { key: 'whatsapp_access_token' },
             });
+
+            const rawToken = waTokenSetting?.value || '';
+            const decryptedToken = rawToken ? this.encryptionService.decrypt(rawToken) : '';
 
             const resolved: ResolvedTenant = {
               id: tenant.id,
@@ -124,7 +129,7 @@ export class TenantResolverService {
               databaseName: tenant.databaseName,
               salonName: tenant.nameAr || tenant.nameEn || tenant.slug,
               credentials: {
-                token: waTokenSetting?.value || '',
+                token: decryptedToken,
                 phoneNumberId,
               },
             };

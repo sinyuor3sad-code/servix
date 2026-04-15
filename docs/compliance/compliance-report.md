@@ -13,22 +13,24 @@
 | الغرض من الجمع مُحدد | ✅ | موثق في Privacy Policy |
 | جمع أقل قدر ممكن | ✅ | فقط البيانات الضرورية للخدمة |
 
-## 2. حقوق أصحاب البيانات ✅
+## 2. حقوق أصحاب البيانات ⚠️
 
-| الحق | Endpoint | الحالة |
-|------|----------|--------|
-| حق الوصول (PDPL Art. 14) | `GET /api/v1/data-rights/my-data` | ✅ |
-| حق التصحيح (PDPL Art. 15) | `PATCH /api/v1/data-rights/my-data` | ✅ |
-| حق الحذف (PDPL Art. 16) | `DELETE /api/v1/data-rights/my-data` | ✅ |
-| حق النقل | `GET /api/v1/data-rights/my-data?format=json` | ✅ |
-| فترة انتظار 30 يوم | DataRightsService.requestDeletion | ✅ |
+| الحق | Endpoint | الحالة | ملاحظات |
+|------|----------|--------|---------|
+| حق الوصول (PDPL Art. 14) | `GET /api/v1/data-rights/my-data` | ⚠️ | Endpoint مُعرّف، التنفيذ يعيد بيانات وهمية — يحتاج ربط بقاعدة البيانات الفعلية |
+| حق التصحيح (PDPL Art. 15) | `PATCH /api/v1/data-rights/my-data` | ⚠️ | Endpoint مُعرّف، التعديل الفعلي في قاعدة البيانات غير مُنفذ بعد |
+| حق الحذف (PDPL Art. 16) | `DELETE /api/v1/data-rights/my-data` | ⚠️ | Endpoint مُعرّف، الحذف يُخزّن في الذاكرة فقط (يحتاج نقل لقاعدة البيانات) |
+| حق النقل | `GET /api/v1/data-rights/my-data?format=json` | ⚠️ | يعيد بيانات وهمية حالياً |
+| فترة انتظار 30 يوم | DataRightsService.requestDeletion | ⚠️ | المنطق موجود لكن التخزين في Map بالذاكرة فقط |
 
-## 3. أمن البيانات ✅
+> **ملاحظة:** الوحدة مُسجلة في AppModule والـ endpoints محمية بـ JWT. الهوية تُستخرج من التوكن (لا يمكن للمستخدم الوصول لبيانات غيره). التنفيذ الفعلي لعمليات قاعدة البيانات قيد العمل.
+
+## 3. أمن البيانات ⚠️
 
 | الإجراء | الحالة | التفاصيل |
 |---------|--------|---------|
 | تشفير أثناء النقل | ✅ | TLS 1.3 via cert-manager |
-| تشفير أثناء التخزين | ✅ | AES-256-GCM (EncryptionService) |
+| تشفير أثناء التخزين | ⚠️ | AES-256-GCM (EncryptionService) — يتطلب تعيين ENCRYPTION_KEY في بيئة الإنتاج، بدونه يرفض النظام التشغيل |
 | عزل المستأجرين | ✅ | Database-per-tenant |
 | سجل تدقيق | ✅ | PlatformAuditLog |
 | إدارة الأسرار | ✅ | K8s Secrets / Environment vars |

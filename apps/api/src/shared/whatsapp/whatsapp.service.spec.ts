@@ -48,7 +48,7 @@ describe('WhatsAppService', () => {
 
       const call = mockFetch.mock.calls[0];
       const body = JSON.parse(call[1].body);
-      expect(body.to).toBe('512345678');
+      expect(body.to).toBe('966512345678');
     });
 
     it('يجب تمرير الرقم الذي يبدأ بـ 966 كما هو', async () => {
@@ -61,7 +61,7 @@ describe('WhatsAppService', () => {
 
       const call = mockFetch.mock.calls[0];
       const body = JSON.parse(call[1].body);
-      expect(body.to).toBe('501234567');
+      expect(body.to).toBe('966501234567');
     });
 
     it('يجب عدم إرسال عند عدم وجود credentials', async () => {
