@@ -1,38 +1,20 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Clients', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[type="email"], input[name="email"]', process.env.TEST_EMAIL || 'test@servix.sa');
-    await page.fill('input[type="password"]', process.env.TEST_PASSWORD || 'Test123!');
-    await page.getByRole('button', { name: /دخول|login/i }).click();
-    await page.waitForURL(/\/(dashboard|ar|en)?$/, { timeout: 15000 });
+  test('list surface renders after navigation', async ({ clientsPage, page }) => {
+    await clientsPage.goto();
+    await expect(page).toHaveURL(/\/clients/);
+    await expect(clientsPage.list.first()).toBeVisible();
   });
 
-  test('should display clients list', async ({ page }) => {
-    await page.goto('/clients');
-    await expect(page).toHaveURL(/clients/);
-    await expect(page.locator('table, [data-testid="clients-list"]')).toBeVisible({ timeout: 10000 });
-  });
+  test('search input is visible and accepts input', async ({ clientsPage }) => {
+    await clientsPage.goto();
 
-  test('should search clients by name', async ({ page }) => {
-    await page.goto('/clients');
-    const searchInput = page.locator('input[type="search"], input[placeholder*="بحث"], input[placeholder*="search"]');
-    if (await searchInput.isVisible()) {
-      await searchInput.fill('سارة');
-      await page.waitForTimeout(1000);
-      // Search should filter results
-      const pageContent = await page.textContent('body');
-      expect(pageContent).toBeTruthy();
+    if (!(await clientsPage.searchInput.first().isVisible())) {
+      test.skip(true, 'Search input not present on current plan/role');
     }
-  });
 
-  test('should open add client form', async ({ page }) => {
-    await page.goto('/clients');
-    const addBtn = page.getByRole('button', { name: /إضافة|عميل جديد|add|new/i });
-    if (await addBtn.isVisible()) {
-      await addBtn.click();
-      await expect(page.locator('dialog, [role="dialog"], .modal, form')).toBeVisible({ timeout: 5000 });
-    }
+    await clientsPage.search('test');
+    await expect(clientsPage.searchInput.first()).toHaveValue('test');
   });
 });

@@ -27,6 +27,7 @@ generated/
 .env
 .env.*
 !.env.example
+!.env.test.example
 
 # ──────────────── Database ────────────────
 postgres_data/
@@ -68,6 +69,8 @@ test-results/
 playwright-report/
 junit.xml
 *.lcov
+# Playwright stored auth state (captured by global-setup; contains tokens)
+apps/*/e2e/.auth/
 
 # ──────────────── Logs ────────────────
 logs/

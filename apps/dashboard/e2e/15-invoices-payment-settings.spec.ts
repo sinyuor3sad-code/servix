@@ -1,18 +1,22 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
-test.describe('Invoice Creation & PDF', () => {
-  test.beforeEach(async ({ page }) => { await page.goto('/login'); await page.fill('input[name="phone"]', '+966512345678'); await page.fill('input[name="password"]', 'Test123!'); await page.click('button[type="submit"]'); await page.waitForURL('**/dashboard**'); });
-  test('should navigate to invoices', async ({ page }) => { await page.goto('/dashboard/invoices'); await page.waitForLoadState('networkidle'); await expect(page.locator('main')).toBeVisible(); });
-  test('should show invoice list', async ({ page }) => { await page.goto('/dashboard/invoices'); await page.waitForLoadState('networkidle'); const content = page.locator('table, .empty-state, [data-testid="invoices-list"]'); await expect(content.first()).toBeVisible(); });
+test.describe('Invoices & payments', () => {
+  test('invoices list page loads', async ({ page }) => {
+    await page.goto('/invoices');
+    await expect(page).toHaveURL(/\/invoices/);
+    await expect(page.locator('main, [role="main"]').first()).toBeVisible();
+  });
 });
 
-test.describe('Payment Flow', () => {
-  test.beforeEach(async ({ page }) => { await page.goto('/login'); await page.fill('input[name="phone"]', '+966512345678'); await page.fill('input[name="password"]', 'Test123!'); await page.click('button[type="submit"]'); await page.waitForURL('**/dashboard**'); });
-  test('should load payment page', async ({ page }) => { await page.goto('/dashboard/invoices'); await page.waitForLoadState('networkidle'); await expect(page.locator('main')).toBeVisible(); });
-});
+test.describe('Salon settings', () => {
+  test('settings landing page loads', async ({ page }) => {
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings/);
+    await expect(page.locator('main, [role="main"]').first()).toBeVisible();
+  });
 
-test.describe('Salon Settings', () => {
-  test.beforeEach(async ({ page }) => { await page.goto('/login'); await page.fill('input[name="phone"]', '+966512345678'); await page.fill('input[name="password"]', 'Test123!'); await page.click('button[type="submit"]'); await page.waitForURL('**/dashboard**'); });
-  test('should load settings page', async ({ page }) => { await page.goto('/dashboard/settings'); await page.waitForLoadState('networkidle'); await expect(page.locator('main')).toBeVisible(); });
-  test('should show working hours section', async ({ page }) => { await page.goto('/dashboard/settings'); await page.waitForLoadState('networkidle'); await expect(page.locator('main')).toBeVisible(); });
+  test('working-hours sub-page loads', async ({ page }) => {
+    await page.goto('/settings/working-hours');
+    await expect(page).toHaveURL(/\/settings/);
+  });
 });

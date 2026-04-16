@@ -1,14 +1,32 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
-test.describe('Forgot Password', () => {
-  test('should display forgot password form', async ({ page }) => { await page.goto('/forgot-password'); await page.waitForLoadState('networkidle'); const form = page.locator('form, main'); await expect(form.first()).toBeVisible(); });
-  test('should have phone/email input', async ({ page }) => { await page.goto('/forgot-password'); const input = page.locator('input[name="phone"], input[name="email"], input[type="tel"]'); if (await input.first().isVisible()) { await expect(input.first()).toBeVisible(); } });
+test.describe('Forgot password', () => {
+  test('renders the forgot password form', async ({ page }) => {
+    await page.goto('/forgot-password');
+    await expect(page.locator('form').first()).toBeVisible();
+  });
+
+  test('has a phone or email identifier input', async ({ page }) => {
+    await page.goto('/forgot-password');
+    const input = page.locator(
+      'input[name="phone"], input[name="email"], input[type="tel"], input[autocomplete="email"]',
+    );
+    await expect(input.first()).toBeVisible();
+  });
 });
 
 test.describe('Register', () => {
-  test('should display register page', async ({ page }) => { await page.goto('/register'); await page.waitForLoadState('networkidle'); const form = page.locator('form, main'); await expect(form.first()).toBeVisible(); });
+  test('renders the register form', async ({ page }) => {
+    await page.goto('/register');
+    await expect(page.locator('form').first()).toBeVisible();
+  });
 });
 
-test.describe('Session Expiry', () => {
-  test('should redirect to login when not authenticated', async ({ page }) => { await page.goto('/dashboard'); await page.waitForLoadState('networkidle'); const url = page.url(); expect(url).toContain('login'); });
+test.describe('Session expiry', () => {
+  test('redirects unauthenticated visits to /login', async ({ page }) => {
+    // This spec runs under the anonymous project — no cookies loaded.
+    await page.goto('/');
+    await page.waitForURL(/\/login/, { timeout: 10_000 });
+    expect(page.url()).toContain('/login');
+  });
 });

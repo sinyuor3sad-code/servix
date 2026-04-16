@@ -1,42 +1,29 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
+import { COMMON_SELECTORS } from './helpers/selectors';
 
 test.describe('Appointments', () => {
-  test.beforeEach(async ({ page }) => {
-    // Login first
-    await page.goto('/login');
-    await page.fill('input[type="email"], input[name="email"]', process.env.TEST_EMAIL || 'test@servix.sa');
-    await page.fill('input[type="password"]', process.env.TEST_PASSWORD || 'Test123!');
-    await page.getByRole('button', { name: /دخول|login/i }).click();
-    await page.waitForURL(/\/(dashboard|ar|en)?$/, { timeout: 15000 });
+  test('calendar surface renders after navigation', async ({ appointmentsPage, page }) => {
+    await appointmentsPage.goto();
+    await expect(page).toHaveURL(/\/appointments/);
+    await expect(appointmentsPage.surface.first()).toBeVisible();
   });
 
-  test('should display appointments calendar', async ({ page }) => {
-    await page.goto('/appointments');
-    await expect(page).toHaveURL(/appointments/);
-    // Calendar or table should be visible
-    await expect(page.locator('table, .calendar, [data-testid="appointments-list"]')).toBeVisible({ timeout: 10000 });
-  });
+  test('"new appointment" button opens a dialog or navigates to form', async ({
+    appointmentsPage,
+    page,
+  }) => {
+    await appointmentsPage.goto();
 
-  test('should open new appointment form', async ({ page }) => {
-    await page.goto('/appointments');
-    const newBtn = page.getByRole('button', { name: /إضافة|جديد|new|add/i });
-    if (await newBtn.isVisible()) {
-      await newBtn.click();
-      // Form or modal should appear
-      await expect(page.locator('dialog, [role="dialog"], .modal, form')).toBeVisible({ timeout: 5000 });
+    if (!(await appointmentsPage.addButton.isVisible())) {
+      test.skip(true, 'No "new appointment" button — role may lack appointments.create');
     }
-  });
 
-  test('should show appointment details on click', async ({ page }) => {
-    await page.goto('/appointments');
-    // Click first appointment if available
-    const firstRow = page.locator('tr, .appointment-card').first();
-    if (await firstRow.isVisible()) {
-      await firstRow.click();
-      await page.waitForTimeout(1000);
-      // Some detail view should appear
-      const pageContent = await page.textContent('body');
-      expect(pageContent).toBeTruthy();
-    }
+    await appointmentsPage.openNewDialog();
+
+    // Either a modal opens, or we navigate to /appointments/new.
+    const dialog = page.locator(COMMON_SELECTORS.dialog);
+    const navigatedToNew = page.waitForURL(/\/appointments\/new/, { timeout: 3_000 });
+
+    await Promise.race([dialog.waitFor({ state: 'visible', timeout: 3_000 }), navigatedToNew]);
   });
 });

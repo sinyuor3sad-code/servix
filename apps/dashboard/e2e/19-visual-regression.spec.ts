@@ -1,13 +1,21 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
-const pages = [
+/**
+ * Visual regression via Playwright screenshots.
+ *
+ * Baselines live in `e2e/19-visual-regression.spec.ts-snapshots/`. First
+ * run after a UI change: `pnpm e2e:update` to refresh baselines.
+ */
+
+const PUBLIC_PAGES = [
   { name: 'login', path: '/login' },
   { name: 'forgot-password', path: '/forgot-password' },
   { name: 'register', path: '/register' },
-];
+] as const;
 
-for (const pageConfig of pages) {
-  test(`visual regression: ${pageConfig.name} (ar)`, async ({ page }) => {
+for (const pageConfig of PUBLIC_PAGES) {
+  test(`visual: ${pageConfig.name} (ar)`, async ({ page, context }) => {
+    await context.clearCookies();
     await page.goto(pageConfig.path);
     await page.waitForLoadState('networkidle');
     await expect(page).toHaveScreenshot(`${pageConfig.name}-ar.png`, {
@@ -17,25 +25,17 @@ for (const pageConfig of pages) {
   });
 }
 
-test.describe('Visual: Authenticated Pages', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[name="phone"]', '+966512345678');
-    await page.fill('input[name="password"]', 'Test123!');
-    await page.click('button[type="submit"]');
-    await page.waitForURL('**/dashboard**');
-  });
+test.describe('Visual: authenticated pages', () => {
+  const AUTH_PAGES = [
+    { name: 'home', path: '/' },
+    { name: 'appointments', path: '/appointments' },
+    { name: 'clients', path: '/clients' },
+    { name: 'services', path: '/services' },
+    { name: 'employees', path: '/employees' },
+    { name: 'settings', path: '/settings' },
+  ] as const;
 
-  const authPages = [
-    { name: 'dashboard', path: '/dashboard' },
-    { name: 'appointments', path: '/dashboard/appointments' },
-    { name: 'clients', path: '/dashboard/clients' },
-    { name: 'services', path: '/dashboard/services' },
-    { name: 'employees', path: '/dashboard/employees' },
-    { name: 'settings', path: '/dashboard/settings' },
-  ];
-
-  for (const pageConfig of authPages) {
+  for (const pageConfig of AUTH_PAGES) {
     test(`visual: ${pageConfig.name}`, async ({ page }) => {
       await page.goto(pageConfig.path);
       await page.waitForLoadState('networkidle');

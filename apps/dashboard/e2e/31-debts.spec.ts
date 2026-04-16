@@ -1,8 +1,14 @@
-import { test, expect } from '@playwright/test';
-const BASE = process.env.STAGING_URL || 'http://localhost:3000';
+import { test, expect } from './fixtures';
 
-test.describe('Debts Management', () => {
-  test('should navigate to debts', async ({ page }) => { await page.goto(`${BASE}/ar/debts`); await expect(page).toHaveTitle(/SERVIX/i); });
-  test('should show debts list', async ({ page }) => { await page.goto(`${BASE}/ar/debts`); await expect(page.locator('body')).toBeVisible(); });
-  test('should allow recording payment', async ({ page }) => { await page.goto(`${BASE}/ar/debts`); const body = await page.textContent('body'); expect(body?.length).toBeGreaterThan(0); });
+/**
+ * NOTE: A dedicated /debts route doesn't exist — debts are tracked under
+ * /expenses in the current dashboard build. We verify the expenses surface
+ * and document the expected location.
+ */
+test.describe('Debts (via expenses)', () => {
+  test('expenses page (debts home) loads', async ({ page }) => {
+    await page.goto('/expenses');
+    await expect(page).toHaveURL(/\/expenses/);
+    await expect(page.locator('main, [role="main"]').first()).toBeVisible();
+  });
 });

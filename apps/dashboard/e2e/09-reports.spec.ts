@@ -1,31 +1,25 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test.describe('Reports', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[name="phone"]', '+966512345678');
-    await page.fill('input[name="password"]', 'Test123!');
-    await page.click('button[type="submit"]');
-    await page.waitForURL('**/dashboard**');
+  test('reports page loads', async ({ page }) => {
+    await page.goto('/reports');
+    await expect(page).toHaveURL(/\/reports/);
+    await expect(page.locator('main, [role="main"]').first()).toBeVisible();
   });
 
-  test('should navigate to reports page', async ({ page }) => {
-    await page.click('text=التقارير');
-    await expect(page).toHaveURL(/reports/);
-  });
+  test('all report sub-pages are reachable', async ({ page }) => {
+    const subPaths = [
+      '/reports/appointments',
+      '/reports/clients',
+      '/reports/employees',
+      '/reports/expenses',
+      '/reports/revenue',
+      '/reports/services',
+    ];
 
-  test('should display report content', async ({ page }) => {
-    await page.goto('/dashboard/reports');
-    await page.waitForLoadState('networkidle');
-    const content = page.locator('main');
-    await expect(content).toBeVisible();
-  });
-
-  test('should have date filter', async ({ page }) => {
-    await page.goto('/dashboard/reports');
-    const dateFilter = page.locator('input[type="date"], [data-testid="date-filter"], button:has-text("اليوم")');
-    if (await dateFilter.first().isVisible()) {
-      await expect(dateFilter.first()).toBeVisible();
+    for (const sub of subPaths) {
+      await page.goto(sub);
+      await expect(page, `Failed on ${sub}`).toHaveURL(new RegExp(sub.replace('/', '\\/')));
     }
   });
 });

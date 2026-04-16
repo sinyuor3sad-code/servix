@@ -1,12 +1,14 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
-test.describe('Appointment Edit', () => {
-  test.beforeEach(async ({ page }) => { await page.goto('/login'); await page.fill('input[name="phone"]', '+966512345678'); await page.fill('input[name="password"]', 'Test123!'); await page.click('button[type="submit"]'); await page.waitForURL('**/dashboard**'); });
-  test('should view appointment details', async ({ page }) => { await page.goto('/dashboard/appointments'); await page.waitForLoadState('networkidle'); const main = page.locator('main'); await expect(main).toBeVisible(); });
-  test('should have edit controls', async ({ page }) => { await page.goto('/dashboard/appointments'); await page.waitForLoadState('networkidle'); const content = page.locator('main'); await expect(content).toBeVisible(); });
-});
+test.describe('Appointment edit / calendar', () => {
+  test('appointments list page loads', async ({ page }) => {
+    await page.goto('/appointments');
+    await expect(page).toHaveURL(/\/appointments/);
+    await expect(page.locator('main, [role="main"]').first()).toBeVisible();
+  });
 
-test.describe('Appointment Calendar', () => {
-  test.beforeEach(async ({ page }) => { await page.goto('/login'); await page.fill('input[name="phone"]', '+966512345678'); await page.fill('input[name="password"]', 'Test123!'); await page.click('button[type="submit"]'); await page.waitForURL('**/dashboard**'); });
-  test('should show calendar view', async ({ page }) => { await page.goto('/dashboard/appointments'); await page.waitForLoadState('networkidle'); const main = page.locator('main'); await expect(main).toBeVisible(); });
+  test('new-appointment route loads', async ({ page }) => {
+    await page.goto('/appointments/new');
+    await expect(page).toHaveURL(/\/appointments\/new/);
+  });
 });

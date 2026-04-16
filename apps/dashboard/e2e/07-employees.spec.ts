@@ -1,33 +1,26 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
-test.describe('Employee Management', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[name="phone"]', '+966512345678');
-    await page.fill('input[name="password"]', 'Test123!');
-    await page.click('button[type="submit"]');
-    await page.waitForURL('**/dashboard**');
+test.describe('Employee management', () => {
+  test('employees page loads', async ({ page }) => {
+    await page.goto('/employees');
+    await expect(page).toHaveURL(/\/employees/);
+    await expect(page.locator('main, [role="main"]').first()).toBeVisible();
   });
 
-  test('should navigate to employees page', async ({ page }) => {
-    await page.click('text=الموظفين');
-    await expect(page).toHaveURL(/employees/);
-  });
+  test('"add employee" triggers dialog or navigates to /employees/new', async ({ page }) => {
+    await page.goto('/employees');
 
-  test('should display employees list', async ({ page }) => {
-    await page.goto('/dashboard/employees');
-    await page.waitForLoadState('networkidle');
-    const table = page.locator('table, [data-testid="employees-list"]');
-    await expect(table).toBeVisible();
-  });
-
-  test('should open add employee dialog', async ({ page }) => {
-    await page.goto('/dashboard/employees');
-    const addBtn = page.locator('button:has-text("إضافة"), button:has-text("موظف جديد")');
-    if (await addBtn.isVisible()) {
-      await addBtn.click();
-      const dialog = page.locator('[role="dialog"], .modal');
-      await expect(dialog).toBeVisible();
+    const addBtn = page.getByRole('button', { name: /إضافة|جديد|add|new/i }).first();
+    if (!(await addBtn.isVisible())) {
+      test.skip(true, 'Add-employee button not visible for current role');
     }
+
+    await addBtn.click();
+    const dialogOpen = page.locator('[role="dialog"], dialog[open]').first().waitFor({
+      state: 'visible',
+      timeout: 3_000,
+    });
+    const navigated = page.waitForURL(/\/employees\/new/, { timeout: 3_000 });
+    await Promise.race([dialogOpen, navigated]);
   });
 });

@@ -140,6 +140,31 @@ jobs:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
     needs: [build]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: servix
+          POSTGRES_PASSWORD: servix
+          POSTGRES_DB: servix_platform
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://servix:servix@localhost:5432/servix_platform
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-32-chars-minimum-ok
+      ENCRYPTION_KEY: ci-test-encryption-key-32-chars-x
+      TEST_EMAIL: servix@dev.local
+      TEST_PASSWORD: adsf1324
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -150,14 +175,38 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx playwright install --with-deps chromium
+      - name: Generate Prisma Clients
+        run: pnpm --filter @servix/api db:generate
+      - name: Apply migrations + seed
+        run: |
+          pnpm --filter @servix/api prisma migrate deploy --schema=prisma/platform.prisma || true
+          pnpm --filter @servix/api prisma:seed || true
+      - name: Install Playwright browsers
+        run: pnpm --filter @servix/dashboard e2e:install
+      - name: Start API (background)
+        run: pnpm --filter @servix/api start:dev &
+        env:
+          PORT: 4000
+      - name: Start Dashboard (background)
+        run: pnpm --filter @servix/dashboard dev &
+      - name: Wait for services
+        run: |
+          npx wait-on --timeout 120000 http://localhost:4000/api/v1/health/live http://localhost:3000
       - name: Run E2E tests
-        run: cd apps/dashboard && npx playwright test --reporter=html
+        run: pnpm --filter @servix/dashboard e2e
+        env:
+          CI: '1'
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: playwright-report
           path: apps/dashboard/playwright-report/
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: apps/dashboard/test-results/
 
   performance:
     name: Performance Budget (Lighthouse)

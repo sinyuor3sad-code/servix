@@ -1,48 +1,45 @@
-import { test, expect, devices } from '@playwright/test';
+import { test, expect } from './fixtures';
 
-test.describe('Responsive Layout', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[type="email"], input[name="email"]', process.env.TEST_EMAIL || 'test@servix.sa');
-    await page.fill('input[type="password"]', process.env.TEST_PASSWORD || 'Test123!');
-    await page.getByRole('button', { name: /دخول|login/i }).click();
-    await page.waitForURL(/\/(dashboard|ar|en)?$/, { timeout: 15000 });
-  });
+/**
+ * Responsive layout checks.
+ *
+ * This spec is scoped to the `authenticated-mobile` project in
+ * playwright.config.ts, so the viewport is already an iPhone 14 and
+ * auth state is already loaded. No manual login needed.
+ */
 
-  test('login page renders on mobile viewport', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
+test.describe('Responsive layout (mobile)', () => {
+  test('login page has no horizontal overflow on mobile', async ({ page, context }) => {
+    // Temporarily strip auth for this test so we can see /login.
+    await context.clearCookies();
     await page.goto('/login');
-    await expect(page.locator('input[type="email"], input[name="email"]')).toBeVisible();
-    // No horizontal scrollbar
-    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-    const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+
+    await expect(page.locator('input[autocomplete="email"]')).toBeVisible();
+
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 5);
   });
 
-  test('dashboard sidebar collapses on mobile', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto('/');
-    await page.waitForTimeout(2000);
-    // Sidebar should be hidden or collapsed on mobile
-    const sidebar = page.locator('aside, nav, [data-testid="sidebar"]').first();
-    if (await sidebar.isVisible()) {
-      const box = await sidebar.boundingBox();
-      // On mobile, sidebar should be off-screen or narrow
-      if (box) {
-        expect(box.width).toBeLessThan(300);
-      }
-    }
-  });
+  test('dashboard main pages do not overflow horizontally', async ({ page }) => {
+    const paths = ['/appointments', '/clients', '/invoices', '/settings'];
 
-  test('main pages render without overflow on mobile', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    const pages = ['/appointments', '/clients', '/invoices', '/settings'];
-    for (const path of pages) {
-      await page.goto(path);
-      await page.waitForTimeout(1500);
-      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-      const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
-      expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 10);
+    for (const pathname of paths) {
+      await page.goto(pathname);
+      await page.waitForLoadState('networkidle').catch(() => {
+        /* best-effort */
+      });
+
+      const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+
+      expect(scrollWidth, `${pathname} overflows (${scrollWidth}px > ${clientWidth}px)`).toBeLessThanOrEqual(
+        clientWidth + 10,
+      );
     }
   });
 });

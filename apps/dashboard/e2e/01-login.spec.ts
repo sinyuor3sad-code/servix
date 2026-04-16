@@ -1,45 +1,38 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
+import { TEST_CREDENTIALS, TIMEOUTS } from './helpers/constants';
 
-test.describe('Login Flow', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/login');
+test.describe('Login flow', () => {
+  test.beforeEach(async ({ loginPage }) => {
+    await loginPage.goto();
   });
 
-  test('should display login form', async ({ page }) => {
-    await expect(page.locator('input[type="email"], input[name="email"]')).toBeVisible();
-    await expect(page.locator('input[type="password"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: /دخول|login/i })).toBeVisible();
+  test('displays login form with email and password fields', async ({ loginPage }) => {
+    await expect(loginPage.emailInput).toBeVisible();
+    await expect(loginPage.passwordInput).toBeVisible();
+    await expect(loginPage.submitButton).toBeVisible();
   });
 
-  test('should show error on invalid credentials', async ({ page }) => {
-    await page.fill('input[type="email"], input[name="email"]', 'wrong@example.com');
-    await page.fill('input[type="password"]', 'wrongpassword');
-    await page.getByRole('button', { name: /دخول|login/i }).click();
-
-    // Should show error message
-    await expect(page.locator('[role="alert"], .error, .toast')).toBeVisible({ timeout: 10000 });
+  test('shows an error toast on invalid credentials', async ({ loginPage }) => {
+    await loginPage.submit({ email: 'wrong@example.com', password: 'wrongpassword' });
+    await loginPage.expectErrorToast();
   });
 
-  test('should redirect to dashboard on successful login', async ({ page }) => {
-    await page.fill('input[type="email"], input[name="email"]', process.env.TEST_EMAIL || 'test@servix.sa');
-    await page.fill('input[type="password"]', process.env.TEST_PASSWORD || 'Test123!');
-    await page.getByRole('button', { name: /دخول|login/i }).click();
+  test('redirects away from /login on successful login', async ({ page, loginPage }) => {
+    await loginPage.submit(TEST_CREDENTIALS);
 
-    // Should redirect to dashboard
-    await expect(page).toHaveURL(/\/(dashboard|ar|en)?$/, { timeout: 15000 });
+    await page.waitForURL((url) => !url.pathname.startsWith('/login'), {
+      timeout: TIMEOUTS.navigation,
+    });
+    expect(page.url()).not.toContain('/login');
   });
 
-  test('should show locked account message after many attempts', async ({ page }) => {
-    // This test documents the expected behavior but may need
-    // specific test account setup to trigger account lock
-    for (let i = 0; i < 5; i++) {
-      await page.fill('input[type="email"], input[name="email"]', 'locked@example.com');
-      await page.fill('input[type="password"]', 'wrong');
-      await page.getByRole('button', { name: /دخول|login/i }).click();
-      await page.waitForTimeout(500);
-    }
-    // Expect some rate limiting message
-    const pageContent = await page.textContent('body');
-    expect(pageContent).toBeTruthy();
+  test('client-side validation blocks empty submission', async ({ loginPage }) => {
+    await loginPage.submitButton.click();
+
+    // Form validation renders inline error copy; either the email or password
+    // error is enough to prove we didn't hit the network.
+    await expect(
+      loginPage.page.getByText(/مطلوب|required/i).first(),
+    ).toBeVisible({ timeout: TIMEOUTS.ui });
   });
 });
