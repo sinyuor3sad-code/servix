@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:generate": "prisma generate --schema=./prisma/platform.prisma && prisma generate --schema=./prisma/tenant.prisma",
     "db:migrate": "prisma migrate dev --schema=./prisma/platform.prisma",
+    "db:migrate:deploy": "prisma migrate deploy --schema=./prisma/platform.prisma",
     "db:seed": "ts-node prisma/seed.ts",
     "db:seed:e2e": "ts-node prisma/seed-e2e.ts",
     "db:studio": "prisma studio --schema=./prisma/platform.prisma",
