@@ -213,7 +213,7 @@ export default function ServicesSection({ categories, slug, layout, totalService
         {allFiltered.length === 0 && search && (
           <div className="py-12 text-center">
             <p className="text-sm" style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'var(--color-text-muted)' }}>
-              لا توجد نتائج لـ "{search}"
+              لا توجد نتائج لـ &quot;{search}&quot;
             </p>
           </div>
         )}

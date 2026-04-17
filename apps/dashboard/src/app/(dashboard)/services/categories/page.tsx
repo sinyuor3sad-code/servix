@@ -110,7 +110,7 @@ export default function CategoriesPage() {
                 {delId === c.id && (
                   <div className="absolute inset-0 rounded-2xl bg-white/95 backdrop-blur-sm z-10 flex items-center justify-center gap-3">
                     <AlertTriangle className="h-5 w-5 text-red-500" />
-                    <span className="text-sm font-bold">حذف "{c.nameAr}"؟</span>
+                    <span className="text-sm font-bold">حذف &quot;{c.nameAr}&quot;؟</span>
                     <button onClick={() => delMut.mutate(c.id)} className="px-3 py-1.5 rounded-lg bg-red-500 text-white text-xs font-bold">حذف</button>
                     <button onClick={() => setDelId(null)} className="px-3 py-1.5 rounded-lg border text-xs font-bold">إلغاء</button>
                   </div>

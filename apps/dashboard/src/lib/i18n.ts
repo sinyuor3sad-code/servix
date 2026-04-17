@@ -51,12 +51,11 @@ export function createTranslator(locale: Locale) {
 
   return function t(key: string, params?: Record<string, string | number>): string {
     const keys = key.split('.');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let value: any = msgs;
+    let value: unknown = msgs;
 
     for (const k of keys) {
       if (value && typeof value === 'object' && k in value) {
-        value = value[k];
+        value = (value as Record<string, unknown>)[k];
       } else {
         return key; // Fallback: return the key itself
       }

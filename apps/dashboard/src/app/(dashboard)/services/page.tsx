@@ -169,7 +169,7 @@ export default function ServicesPage() {
                     {deleteId === svc.id && (
                       <div className="absolute inset-0 z-20 bg-white/95 dark:bg-black/90 backdrop-blur-md rounded-2xl flex flex-col items-center justify-center gap-3 p-6">
                         <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center"><Trash2 className="h-6 w-6 text-red-500" /></div>
-                        <p className="text-sm font-bold text-center">حذف "{svc.nameAr}"؟</p>
+                        <p className="text-sm font-bold text-center">حذف &quot;{svc.nameAr}&quot;؟</p>
                         <p className="text-[11px] text-[var(--muted-foreground)] text-center">لا يمكن التراجع عن هذا الإجراء</p>
                         <div className="flex gap-2 w-full">
                           <button onClick={() => deleteMut.mutate(svc.id)} disabled={deleteMut.isPending}

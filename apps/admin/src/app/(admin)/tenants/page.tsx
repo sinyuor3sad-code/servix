@@ -220,7 +220,7 @@ export default function TenantsPage(): ReactElement {
           <div className="nx-empty">
             <div className="nx-empty-icon"><Building2 size={22} /></div>
             <p className="nx-empty-title">لا توجد صالونات مسجلة</p>
-            <p className="nx-empty-desc">اضغط "إنشاء صالون" لإضافة أول صالون</p>
+            <p className="nx-empty-desc">اضغط &quot;إنشاء صالون&quot; لإضافة أول صالون</p>
           </div>
         ) : (
           <>
