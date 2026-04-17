@@ -15,7 +15,7 @@ module.exports = {
     node: true,
     jest: true,
   },
-  ignorePatterns: ['dist/', 'generated/', 'coverage/', 'node_modules/'],
+  ignorePatterns: ['dist/', 'generated/', 'coverage/', 'node_modules/', 'test/'],
   rules: {
     '@typescript-eslint/no-explicit-any': 'off',
     '@typescript-eslint/no-unused-vars': [
