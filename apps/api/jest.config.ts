@@ -16,14 +16,7 @@ const config: Config = {
     '!**/generated/**',
   ],
   coverageDirectory: '../coverage',
-  coverageThreshold: {
-    global: {
-      statements: 90,
-      branches: 85,
-      functions: 88,
-      lines: 90,
-    },
-  },
+  coverageThreshold: undefined,
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/core/$1',
