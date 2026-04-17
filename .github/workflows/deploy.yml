@@ -1,8 +1,12 @@
 name: Deploy
 
+# DISABLED until launch. Re-enable by restoring `push` trigger once:
+#   1) GHCR + SSH secrets are configured on the repo
+#      (REGISTRY_URL, REGISTRY_USERNAME, REGISTRY_PASSWORD, SSH_HOST, SSH_USER, SSH_KEY)
+#   2) staging environment exists and has been smoke-tested
+#   3) production deploy target is locked in
+# Manual runs remain available via workflow_dispatch for testing.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       skip_staging:
