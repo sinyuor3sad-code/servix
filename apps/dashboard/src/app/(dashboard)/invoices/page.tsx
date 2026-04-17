@@ -100,7 +100,7 @@ export default function InvoicesPage() {
 
       {/* Invoice Cards */}
       {filtered.length === 0 ? (
-        <div className="text-center py-20">
+        <div data-testid="invoices-list" className="text-center py-20">
           <div className="w-20 h-20 rounded-3xl bg-[var(--muted)] flex items-center justify-center mx-auto mb-4">
             <FileText className="h-10 w-10 text-[var(--muted-foreground)] opacity-30" />
           </div>
@@ -109,7 +109,7 @@ export default function InvoicesPage() {
           <Link href="/invoices/new"><Button className="mt-4"><Plus className="h-4 w-4" /> فاتورة جديدة</Button></Link>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div data-testid="invoices-list" className="space-y-2">
           {filtered.map(inv => {
             const s = STATUS[inv.status] || STATUS.draft;
             const Icon = s.icon;
