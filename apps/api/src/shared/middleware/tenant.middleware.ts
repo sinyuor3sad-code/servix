@@ -9,7 +9,6 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Request } from 'express';
 import { PlatformPrismaClient } from '../database/platform.client';
 import { TenantClientFactory } from '../database/tenant-client.factory';
 import { CacheService } from '../cache/cache.service';
@@ -54,8 +53,6 @@ const RENEWAL_ALLOWED_PATHS = [
   '/api/v1/subscriptions/plans',
   '/api/v1/auth/me',
 ];
-
-const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trial'] as const;
 
 function isPublicPath(path: string): boolean {
   return PUBLIC_TENANT_PATHS.some((p) => path.startsWith(p));

@@ -4,7 +4,6 @@ import { GeminiService } from '../../../shared/ai/gemini.service';
 import { CacheService } from '../../../shared/cache/cache.service';
 
 const SALON_DATA_CACHE_PREFIX = 'servix:ai_data:';
-const SALON_DATA_CACHE_TTL = 900; // 15 minutes
 
 /**
  * AI Consultant Service — Gathers comprehensive salon data

@@ -1,6 +1,5 @@
-import { RateLimitGuard, RATE_LIMIT_KEY } from './rate-limit.guard';
+import { RateLimitGuard } from './rate-limit.guard';
 import { ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
 
 describe('RateLimitGuard', () => {
   let guard: RateLimitGuard;

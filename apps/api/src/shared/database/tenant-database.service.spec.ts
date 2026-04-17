@@ -10,7 +10,7 @@ jest.mock('child_process', () => ({
 
 jest.mock('util', () => ({
   ...jest.requireActual('util'),
-  promisify: jest.fn((fn: unknown) => {
+  promisify: jest.fn((_fn: unknown) => {
     return jest.fn().mockResolvedValue({ stdout: 'OK', stderr: '' });
   }),
 }));

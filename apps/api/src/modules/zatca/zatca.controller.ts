@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Logger } from '@nestjs/common';
+import { Controller, Post, Get, Body, Logger } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ZatcaService } from './zatca.service';
 

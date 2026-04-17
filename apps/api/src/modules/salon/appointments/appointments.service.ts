@@ -593,8 +593,6 @@ export class AppointmentsService {
 
     for (let m = startMinutes; m + totalDuration <= endMinutes; m += slotDuration) {
       const slotStart = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-      const slotEnd = addMinutesToTime(slotStart, totalDuration + bufferTime);
-
       const hasConflict = existingAppointments.some((appt) => {
         const apptStart = timeToMinutes(appt.startTime);
         const apptEnd = timeToMinutes(appt.endTime) + bufferTime;

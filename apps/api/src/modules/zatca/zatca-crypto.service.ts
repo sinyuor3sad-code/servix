@@ -20,7 +20,7 @@ export class ZatcaCryptoService {
     serialNumber: string;
   }): { privateKey: string; csr: string } {
     // Generate ECDSA P-256 key pair
-    const { privateKey, publicKey } = generateKeyPairSync('ec', {
+    const { privateKey, publicKey: _publicKey } = generateKeyPairSync('ec', {
       namedCurve: 'secp256k1',
       publicKeyEncoding: { type: 'spki', format: 'pem' },
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },

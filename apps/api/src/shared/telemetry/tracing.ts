@@ -8,7 +8,11 @@
  * Exports traces to Jaeger via OTLP HTTP.
  *
  * Set OTEL_ENABLED=true to activate (disabled by default in dev).
+ *
+ * console.* is intentional here: this runs during bootstrap before the
+ * Nest Logger is available.
  */
+/* eslint-disable no-console */
 
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';

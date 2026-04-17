@@ -17,7 +17,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { RolesService } from './roles.service';
-import type { RoleWithPermissions, GroupedPermissions } from './roles.service';
+import type { RoleWithPermissions } from './roles.service';
 import type { Role, Permission } from '../../shared/database';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';

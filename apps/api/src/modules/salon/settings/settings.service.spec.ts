@@ -153,7 +153,7 @@ describe('SettingsService', () => {
       mockDb.$transaction.mockResolvedValue([]);
       mockDb.setting.findMany.mockResolvedValue([]);
 
-      const result = await service.updateBatch(
+      await service.updateBatch(
         mockDb as unknown as TenantPrismaClient,
         {
           settings: [

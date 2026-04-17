@@ -543,8 +543,13 @@ export class CacheService implements OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.redis) {
+    if (!this.redis) return;
+    try {
       await this.redis.quit();
+    } catch (err) {
+      // Never block shutdown on Redis. A hang here would prevent the SIGTERM
+      // drain from completing inside the container grace period.
+      this.logger.warn(`Redis quit failed during shutdown: ${(err as Error).message}`);
     }
   }
 }

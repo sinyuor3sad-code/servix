@@ -1,5 +1,4 @@
-﻿export {}; 
-import { Test, TestingModule } from '@nestjs/testing';
+﻿export {};
 
 // Mock Prisma for attendance
 const mockDb = {
@@ -10,8 +9,6 @@ const mockDb = {
     count: jest.fn().mockResolvedValue(5),
   },
 };
-
-const mockTenantDb = { getClient: jest.fn().mockResolvedValue(mockDb) };
 
 describe('AttendanceService', () => {
   it('should record check-in', async () => {

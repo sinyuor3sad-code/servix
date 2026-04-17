@@ -195,7 +195,7 @@ describe('AuthService', () => {
         slug: 'elegance-salon-a1b2c3d4',
       };
 
-      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+      mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           user: { create: jest.fn().mockResolvedValue(createdUser) },
           tenant: { create: jest.fn().mockResolvedValue(createdTenant) },

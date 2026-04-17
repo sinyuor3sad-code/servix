@@ -21,8 +21,10 @@
     "db:generate": "prisma generate --schema=./prisma/platform.prisma && prisma generate --schema=./prisma/tenant.prisma",
     "db:migrate": "prisma migrate dev --schema=./prisma/platform.prisma",
     "db:seed": "ts-node prisma/seed.ts",
+    "db:seed:e2e": "ts-node prisma/seed-e2e.ts",
     "db:studio": "prisma studio --schema=./prisma/platform.prisma",
-    "test:pact:verify": "jest --testPathPattern=test/pact/provider --forceExit",
+    "test:pact:verify": "jest --config test/pact/provider/jest-pact.json --forceExit",
+    "test:chaos": "jest --config test/chaos/jest-chaos.json --forceExit",
     "clean": "rimraf dist"
   },
   "dependencies": {

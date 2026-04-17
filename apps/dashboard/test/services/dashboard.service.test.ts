@@ -3,7 +3,11 @@ import { describe, it, expect, vi } from 'vitest';
 describe('Dashboard Service', () => {
   it('should format revenue as SAR currency', () => {
     const amount = 45000;
-    const formatted = new Intl.NumberFormat('ar-SA', { style: 'currency', currency: 'SAR' }).format(amount);
+    // ar-SA renders digits in Arabic-Indic (٠١٢٣٤٥٦٧٨٩), so assert via latn numbering.
+    const formatted = new Intl.NumberFormat('ar-SA-u-nu-latn', {
+      style: 'currency',
+      currency: 'SAR',
+    }).format(amount);
     expect(formatted).toContain('45');
   });
 

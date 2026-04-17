@@ -16,7 +16,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtPayload, JwtTokens } from '../../shared/types';
+import { JwtTokens } from '../../shared/types';
 import { CurrentUser, Public } from '../../shared/decorators';
 import { RateLimit } from '../../shared/guards/rate-limit.guard';
 import { AuthService } from './auth.service';

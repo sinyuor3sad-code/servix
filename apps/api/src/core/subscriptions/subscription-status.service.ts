@@ -14,7 +14,6 @@ export type SubscriptionPhase =
   | 'deleted';
 
 const GRACE_DAYS = 7;
-const LOCKED_DAYS = 14; // Day 8-14 from expiry
 const DELETION_DAYS = 60;
 
 export interface SubscriptionStatus {

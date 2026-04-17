@@ -93,7 +93,6 @@ export class PdfService {
 
     doc.fontSize(12).fillColor('#333').text('تفاصيل الخدمات', { align: 'right' }).moveDown(0.5);
 
-    let y = doc.y;
     doc.fontSize(10);
     for (const item of invoice.invoiceItems) {
       const serviceName = item.service?.nameAr || item.description;

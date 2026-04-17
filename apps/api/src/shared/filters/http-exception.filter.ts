@@ -5,7 +5,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import { Response, Request } from 'express';
+import { Response } from 'express';
 
 // Sentry decorator — optional, only if @sentry/nestjs is installed
 let SentryExceptionCaptured: () => MethodDecorator;

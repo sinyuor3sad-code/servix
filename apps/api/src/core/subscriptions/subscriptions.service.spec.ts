@@ -109,7 +109,7 @@ describe('SubscriptionsService', () => {
         plan: { id: 'plan-id', name: 'Pro' },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+      mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           subscription: {
             updateMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -147,7 +147,7 @@ describe('SubscriptionsService', () => {
         plan: { id: 'plan-id', name: 'Premium' },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+      mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           subscription: {
             updateMany: mockUpdateMany,

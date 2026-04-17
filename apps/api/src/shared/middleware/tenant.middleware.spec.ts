@@ -62,7 +62,6 @@ const baseSubscription = {
 
 describe('TenantMiddleware', () => {
   let middleware: TenantMiddleware;
-  let reflector: Reflector;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -77,7 +76,6 @@ describe('TenantMiddleware', () => {
     }).compile();
 
     middleware = module.get<TenantMiddleware>(TenantMiddleware);
-    reflector = module.get<Reflector>(Reflector);
     jest.clearAllMocks();
     mockCacheService.getTenant.mockResolvedValue(null);
   });

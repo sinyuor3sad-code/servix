@@ -73,7 +73,7 @@ export class DataRightsService {
     // 2. Tenant-level data (if tenant context is available)
     let appointments: any[] = [];
     let invoices: any[] = [];
-    let settings: Record<string, string> = {};
+    const settings: Record<string, string> = {};
     let activityLog: any[] = [];
 
     if (tenantDb) {

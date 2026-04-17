@@ -2,9 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PlatformPrismaClient } from '../database/platform.client';
 import { CacheService } from '../cache/cache.service';
 
-const PLATFORM_SETTINGS_CACHE_KEY = 'servix:platform_settings';
-const PLATFORM_SETTINGS_CACHE_TTL = 300; // 5 minutes
-
 /**
  * Shared platform settings service.
  * Loads admin settings from platform_settings table with Redis caching.

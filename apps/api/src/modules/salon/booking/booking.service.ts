@@ -363,6 +363,7 @@ export class BookingService {
 
     // TODO: send SMS via WhatsApp/SMS gateway
     // For now, log to console in development
+    // eslint-disable-next-line no-console
     console.log(`[BookingOTP] Phone: ${phone}, Code: ${code}`);
 
     return { message: 'تم إرسال رمز التحقق' };

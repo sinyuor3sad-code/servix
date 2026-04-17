@@ -487,6 +487,7 @@ export class AdminService {
 
     // TODO: Send email with reset link when MailService is available in AdminModule
     // For now, log it
+    // eslint-disable-next-line no-console
     console.log(`[AdminResetLink] User ${user.email} → token: ${token}`);
 
     return { message: `تم إنشاء رابط التعيين وإرساله إلى ${user.email}` };
@@ -1596,7 +1597,8 @@ export class AdminService {
     });
     if (!plan) throw new NotFoundException('الباقة غير موجودة');
 
-    const { id, createdAt, updatedAt, slug, ...planData } = plan as any;
+    // Strip auto-generated fields — rest is cloned into the new plan.
+    const { id: _id, createdAt: _ca, updatedAt: _ua, slug: _s, ...planData } = plan as any;
     const newPlan = await this.prisma.plan.create({
       data: {
         ...planData,

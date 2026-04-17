@@ -14,7 +14,7 @@ export class FailedJobsListener extends WorkerHost {
   }
 
   // Required by WorkerHost — delegate to the notification processor
-  async process(job: Job): Promise<void> {
+  async process(_job: Job): Promise<void> {
     // This processor only handles DLQ logic via events
     // Actual notification processing is in NotificationProcessor
     return;

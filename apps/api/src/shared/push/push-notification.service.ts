@@ -30,7 +30,8 @@ export class PushNotificationService {
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // Lazy load: firebase-admin is optional — only used if FIREBASE_PROJECT_ID is set.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const admin = require('firebase-admin');
       if (!admin.apps?.length) {
         admin.initializeApp({

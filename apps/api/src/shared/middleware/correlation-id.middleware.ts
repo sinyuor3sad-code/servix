@@ -12,7 +12,8 @@ export class CorrelationIdMiddleware implements NestMiddleware {
 
     if (!correlationId) {
       try {
-        // Dynamic import to avoid hard dependency when OTEL is disabled
+        // Lazy load to avoid hard dependency when OTEL is disabled — sync path inside middleware.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { trace } = require('@opentelemetry/api');
         const currentSpan = trace.getActiveSpan?.();
         const traceId = currentSpan?.spanContext()?.traceId;

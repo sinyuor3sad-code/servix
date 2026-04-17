@@ -59,7 +59,7 @@ describe('TenantsService', () => {
         trialEndsAt: expect.any(Date),
       };
 
-      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+      mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           tenant: { create: jest.fn().mockResolvedValue(createdTenant) },
           role: {

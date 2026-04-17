@@ -23,7 +23,6 @@ const CF_TEXT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const CF_WHISPER_MODEL = '@cf/openai/whisper';
 
 const CONVERSATION_CACHE_PREFIX = 'servix:wa_conv:';
-const CONVERSATION_TTL_SECONDS = 3600;
 const MAX_CONVERSATION_HISTORY = 20;
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 3000;

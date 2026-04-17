@@ -6,6 +6,7 @@ import {
   UseGuards,
   Res,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -34,7 +35,11 @@ export class AccountController {
     @Req() req: AuthenticatedRequest,
     @Res() res: Response,
   ): Promise<void> {
-    const isOwner = await this.accountService.checkIsOwner(req.tenant?.id!, req.user.sub);
+    const tenantId = req.tenant?.id;
+    if (!tenantId) {
+      throw new BadRequestException('سياق المستأجر مفقود');
+    }
+    const isOwner = await this.accountService.checkIsOwner(tenantId, req.user.sub);
     if (!isOwner) {
       throw new ForbiddenException('تصدير البيانات متاح للمالك فقط');
     }

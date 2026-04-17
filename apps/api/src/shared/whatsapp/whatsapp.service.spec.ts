@@ -1,4 +1,4 @@
-import { WhatsAppService, WhatsAppCredentials, SendWhatsAppOptions } from './whatsapp.service';
+import { WhatsAppService, WhatsAppCredentials } from './whatsapp.service';
 
 // Mock global fetch
 const mockFetch = jest.fn();

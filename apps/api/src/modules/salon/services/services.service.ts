@@ -6,7 +6,7 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { ReorderServicesDto } from './dto/reorder.dto';
 import { QueryServicesDto } from './dto/query-services.dto';
-import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
+import { paginate } from '../../../shared/helpers/paginate.helper';
 
 
 @Injectable()
@@ -146,7 +146,7 @@ export class ServicesService {
       // Try real delete first
       await db.service.delete({ where: { id } });
       return { deleted: true, message: 'تم حذف الخدمة نهائياً' };
-    } catch (e: any) {
+    } catch (_e: any) {
       // Foreign key constraint — service used in invoices/appointments
       // Fall back to soft delete
       await db.service.update({ where: { id }, data: { isActive: false } });

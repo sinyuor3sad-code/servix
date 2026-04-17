@@ -34,8 +34,7 @@ export interface SalonContext {
   };
 }
 
-// Cache TTL for WhatsApp tenant mapping (10 minutes)
-const WA_TENANT_CACHE_TTL = 600;
+// Cache key prefix for WhatsApp tenant mapping
 const WA_TENANT_CACHE_PREFIX = 'servix:wa_tenant:';
 
 /**

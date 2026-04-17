@@ -593,7 +593,7 @@ export class AuthService {
     emailOrPhone: string,
     password: string,
     code: string,
-    ip: string,
+    _ip: string,
   ): Promise<{ user: any; tokens: JwtTokens }> {
     // Re-authenticate
     const user = await this.prisma.user.findFirst({
