@@ -13,7 +13,6 @@ export default defineConfig({
     // causes port collisions.
     fileParallelism: false,
     pool: 'forks',
-    forks: { singleFork: true },
     testTimeout: 30000,
   },
   resolve: {
