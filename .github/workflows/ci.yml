@@ -163,9 +163,11 @@ jobs:
       # DATABASE_URL kept as alias for any tooling that still reads it.
       PLATFORM_DATABASE_URL: postgresql://servix:servix@localhost:5432/servix_platform
       DATABASE_URL: postgresql://servix:servix@localhost:5432/servix_platform
-      REDIS_URL: redis://localhost:6379
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
       NODE_ENV: test
-      JWT_SECRET: ci-test-secret-32-chars-minimum-ok
+      JWT_ACCESS_SECRET: ci-test-access-secret-32-chars-min
+      JWT_REFRESH_SECRET: ci-test-refresh-secret-32-chars-min
       ENCRYPTION_KEY: ci-test-encryption-key-32-chars-x
       TEST_EMAIL: servix@dev.local
       TEST_PASSWORD: adsf1324
