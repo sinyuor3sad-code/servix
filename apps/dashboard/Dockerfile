@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:25-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
@@ -28,7 +28,7 @@ ENV NEXT_PUBLIC_WS_URL=https://api.servi-x.com
 ENV NEXT_PUBLIC_DASHBOARD_URL=https://app.servi-x.com
 RUN mkdir -p public && node /app/node_modules/next/dist/bin/next build
 
-FROM node:22-alpine AS runner
+FROM node:25-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
