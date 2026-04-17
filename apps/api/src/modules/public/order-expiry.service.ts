@@ -24,9 +24,16 @@ export class OrderExpiryService {
     this.running = true;
 
     try {
-      // Get all active tenants (skip platform admin — it has no selfOrder table)
+      // Get all active tenants. Skip the platform tenant itself — its DB is
+      // the platform schema (no selfOrder table). The seed creates it with
+      // slug 'servix-platform' / databaseName 'servix_platform'.
+      const platformDb = process.env.PLATFORM_DATABASE_NAME || 'servix_platform';
       const tenants = await this.platformPrisma.tenant.findMany({
-        where: { status: 'active', slug: { not: 'platform-admin' } },
+        where: {
+          status: 'active',
+          slug: { notIn: ['servix-platform', 'platform-admin'] },
+          databaseName: { not: platformDb },
+        },
         select: { id: true, databaseName: true, slug: true },
       });
 

@@ -21,9 +21,10 @@ import {
  */
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.projects[0]?.use?.baseURL ?? BASE_URL;
-  const rootDir = config.rootDir;
-  const ownerStatePath = path.join(rootDir, AUTH_STATE_PATH);
-  const cashierStatePath = path.join(rootDir, CASHIER_AUTH_STATE_PATH);
+  // AUTH_STATE_PATH / CASHIER_AUTH_STATE_PATH are already absolute (resolved
+  // against helpers/constants.ts), so no join with rootDir is needed.
+  const ownerStatePath = AUTH_STATE_PATH;
+  const cashierStatePath = CASHIER_AUTH_STATE_PATH;
 
   fs.mkdirSync(path.dirname(ownerStatePath), { recursive: true });
 

@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import * as path from 'node:path';
+import { AUTH_STATE_PATH } from './e2e/helpers/constants';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
 const IS_CI = !!process.env.CI;
@@ -59,7 +60,7 @@ export default defineConfig({
       ],
       use: {
         ...devices['Desktop Chrome'],
-        storageState: path.resolve(__dirname, 'e2e/.auth/user.json'),
+        storageState: AUTH_STATE_PATH,
       },
     },
 
@@ -69,7 +70,7 @@ export default defineConfig({
       testMatch: ['**/06-responsive.spec.ts'],
       use: {
         ...devices['iPhone 14'],
-        storageState: path.resolve(__dirname, 'e2e/.auth/user.json'),
+        storageState: AUTH_STATE_PATH,
       },
     },
   ],

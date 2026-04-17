@@ -4,6 +4,8 @@
  * Credentials fall back to the dev-seeded owner account. Override in CI via
  * TEST_EMAIL / TEST_PASSWORD environment variables (or a .env.test file).
  */
+import * as path from 'node:path';
+
 export const TEST_CREDENTIALS = {
   email: process.env.TEST_EMAIL ?? 'servix@dev.local',
   password: process.env.TEST_PASSWORD ?? 'adsf1324',
@@ -16,9 +18,12 @@ export const CASHIER_CREDENTIALS = {
 
 export const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
 
-/** Path to stored auth state, relative to playwright's rootDir. */
-export const AUTH_STATE_PATH = 'e2e/.auth/user.json';
-export const CASHIER_AUTH_STATE_PATH = 'e2e/.auth/cashier.json';
+// Resolve storage-state paths from this file's location so both global-setup
+// and playwright.config agree regardless of Playwright's rootDir semantics.
+// __dirname here = apps/dashboard/e2e/helpers → go up one to apps/dashboard/e2e.
+const E2E_DIR = path.resolve(__dirname, '..');
+export const AUTH_STATE_PATH = path.resolve(E2E_DIR, '.auth/user.json');
+export const CASHIER_AUTH_STATE_PATH = path.resolve(E2E_DIR, '.auth/cashier.json');
 
 /** Sensible defaults for Playwright waits (ms). */
 export const TIMEOUTS = {
