@@ -24,8 +24,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generate Prisma Clients
         run: pnpm --filter @servix/api db:generate
-      - name: Lint
-        run: pnpm lint
+      - name: Lint (API)
+        run: pnpm --filter @servix/api lint
       - name: Type Check API
         run: pnpm --filter @servix/api type-check
       - name: Type Check Dashboard
@@ -55,7 +55,7 @@ jobs:
         continue-on-error: true
 
       - name: Semgrep SAST scan
-        uses: returntocorp/semgrep-action@v1
+        uses: semgrep/semgrep-action@v1
         with:
           config: >-
             p/javascript
@@ -63,7 +63,6 @@ jobs:
             p/nodejs
             p/owasp-top-ten
         env:
-          # Fail on findings of severity ERROR; warnings only post to summary.
           SEMGREP_FAIL_OPEN: 'false'
 
   test:
