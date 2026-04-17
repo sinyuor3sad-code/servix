@@ -33,7 +33,7 @@
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s"
   },
   "devDependencies": {
-    "turbo": "^2.0.0",
+    "turbo": "^2.9.6",
     "rimraf": "^6.0.0",
     "conventional-changelog-cli": "^5.0.0"
   },
