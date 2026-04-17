@@ -1,179 +1,188 @@
-#!/bin/bash
+#!/bin/sh
 # ═══════════════════════════════════════════════════════════════
-# SERVIX — Automated Database Backup Script
-# Runs via cron every 6 hours. Backs up ALL databases.
-# Storage: MinIO (S3-compatible) bucket "servix-backups"
-# Retention: 7 days (older backups are deleted automatically)
+# SERVIX — In-container scheduled backup
+#
+# Runs every 6h via cron. For every Postgres database (excluding
+# `postgres` and templates):
+#   1. pg_dump | gzip → encrypt with gpg (AES-256, symmetric)
+#   2. Upload to MinIO bucket `servix-backups/<TS>/<db>.sql.gz.gpg`
+#   3. Write a manifest with sha256 of every dump
+#   4. Cleanup local temp; retain 7d on MinIO
+#   5. Write last-success + db count + total bytes to a node-exporter
+#      textfile so Prometheus can alert on stale backups.
+#
+# A separate cron mirrors the latest day off-site (mirror-to-offsite.sh)
+# and verifies it weekly (verify-backup.sh).
 # ═══════════════════════════════════════════════════════════════
 
-set -euo pipefail
+set -eu
 
-# ── Config ──
+# ─── Config ───
 BACKUP_DIR="/tmp/backups"
 RETENTION_DAYS=7
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
 BACKUP_PATH="${BACKUP_DIR}/${TIMESTAMP}"
 LOG_FILE="/backups/backup.log"
 MINIO_BUCKET="servix-backups"
 MINIO_ALIAS="servix"
+METRICS_DIR="/var/lib/node_exporter/textfile_collector"
+METRICS_FILE="${METRICS_DIR}/servix_backup.prom"
 
-# ── Database connection (from environment) ──
+# ─── DB connection ───
 PGHOST="${PGHOST:-postgres}"
 PGPORT="${PGPORT:-5432}"
 PGUSER="${POSTGRES_USER:-servix}"
-export PGPASSWORD="${POSTGRES_PASSWORD:-servix_secret}"
+export PGPASSWORD="${POSTGRES_PASSWORD:-}"
 
-# ── MinIO connection (from environment) ──
+# ─── MinIO ───
 MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://minio:9000}"
-MINIO_ACCESS_KEY="${MINIO_ROOT_USER:-servix_minio}"
+MINIO_ACCESS_KEY="${MINIO_ROOT_USER:-}"
 MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD:-}"
 
-# ── Functions ──
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
+
+# ─── Hard preconditions ───
+if [ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then
+  log "FATAL: BACKUP_ENCRYPTION_PASSPHRASE is required (PDPL)"
+  exit 1
+fi
+if [ -z "$PGPASSWORD" ]; then
+  log "FATAL: POSTGRES_PASSWORD is required"
+  exit 1
+fi
+
+write_metrics() {
+  # arg1: status (0|1) — 0 = success
+  # arg2: db_count
+  # arg3: success_count
+  # arg4: failed_count
+  # arg5: total_bytes
+  mkdir -p "$METRICS_DIR"
+  cat > "${METRICS_FILE}.tmp" <<EOF
+# HELP servix_backup_last_success_timestamp Unix time of last successful backup run.
+# TYPE servix_backup_last_success_timestamp gauge
+servix_backup_last_success_timestamp ${1}
+# HELP servix_backup_databases_total Number of databases targeted by the last run.
+# TYPE servix_backup_databases_total gauge
+servix_backup_databases_total ${2}
+# HELP servix_backup_success_total Number of databases successfully backed up in the last run.
+# TYPE servix_backup_success_total gauge
+servix_backup_success_total ${3}
+# HELP servix_backup_failed_total Number of databases that failed in the last run.
+# TYPE servix_backup_failed_total gauge
+servix_backup_failed_total ${4}
+# HELP servix_backup_size_bytes Total size of the last successful backup batch.
+# TYPE servix_backup_size_bytes gauge
+servix_backup_size_bytes ${5}
+EOF
+  mv "${METRICS_FILE}.tmp" "$METRICS_FILE"
 }
 
 setup_minio() {
-  # Configure mc alias
   mc alias set "$MINIO_ALIAS" "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --api S3v4 >/dev/null 2>&1
-
-  # Create bucket if it doesn't exist
-  if ! mc ls "$MINIO_ALIAS/$MINIO_BUCKET" >/dev/null 2>&1; then
-    log "Creating MinIO bucket: $MINIO_BUCKET"
-    mc mb "$MINIO_ALIAS/$MINIO_BUCKET" >/dev/null 2>&1
-  fi
+  mc ls "$MINIO_ALIAS/$MINIO_BUCKET" >/dev/null 2>&1 || mc mb "$MINIO_ALIAS/$MINIO_BUCKET" >/dev/null
+  # Versioning protects against ransomware that overwrites an existing object.
+  mc version enable "$MINIO_ALIAS/$MINIO_BUCKET" >/dev/null 2>&1 || true
 }
 
-upload_to_minio() {
-  local LOCAL_PATH="$1"
-  local REMOTE_PATH="$2"
-
-  if mc cp --recursive "$LOCAL_PATH/" "$MINIO_ALIAS/$MINIO_BUCKET/$REMOTE_PATH/" >/dev/null 2>&1; then
-    return 0
-  else
-    return 1
-  fi
+encrypt_file() {
+  # in-place: foo.sql.gz → foo.sql.gz.gpg, removes plaintext
+  src="$1"
+  gpg --batch --yes --quiet --cipher-algo AES256 \
+      --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" \
+      --symmetric --output "${src}.gpg" "$src"
+  shred -u "$src" 2>/dev/null || rm -f "$src"
 }
 
-cleanup_old_minio_backups() {
-  log "Cleaning MinIO backups older than ${RETENTION_DAYS} days..."
-  local CUTOFF_DATE
-  CUTOFF_DATE=$(date -d "@$(( $(date +%s) - RETENTION_DAYS * 86400 ))" +"%Y%m%d" 2>/dev/null || echo "")
-
-  if [ -z "$CUTOFF_DATE" ]; then
-    log "  Could not compute cutoff date, skipping MinIO cleanup"
-    return
-  fi
-
-  local DELETED=0
-  for FOLDER in $(mc ls "$MINIO_ALIAS/$MINIO_BUCKET/" 2>/dev/null | awk '{print $NF}' | tr -d '/'); do
-    # Extract date part (YYYYMMDD) from folder name like 20260410_120000
-    local FOLDER_DATE="${FOLDER%%_*}"
-    if [ -n "$FOLDER_DATE" ] && [ "$FOLDER_DATE" -lt "$CUTOFF_DATE" ] 2>/dev/null; then
-      log "  Deleting old backup: $FOLDER"
-      mc rm --recursive --force "$MINIO_ALIAS/$MINIO_BUCKET/$FOLDER/" >/dev/null 2>&1
-      DELETED=$((DELETED + 1))
+cleanup_old_minio() {
+  cutoff="$(date -d "@$(( $(date +%s) - RETENTION_DAYS * 86400 ))" +"%Y%m%d" 2>/dev/null || echo "")"
+  [ -z "$cutoff" ] && return 0
+  for folder in $(mc ls "$MINIO_ALIAS/$MINIO_BUCKET/" 2>/dev/null | awk '{print $NF}' | tr -d '/'); do
+    fdate="${folder%%_*}"
+    [ -z "$fdate" ] && continue
+    if [ "$fdate" -lt "$cutoff" ] 2>/dev/null; then
+      log "  Removing stale: $folder"
+      mc rm --recursive --force "$MINIO_ALIAS/$MINIO_BUCKET/$folder/" >/dev/null 2>&1 || true
     fi
   done
-  log "  Deleted ${DELETED} old backup(s) from MinIO"
 }
 
-# ── Start ──
+# ─── Run ───
 log "════════════════════════════════════════"
-log "Starting SERVIX backup..."
+log "Starting SERVIX backup ${TIMESTAMP}"
 mkdir -p "$BACKUP_PATH" /backups
 
-# ── 0. Setup MinIO ──
-MINIO_OK=false
-if [ -n "$MINIO_SECRET_KEY" ]; then
-  if setup_minio; then
-    MINIO_OK=true
-    log "MinIO connected: $MINIO_ENDPOINT"
-  else
-    log "WARNING: MinIO setup failed — backup will be local only"
-  fi
-else
-  log "WARNING: MINIO_ROOT_PASSWORD not set — backup will be local only"
-fi
+setup_minio
+log "MinIO ready: $MINIO_ENDPOINT"
 
-# ── 1. Get all databases ──
-DATABASES=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -t -A -c \
-  "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';")
+DATABASES="$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -t -A -c \
+  "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';")"
 
 if [ -z "$DATABASES" ]; then
-  log "No databases found!"
+  log "FATAL: no databases discovered"
+  write_metrics 0 0 0 1 0
   exit 1
 fi
 
 DB_COUNT=$(echo "$DATABASES" | wc -l)
-log "Found ${DB_COUNT} databases to backup"
+log "Backing up $DB_COUNT database(s)"
 
-# ── 2. Backup each database ──
-SUCCESS=0
-FAILED=0
+SUCCESS=0; FAILED=0
+MANIFEST="${BACKUP_PATH}/manifest.json"
+echo '{ "timestamp": "'"${TIMESTAMP}"'", "databases": [' > "$MANIFEST"
+first=1
 
 for DB in $DATABASES; do
-  DUMP_FILE="${BACKUP_PATH}/${DB}.sql.gz"
-  log "  Backing up: ${DB}..."
-
+  DUMP="${BACKUP_PATH}/${DB}.sql.gz"
+  log "  → ${DB}"
   if pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$DB" \
-    --no-owner --no-privileges --clean --if-exists \
-    | gzip > "$DUMP_FILE" 2>>"$LOG_FILE"; then
-
-    SIZE=$(du -sh "$DUMP_FILE" | cut -f1)
-    log "  OK ${DB} (${SIZE})"
+       --no-owner --no-privileges --clean --if-exists \
+       | gzip > "$DUMP" 2>>"$LOG_FILE"; then
+    encrypt_file "$DUMP"
+    enc="${DUMP}.gpg"
+    sha="$(sha256sum "$enc" | awk '{print $1}')"
+    sz="$(stat -c %s "$enc")"
+    [ "$first" = "1" ] || echo ',' >> "$MANIFEST"
+    first=0
+    printf '  {"db":"%s","file":"%s","sha256":"%s","bytes":%s}' \
+      "$DB" "$(basename "$enc")" "$sha" "$sz" >> "$MANIFEST"
+    log "  ✓ ${DB} ($(numfmt --to=iec "$sz" 2>/dev/null || echo "${sz}B"))"
     SUCCESS=$((SUCCESS + 1))
   else
-    log "  FAILED: ${DB}"
+    log "  ✗ ${DB} dump failed"
+    rm -f "$DUMP"
     FAILED=$((FAILED + 1))
-    rm -f "$DUMP_FILE"
   fi
 done
 
-# ── 3. Create manifest ──
-cat > "${BACKUP_PATH}/manifest.json" <<EOF
-{
-  "timestamp": "${TIMESTAMP}",
-  "date": "$(date -Iseconds)",
-  "databases": ${DB_COUNT},
-  "success": ${SUCCESS},
-  "failed": ${FAILED},
-  "host": "${PGHOST}",
-  "retention_days": ${RETENTION_DAYS},
-  "storage": "$([ "$MINIO_OK" = true ] && echo 'minio' || echo 'local')"
-}
-EOF
+echo "" >> "$MANIFEST"
+echo '], "success": '"$SUCCESS"', "failed": '"$FAILED"', "encrypted": true }' >> "$MANIFEST"
 
-# ── 4. Upload to MinIO ──
-if [ "$MINIO_OK" = true ]; then
-  log "Uploading to MinIO: ${MINIO_BUCKET}/${TIMESTAMP}/..."
-  if upload_to_minio "$BACKUP_PATH" "$TIMESTAMP"; then
-    log "  Upload complete"
-  else
-    log "  WARNING: Upload failed — backup kept locally"
-  fi
-
-  # ── 5. Cleanup old MinIO backups ──
-  cleanup_old_minio_backups
+# Upload (encrypted dumps + manifest)
+log "Uploading to MinIO: ${MINIO_BUCKET}/${TIMESTAMP}/"
+if ! mc cp --recursive "$BACKUP_PATH/" "$MINIO_ALIAS/$MINIO_BUCKET/$TIMESTAMP/" >/dev/null 2>&1; then
+  log "✗ Upload failed — keeping local copy in /backups/failed-uploads/"
+  mkdir -p /backups/failed-uploads
+  mv "$BACKUP_PATH" "/backups/failed-uploads/$TIMESTAMP"
+  write_metrics 0 "$DB_COUNT" "$SUCCESS" "$FAILED" 0
+  exit 1
 fi
+log "✓ Upload complete"
 
-# ── 6. Cleanup local temp ──
+cleanup_old_minio
+
+TOTAL_BYTES=$(du -sb "$BACKUP_PATH" 2>/dev/null | awk '{print $1}')
 rm -rf "$BACKUP_PATH"
 
-# Also keep a local fallback copy (latest only) in /backups/latest
-rm -rf /backups/latest
-mkdir -p /backups/latest
-# Re-dump platform DB as local fallback
-pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "servix_platform" \
-  --no-owner --no-privileges --clean --if-exists \
-  | gzip > /backups/latest/servix_platform.sql.gz 2>/dev/null || true
-
-# ── 7. Summary ──
-log "════════════════════════════════════════"
-log "Backup complete!"
-log "  Databases: ${SUCCESS} success, ${FAILED} failed, ${DB_COUNT} total"
-log "  Storage: $([ "$MINIO_OK" = true ] && echo "MinIO ($MINIO_BUCKET/$TIMESTAMP)" || echo 'local only')"
-log "════════════════════════════════════════"
-
-# Exit with error if any database failed
-[ "$FAILED" -eq 0 ] || exit 1
+# Write metrics for Prometheus alerting
+NOW=$(date +%s)
+if [ "$FAILED" -eq 0 ]; then
+  write_metrics "$NOW" "$DB_COUNT" "$SUCCESS" "$FAILED" "${TOTAL_BYTES:-0}"
+  log "════════════════════════════════════════"
+  log "✓ Backup complete: $SUCCESS/$DB_COUNT, $(numfmt --to=iec "${TOTAL_BYTES:-0}" 2>/dev/null || echo "${TOTAL_BYTES:-0}B")"
+  exit 0
+else
+  # Don't bump last_success_timestamp on partial failure — alert will fire.
+  log "✗ Backup partial: $SUCCESS ok, $FAILED failed"
+  exit 1
+fi

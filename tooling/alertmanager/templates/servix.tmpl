@@ -1,0 +1,24 @@
+{{/*
+  SERVIX alert templates — keep short, action-oriented.
+  Used by alertmanager.yml receivers (Slack/email/PagerDuty).
+*/}}
+
+{{ define "servix.title" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }} — {{ .CommonLabels.severity }}
+{{ end }}
+
+{{ define "servix.text" }}
+{{ range .Alerts -}}
+*Severity:* {{ .Labels.severity }}
+*Service:* {{ .Labels.service | default "n/a" }}
+*Summary:* {{ .Annotations.summary }}
+{{- if .Annotations.description }}
+*Description:* {{ .Annotations.description }}
+{{- end }}
+*Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+{{- if .GeneratorURL }}
+*Graph:* <{{ .GeneratorURL }}|open>
+{{- end }}
+---
+{{ end }}
+{{ end }}

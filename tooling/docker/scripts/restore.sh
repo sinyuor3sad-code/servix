@@ -76,14 +76,31 @@ list_backups() {
   echo ""
 }
 
+decrypt_stream() {
+  # Reads encrypted dump on stdin, writes plaintext on stdout.
+  # Falls back to passthrough if file is plain (pre-encryption format).
+  local FILE="$1"
+  case "$FILE" in
+    *.gpg)
+      if [ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then
+        log "FATAL: BACKUP_ENCRYPTION_PASSPHRASE required to decrypt $FILE"
+        exit 1
+      fi
+      gpg --batch --quiet --decrypt --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" "$FILE"
+      ;;
+    *)  cat "$FILE" ;;
+  esac
+}
+
 restore_database() {
   local DUMP_FILE="$1"
+  local BASE
+  BASE=$(basename "$DUMP_FILE" .gpg)
   local DB_NAME
-  DB_NAME=$(basename "$DUMP_FILE" .sql.gz)
+  DB_NAME=$(basename "$BASE" .sql.gz)
 
   log "  Restoring: ${DB_NAME}..."
 
-  # Check if database exists, create if not
   DB_EXISTS=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -t -A -c \
     "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}';" 2>/dev/null || echo "")
 
@@ -93,8 +110,7 @@ restore_database() {
       "CREATE DATABASE \"${DB_NAME}\";" 2>/dev/null || true
   fi
 
-  # Restore
-  if gunzip -c "$DUMP_FILE" | psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$DB_NAME" \
+  if decrypt_stream "$DUMP_FILE" | gunzip -c | psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$DB_NAME" \
     --single-transaction --quiet 2>/dev/null; then
     log "  OK: ${DB_NAME}"
     return 0
@@ -148,12 +164,17 @@ fi
 
 # ── Restore ──
 if [ -n "$TARGET_DB" ]; then
-  DUMP_FILE="${SOURCE_PATH}/${TARGET_DB}.sql.gz"
+  # Prefer encrypted; fall back to legacy plain dumps.
+  DUMP_FILE="${SOURCE_PATH}/${TARGET_DB}.sql.gz.gpg"
+  [ -f "$DUMP_FILE" ] || DUMP_FILE="${SOURCE_PATH}/${TARGET_DB}.sql.gz"
   if [ ! -f "$DUMP_FILE" ]; then
     log "Database dump not found: ${TARGET_DB}"
     log "Available databases in this backup:"
-    ls -1 "${SOURCE_PATH}"/*.sql.gz 2>/dev/null | while read -r f; do
-      echo "  - $(basename "$f" .sql.gz)"
+    ls -1 "${SOURCE_PATH}"/*.sql.gz* 2>/dev/null | while read -r f; do
+      base=$(basename "$f")
+      base=${base%.gpg}
+      base=${base%.sql.gz}
+      echo "  - $base"
     done
     exit 1
   fi
@@ -171,7 +192,13 @@ else
 
   SUCCESS=0
   FAILED=0
-  for DUMP_FILE in "${SOURCE_PATH}"/*.sql.gz; do
+  # Prefer .gpg over .sql.gz (encrypted backups override legacy ones)
+  for DUMP_FILE in "${SOURCE_PATH}"/*.sql.gz.gpg "${SOURCE_PATH}"/*.sql.gz; do
+    [ -f "$DUMP_FILE" ] || continue
+    base=$(basename "$DUMP_FILE")
+    plain="${base%.gpg}"
+    # Skip the plain dump if its encrypted twin exists.
+    if [ "$base" = "$plain" ] && [ -f "${SOURCE_PATH}/${plain}.gpg" ]; then continue; fi
     if restore_database "$DUMP_FILE"; then
       SUCCESS=$((SUCCESS + 1))
     else

@@ -1,0 +1,108 @@
+groups:
+  # ═════════════════════════════════════════════════════════
+  # Backup health
+  #
+  # Metrics emitted by:
+  #   - tooling/docker/scripts/backup.sh        → servix_backup_*
+  #   - tooling/scripts/mirror-to-offsite.sh    → servix_offsite_mirror_*
+  #   - tooling/scripts/verify-backup.sh        → servix_backup_verify_*
+  #
+  # Scraped via node-exporter's textfile collector
+  # (/var/lib/node_exporter/textfile_collector).
+  # ═════════════════════════════════════════════════════════
+  - name: backups
+    rules:
+      # ── Local (MinIO) backups stale ──
+      - alert: BackupStale
+        expr: |
+          time() - servix_backup_last_success_timestamp > 25 * 3600
+        for: 10m
+        labels:
+          severity: P1
+          service: backup
+        annotations:
+          summary: "🔴 No successful backup in over 25h"
+          description: |
+            Last successful pg_dump finished at {{ $value | humanizeTimestamp }}.
+            RPO target is 6h (cron is 0 */6 * * *). Investigate the backup container:
+              docker logs servix-backup --tail 200
+
+      - alert: BackupNeverRan
+        expr: absent(servix_backup_last_success_timestamp)
+        for: 30m
+        labels:
+          severity: P1
+          service: backup
+        annotations:
+          summary: "🔴 Backup metric absent — backup container may be down"
+          description: "Either the textfile collector mount is broken or backup.sh has never completed."
+
+      - alert: BackupPartialFailure
+        expr: servix_backup_failed_total > 0
+        for: 5m
+        labels:
+          severity: P2
+          service: backup
+        annotations:
+          summary: "⚠️ {{ $value }} database(s) failed in last backup run"
+
+      # ── Off-site mirror ──
+      - alert: OffsiteMirrorStale
+        expr: |
+          time() - servix_offsite_mirror_last_success_timestamp > 49 * 3600
+        for: 10m
+        labels:
+          severity: P1
+          service: backup
+        annotations:
+          summary: "🔴 Off-site mirror hasn't run in over 49h"
+          description: |
+            All backup copies currently live on the same VM as the primary
+            database. A single VM loss = total data loss. Cron is daily 02:00.
+
+      - alert: OffsiteMirrorNotConfigured
+        expr: absent(servix_offsite_mirror_last_success_timestamp)
+        for: 1h
+        labels:
+          severity: P2
+          service: backup
+        annotations:
+          summary: "⚠️ Off-site mirror metric absent — likely OFFSITE_S3_* unset"
+          description: "Configure OFFSITE_S3_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY in .env.prod."
+
+      # ── Restore verification ──
+      - alert: BackupVerifyFailed
+        expr: servix_backup_verify_status == 0
+        for: 5m
+        labels:
+          severity: P1
+          service: backup
+        annotations:
+          summary: "🔴 Last backup verification FAILED"
+          description: |
+            verify-backup.sh restored the latest backup to an ephemeral DB
+            and found errors or no tables. Backups may be corrupt — DO NOT
+            wait for a real incident. See /backups/verify.log on prod.
+
+      - alert: BackupVerifyStale
+        expr: |
+          time() - servix_backup_verify_last_pass_timestamp > 14 * 86400
+        for: 1h
+        labels:
+          severity: P2
+          service: backup
+        annotations:
+          summary: "⚠️ No successful backup verification in over 14 days"
+          description: "Cron schedule is Sundays 04:00. Investigate the verify container."
+
+      # ── Local backup volume size ──
+      - alert: BackupVolumeAlmostFull
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint=~".*backup.*"} /
+           node_filesystem_size_bytes{mountpoint=~".*backup.*"}) * 100 < 20
+        for: 30m
+        labels:
+          severity: P2
+          service: backup
+        annotations:
+          summary: "⚠️ Backup volume < 20% free"

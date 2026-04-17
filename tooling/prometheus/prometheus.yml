@@ -1,6 +1,19 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  external_labels:
+    environment: production
+    cluster: servix-prod
+
+# Load recording + alerting rules from the alerts/ directory.
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+# Forward firing alerts to Alertmanager.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
 
 scrape_configs:
   - job_name: 'servix-api'
@@ -24,3 +37,31 @@ scrape_configs:
         labels:
           app: 'servix'
           service: 'postgres'
+
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          app: 'servix'
+          service: 'redis'
+
+  - job_name: 'nginx-exporter'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+        labels:
+          app: 'servix'
+          service: 'nginx'
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          app: 'servix'
+          service: 'prometheus'
+
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+        labels:
+          app: 'servix'
+          service: 'alertmanager'

@@ -1,0 +1,109 @@
+# ═════════════════════════════════════════════════════════════════
+# SERVIX Alertmanager configuration
+#
+# Receivers are driven by env vars so we can rotate webhooks without
+# rebuilding the image. Set these in tooling/docker/.env.prod:
+#
+#   ALERT_SLACK_WEBHOOK_URL       # Slack incoming webhook (P1 + P2)
+#   ALERT_PAGERDUTY_ROUTING_KEY   # PagerDuty Events API v2 routing key (P1)
+#   ALERT_EMAIL_TO                # On-call email (optional)
+#   ALERT_EMAIL_FROM              # SMTP FROM address
+#   ALERT_SMTP_HOST, _USER, _PASS # SMTP credentials
+# ═════════════════════════════════════════════════════════════════
+
+global:
+  resolve_timeout: 5m
+  smtp_from: '${ALERT_EMAIL_FROM}'
+  smtp_smarthost: '${ALERT_SMTP_HOST}'
+  smtp_auth_username: '${ALERT_SMTP_USER}'
+  smtp_auth_password: '${ALERT_SMTP_PASS}'
+  smtp_require_tls: true
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Routing tree: everything goes to slack, P1 also pages + emails,
+# P3/low severity gets batched into a quiet channel.
+route:
+  receiver: 'slack-default'
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # Critical — page the on-call engineer.
+    - matchers:
+        - severity = P1
+      receiver: 'critical-multi'
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: false
+
+    # Warnings — Slack only.
+    - matchers:
+        - severity = P2
+      receiver: 'slack-default'
+      repeat_interval: 6h
+
+    # Low priority / noise — batched digest.
+    - matchers:
+        - severity =~ "P3|P4|info"
+      receiver: 'slack-digest'
+      group_interval: 30m
+      repeat_interval: 24h
+
+# Silence warning-level alerts when a P1 for the same service is firing.
+inhibit_rules:
+  - source_matchers:
+      - severity = P1
+    target_matchers:
+      - severity =~ "P2|P3"
+    equal: ['alertname', 'cluster', 'service']
+
+receivers:
+  - name: 'slack-default'
+    slack_configs:
+      - api_url: '${ALERT_SLACK_WEBHOOK_URL}'
+        channel: '#servix-alerts'
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Severity:* {{ .Labels.severity }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+          {{ end }}
+
+  - name: 'slack-digest'
+    slack_configs:
+      - api_url: '${ALERT_SLACK_WEBHOOK_URL}'
+        channel: '#servix-alerts-info'
+        send_resolved: false
+        title: '[INFO] {{ .CommonLabels.alertname }}'
+
+  - name: 'critical-multi'
+    slack_configs:
+      - api_url: '${ALERT_SLACK_WEBHOOK_URL}'
+        channel: '#servix-incidents'
+        send_resolved: true
+        title: '🔴 P1 [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Runbook:* https://grafana.servix.io/d/runbooks
+          {{ end }}
+    pagerduty_configs:
+      - routing_key: '${ALERT_PAGERDUTY_ROUTING_KEY}'
+        send_resolved: true
+        description: '{{ .CommonLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+        severity: 'critical'
+        client: 'SERVIX Alertmanager'
+        client_url: 'https://grafana.servix.io/alerting/list'
+    email_configs:
+      - to: '${ALERT_EMAIL_TO}'
+        send_resolved: true
+        headers:
+          Subject: '🔴 [P1] SERVIX: {{ .CommonLabels.alertname }}'

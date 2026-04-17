@@ -1,0 +1,93 @@
+{
+  "id": null,
+  "uid": "servix-business",
+  "title": "SERVIX — Business KPIs",
+  "tags": ["servix", "business", "kpi"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(servix_bookings_created_total, tenant_id)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "title": "Active tenants", "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "servix_active_tenants" }],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 2, "title": "Active subscriptions", "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(servix_active_subscriptions)" }],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 3, "title": "Daily revenue (SAR)", "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(servix_daily_revenue)" }],
+      "fieldConfig": { "defaults": { "unit": "currencySAR" } }
+    },
+    {
+      "id": 4, "title": "Payment success rate", "type": "gauge",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "servix_payment_success_rate" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.9 }, { "color": "green", "value": 0.97 }] } } }
+    },
+    {
+      "id": 5, "title": "Bookings per hour", "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (tenant_id) (rate(servix_bookings_created_total{tenant_id=~\"$tenant\"}[1h]) * 3600)",
+        "legendFormat": "{{tenant_id}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10 } } }
+    },
+    {
+      "id": 6, "title": "Revenue trend (24h)", "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (tenant_id) (servix_daily_revenue{tenant_id=~\"$tenant\"})",
+        "legendFormat": "{{tenant_id}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "currencySAR" } }
+    },
+    {
+      "id": 7, "title": "Bookings created (24h, by tenant)", "type": "table",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "topk(20, sum by (tenant_id) (increase(servix_bookings_created_total[24h])))",
+        "instant": true,
+        "format": "table"
+      }]
+    },
+    {
+      "id": 8, "title": "Payment failures by gateway", "type": "timeseries",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum by (gateway) (rate(servix_payments_total{status=\"failed\"}[5m]))",
+        "legendFormat": "{{gateway}}"
+      }]
+    }
+  ]
+}

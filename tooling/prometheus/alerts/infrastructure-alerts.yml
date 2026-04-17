@@ -1,0 +1,225 @@
+groups:
+  # ═════════════════════════════════════════════════════════
+  # Exporter / target liveness
+  # ═════════════════════════════════════════════════════════
+  - name: target-health
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "🔴 Scrape target DOWN: {{ $labels.job }} / {{ $labels.instance }}"
+          description: "Prometheus has been unable to scrape {{ $labels.instance }} for 5m."
+
+      - alert: APINodeUnreachable
+        expr: up{job="servix-api"} == 0
+        for: 2m
+        labels:
+          severity: P1
+        annotations:
+          summary: "🔴 API node unreachable: {{ $labels.instance }}"
+          description: "One of the API replicas is down. If both are down, the service is offline."
+
+  # ═════════════════════════════════════════════════════════
+  # Redis
+  # ═════════════════════════════════════════════════════════
+  - name: redis
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: P1
+          service: redis
+        annotations:
+          summary: "🔴 Redis is DOWN"
+          description: "Redis exporter reports redis_up=0 for 2m. Cache + queue + pub/sub are offline."
+
+      - alert: RedisHighMemory
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 10m
+        labels:
+          severity: P2
+          service: redis
+        annotations:
+          summary: "⚠️ Redis memory usage > 90%"
+          description: "Current: {{ $value | humanizePercentage }}. Consider scaling or reviewing key TTLs."
+
+      - alert: RedisHighEvictions
+        expr: rate(redis_evicted_keys_total[5m]) > 10
+        for: 10m
+        labels:
+          severity: P2
+          service: redis
+        annotations:
+          summary: "⚠️ Redis evicting keys at > 10/sec"
+          description: "Sustained evictions signal memory pressure — queue/cache data is being dropped."
+
+      - alert: RedisSlowCommands
+        expr: rate(redis_slowlog_length[5m]) > 5
+        for: 10m
+        labels:
+          severity: P3
+          service: redis
+        annotations:
+          summary: "Redis slowlog growing"
+
+  # ═════════════════════════════════════════════════════════
+  # Nginx
+  # ═════════════════════════════════════════════════════════
+  - name: nginx
+    rules:
+      - alert: NginxDown
+        expr: nginx_up == 0
+        for: 2m
+        labels:
+          severity: P1
+          service: nginx
+        annotations:
+          summary: "🔴 Nginx edge DOWN"
+          description: "If nginx is down, all external traffic is rejected."
+
+      - alert: NginxHighConnections
+        expr: nginx_connections_active > 500
+        for: 10m
+        labels:
+          severity: P2
+          service: nginx
+        annotations:
+          summary: "⚠️ Nginx active connections > 500"
+
+  # ═════════════════════════════════════════════════════════
+  # PostgreSQL
+  # ═════════════════════════════════════════════════════════
+  - name: postgres
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: P1
+          service: postgres
+        annotations:
+          summary: "🔴 PostgreSQL is DOWN"
+          description: "Database unreachable from exporter. All API requests will 5xx."
+
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag > 60
+        for: 5m
+        labels:
+          severity: P2
+          service: postgres
+        annotations:
+          summary: "⚠️ Postgres replication lag > 60s"
+          description: "Current lag: {{ $value }}s."
+
+      - alert: PostgresTooManyDeadlocks
+        expr: rate(pg_stat_database_deadlocks[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: P2
+          service: postgres
+        annotations:
+          summary: "⚠️ Deadlock rate elevated"
+
+  # ═════════════════════════════════════════════════════════
+  # Host / disk / memory
+  # ═════════════════════════════════════════════════════════
+  - name: host
+    rules:
+      - alert: HostLowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} /
+           node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 10m
+        labels:
+          severity: P2
+          service: node
+        annotations:
+          summary: "⚠️ Root filesystem < 15% free on {{ $labels.instance }}"
+          description: "Remaining: {{ $value | humanize }}%. Rotate logs / prune old backups."
+
+      - alert: HostDiskCritical
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} /
+           node_filesystem_size_bytes{mountpoint="/"}) * 100 < 5
+        for: 5m
+        labels:
+          severity: P1
+          service: node
+        annotations:
+          summary: "🔴 Root filesystem < 5% free on {{ $labels.instance }}"
+
+      - alert: HostHighMemory
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 10m
+        labels:
+          severity: P2
+          service: node
+        annotations:
+          summary: "⚠️ Host memory > 90% on {{ $labels.instance }}"
+
+      - alert: HostHighLoad
+        expr: node_load5 > on(instance) count(node_cpu_seconds_total{mode="idle"}) by (instance)
+        for: 15m
+        labels:
+          severity: P2
+          service: node
+        annotations:
+          summary: "⚠️ 5-min load avg exceeds CPU count on {{ $labels.instance }}"
+
+  # ═════════════════════════════════════════════════════════
+  # BullMQ / background jobs (SERVIX-specific metrics)
+  # ═════════════════════════════════════════════════════════
+  - name: bullmq
+    rules:
+      - alert: JobQueueBacklog
+        expr: bullmq_queue_waiting > 1000
+        for: 10m
+        labels:
+          severity: P2
+          service: api
+        annotations:
+          summary: "⚠️ Background queue backlog > 1000 jobs ({{ $labels.queue }})"
+
+      - alert: JobFailureRateHigh
+        expr: |
+          rate(bullmq_jobs_failed_total[5m]) /
+          clamp_min(rate(bullmq_jobs_completed_total[5m]) + rate(bullmq_jobs_failed_total[5m]), 1) > 0.1
+        for: 10m
+        labels:
+          severity: P2
+          service: api
+        annotations:
+          summary: "⚠️ Job failure rate > 10% on queue {{ $labels.queue }}"
+
+  # ═════════════════════════════════════════════════════════
+  # Business KPIs
+  # ═════════════════════════════════════════════════════════
+  - name: business
+    rules:
+      - alert: PaymentSuccessRateLow
+        expr: servix_payment_success_rate < 0.9
+        for: 15m
+        labels:
+          severity: P1
+          service: api
+        annotations:
+          summary: "🔴 Payment success rate < 90%"
+          description: "Gateway or Mada issue — check Moyasar/STC/Tap logs and Sentry."
+
+      - alert: NoBookingsLastHour
+        expr: |
+          sum(increase(servix_bookings_created_total[1h])) == 0
+          and ON() hour() >= 8 and ON() hour() <= 22
+        for: 30m
+        labels:
+          severity: P2
+          service: api
+        annotations:
+          summary: "⚠️ Zero bookings in the last hour during business hours"
+          description: "Possible booking flow regression — check /booking funnel in Grafana."

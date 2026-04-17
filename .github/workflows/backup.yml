@@ -1,29 +1,132 @@
-# SEC-4: Daily database backup at 3:00 AM UTC
-name: Database Backup
+name: Backup Verification
+
+# Why this lives in CI rather than just on the server:
+#   - The on-server cron (verify-backup.sh, Sundays 04:00) tests the
+#     local MinIO copy.
+#   - This job tests the OFF-SITE copy from outside the production
+#     network — proving that backups survive a total VM loss AND that
+#     someone with only the off-site bucket + encryption key can recover.
+#
+# Runs daily at 03:00 UTC after the off-site mirror completes (02:00 UTC).
+# A failure here is P1 — it means our disaster-recovery story is broken.
 
 on:
   schedule:
     - cron: '0 3 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  backup:
+  offsite-restore-test:
+    name: Restore latest off-site backup
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: verify
+          POSTGRES_PASSWORD: verify_pw
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup PostgreSQL client
+      - name: Install mc + gpg
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc \
+            -o /usr/local/bin/mc
+          chmod +x /usr/local/bin/mc
+          sudo apt-get update -qq && sudo apt-get install -y -qq gnupg postgresql-client
 
-      - name: Run backup script
+      - name: Configure off-site bucket access
         env:
-          PLATFORM_DATABASE_URL: ${{ secrets.PLATFORM_DATABASE_URL }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-          S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
-          S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+          OFFSITE_S3_ENDPOINT: ${{ secrets.OFFSITE_S3_ENDPOINT }}
+          OFFSITE_S3_ACCESS_KEY: ${{ secrets.OFFSITE_S3_ACCESS_KEY }}
+          OFFSITE_S3_SECRET_KEY: ${{ secrets.OFFSITE_S3_SECRET_KEY }}
         run: |
-          chmod +x tooling/scripts/backup.sh
-          ./tooling/scripts/backup.sh
+          mc alias set offsite \
+            "$OFFSITE_S3_ENDPOINT" "$OFFSITE_S3_ACCESS_KEY" "$OFFSITE_S3_SECRET_KEY" \
+            --api S3v4
+
+      - name: Locate most recent off-site backup folder
+        id: locate
+        env:
+          OFFSITE_S3_BUCKET: ${{ secrets.OFFSITE_S3_BUCKET }}
+        run: |
+          LATEST=$(mc ls "offsite/${OFFSITE_S3_BUCKET}/" \
+            | awk '{print $NF}' | tr -d '/' | sort | tail -1)
+          if [ -z "$LATEST" ]; then
+            echo "::error::No off-site backups found in $OFFSITE_S3_BUCKET"
+            exit 1
+          fi
+          echo "folder=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "Found latest: $LATEST"
+
+      - name: Backup age check (must be ≤ 49h old)
+        env:
+          FOLDER: ${{ steps.locate.outputs.folder }}
+        run: |
+          # Folder name is YYYYMMDD_HHMMSS in UTC.
+          DATE_PART=${FOLDER%%_*}
+          TIME_PART=${FOLDER#*_}
+          BACKUP_TS=$(date -u -d "${DATE_PART:0:4}-${DATE_PART:4:2}-${DATE_PART:6:2} ${TIME_PART:0:2}:${TIME_PART:2:2}:${TIME_PART:4:2}" +%s)
+          NOW=$(date -u +%s)
+          AGE_HOURS=$(( (NOW - BACKUP_TS) / 3600 ))
+          echo "Backup age: ${AGE_HOURS}h"
+          if [ "$AGE_HOURS" -gt 49 ]; then
+            echo "::error::Off-site backup is ${AGE_HOURS}h old — mirror is broken"
+            exit 1
+          fi
+
+      - name: Download backup
+        env:
+          OFFSITE_S3_BUCKET: ${{ secrets.OFFSITE_S3_BUCKET }}
+          FOLDER: ${{ steps.locate.outputs.folder }}
+        run: |
+          mkdir -p ./restore
+          mc cp --recursive "offsite/${OFFSITE_S3_BUCKET}/${FOLDER}/" ./restore/
+
+      - name: Decrypt + restore + sanity-check each dump
+        env:
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          PGPASSWORD: verify_pw
+        run: |
+          set -euo pipefail
+          DUMP_COUNT=$(ls -1 ./restore/*.sql.gz.gpg 2>/dev/null | wc -l)
+          [ "$DUMP_COUNT" -eq 0 ] && { echo "::error::no encrypted dumps in download"; exit 1; }
+
+          TOTAL_TABLES=0
+          for f in ./restore/*.sql.gz.gpg; do
+            DB=$(basename "$f" .sql.gz.gpg)
+            echo "── restoring $DB ──"
+            psql -h localhost -U verify -d postgres -c "CREATE DATABASE \"$DB\";" >/dev/null 2>&1 || true
+            gpg --batch --quiet --decrypt --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" "$f" \
+              | gunzip -c \
+              | psql -h localhost -U verify -d "$DB" --quiet
+            T=$(psql -h localhost -U verify -d "$DB" -t -A -c \
+              "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")
+            echo "  ✓ $DB — $T tables"
+            TOTAL_TABLES=$((TOTAL_TABLES + T))
+          done
+
+          echo ""
+          echo "════════════════════════════════════════"
+          echo "Restored ${DUMP_COUNT} dump(s), ${TOTAL_TABLES} tables total"
+          [ "$TOTAL_TABLES" -gt 0 ] || { echo "::error::Restore produced zero tables"; exit 1; }
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "🚨 Off-site backup verification FAILED — disaster recovery is broken. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
