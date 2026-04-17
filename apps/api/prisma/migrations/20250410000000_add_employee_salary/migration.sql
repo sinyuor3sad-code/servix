@@ -1,5 +1,4 @@
--- Add salary field to employees
-ALTER TABLE "employees" ADD COLUMN "salary" DECIMAL(10,2) NOT NULL DEFAULT 0;
+-- salary column already exists in baseline — this migration only adds the expense link.
 
 -- Add employee_id to expenses for linking salary expenses to employees
 ALTER TABLE "expenses" ADD COLUMN "employee_id" UUID;
