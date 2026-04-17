@@ -39,8 +39,11 @@ export default function DashboardLayout({
     setMobileMenuOpen(false);
   }, []);
 
+  // Dev-only escape hatch: render the dashboard shell when hitting localhost
+  // without a token so designers can preview without logging in. Gated on
+  // NODE_ENV so production builds (and CI E2E) always enforce auth.
   const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-  const skipAuth = isLocalhost && !accessToken;
+  const skipAuth = process.env.NODE_ENV !== 'production' && isLocalhost && !accessToken;
 
   // Redirect unauthenticated users to login
   useEffect(() => {

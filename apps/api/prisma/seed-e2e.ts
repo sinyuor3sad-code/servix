@@ -198,6 +198,15 @@ async function deployTenantMigrations(databaseName: string): Promise<void> {
 // ─── Salon data seed ────────────────────────────────────────────────────────
 
 async function seedSalonData(db: TenantPrismaClient): Promise<void> {
+  // Settings — mark onboarding complete so the dashboard guard doesn't
+  // redirect the seeded owner to /onboarding during E2E.
+  await db.setting.upsert({
+    where: { key: 'onboarding_completed' },
+    update: { value: 'true' },
+    create: { key: 'onboarding_completed', value: 'true' },
+  });
+  console.log('    ✓ onboarding_completed=true');
+
   // SalonInfo (single row)
   const salonInfoCount = await db.salonInfo.count();
   if (salonInfoCount === 0) {
