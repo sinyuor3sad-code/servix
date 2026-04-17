@@ -1,0 +1,99 @@
+version: 2
+
+updates:
+  # ── Application code (pnpm workspaces) ──
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Asia/Riyadh
+    open-pull-requests-limit: 10
+    labels: [dependencies, automated]
+    commit-message:
+      prefix: chore
+      include: scope
+    versioning-strategy: increase
+    # Group patches/minors so we don't drown in PRs.
+    groups:
+      production-minor:
+        applies-to: version-updates
+        update-types: [minor, patch]
+        exclude-patterns:
+          - 'next'
+          - 'react'
+          - 'react-dom'
+          - '@nestjs/*'
+          - 'prisma'
+          - '@prisma/*'
+      dev-minor:
+        applies-to: version-updates
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Major bumps for these need manual review (breaking changes).
+      - dependency-name: 'next'
+        update-types: [version-update:semver-major]
+      - dependency-name: 'react'
+        update-types: [version-update:semver-major]
+      - dependency-name: 'react-dom'
+        update-types: [version-update:semver-major]
+      - dependency-name: '@nestjs/*'
+        update-types: [version-update:semver-major]
+      - dependency-name: 'prisma'
+        update-types: [version-update:semver-major]
+      - dependency-name: '@prisma/*'
+        update-types: [version-update:semver-major]
+
+  # ── GitHub Actions ──
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [ci, dependencies, automated]
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns: ['*']
+
+  # ── Docker base images (one per app) ──
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: weekly
+    labels: [docker, dependencies, automated]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /apps/dashboard
+    schedule:
+      interval: weekly
+    labels: [docker, dependencies, automated]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /apps/booking
+    schedule:
+      interval: weekly
+    labels: [docker, dependencies, automated]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /apps/admin
+    schedule:
+      interval: weekly
+    labels: [docker, dependencies, automated]
+    commit-message:
+      prefix: chore
+      include: scope

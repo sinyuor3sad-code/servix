@@ -52,8 +52,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: npm audit (high + critical)
+        # Fail the build on high/critical vulnerabilities. Use `pnpm audit
+        # --fix` locally or pin the dep before merging.
         run: pnpm audit --audit-level=high
-        continue-on-error: true
 
       - name: Semgrep SAST scan
         uses: returntocorp/semgrep-action@v1
@@ -63,7 +64,9 @@ jobs:
             p/typescript
             p/nodejs
             p/owasp-top-ten
-        continue-on-error: true
+        env:
+          # Fail on findings of severity ERROR; warnings only post to summary.
+          SEMGREP_FAIL_OPEN: 'false'
 
   test:
     name: Unit Tests
@@ -101,11 +104,15 @@ jobs:
 
       - name: Consumer Contract Tests (Pact)
         run: pnpm --filter @servix/dashboard test:pact
-        continue-on-error: true
 
       - name: Provider Contract Verification (Pact)
         run: pnpm --filter @servix/api test:pact:verify
-        continue-on-error: true
+
+      - name: Chaos Engineering (graceful degradation)
+        # Pure unit tests with mocked Redis/providers — no services needed.
+        # Catches regressions where someone removes a try/catch and turns a
+        # downstream blip into a platform outage. See tooling/chaos/scenarios.md
+        run: pnpm --filter @servix/api test:chaos
 
       - name: Upload Coverage
         uses: actions/upload-artifact@v4
@@ -158,6 +165,9 @@ jobs:
           --health-cmd "redis-cli ping" --health-interval 5s
           --health-timeout 5s --health-retries 10
     env:
+      # API uses PLATFORM_DATABASE_URL (per platform.prisma datasource).
+      # DATABASE_URL kept as alias for any tooling that still reads it.
+      PLATFORM_DATABASE_URL: postgresql://servix:servix@localhost:5432/servix_platform
       DATABASE_URL: postgresql://servix:servix@localhost:5432/servix_platform
       REDIS_URL: redis://localhost:6379
       NODE_ENV: test
@@ -177,26 +187,39 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generate Prisma Clients
         run: pnpm --filter @servix/api db:generate
-      - name: Apply migrations + seed
-        run: |
-          pnpm --filter @servix/api prisma migrate deploy --schema=prisma/platform.prisma || true
-          pnpm --filter @servix/api prisma:seed || true
+      - name: Apply platform migrations
+        run: pnpm --filter @servix/api exec prisma migrate deploy --schema=prisma/platform.prisma
+      - name: Seed E2E fixtures (platform + tenant DB + salon data)
+        run: pnpm --filter @servix/api db:seed:e2e
       - name: Install Playwright browsers
         run: pnpm --filter @servix/dashboard e2e:install
+      - name: Build API + Dashboard
+        run: |
+          pnpm --filter @servix/api build
+          pnpm --filter @servix/dashboard build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
       - name: Start API (background)
-        run: pnpm --filter @servix/api start:dev &
+        run: pnpm --filter @servix/api start > /tmp/api.log 2>&1 &
         env:
           PORT: 4000
       - name: Start Dashboard (background)
-        run: pnpm --filter @servix/dashboard dev &
+        run: pnpm --filter @servix/dashboard start > /tmp/dashboard.log 2>&1 &
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
       - name: Wait for services
-        run: |
-          npx wait-on --timeout 120000 http://localhost:4000/api/v1/health/live http://localhost:3000
+        run: npx wait-on --timeout 120000 http://localhost:4000/api/v1/health/live http://localhost:3000
       - name: Run E2E tests
         run: pnpm --filter @servix/dashboard e2e
         env:
           CI: '1'
           PLAYWRIGHT_BASE_URL: http://localhost:3000
+          NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+      - name: Dump server logs on failure
+        if: failure()
+        run: |
+          echo "=== API LOG ==="; tail -200 /tmp/api.log || true
+          echo "=== DASHBOARD LOG ==="; tail -200 /tmp/dashboard.log || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -225,8 +248,9 @@ jobs:
       - name: Build Dashboard
         run: pnpm --filter @servix/dashboard build
       - name: Lighthouse CI
+        # Performance budget is enforced via apps/dashboard/lighthouserc.* —
+        # if a regression breaches the budget, fail the PR.
         run: cd apps/dashboard && npx lhci autorun
-        continue-on-error: true
       - name: Bundle Size Check
         run: |
           cd apps/dashboard
@@ -243,55 +267,6 @@ jobs:
           name: lighthouse-report
           path: apps/dashboard/lhci-results/
 
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: [build, security, e2e-tests, performance]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Staging Server
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            cd /root/servix
-            git pull origin main
-            docker compose -f tooling/docker/docker-compose.staging.yml up -d --build
-            sleep 15
-            curl -f http://localhost:4100/api/v1/health/live || exit 1
-            echo "✅ Staging deployed successfully"
-
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: [deploy-staging]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Production Server
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            cd /root/servix
-            bash tooling/docker/scripts/backup.sh
-            git pull origin main
-            docker compose -f tooling/docker/docker-compose.prod.yml up -d --build --no-deps api-1
-            sleep 15
-            curl -f http://localhost:4000/api/v1/health/live || exit 1
-            docker compose -f tooling/docker/docker-compose.prod.yml up -d --build --no-deps api-2
-            sleep 15
-            docker compose -f tooling/docker/docker-compose.prod.yml up -d --build
-            # Update changelog
-            npx conventional-changelog -p angular -i CHANGELOG.md -s
-            git add CHANGELOG.md
-            git diff --cached --quiet || git commit -m "docs: update changelog [skip ci]"
-            git push origin main || true
-            echo "✅ Production deployed successfully"
+  # Deployment lives in .github/workflows/deploy.yml (GHCR-image based,
+  # with Trivy scan + health verification + rollback). Keeping a single
+  # deploy path avoids racing two workflows on every push to main.

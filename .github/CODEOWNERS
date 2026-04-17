@@ -1,0 +1,30 @@
+# SERVIX code ownership
+# Routes review requests automatically. Owners are required reviewers
+# when branch protection enforces "Require review from Code Owners".
+
+# ── Default owner — catches anything not matched below ──
+*                                                   @sinyuor3sad-code
+
+# ── CI / deploy / infra ──
+/.github/                                           @sinyuor3sad-code
+/tooling/                                           @sinyuor3sad-code
+/tooling/terraform/                                 @sinyuor3sad-code
+/tooling/prometheus/                                @sinyuor3sad-code
+/tooling/alertmanager/                              @sinyuor3sad-code
+/tooling/grafana/                                   @sinyuor3sad-code
+/tooling/docker/                                    @sinyuor3sad-code
+
+# ── Database migrations + Prisma schemas ──
+# Schema changes are high-risk; require explicit owner review.
+/apps/api/prisma/                                   @sinyuor3sad-code
+
+# ── Security-sensitive surfaces ──
+/apps/api/src/modules/auth/                         @sinyuor3sad-code
+/apps/api/src/shared/security/                      @sinyuor3sad-code
+/apps/api/src/shared/encryption/                    @sinyuor3sad-code
+/apps/api/src/modules/data-rights/                  @sinyuor3sad-code
+
+# ── Payments — anything that touches money ──
+/apps/api/src/modules/payments/                     @sinyuor3sad-code
+/apps/api/src/modules/billing/                      @sinyuor3sad-code
+/apps/api/src/modules/invoices/                     @sinyuor3sad-code

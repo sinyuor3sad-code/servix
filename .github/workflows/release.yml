@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.4.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag-driven changelog + GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
+          # Strip leading "v" for changelog header.
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes from conventional commits
+        id: notes
+        run: |
+          npx --yes conventional-changelog-cli \
+            -p angular -i CHANGELOG.md -s -r 0
+          # Extract just the section for this release for the GH Release body.
+          awk '/^# /{i++}i==1' CHANGELOG.md > release-notes.md
+          {
+            echo "body<<EOF"
+            cat release-notes.md
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Commit updated CHANGELOG.md
+        run: |
+          if git diff --quiet CHANGELOG.md; then
+            echo "No changelog changes"; exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add CHANGELOG.md
+          git commit -m "docs(release): ${{ steps.tag.outputs.name }} changelog [skip ci]"
+          git push origin HEAD:main
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: ${{ steps.tag.outputs.name }}
+          body: ${{ steps.notes.outputs.body }}
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.name, '-') }}

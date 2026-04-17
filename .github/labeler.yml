@@ -1,0 +1,40 @@
+api:
+  - changed-files:
+      - any-glob-to-any-file: ['apps/api/**']
+
+dashboard:
+  - changed-files:
+      - any-glob-to-any-file: ['apps/dashboard/**']
+
+booking:
+  - changed-files:
+      - any-glob-to-any-file: ['apps/booking/**']
+
+admin:
+  - changed-files:
+      - any-glob-to-any-file: ['apps/admin/**']
+
+infra:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tooling/**'
+          - 'docker-compose*.yml'
+          - 'Dockerfile'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ['.github/workflows/**', '.github/dependabot.yml']
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file: ['**/*.md', 'docs/**']
+
+database:
+  - changed-files:
+      - any-glob-to-any-file: ['apps/api/prisma/**']
+
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'apps/api/src/shared/security/**'
+          - 'apps/api/src/modules/auth/**'

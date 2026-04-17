@@ -1,0 +1,45 @@
+name: ✨ Feature request
+description: Propose a new capability or enhancement
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user pain or business need does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - api
+        - dashboard
+        - booking
+        - admin
+        - infra
+        - database
+        - payments
+        - auth / security
+        - other
+
+  - type: textarea
+    id: success
+    attributes:
+      label: How will we know this is done?
+      description: Acceptance criteria / measurable outcome.

@@ -4,64 +4,68 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      skip_staging:
+        description: 'Skip staging gate (emergency hotfix only)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+  id-token: write
 
 jobs:
   # ═══════════════════════════════════════════
-  # Quality Gate — must pass before deploy
+  # Quality Gate — must pass before any image is pushed
   # ═══════════════════════════════════════════
   quality:
     name: Quality Gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 10
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Generate Prisma clients
-        run: |
-          cd apps/api
-          npx prisma generate --schema=./prisma/platform.prisma
-          npx prisma generate --schema=./prisma/tenant.prisma
-
+        run: pnpm --filter @servix/api db:generate
       - name: Type check (API)
         run: pnpm --filter @servix/api type-check
-
-      - name: Lint (API)
-        run: pnpm --filter @servix/api lint 2>/dev/null || echo "⚠️ Lint warnings found"
-
-      - name: Security audit
-        run: pnpm audit --prod --audit-level=critical 2>/dev/null || echo "⚠️ Audit warnings (non-critical)"
-
-      - name: Run tests (API)
+      - name: Lint
+        run: pnpm lint
+      - name: Test (API)
         run: pnpm --filter @servix/api test -- --passWithNoTests --forceExit
         env:
           NODE_ENV: test
+      - name: Audit (high+critical)
+        run: pnpm audit --prod --audit-level=high
 
   # ═══════════════════════════════════════════
-  # Build & Deploy — only after quality passes
+  # Build → Scan → Push (per app, in parallel)
   # ═══════════════════════════════════════════
-  deploy:
-    name: Deploy to Production
+  build:
+    name: Build & Scan ${{ matrix.app }}
     needs: quality
     runs-on: ubuntu-latest
-    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [api, dashboard, booking, admin]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
+      - uses: docker/setup-buildx-action@v3
       - name: Login to Container Registry
         uses: docker/login-action@v3
         with:
@@ -69,47 +73,131 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Build and Push API
+      - name: Image metadata
+        id: meta
+        run: |
+          echo "tag=${{ secrets.REGISTRY_URL }}/servix-${{ matrix.app }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "latest=${{ secrets.REGISTRY_URL }}/servix-${{ matrix.app }}:latest" >> "$GITHUB_OUTPUT"
+
+      # Build to local docker so we can scan before pushing.
+      - name: Build (load locally for scan)
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/api/Dockerfile
-          push: true
-          tags: ${{ secrets.REGISTRY_URL }}/servix-api:${{ github.sha }},${{ secrets.REGISTRY_URL }}/servix-api:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          file: apps/${{ matrix.app }}/Dockerfile
+          load: true
+          tags: ${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max
 
-      - name: Build and Push Dashboard
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.tag }}
+          format: sarif
+          output: trivy-${{ matrix.app }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.app }}.sarif
+          category: trivy-${{ matrix.app }}
+
+      - name: Generate SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.tag }}
+          format: cyclonedx
+          output: sbom-${{ matrix.app }}.cdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.app }}-${{ github.sha }}
+          path: sbom-${{ matrix.app }}.cdx.json
+          retention-days: 90
+
+      # Only push if the Trivy gate passed.
+      - name: Push image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/dashboard/Dockerfile
+          file: apps/${{ matrix.app }}/Dockerfile
           push: true
-          tags: ${{ secrets.REGISTRY_URL }}/servix-dashboard:${{ github.sha }},${{ secrets.REGISTRY_URL }}/servix-dashboard:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: |
+            ${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.latest }}
+          cache-from: type=gha,scope=${{ matrix.app }}
 
-      - name: Build and Push Booking
-        uses: docker/build-push-action@v6
+  # ═══════════════════════════════════════════
+  # Staging — smoke test before production
+  # ═══════════════════════════════════════════
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    if: ${{ !inputs.skip_staging }}
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Pull + restart staging stack
+        uses: appleboy/ssh-action@v1
         with:
-          context: .
-          file: apps/booking/Dockerfile
-          push: true
-          tags: ${{ secrets.REGISTRY_URL }}/servix-booking:${{ github.sha }},${{ secrets.REGISTRY_URL }}/servix-booking:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /root/servix/tooling/docker
+            export IMAGE_TAG=${{ github.sha }}
+            docker compose -f docker-compose.staging.yml pull
+            docker compose -f docker-compose.staging.yml up -d --remove-orphans
 
-      - name: Build and Push Admin
-        uses: docker/build-push-action@v6
+      - name: Smoke test staging
+        uses: appleboy/ssh-action@v1
         with:
-          context: .
-          file: apps/admin/Dockerfile
-          push: true
-          tags: ${{ secrets.REGISTRY_URL }}/servix-admin:${{ github.sha }},${{ secrets.REGISTRY_URL }}/servix-admin:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            sleep 30
+            for i in 1 2 3 4 5; do
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4100/api/v1/health/ready || echo 000)
+              [ "$CODE" = "200" ] && { echo "✅ staging healthy"; exit 0; }
+              echo "Staging not ready (HTTP $CODE), retry $i/5"; sleep 10
+            done
+            echo "❌ staging failed health check"; exit 1
 
-      - name: Deploy to Server
+  # ═══════════════════════════════════════════
+  # Production — gated by staging
+  # ═══════════════════════════════════════════
+  deploy-production:
+    name: Deploy to Production
+    needs: [build, deploy-staging]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.deploy-staging.result == 'success' || inputs.skip_staging)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pre-deploy DB backup
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /root/servix
+            bash tooling/scripts/backup.sh || { echo "❌ Backup failed — aborting deploy"; exit 1; }
+
+      - name: Capture currently-running image tags (for rollback)
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -117,52 +205,87 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd /root/servix/tooling/docker
-            # Save current image tags for rollback
-            docker compose -f docker-compose.prod.yml config --images > /tmp/servix-prev-images.txt 2>/dev/null || true
-            # Pull new images and restart
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
-            docker system prune -f
+            docker compose -f docker-compose.prod.yml config --images > /tmp/servix-prev-images.txt
+            cat /tmp/servix-prev-images.txt
 
-      - name: Verify Deployment Health
+      - name: Rolling deploy
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            echo "⏳ Waiting 45s for services to start..."
-            sleep 45
+            set -euo pipefail
+            cd /root/servix/tooling/docker
+            export IMAGE_TAG=${{ github.sha }}
+            docker compose -f docker-compose.prod.yml pull
 
+            # Roll API replicas one at a time
+            for replica in api-1 api-2; do
+              echo "🔄 Restarting $replica"
+              docker compose -f docker-compose.prod.yml up -d --no-deps "$replica"
+              sleep 20
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/api/v1/health/live || echo 000)
+              [ "$CODE" = "200" ] || { echo "❌ $replica failed health check (HTTP $CODE)"; exit 1; }
+              echo "✅ $replica healthy"
+            done
+
+            # Front-ends + workers
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker system prune -f --filter "until=168h"
+
+      - name: Verify full stack
+        id: verify
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            sleep 30
             FAILED=0
+            check() {
+              local name=$1 url=$2
+              local code=$(curl -s -o /dev/null -w "%{http_code}" "$url" || echo 000)
+              if [ "$code" = "200" ]; then echo "✅ $name OK ($code)"
+              else echo "❌ $name FAIL ($code)"; FAILED=1; fi
+            }
+            check api-1 http://localhost:4000/api/v1/health/ready
+            check dashboard http://localhost:3000/
+            check booking http://localhost:3001/
+            check admin http://localhost:3002/
+            exit $FAILED
 
-            # Check API-1
-            API1_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/api/v1/health/live 2>/dev/null || echo "000")
-            if [ "$API1_CODE" = "200" ]; then
-              echo "✅ API-1 health check passed (HTTP $API1_CODE)"
-            else
-              echo "❌ API-1 health check FAILED (HTTP $API1_CODE)"
-              FAILED=1
-            fi
+      - name: Rollback on failure
+        if: failure() && steps.verify.outcome == 'failure'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "🚨 Rolling back to previous images"
+            cd /root/servix/tooling/docker
+            while read -r img; do docker pull "$img" || true; done < /tmp/servix-prev-images.txt
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            sleep 20
+            curl -fsS http://localhost:4000/api/v1/health/live && echo "✅ rollback healthy"
 
-            # Check Dashboard
-            DASH_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ 2>/dev/null || echo "000")
-            echo "📊 Dashboard: HTTP $DASH_CODE"
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            { "text": "🚨 Production deploy of `${{ github.sha }}` FAILED — rollback executed. <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>" }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
 
-            # Check Booking
-            BOOK_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/ 2>/dev/null || echo "000")
-            echo "📅 Booking: HTTP $BOOK_CODE"
-
-            # Check Admin
-            ADMIN_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/ 2>/dev/null || echo "000")
-            echo "🔧 Admin: HTTP $ADMIN_CODE"
-
-            if [ "$FAILED" = "1" ]; then
-              echo "❌ Health checks failed — Rolling back..."
-              cd /root/servix/tooling/docker
-              docker compose -f docker-compose.prod.yml down
-              docker compose -f docker-compose.prod.yml up -d
-              exit 1
-            fi
-
-            echo "🎉 Deployment verified successfully!"
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            { "text": "✅ Production deploy of `${{ github.sha }}` succeeded." }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
