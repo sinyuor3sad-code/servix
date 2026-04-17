@@ -42,7 +42,9 @@ jobs:
       - name: Lint
         run: pnpm lint
       - name: Test (API)
-        run: pnpm --filter @servix/api test -- --passWithNoTests --forceExit
+        # pnpm's `--` forwarding lands after jest's own `--` delimiter, which
+        # treats our flags as test-name patterns. Run jest directly instead.
+        run: cd apps/api && npx jest --passWithNoTests --forceExit
         env:
           NODE_ENV: test
       - name: Audit (high+critical)
