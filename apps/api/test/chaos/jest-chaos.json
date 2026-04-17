@@ -1,0 +1,19 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "../..",
+  "testEnvironment": "node",
+  "testRegex": "test/chaos/.*\\.chaos-spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": ["ts-jest", {
+      "tsconfig": "test/tsconfig.json",
+      "isolatedModules": true,
+      "diagnostics": false
+    }]
+  },
+  "moduleNameMapper": {
+    "^@core/(.*)$": "<rootDir>/src/core/$1",
+    "^@modules/(.*)$": "<rootDir>/src/modules/$1",
+    "^@shared/(.*)$": "<rootDir>/src/shared/$1"
+  },
+  "testTimeout": 15000
+}

@@ -1,7 +1,9 @@
 import { PactV4, MatchersV3 } from '@pact-foundation/pact';
 import path from 'path';
 
-const { like, eachLike, uuid, iso8601DateTimeWithMillis } = MatchersV3;
+const { like, eachLike, uuid, datetime } = MatchersV3;
+const ISO_DT = "yyyy-MM-dd'T'HH:mm:ss.SSSX";
+const iso8601DateTimeWithMillis = () => datetime(ISO_DT, '2026-01-01T00:00:00.000Z');
 
 const provider = new PactV4({
   consumer: 'ServixDashboard',

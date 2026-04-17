@@ -1,15 +1,92 @@
-name: Weekly Load Test
+name: Load Test
+
+# Two modes:
+#   1. Weekly schedule — full ramp-up (0→1000 VUs) against STAGING_URL.
+#      Runs Sunday 03:00 UTC as a regression safety net.
+#   2. PR label `perf-test` — smoke run (0→100 VUs) against a freshly-booted
+#      CI stack. Fast feedback (~5min) before merge.
 on:
   schedule:
     - cron: '0 3 * * 0'
   workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize]
 
 jobs:
-  load-test:
-    name: K6 Load Test
+  # ─────────────── Weekly full ramp (staging) ───────────────
+  weekly:
+    name: Weekly Load Test (staging)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D68
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update && sudo apt-get install -y k6
+      - name: Run Weekly Load Test
+        run: k6 run tooling/k6/weekly-load-test.js --out json=results.json
+        env:
+          BASE_URL: ${{ secrets.STAGING_URL || 'http://localhost:4000' }}
+          TEST_EMAIL: ${{ secrets.LOAD_TEST_EMAIL }}
+          TEST_PASSWORD: ${{ secrets.LOAD_TEST_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-weekly-${{ github.run_number }}
+          path: |
+            results.json
+            results/weekly-results.json
+
+  # ─────────────── PR smoke test (label-gated) ───────────────
+  pr-smoke:
+    name: PR Smoke Load Test
+    # Only run when someone applies `perf-test` label OR pushes to a PR that
+    # already carries it. Other PRs skip this job entirely — no cost.
+    if: |
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'perf-test')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: servix
+          POSTGRES_PASSWORD: servix
+          POSTGRES_DB: servix_platform
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      PLATFORM_DATABASE_URL: postgresql://servix:servix@localhost:5432/servix_platform
+      DATABASE_URL: postgresql://servix:servix@localhost:5432/servix_platform
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-32-chars-minimum-ok
+      ENCRYPTION_KEY: ci-test-encryption-key-32-chars-x
+      TEST_EMAIL: servix@dev.local
+      TEST_PASSWORD: adsf1324
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
 
       - name: Install k6
         run: |
@@ -18,13 +95,36 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
           sudo apt-get update && sudo apt-get install -y k6
 
-      - name: Run Weekly Load Test
-        run: k6 run tooling/k6/weekly-load-test.js --out json=results.json -e BASE_URL=${{ secrets.STAGING_URL || 'http://localhost:4000' }}
-        timeout-minutes: 30
+      - name: Generate Prisma + migrate + seed
+        run: |
+          pnpm --filter @servix/api db:generate
+          pnpm --filter @servix/api exec prisma migrate deploy --schema=prisma/platform.prisma
+          pnpm --filter @servix/api db:seed:e2e
 
-      - name: Upload Results
-        uses: actions/upload-artifact@v4
+      - name: Build API
+        run: pnpm --filter @servix/api build
+
+      - name: Start API (background)
+        run: pnpm --filter @servix/api start > /tmp/api.log 2>&1 &
+        env:
+          PORT: 4000
+
+      - name: Wait for API
+        run: npx wait-on --timeout 120000 http://localhost:4000/api/v1/health/live
+
+      - name: Run PR smoke load test
+        run: k6 run tooling/k6/pr-smoke-test.js --out json=pr-smoke.json
+        env:
+          BASE_URL: http://localhost:4000
+
+      - name: Dump API log on failure
+        if: failure()
+        run: tail -300 /tmp/api.log || true
+
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: k6-results-${{ github.run_number }}
-          path: results.json
+          name: k6-pr-smoke-${{ github.run_number }}
+          path: |
+            pr-smoke.json
+            results/pr-smoke.json
