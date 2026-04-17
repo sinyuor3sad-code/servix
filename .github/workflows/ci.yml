@@ -179,8 +179,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generate Prisma Clients
         run: pnpm --filter @servix/api db:generate
-      - name: Apply platform migrations
-        run: pnpm --filter @servix/api db:migrate:deploy
+      - name: Setup platform database
+        run: cd apps/api && npx prisma db push --schema=prisma/platform.prisma --accept-data-loss
       - name: Seed E2E fixtures (platform + tenant DB + salon data)
         run: pnpm --filter @servix/api db:seed:e2e
       - name: Install Playwright browsers
