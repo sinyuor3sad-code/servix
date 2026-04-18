@@ -1,8 +1,21 @@
 import { WhatsAppService, WhatsAppCredentials } from './whatsapp.service';
+import { CircuitBreakerService } from '../resilience/circuit-breaker.service';
 
 // Mock global fetch
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
+
+// Pass-through breaker mock: behaviour under test is the HTTP layer, not
+// the breaker state machine (which is covered in circuit-breaker.service.spec).
+function makeBreakerMock() {
+  return {
+    createBreaker: jest.fn((_name: string, fn: (...args: any[]) => Promise<any>) => ({
+      fire: (...args: any[]) => fn(...args),
+      fallback: jest.fn(),
+      on: jest.fn(),
+    })),
+  } as unknown as CircuitBreakerService;
+}
 
 describe('WhatsAppService', () => {
   let service: WhatsAppService;
@@ -13,7 +26,8 @@ describe('WhatsAppService', () => {
   };
 
   beforeEach(() => {
-    service = new WhatsAppService();
+    service = new WhatsAppService(makeBreakerMock());
+    service.onModuleInit();
     jest.clearAllMocks();
   });
 

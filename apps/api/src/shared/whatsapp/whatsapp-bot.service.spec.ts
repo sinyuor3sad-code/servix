@@ -5,6 +5,7 @@ import { TenantResolverService } from './tenant-resolver.service';
 import { GeminiService } from '../ai/gemini.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { FeaturesService } from '../../core/features/features.service';
+import { CircuitBreakerService } from '../resilience/circuit-breaker.service';
 
 describe('WhatsAppBotService', () => {
   let service: WhatsAppBotService;
@@ -46,6 +47,14 @@ describe('WhatsAppBotService', () => {
       isFeatureEnabled: jest.fn().mockResolvedValue({ isEnabled: true }),
     };
 
+    const mockCircuitBreaker: Partial<CircuitBreakerService> = {
+      createBreaker: jest.fn((_name: string, fn: any) => ({
+        fire: (...args: any[]) => fn(...args),
+        fallback: jest.fn(),
+        on: jest.fn(),
+      })) as any,
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WhatsAppBotService,
@@ -54,9 +63,11 @@ describe('WhatsAppBotService', () => {
         { provide: GeminiService, useValue: mockGemini },
         { provide: CalendarService, useValue: mockCalendar },
         { provide: FeaturesService, useValue: mockFeatures },
+        { provide: CircuitBreakerService, useValue: mockCircuitBreaker },
       ],
     }).compile();
 
+    await module.init();
     service = module.get<WhatsAppBotService>(WhatsAppBotService);
   });
 

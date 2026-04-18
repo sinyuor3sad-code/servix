@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type CircuitBreaker from 'opossum';
+import { CircuitBreakerService } from '../resilience/circuit-breaker.service';
 
 interface PushPayload {
   title: string;
@@ -14,12 +16,40 @@ interface PushPayload {
  * Supports both individual device and topic-based messaging.
  */
 @Injectable()
-export class PushNotificationService {
+export class PushNotificationService implements OnModuleInit {
   private readonly logger = new Logger(PushNotificationService.name);
   private admin: any = null;
+  private fcmDeviceBreaker!: CircuitBreaker<[any], string | null>;
+  private fcmTopicBreaker!: CircuitBreaker<[any], string | null>;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly circuitBreaker: CircuitBreakerService,
+  ) {
     this.initFirebase();
+  }
+
+  onModuleInit() {
+    // FCM has its own retry/rate-limit handling; breaker only protects against
+    // outright outage. 10s is generous for a single FCM send.
+    this.fcmDeviceBreaker = this.circuitBreaker.createBreaker(
+      'push-fcm-device',
+      (message: any) => this.sendMessageRaw(message),
+      { timeout: 10_000, errorThresholdPercentage: 50, resetTimeout: 30_000, volumeThreshold: 5 },
+    );
+    this.fcmDeviceBreaker.fallback(() => null);
+
+    this.fcmTopicBreaker = this.circuitBreaker.createBreaker(
+      'push-fcm-topic',
+      (message: any) => this.sendMessageRaw(message),
+      { timeout: 10_000, errorThresholdPercentage: 50, resetTimeout: 30_000, volumeThreshold: 5 },
+    );
+    this.fcmTopicBreaker.fallback(() => null);
+  }
+
+  private async sendMessageRaw(message: any): Promise<string | null> {
+    if (!this.admin) return null;
+    return this.admin.messaging().send(message);
   }
 
   private initFirebase(): void {
@@ -52,7 +82,7 @@ export class PushNotificationService {
   }
 
   /**
-   * Send push notification to a specific device
+   * Send push notification to a specific device (through circuit breaker)
    */
   async sendToDevice(fcmToken: string, payload: PushPayload): Promise<string | null> {
     if (!this.admin) {
@@ -60,60 +90,57 @@ export class PushNotificationService {
       return null;
     }
 
-    try {
-      const messageId = await this.admin.messaging().send({
-        token: fcmToken,
+    const message = {
+      token: fcmToken,
+      notification: { title: payload.title, body: payload.body },
+      data: payload.data || {},
+      android: {
+        priority: 'high' as const,
         notification: {
-          title: payload.title,
-          body: payload.body,
+          channelId: 'servix-default',
+          sound: 'default',
+          clickAction: 'OPEN_ACTIVITY',
         },
-        data: payload.data || {},
-        android: {
-          priority: 'high' as const,
-          notification: {
-            channelId: 'servix-default',
+      },
+      apns: {
+        payload: {
+          aps: {
             sound: 'default',
-            clickAction: 'OPEN_ACTIVITY',
+            badge: payload.badgeCount ?? 1,
+            'content-available': 1,
           },
         },
-        apns: {
-          payload: {
-            aps: {
-              sound: 'default',
-              badge: payload.badgeCount ?? 1,
-              'content-available': 1,
-            },
-          },
-        },
-      });
+      },
+    };
 
-      this.logger.debug(`Push sent to device: ${messageId}`);
-      return messageId;
-    } catch (error) {
+    const messageId = await this.fcmDeviceBreaker.fire(message).catch((error) => {
       this.logger.error(`Push to device failed: ${error}`);
       return null;
-    }
+    });
+
+    if (messageId) this.logger.debug(`Push sent to device: ${messageId}`);
+    return messageId;
   }
 
   /**
-   * Send push notification to a topic (e.g., tenant-specific)
+   * Send push notification to a topic (through circuit breaker)
    */
   async sendToTopic(topic: string, payload: PushPayload): Promise<string | null> {
     if (!this.admin) return null;
 
-    try {
-      const messageId = await this.admin.messaging().send({
-        topic,
-        notification: { title: payload.title, body: payload.body },
-        data: payload.data || {},
-      });
+    const message = {
+      topic,
+      notification: { title: payload.title, body: payload.body },
+      data: payload.data || {},
+    };
 
-      this.logger.debug(`Push sent to topic ${topic}: ${messageId}`);
-      return messageId;
-    } catch (error) {
+    const messageId = await this.fcmTopicBreaker.fire(message).catch((error) => {
       this.logger.error(`Push to topic ${topic} failed: ${error}`);
       return null;
-    }
+    });
+
+    if (messageId) this.logger.debug(`Push sent to topic ${topic}: ${messageId}`);
+    return messageId;
   }
 
   /**

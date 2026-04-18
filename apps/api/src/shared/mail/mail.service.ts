@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type CircuitBreaker from 'opossum';
 import * as nodemailer from 'nodemailer';
 import { PlatformSettingsService } from '../database/platform-settings.service';
+import { CircuitBreakerService } from '../resilience/circuit-breaker.service';
 
 export interface EmailAttachment {
   filename: string;
@@ -17,14 +19,33 @@ export interface SendEmailOptions {
   attachments?: EmailAttachment[];
 }
 
+interface SmtpConfig {
+  host: string;
+  port: number;
+  from: string;
+  username: string;
+  password: string;
+}
+
 @Injectable()
-export class MailService {
+export class MailService implements OnModuleInit {
   private logger = new Logger(MailService.name);
+  private smtpBreaker!: CircuitBreaker<[SmtpConfig, SendEmailOptions], void>;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly circuitBreaker: CircuitBreakerService,
   ) {}
+
+  onModuleInit() {
+    // Email can be slow (especially with attachments), hence 30s timeout.
+    this.smtpBreaker = this.circuitBreaker.createBreaker(
+      'email-smtp',
+      (cfg: SmtpConfig, opts: SendEmailOptions) => this.sendViaSmtpRaw(cfg, opts),
+      { timeout: 30_000, errorThresholdPercentage: 50, resetTimeout: 30_000, volumeThreshold: 5 },
+    );
+  }
 
   /**
    * Send email using SMTP settings from platform_settings table.
@@ -50,33 +71,36 @@ export class MailService {
     }
 
     try {
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        auth: {
-          user: smtpUsername,
-          pass: smtpPassword,
-        },
-      });
-
-      await transporter.sendMail({
-        from: smtpFrom || smtpUsername,
-        to: options.to,
-        subject: options.subject,
-        text: options.body,
-        html: options.html || options.body,
-        attachments: options.attachments?.map((a) => ({
-          filename: a.filename,
-          content: a.content,
-          contentType: a.contentType,
-        })),
-      });
-
+      await this.smtpBreaker.fire(
+        { host: smtpHost, port: smtpPort, from: smtpFrom, username: smtpUsername, password: smtpPassword },
+        options,
+      );
       this.logger.log(`Email sent to: ${options.to}, subject: ${options.subject}`);
     } catch (err) {
       this.logger.error(`Failed to send email to ${options.to}: ${(err as Error).message}`);
       throw err;
     }
+  }
+
+  private async sendViaSmtpRaw(cfg: SmtpConfig, options: SendEmailOptions): Promise<void> {
+    const transporter = nodemailer.createTransport({
+      host: cfg.host,
+      port: cfg.port,
+      secure: cfg.port === 465,
+      auth: { user: cfg.username, pass: cfg.password },
+    });
+
+    await transporter.sendMail({
+      from: cfg.from || cfg.username,
+      to: options.to,
+      subject: options.subject,
+      text: options.body,
+      html: options.html || options.body,
+      attachments: options.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        contentType: a.contentType,
+      })),
+    });
   }
 }

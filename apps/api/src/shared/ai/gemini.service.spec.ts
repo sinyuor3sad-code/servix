@@ -1,6 +1,7 @@
 import { GeminiService } from './gemini.service';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
+import { CircuitBreakerService } from '../resilience/circuit-breaker.service';
 
 // ─── Mocks ───
 
@@ -16,6 +17,21 @@ const mockConfigService = {
   }),
 };
 
+// Pass-through breaker mock — the production breaker wraps the function and
+// invokes it; the tests exercise the wrapped logic, not the breaker state
+// machine (which has its own tests in circuit-breaker.service.spec.ts).
+function makeBreakerMock() {
+  const createBreaker = jest.fn((_name: string, fn: (...args: any[]) => Promise<any>) => {
+    const breaker = {
+      fire: (...args: any[]) => fn(...args),
+      fallback: jest.fn(),
+      on: jest.fn(),
+    };
+    return breaker;
+  });
+  return { createBreaker } as unknown as CircuitBreakerService;
+}
+
 // Mock global fetch
 const originalFetch = global.fetch;
 
@@ -26,7 +42,9 @@ describe('GeminiService', () => {
     service = new GeminiService(
       mockConfigService as unknown as ConfigService,
       mockCacheService as unknown as CacheService,
+      makeBreakerMock(),
     );
+    service.onModuleInit();
     jest.clearAllMocks();
   });
 

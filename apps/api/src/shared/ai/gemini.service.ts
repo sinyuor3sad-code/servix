@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type CircuitBreaker from 'opossum';
 import { CacheService } from '../cache/cache.service';
+import { CircuitBreakerService } from '../resilience/circuit-breaker.service';
 
 // ─────────────────── Types ───────────────────
 
@@ -46,7 +48,7 @@ const RETRY_DELAY_MS = 3000;
  * - Real names are restored in the final response
  */
 @Injectable()
-export class GeminiService {
+export class GeminiService implements OnModuleInit {
   private readonly logger = new Logger(GeminiService.name);
 
   // Cloudflare Workers AI (primary)
@@ -59,9 +61,18 @@ export class GeminiService {
 
   private readonly provider: 'cloudflare' | 'gemini' | 'none';
 
+  // Circuit breakers — one per upstream endpoint. AI generation is slow
+  // (especially Gemini thinking mode), so timeouts are generous. The breaker
+  // opens if 50% of a 5-request window fails, and half-opens 30s later.
+  private cfTextBreaker!: CircuitBreaker<[Array<{ role: string; content: string }>, number], string | null>;
+  private cfWhisperBreaker!: CircuitBreaker<[Buffer], string>;
+  private geminiTextBreaker!: CircuitBreaker<[any[], number, number, boolean], string | null>;
+  private geminiMultimodalBreaker!: CircuitBreaker<[string, string], string>;
+
   constructor(
     private readonly config: ConfigService,
     private readonly cache: CacheService,
+    private readonly circuitBreaker: CircuitBreakerService,
   ) {
     // Cloudflare Workers AI config
     this.cfAccountId = this.config.get<string>('CLOUDFLARE_ACCOUNT_ID', '');
@@ -93,14 +104,62 @@ export class GeminiService {
     }
   }
 
+  onModuleInit() {
+    // Generous timeouts: AI generation (especially thinking mode) can take
+    // 10–25s legitimately; we only want the breaker firing on real outages,
+    // not slow-but-working responses.
+    this.cfTextBreaker = this.circuitBreaker.createBreaker(
+      'ai-cloudflare-text',
+      (messages: Array<{ role: string; content: string }>, maxTokens: number) =>
+        this.callCloudflareRaw(messages, maxTokens),
+      { timeout: 30_000, errorThresholdPercentage: 50, resetTimeout: 30_000, volumeThreshold: 5 },
+    );
+    this.cfTextBreaker.fallback(() => null);
+
+    this.cfWhisperBreaker = this.circuitBreaker.createBreaker(
+      'ai-cloudflare-whisper',
+      (audio: Buffer) => this.callCloudflareWhisperRaw(audio),
+      { timeout: 30_000, errorThresholdPercentage: 50, resetTimeout: 30_000, volumeThreshold: 5 },
+    );
+    this.cfWhisperBreaker.fallback(() => '');
+
+    this.geminiTextBreaker = this.circuitBreaker.createBreaker(
+      'ai-gemini-text',
+      (contents: any[], maxTokens: number, temperature: number, enableThinking: boolean) =>
+        this.callGeminiRaw(contents, maxTokens, temperature, enableThinking),
+      { timeout: 45_000, errorThresholdPercentage: 50, resetTimeout: 30_000, volumeThreshold: 5 },
+    );
+    this.geminiTextBreaker.fallback(() => null);
+
+    // Shared breaker for Gemini multimodal (audio/image) — same upstream,
+    // same failure mode. Returns '' as fallback since callers expect string.
+    this.geminiMultimodalBreaker = this.circuitBreaker.createBreaker(
+      'ai-gemini-multimodal',
+      (url: string, bodyJson: string) => this.callGeminiMultimodalRaw(url, bodyJson),
+      { timeout: 30_000, errorThresholdPercentage: 50, resetTimeout: 30_000, volumeThreshold: 5 },
+    );
+    this.geminiMultimodalBreaker.fallback(() => '');
+  }
+
   // ═══════════════════════════════════════════
   // Core: Cloudflare Workers AI API
   // ═══════════════════════════════════════════
 
   /**
-   * Call Cloudflare Workers AI text model.
+   * Call Cloudflare Workers AI text model (through circuit breaker).
    */
   private async callCloudflare(
+    messages: Array<{ role: string; content: string }>,
+    maxTokens = 500,
+  ): Promise<string | null> {
+    return this.cfTextBreaker.fire(messages, maxTokens).catch(() => null);
+  }
+
+  /**
+   * Raw Cloudflare text call — invoked by the breaker. Does not catch its own
+   * errors; the breaker tracks failures and the wrapper above translates them.
+   */
+  private async callCloudflareRaw(
     messages: Array<{ role: string; content: string }>,
     maxTokens = 500,
   ): Promise<string | null> {
@@ -147,9 +206,16 @@ export class GeminiService {
   }
 
   /**
-   * Call Cloudflare Whisper model for audio transcription.
+   * Call Cloudflare Whisper model (through circuit breaker).
    */
   private async callCloudflareWhisper(audioBuffer: Buffer): Promise<string> {
+    return this.cfWhisperBreaker.fire(audioBuffer).catch(() => '');
+  }
+
+  /**
+   * Raw Whisper call — invoked by the breaker.
+   */
+  private async callCloudflareWhisperRaw(audioBuffer: Buffer): Promise<string> {
     const url = `${CLOUDFLARE_AI_BASE}/${this.cfAccountId}/ai/run/${CF_WHISPER_MODEL}`;
 
     try {
@@ -184,9 +250,25 @@ export class GeminiService {
   // ═══════════════════════════════════════════
 
   /**
-   * Call Google Gemini API with retry.
+   * Call Google Gemini API (through circuit breaker).
    */
   private async callGemini(
+    contents: any[],
+    maxTokens = 500,
+    temperature = 0.7,
+    enableThinking = false,
+  ): Promise<string | null> {
+    return this.geminiTextBreaker
+      .fire(contents, maxTokens, temperature, enableThinking)
+      .catch(() => null);
+  }
+
+  /**
+   * Raw Gemini text call — invoked by the breaker. Internal retry logic
+   * (429/backoff + fallback models) stays here; only unrecoverable errors
+   * bubble up for the breaker to count.
+   */
+  private async callGeminiRaw(
     contents: any[],
     maxTokens = 500,
     temperature = 0.7,
@@ -260,6 +342,25 @@ export class GeminiService {
     }
 
     return null;
+  }
+
+  /**
+   * Raw Gemini multimodal call (audio/image) — invoked by the breaker.
+   * Body is pre-serialized JSON so the breaker signature stays primitive.
+   */
+  private async callGeminiMultimodalRaw(url: string, bodyJson: string): Promise<string> {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: bodyJson,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini multimodal error: ${response.status}`);
+    }
+
+    const data = (await response.json()) as any;
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
   }
 
   // ═══════════════════════════════════════════
@@ -361,32 +462,26 @@ export class GeminiService {
         return text;
       }
 
-      // Gemini fallback
+      // Gemini fallback — routed through multimodal breaker
       const url = `${this.geminiBaseUrl}/models/gemini-2.0-flash-lite:generateContent?key=${this.geminiApiKey}`;
       const base64Audio = audioBuffer.toString('base64');
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: 'حوّل هذا المقطع الصوتي لنص. أرجع النص فقط بدون أي إضافات أو شرح.' },
-                { inlineData: { mimeType: 'audio/ogg', data: base64Audio } },
-              ],
-            },
-          ],
-        }),
+      const bodyJson = JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: 'حوّل هذا المقطع الصوتي لنص. أرجع النص فقط بدون أي إضافات أو شرح.' },
+              { inlineData: { mimeType: 'audio/ogg', data: base64Audio } },
+            ],
+          },
+        ],
       });
 
-      if (!response.ok) return '';
-
-      const data = (await response.json()) as any;
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      this.logger.log(
-        `🎤 Audio transcribed (${audioBuffer.length} bytes → "${text.substring(0, 50)}...")`,
-      );
+      const text = await this.geminiMultimodalBreaker.fire(url, bodyJson).catch(() => '');
+      if (text) {
+        this.logger.log(
+          `🎤 Audio transcribed (${audioBuffer.length} bytes → "${text.substring(0, 50)}...")`,
+        );
+      }
       return text;
     } catch (err) {
       this.logger.error(
@@ -423,29 +518,23 @@ export class GeminiService {
         return result || 'أرسل العميل صورة';
       }
 
-      // Gemini fallback (supports vision)
+      // Gemini fallback (supports vision) — routed through multimodal breaker
       const url = `${this.geminiBaseUrl}/models/gemini-2.0-flash-lite:generateContent?key=${this.geminiApiKey}`;
       const base64Image = imageBuffer.toString('base64');
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: 'العميل أرسل هذه الصورة في محادثة صالون حلاقة/تجميل. وصف ماذا يريد العميل بناءً على الصورة. لو فيها قصة شعر أو تسريحة، حدد نوعها. أجب باختصار.' },
-                { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-              ],
-            },
-          ],
-        }),
+      const bodyJson = JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: 'العميل أرسل هذه الصورة في محادثة صالون حلاقة/تجميل. وصف ماذا يريد العميل بناءً على الصورة. لو فيها قصة شعر أو تسريحة، حدد نوعها. أجب باختصار.' },
+              { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+            ],
+          },
+        ],
       });
 
-      if (!response.ok) return 'أرسل العميل صورة';
+      const description = await this.geminiMultimodalBreaker.fire(url, bodyJson).catch(() => '');
+      if (!description) return 'أرسل العميل صورة';
 
-      const data = (await response.json()) as any;
-      const description = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'أرسل العميل صورة';
       this.logger.log(
         `📷 Image described (${imageBuffer.length} bytes → "${description.substring(0, 50)}...")`,
       );

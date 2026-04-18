@@ -1,9 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import type CircuitBreaker from 'opossum';
 import { WhatsAppService, WhatsAppCredentials } from './whatsapp.service';
 import { TenantResolverService } from './tenant-resolver.service';
 import { GeminiService } from '../ai/gemini.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { FeaturesService } from '../../core/features/features.service';
+import { CircuitBreakerService } from '../resilience/circuit-breaker.service';
 
 // ─────────────────── Types ───────────────────
 
@@ -31,8 +33,9 @@ const GRAPH_API_VERSION = 'v21.0';
  * - Interactive (buttons) → direct to Gemini chat
  */
 @Injectable()
-export class WhatsAppBotService {
+export class WhatsAppBotService implements OnModuleInit {
   private readonly logger = new Logger(WhatsAppBotService.name);
+  private mediaDownloadBreaker!: CircuitBreaker<[string, WhatsAppCredentials], Buffer>;
 
   constructor(
     private readonly whatsapp: WhatsAppService,
@@ -40,7 +43,17 @@ export class WhatsAppBotService {
     private readonly gemini: GeminiService,
     private readonly calendar: CalendarService,
     private readonly features: FeaturesService,
+    private readonly circuitBreaker: CircuitBreakerService,
   ) {}
+
+  onModuleInit() {
+    this.mediaDownloadBreaker = this.circuitBreaker.createBreaker(
+      'whatsapp-media-download',
+      (mediaId: string, credentials: WhatsAppCredentials) =>
+        this.downloadMediaRaw(mediaId, credentials),
+      { timeout: 20_000, errorThresholdPercentage: 50, resetTimeout: 30_000, volumeThreshold: 5 },
+    );
+  }
 
   /**
    * Main entry point for processing incoming WhatsApp messages.
@@ -218,10 +231,18 @@ export class WhatsAppBotService {
   }
 
   /**
-   * Download media file from Meta Graph API (audio/image).
-   * Two-step process: 1) Get download URL, 2) Download file.
+   * Download media file from Meta Graph API (through circuit breaker).
+   * Two-step process is wrapped as one breaker call because both steps hit
+   * the same upstream and a failure in either is effectively "Meta is down."
    */
   async downloadMedia(
+    mediaId: string,
+    credentials: WhatsAppCredentials,
+  ): Promise<Buffer> {
+    return this.mediaDownloadBreaker.fire(mediaId, credentials);
+  }
+
+  private async downloadMediaRaw(
     mediaId: string,
     credentials: WhatsAppCredentials,
   ): Promise<Buffer> {

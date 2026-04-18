@@ -1,6 +1,7 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import type CircuitBreaker from 'opossum';
 import { randomUUID } from 'crypto';
 import { ZatcaCryptoService } from './zatca-crypto.service';
 import { ZatcaXmlBuilder } from './zatca-xml.builder';
@@ -11,28 +12,59 @@ import {
   SignedInvoice,
 } from './zatca.types';
 import { EncryptionService } from '../../shared/encryption/encryption.service';
+import { CircuitBreakerService } from '../../shared/resilience/circuit-breaker.service';
 
 /**
  * ZATCA Phase 2 Service
  * Handles device onboarding, invoice generation, signing, and reporting.
  */
 @Injectable()
-export class ZatcaService {
+export class ZatcaService implements OnModuleInit {
   private readonly logger = new Logger(ZatcaService.name);
   private readonly baseUrl: string;
 
   // In-memory credential cache (production: use encrypted DB storage)
   private readonly credentials = new Map<string, ZatcaCredentials>();
 
+  // Separate breakers for onboarding vs reporting — onboarding is rare and
+  // can tolerate a longer timeout; reporting happens per-invoice and must be
+  // fast-failing so cashiers don't wait.
+  private onboardComplianceBreaker!: CircuitBreaker<[string, string], any>;
+  private onboardProductionBreaker!: CircuitBreaker<[string, any], any>;
+  private reportingBreaker!: CircuitBreaker<[string, ZatcaCredentials, SignedInvoice], any>;
+
   constructor(
     private readonly configService: ConfigService,
     private readonly cryptoService: ZatcaCryptoService,
     private readonly xmlBuilder: ZatcaXmlBuilder,
     private readonly encryptionService: EncryptionService,
+    private readonly circuitBreaker: CircuitBreakerService,
   ) {
     this.baseUrl = this.configService.get<string>(
       'ZATCA_API_URL',
       'https://gw-fatoora.zatca.gov.sa/e-invoicing/developer-portal',
+    );
+  }
+
+  onModuleInit() {
+    this.onboardComplianceBreaker = this.circuitBreaker.createBreaker(
+      'zatca-onboard-compliance',
+      (csrBase64: string, otp: string) => this.onboardComplianceRaw(csrBase64, otp),
+      { timeout: 30_000, errorThresholdPercentage: 50, resetTimeout: 60_000, volumeThreshold: 3 },
+    );
+
+    this.onboardProductionBreaker = this.circuitBreaker.createBreaker(
+      'zatca-onboard-production',
+      (complianceRequestId: string, authHeader: any) =>
+        this.onboardProductionRaw(complianceRequestId, authHeader),
+      { timeout: 30_000, errorThresholdPercentage: 50, resetTimeout: 60_000, volumeThreshold: 3 },
+    );
+
+    this.reportingBreaker = this.circuitBreaker.createBreaker(
+      'zatca-reporting',
+      (authHeader: string, creds: ZatcaCredentials, signedInvoice: SignedInvoice) =>
+        this.reportToZatcaRaw(authHeader, creds, signedInvoice),
+      { timeout: 15_000, errorThresholdPercentage: 50, resetTimeout: 30_000, volumeThreshold: 5 },
     );
   }
 
@@ -56,40 +88,27 @@ export class ZatcaService {
     });
 
     try {
-      // 2. Submit CSR to ZATCA Compliance API
-      const complianceRes = await axios.post(
-        `${this.baseUrl}/compliance`,
-        { csr: Buffer.from(csr).toString('base64') },
-        {
-          headers: {
-            OTP: otp,
-            'Accept-Version': 'V2',
-            'Content-Type': 'application/json',
-          },
-        },
+      // 2. Submit CSR to ZATCA Compliance API (through breaker)
+      const complianceData = await this.onboardComplianceBreaker.fire(
+        Buffer.from(csr).toString('base64'),
+        otp,
       );
 
-      // 3. Request Production CSID
-      const productionRes = await axios.post(
-        `${this.baseUrl}/production/csids`,
-        { compliance_request_id: complianceRes.data.requestID },
-        {
-          headers: {
-            Authorization: `Basic ${Buffer.from(
-              `${complianceRes.data.binarySecurityToken}:${complianceRes.data.secret}`,
-            ).toString('base64')}`,
-            'Accept-Version': 'V2',
-            'Content-Type': 'application/json',
-          },
-        },
+      // 3. Request Production CSID (through breaker)
+      const authHeader = `Basic ${Buffer.from(
+        `${complianceData.binarySecurityToken}:${complianceData.secret}`,
+      ).toString('base64')}`;
+      const productionData = await this.onboardProductionBreaker.fire(
+        complianceData.requestID,
+        authHeader,
       );
 
       // 4. Store credentials (encrypted)
       const creds: ZatcaCredentials = {
-        certificate: productionRes.data.binarySecurityToken,
-        secret: productionRes.data.secret,
+        certificate: productionData.binarySecurityToken,
+        secret: productionData.secret,
         privateKey: this.encryptionService.encrypt(privateKey),
-        requestId: productionRes.data.requestID,
+        requestId: productionData.requestID,
         status: 'active',
       };
       this.credentials.set(tenantId, creds);
@@ -156,7 +175,7 @@ export class ZatcaService {
   }
 
   /**
-   * Report signed invoice to ZATCA API
+   * Report signed invoice to ZATCA API (through circuit breaker).
    */
   private async reportToZatca(
     tenantId: string,
@@ -165,34 +184,20 @@ export class ZatcaService {
     const creds = this.credentials.get(tenantId);
     if (!creds) throw new Error('No ZATCA credentials');
 
-    try {
-      const res = await axios.post(
-        `${this.baseUrl}/invoices/reporting/single`,
-        {
-          invoiceHash: signedInvoice.invoiceHash,
-          uuid: signedInvoice.uuid,
-          invoice: Buffer.from(signedInvoice.signedXml).toString('base64'),
-        },
-        {
-          headers: {
-            Authorization: `Basic ${Buffer.from(
-              `${creds.certificate}:${creds.secret}`,
-            ).toString('base64')}`,
-            'Clearance-Status': '0', // 0 = reporting, 1 = clearance
-            'Accept-Version': 'V2',
-            'Content-Type': 'application/json',
-            'Accept-Language': 'ar',
-          },
-        },
-      );
+    const authHeader = `Basic ${Buffer.from(
+      `${creds.certificate}:${creds.secret}`,
+    ).toString('base64')}`;
 
+    try {
+      const data = await this.reportingBreaker.fire(authHeader, creds, signedInvoice);
       this.logger.log(
-        `ZATCA report for ${signedInvoice.uuid}: ${res.data.validationResults?.status}`,
+        `ZATCA report for ${signedInvoice.uuid}: ${data.validationResults?.status}`,
       );
-      return res.data;
+      return data;
     } catch (error) {
+      // Breaker open / upstream dead — return a structured failure so the
+      // caller can still persist the local invoice without throwing.
       this.logger.error('ZATCA reporting failed', error);
-      // Return validation failure (don't throw — invoice was still created locally)
       return {
         validationResults: {
           status: 'ERROR',
@@ -210,6 +215,63 @@ export class ZatcaService {
         },
       };
     }
+  }
+
+  // ─────── Raw HTTP calls invoked by breakers ───────
+
+  private async onboardComplianceRaw(csrBase64: string, otp: string): Promise<any> {
+    const res = await axios.post(
+      `${this.baseUrl}/compliance`,
+      { csr: csrBase64 },
+      {
+        headers: {
+          OTP: otp,
+          'Accept-Version': 'V2',
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    return res.data;
+  }
+
+  private async onboardProductionRaw(complianceRequestId: string, authHeader: string): Promise<any> {
+    const res = await axios.post(
+      `${this.baseUrl}/production/csids`,
+      { compliance_request_id: complianceRequestId },
+      {
+        headers: {
+          Authorization: authHeader,
+          'Accept-Version': 'V2',
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    return res.data;
+  }
+
+  private async reportToZatcaRaw(
+    authHeader: string,
+    _creds: ZatcaCredentials,
+    signedInvoice: SignedInvoice,
+  ): Promise<any> {
+    const res = await axios.post(
+      `${this.baseUrl}/invoices/reporting/single`,
+      {
+        invoiceHash: signedInvoice.invoiceHash,
+        uuid: signedInvoice.uuid,
+        invoice: Buffer.from(signedInvoice.signedXml).toString('base64'),
+      },
+      {
+        headers: {
+          Authorization: authHeader,
+          'Clearance-Status': '0', // 0 = reporting, 1 = clearance
+          'Accept-Version': 'V2',
+          'Content-Type': 'application/json',
+          'Accept-Language': 'ar',
+        },
+      },
+    );
+    return res.data;
   }
 
   /**
