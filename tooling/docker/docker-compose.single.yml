@@ -222,8 +222,9 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx-single.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      - certbot_webroot:/var/www/certbot:ro
     depends_on:
       - api
       - dashboard
@@ -329,6 +330,7 @@ volumes:
   grafana_data:
   uptime_kuma_data:
   uploads_data:
+  certbot_webroot:
 
 networks:
   servix-network:
