@@ -1,0 +1,335 @@
+# ═══════════════════════════════════════════════════════════════
+# SERVIX — Single-Server Docker Compose (4 vCPU / 8GB RAM)
+# ═══════════════════════════════════════════════════════════════
+# Optimized for Dimofinf Cloud x2 or similar single-server setup.
+# Runs ALL services on one machine without replica/vault/jaeger.
+#
+# Usage:
+#   cp .env.example .env   # fill in values
+#   docker compose -f docker-compose.single.yml up -d --build
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ═══════ Infrastructure ═══════
+  postgres:
+    image: postgres:17-alpine
+    container_name: servix-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-servix_platform}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - servix-network
+
+  redis:
+    image: redis:8-alpine
+    container_name: servix-redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - servix-network
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: servix-pgbouncer
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-servix_platform}
+      POOL_MODE: transaction
+      DEFAULT_POOL_SIZE: 30
+      MAX_CLIENT_CONN: 200
+      MAX_DB_CONNECTIONS: 80
+      MIN_POOL_SIZE: 3
+      RESERVE_POOL_SIZE: 3
+      SERVER_IDLE_TIMEOUT: 300
+      QUERY_TIMEOUT: 30
+      AUTH_TYPE: scram-sha-256
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "5432"
+    networks:
+      - servix-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: servix-minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - servix-network
+
+  # ═══════ Application Services ═══════
+  api:
+    build:
+      context: ../../
+      dockerfile: apps/api/Dockerfile
+    container_name: servix-api
+    restart: always
+    stop_grace_period: 35s
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      INSTANCE_ID: api-1
+      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.servi-x.com,https://booking.servi-x.com,https://admin.servi-x.com,https://servi-x.com}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_AI_TOKEN: ${CLOUDFLARE_AI_TOKEN:-}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "4000"
+    volumes:
+      - uploads_data:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      - servix-network
+
+  dashboard:
+    build:
+      context: ../../
+      dockerfile: apps/dashboard/Dockerfile
+    container_name: servix-dashboard
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
+      NEXT_PUBLIC_WS_URL: ${WS_URL:-https://api.servi-x.com}
+      NEXT_PUBLIC_DASHBOARD_URL: ${NEXT_PUBLIC_DASHBOARD_URL:-https://app.servi-x.com}
+      NEXT_PUBLIC_BOOKING_URL: ${NEXT_PUBLIC_BOOKING_URL:-https://booking.servi-x.com}
+      NEXT_PUBLIC_META_APP_ID: ${META_APP_ID:-}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 5
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - servix-network
+
+  booking:
+    build:
+      context: ../../
+      dockerfile: apps/booking/Dockerfile
+    container_name: servix-booking
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3001/"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 5
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - servix-network
+
+  admin:
+    build:
+      context: ../../
+      dockerfile: apps/admin/Dockerfile
+    container_name: servix-admin
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
+    expose:
+      - "3002"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3002/login"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 5
+    depends_on:
+      - api
+    networks:
+      - servix-network
+
+  landing:
+    build:
+      context: ../../
+      dockerfile: apps/landing/Dockerfile
+    container_name: servix-landing
+    restart: always
+    environment:
+      NEXT_PUBLIC_DASHBOARD_URL: ${NEXT_PUBLIC_DASHBOARD_URL:-https://app.servi-x.com}
+    expose:
+      - "3003"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3003/"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 5
+    networks:
+      - servix-network
+
+  # ═══════ Nginx Reverse Proxy + SSL ═══════
+  nginx:
+    image: nginx:alpine
+    container_name: servix-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+      - dashboard
+      - booking
+      - admin
+    networks:
+      - servix-network
+
+  # ═══════ Automated Backup (every 6 hours) ═══════
+  backup:
+    image: postgres:17-alpine
+    container_name: servix-backup
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGHOST: postgres
+      PGPORT: 5432
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE}
+    volumes:
+      - ./scripts/backup.sh:/scripts/backup.sh:ro
+      - ./scripts/restore.sh:/scripts/restore.sh:ro
+      - backup_data:/backups
+    entrypoint: /bin/sh
+    command: >
+      -c "apk add --no-cache curl gnupg >/dev/null 2>&1 &&
+          curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc &&
+          chmod +x /usr/local/bin/mc &&
+          {
+            echo '0 */6 * * * /bin/sh /scripts/backup.sh >> /backups/cron.log 2>&1';
+          } > /etc/crontabs/root &&
+          echo 'Backup cron scheduled: dump every 6 hours' &&
+          /bin/sh /scripts/backup.sh || true ;
+          crond -f -l 2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - servix-network
+
+  # ═══════ Monitoring (lightweight) ═══════
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: servix-prometheus
+    restart: always
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.retention.size=2GB'
+      - '--web.enable-lifecycle'
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - servix-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: servix-grafana
+    restart: always
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-servix2026}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3100:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - servix-network
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: servix-uptime-kuma
+    restart: always
+    volumes:
+      - uptime_kuma_data:/app/data
+    ports:
+      - "127.0.0.1:3200:3001"
+    networks:
+      - servix-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  backup_data:
+  prometheus_data:
+  grafana_data:
+  uptime_kuma_data:
+  uploads_data:
+
+networks:
+  servix-network:
+    driver: bridge
