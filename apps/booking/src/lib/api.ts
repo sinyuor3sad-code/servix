@@ -56,14 +56,14 @@ export interface CreateBookingData {
   employeeId: string;
   serviceIds: string[];
   date: string;
-  time: string;
+  startTime: string;
   notes?: string;
 }
 
 export interface BookingResult {
   id: string;
   date: string;
-  time: string;
+  startTime: string;
   status: string;
   services: { nameAr: string; price: number; duration: number }[];
   employee: { fullName: string };

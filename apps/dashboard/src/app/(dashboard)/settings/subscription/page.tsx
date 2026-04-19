@@ -54,9 +54,32 @@ export default function SubscriptionPage() {
   const { data, isLoading } = useQuery<SubscriptionData>({
     queryKey: ['settings', 'subscription'],
     queryFn: async () => {
-      const sub = await api.get<any>('/subscriptions/current', accessToken!);
+      const [sub, empRes, clientRes] = await Promise.all([
+        api.get<any>('/subscriptions/current', accessToken!),
+        api.get<any>('/employees?limit=1', accessToken!).catch(() => ({ total: 0 })),
+        api.get<any>('/clients?limit=1', accessToken!).catch(() => ({ total: 0 })),
+      ]);
       const price = Number(sub.billingCycle === 'yearly' ? sub.plan.priceYearly : sub.plan.priceMonthly);
-      return { plan: { name: sub.plan.name, nameAr: sub.plan.nameAr, price, billingCycle: sub.billingCycle }, renewalDate: sub.currentPeriodEnd, status: sub.status, usage: { employees: { used: 0, limit: null }, clients: { used: 0, limit: null } } };
+      const planSlug = (sub.plan?.slug || sub.plan?.name || '').toLowerCase();
+
+      // Derive limits from plan (mirroring QuotaGuard logic)
+      const planLimits: Record<string, { employees: number | null; clients: number | null }> = {
+        basic: { employees: 5, clients: 100 },
+        pro: { employees: 15, clients: 500 },
+        premium: { employees: null, clients: null },
+        enterprise: { employees: null, clients: null },
+      };
+      const limits = planLimits[planSlug] || { employees: null, clients: null };
+
+      return {
+        plan: { name: sub.plan.name, nameAr: sub.plan.nameAr, price, billingCycle: sub.billingCycle },
+        renewalDate: sub.currentPeriodEnd,
+        status: sub.status,
+        usage: {
+          employees: { used: empRes.total ?? 0, limit: limits.employees },
+          clients: { used: clientRes.total ?? 0, limit: limits.clients },
+        },
+      };
     },
     enabled: !!accessToken,
   });

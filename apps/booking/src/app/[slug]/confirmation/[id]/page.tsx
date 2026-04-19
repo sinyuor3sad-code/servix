@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { bookingApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { ShareButton } from './ShareButton';
 
 interface PageProps {
   params: Promise<{ slug: string; id: string }>;
@@ -154,14 +155,11 @@ export default async function ConfirmationPage({ params }: PageProps): Promise<R
             </a>
           )}
 
-          <button
-            type="button"
-            onClick={undefined}
-            className="flex items-center justify-center gap-2 w-full py-3.5 rounded-xl bg-white border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-          >
-            <Share2 className="w-5 h-5" />
-            مشاركة تفاصيل الحجز
-          </button>
+          <ShareButton
+            bookingId={id.slice(0, 8).toUpperCase()}
+            salonName={salonName}
+            slug={slug}
+          />
 
           <Link
             href={`/${slug}`}

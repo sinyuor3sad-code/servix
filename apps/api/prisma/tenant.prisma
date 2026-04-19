@@ -575,6 +575,10 @@ model Invoice {
   publicTokenCreatedAt DateTime? @map("public_token_created_at") @db.Timestamptz()
   publicTokenRevokedAt DateTime? @map("public_token_revoked_at") @db.Timestamptz()
 
+  // ──── الاسترداد (Refund) ────
+  refundedAt     DateTime? @map("refunded_at") @db.Timestamptz()
+  refundReason   String?   @map("refund_reason") @db.VarChar(500)
+
   // ──── ربط بالطلب الذاتي ────
   selfOrderId          String?   @unique @map("self_order_id") @db.Uuid
 

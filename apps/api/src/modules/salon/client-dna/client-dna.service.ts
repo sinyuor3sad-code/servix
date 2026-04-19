@@ -253,4 +253,28 @@ export class ClientDnaService {
     const visitsPerYear = 365 / Number(dna.avgDaysBetweenVisits);
     return Number(dna.avgTicketValue) * visitsPerYear;
   }
+
+  /**
+   * Compute DNA metrics for ALL active clients.
+   * Processes in batches to avoid memory issues.
+   */
+  async computeForAllClients(db: TenantPrismaClient): Promise<number> {
+    const clients = await db.client.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+
+    let processed = 0;
+    for (const client of clients) {
+      try {
+        await this.computeForClient(db, client.id);
+        processed++;
+      } catch (err) {
+        this.logger.warn(`Failed to compute DNA for client ${client.id}: ${err}`);
+      }
+    }
+
+    this.logger.log(`Computed DNA for ${processed}/${clients.length} clients`);
+    return processed;
+  }
 }

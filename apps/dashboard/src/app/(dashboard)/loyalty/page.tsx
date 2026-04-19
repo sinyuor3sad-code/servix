@@ -16,7 +16,47 @@ export default function LoyaltyPage() {
 
   const { data, isLoading } = useQuery<LoyaltyData>({
     queryKey: ['loyalty'],
-    queryFn: () => api.get<LoyaltyData>('/loyalty', accessToken!),
+    queryFn: async () => {
+      // Backend has no root GET /loyalty — we need to compose from sub-endpoints
+      const [settings, transactions] = await Promise.all([
+        api.get<LoyaltySettings>('/loyalty/settings', accessToken!),
+        api.get<{ items: Array<{ clientId: string; clientName: string; clientPhone: string; type: string; points: number }> }>('/loyalty/transactions?limit=100', accessToken!),
+      ]);
+
+      // Build leaderboard from transactions
+      const clientMap = new Map<string, LoyaltyClient>();
+      if (transactions?.items) {
+        for (const tx of transactions.items) {
+          if (!clientMap.has(tx.clientId)) {
+            clientMap.set(tx.clientId, {
+              id: tx.clientId,
+              fullName: tx.clientName || 'عميل',
+              phone: tx.clientPhone || '',
+              points: 0,
+              totalEarned: 0,
+              totalRedeemed: 0,
+            });
+          }
+          const client = clientMap.get(tx.clientId)!;
+          if (tx.type === 'earn') {
+            client.points += tx.points;
+            client.totalEarned += tx.points;
+          } else {
+            client.points -= tx.points;
+            client.totalRedeemed += tx.points;
+          }
+        }
+      }
+
+      const leaderboard = Array.from(clientMap.values())
+        .sort((a, b) => b.points - a.points)
+        .slice(0, 20);
+
+      return {
+        settings: settings || { pointsPerSar: 1, redemptionValue: 0.1, minimumRedemption: 100 },
+        leaderboard,
+      };
+    },
     enabled: !!accessToken,
     staleTime: 5 * 60 * 1000,
   });

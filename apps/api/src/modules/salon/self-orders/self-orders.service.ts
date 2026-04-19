@@ -46,13 +46,20 @@ export class SelfOrdersService {
      GET ORDER BY CODE
      ════════════════════════════════════════ */
   async findByCode(db: TenantPrismaClient, code: string) {
-    const now = new Date();
-    const monthLetter = MONTH_LETTERS[now.getMonth()];
+    const upperCode = code.toUpperCase();
+    // Extract monthLetter from the order code itself (first character).
+    // Previously used now.getMonth() which caused orders to "disappear"
+    // when checked after a month boundary.
+    const monthLetter = upperCode.charAt(0);
+
+    if (!MONTH_LETTERS.includes(monthLetter)) {
+      throw new NotFoundException('رمز الطلب غير صالح');
+    }
 
     const order = await db.selfOrder.findUnique({
       where: {
         orderCode_monthLetter: {
-          orderCode: code.toUpperCase(),
+          orderCode: upperCode,
           monthLetter,
         },
       },
@@ -86,13 +93,18 @@ export class SelfOrdersService {
     code: string,
     tenantSlug: string,
   ) {
-    const now = new Date();
-    const monthLetter = MONTH_LETTERS[now.getMonth()];
+    const upperCode = code.toUpperCase();
+    // Extract monthLetter from the order code itself (first character).
+    const monthLetter = upperCode.charAt(0);
+
+    if (!MONTH_LETTERS.includes(monthLetter)) {
+      throw new NotFoundException('رمز الطلب غير صالح');
+    }
 
     const order = await db.selfOrder.findUnique({
       where: {
         orderCode_monthLetter: {
-          orderCode: code.toUpperCase(),
+          orderCode: upperCode,
           monthLetter,
         },
       },

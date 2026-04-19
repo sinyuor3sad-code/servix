@@ -267,6 +267,14 @@ export class BookingService {
       throw new BadRequestException(msg);
     }
 
+    // ── OTP Backend Verification ──
+    // Ensure the phone number was verified via OTP before allowing booking.
+    // Without this, anyone could bypass the frontend OTP step and POST directly.
+    const otpVerified = await this.cacheService.isBookingOtpVerified(dto.clientPhone);
+    if (!otpVerified) {
+      throw new BadRequestException('يجب التحقق من رقم الجوال أولاً');
+    }
+
     const db = await this.getTenantDb(slug);
 
     const services = await db.service.findMany({

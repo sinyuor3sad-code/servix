@@ -14,7 +14,7 @@ const DEV_SETTINGS: SalonSettings = {
 
 export const settingsService = {
   getAll: (token: string) => {
-    if (token === 'dev-access-token-mock') {
+    if (token?.startsWith('dev-access-token-')) {
       return Promise.resolve(DEV_SETTINGS);
     }
     return api.get<SalonSettings>('/settings', token);

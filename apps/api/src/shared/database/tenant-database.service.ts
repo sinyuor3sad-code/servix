@@ -156,7 +156,7 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
    * Unlike `db push --accept-data-loss`, this refuses destructive changes.
    */
   private async deployTenantMigrations(databaseName: string): Promise<void> {
-    const { execSync } = await import('child_process');
+    const { spawn } = await import('child_process');
     const { existsSync } = await import('fs');
     const baseUrl = process.env.PLATFORM_DATABASE_URL || '';
     const url = new URL(baseUrl);
@@ -169,7 +169,6 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
     const tenantUrl = url.toString();
 
     const env = { ...process.env, TENANT_DATABASE_URL: tenantUrl };
-    const opts = { cwd: process.cwd(), timeout: 60000, env };
 
     // Try multiple prisma binary paths (pnpm deploy vs pnpm install have different structures)
     const prismaPaths = [
@@ -189,23 +188,46 @@ export class TenantDatabaseService implements OnApplicationBootstrap {
 
     // Fallback to npx if no local binary found
     if (!prismaCmd) {
-      prismaCmd = 'npx prisma';
-      this.logger.warn(`No local prisma binary found, falling back to: ${prismaCmd}`);
+      prismaCmd = 'npx';
+      this.logger.warn(`No local prisma binary found, falling back to npx`);
     }
 
+    const args = prismaCmd === 'npx'
+      ? ['prisma', 'migrate', 'deploy', '--schema=./prisma/tenant.prisma']
+      : ['migrate', 'deploy', '--schema=./prisma/tenant.prisma'];
+
     try {
-      execSync(
-        `${prismaCmd} migrate deploy --schema=./prisma/tenant.prisma`,
-        { ...opts, stdio: 'pipe' },
-      );
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(prismaCmd!, args, {
+          cwd: process.cwd(),
+          env,
+          stdio: 'pipe',
+          timeout: 60000,
+        });
+
+        let stderr = '';
+        let stdout = '';
+
+        child.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
+        child.stderr?.on('data', (data: Buffer) => { stderr += data.toString(); });
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            const details = stderr || stdout || `Process exited with code ${code}`;
+            reject(new Error(details));
+          }
+        });
+
+        child.on('error', (err) => {
+          reject(err);
+        });
+      });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      // Include stderr/stdout from the failed command for better debugging
-      const stderr = (err as { stderr?: Buffer })?.stderr?.toString() || '';
-      const stdout = (err as { stdout?: Buffer })?.stdout?.toString() || '';
-      const details = stderr || stdout || errMsg;
-      this.logger.error(`Migration deploy failed for ${databaseName}: ${details}`);
-      throw new Error(`Failed to deploy migrations to ${databaseName}: ${details}`);
+      this.logger.error(`Migration deploy failed for ${databaseName}: ${errMsg}`);
+      throw new Error(`Failed to deploy migrations to ${databaseName}: ${errMsg}`);
     }
   }
 

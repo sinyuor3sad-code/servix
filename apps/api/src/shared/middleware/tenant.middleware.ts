@@ -78,6 +78,7 @@ export class TenantMiddleware implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const path = request.path;
 
+    // ── Step 1: Skip public routes ──
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -87,27 +88,10 @@ export class TenantMiddleware implements CanActivate {
       return true;
     }
 
-    // ── Maintenance Mode Check ──
-    // Block all non-admin, non-health requests when maintenance is enabled
-    const maintenanceMode = await this.platformSettings.getBoolean('maintenance_mode', false);
-    if (maintenanceMode) {
-      const maintenanceMessage = await this.platformSettings.get(
-        'maintenance_message',
-        'المنصة تحت الصيانة — نعود قريباً',
-      );
-      this.logger.warn(`[MaintenanceMode] BLOCKED: path=${path}`);
-      throw new HttpException(
-        {
-          success: false,
-          error: {
-            code: 'MAINTENANCE_MODE',
-            message: maintenanceMessage,
-          },
-        },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
-    }
+    // ── Step 2: Maintenance mode ──
+    await this.checkMaintenanceMode(path);
 
+    // ── Step 3: Tenant context resolution ──
     const user = request.user;
     const tenantId = user?.tenantId;
 
@@ -126,6 +110,7 @@ export class TenantMiddleware implements CanActivate {
       request.features = ctx.features;
       request.subscriptionStatus = ctx.subscriptionStatus;
     } else if (tenantId) {
+      // Optional tenant context (user is logged in but path doesn't require tenant)
       const ctx = await this.loadTenantContext(tenantId, path);
       request.tenant = ctx.tenant;
       request.tenantDb = ctx.tenantDb;
@@ -134,6 +119,31 @@ export class TenantMiddleware implements CanActivate {
     }
 
     return true;
+  }
+
+  /**
+   * Check if the platform is in maintenance mode.
+   * Blocks all requests with 503 Service Unavailable.
+   */
+  private async checkMaintenanceMode(path: string): Promise<void> {
+    const maintenanceMode = await this.platformSettings.getBoolean('maintenance_mode', false);
+    if (!maintenanceMode) return;
+
+    const maintenanceMessage = await this.platformSettings.get(
+      'maintenance_message',
+      'المنصة تحت الصيانة — نعود قريباً',
+    );
+    this.logger.warn(`[MaintenanceMode] BLOCKED: path=${path}`);
+    throw new HttpException(
+      {
+        success: false,
+        error: {
+          code: 'MAINTENANCE_MODE',
+          message: maintenanceMessage,
+        },
+      },
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
   }
 
   private async loadTenantContext(

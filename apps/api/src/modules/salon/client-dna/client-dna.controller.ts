@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Req, ParseUUIDPipe, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, Req, ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -28,5 +28,28 @@ export class ClientDnaController {
   ) {
     const data = await this.clientDnaService.getProfile(req.tenantDb!, id);
     return { success: true, data, message: 'Client DNA profile' };
+  }
+
+  @Post(':id/dna/compute')
+  @ApiOperation({ summary: 'Compute DNA metrics for a single client' })
+  @ApiParam({ name: 'id', description: 'Client id' })
+  @ApiResponse({ status: 201 })
+  @ApiResponse({ status: 404 })
+  async computeOne(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    await this.clientDnaService.computeForClient(req.tenantDb!, id);
+    return { success: true, message: 'Client DNA computed' };
+  }
+
+  @Post('dna/compute-all')
+  @ApiOperation({ summary: 'Compute DNA metrics for all clients' })
+  @ApiResponse({ status: 201 })
+  async computeAll(
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const processed = await this.clientDnaService.computeForAllClients(req.tenantDb!);
+    return { success: true, data: { processed }, message: 'All clients DNA computed' };
   }
 }

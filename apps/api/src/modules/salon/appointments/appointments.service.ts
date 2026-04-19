@@ -426,11 +426,11 @@ export class AppointmentsService {
       });
 
       if (dto.status === AppointmentStatusEnum.completed) {
+        // Note: totalVisits and totalSpent are updated ONLY when invoice is paid
+        // (invoices.service.ts) to prevent double counting.
         await tx.client.update({
           where: { id: existing.clientId },
           data: {
-            totalVisits: { increment: 1 },
-            totalSpent: { increment: Number(existing.totalPrice) },
             lastVisitAt: new Date(),
           },
         });

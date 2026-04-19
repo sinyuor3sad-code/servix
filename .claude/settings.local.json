@@ -135,7 +135,9 @@
       "Bash(npx jest:*)",
       "Bash(npx prisma:*)",
       "Bash(echo \"exit=$?\")",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(npx eslint:*)",
+      "Bash(node:*)"
     ]
   }
 }

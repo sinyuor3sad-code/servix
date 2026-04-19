@@ -79,53 +79,61 @@ export class ZatcaService {
       throw new NotFoundException('لا يوجد شهادة ZATCA نشطة — يرجى التسجيل أولاً');
     }
 
-    // Get previous invoice hash for chain
-    const lastZatcaInvoice = await db.zatcaInvoice.findFirst({
-      orderBy: { invoiceCounterValue: 'desc' },
-    });
-    const previousHash = lastZatcaInvoice?.zatcaInvoiceHash ?? null;
-    const counterValue = (lastZatcaInvoice?.invoiceCounterValue ?? 0) + 1;
+    // Use a Serializable transaction to prevent counter race condition.
+    // Two concurrent ZATCA submissions could otherwise get the same counter value.
+    const zatcaInvoice = await db.$transaction(async (tx) => {
+      // Get previous invoice hash for chain — with lock
+      const lastZatcaInvoices = await tx.$queryRawUnsafe<{ invoice_counter_value: number; zatca_invoice_hash: string | null }[]>(
+        `SELECT invoice_counter_value, zatca_invoice_hash FROM zatca_invoices ORDER BY invoice_counter_value DESC LIMIT 1 FOR UPDATE`,
+      );
+      const previousHash = lastZatcaInvoices[0]?.zatca_invoice_hash ?? null;
+      const counterValue = (lastZatcaInvoices[0]?.invoice_counter_value ?? 0) + 1;
 
-    // Build UBL XML
-    const xmlContent = this.buildUblXml(invoice as never);
+      // Build UBL XML
+      const xmlContent = this.buildUblXml(invoice as never);
 
-    // Sign the XML
-    const digitalSignature = this.signXml(xmlContent, certificate.privateKey);
+      // Sign the XML
+      const digitalSignature = this.signXml(xmlContent, certificate.privateKey);
 
-    // Hash the invoice
-    const xmlHash = crypto.createHash('sha256').update(xmlContent).digest('hex');
+      // Hash the invoice
+      const xmlHash = crypto.createHash('sha256').update(xmlContent).digest('hex');
 
-    // Build QR
-    const salon = await db.salonInfo.findFirst();
-    const qrCode = this.buildQrPayload({
-      sellerName: salon?.nameAr ?? 'SERVIX',
-      vatNumber: salon?.taxNumber ?? '',
-      timestamp: invoice.createdAt.toISOString(),
-      totalWithVat: Number(invoice.total),
-      vatAmount: Number(invoice.taxAmount),
-      xmlHash,
-    });
-
-    // Determine type
-    const isSimplified = Number(invoice.total) < 1000;
-
-    const zatcaInvoice = await db.zatcaInvoice.create({
-      data: {
-        invoiceId,
-        certificateId: certificate.id,
-        invoiceType: isSimplified ? 'simplified' : 'standard',
-        invoiceSubType: '0100000',
-        xmlContent,
+      // Build QR
+      const salon = await tx.salonInfo.findFirst();
+      const qrCode = this.buildQrPayload({
+        sellerName: salon?.nameAr ?? 'SERVIX',
+        vatNumber: salon?.taxNumber ?? '',
+        timestamp: invoice.createdAt.toISOString(),
+        totalWithVat: Number(invoice.total),
+        vatAmount: Number(invoice.taxAmount),
         xmlHash,
-        digitalSignature,
-        qrCode,
-        submissionStatus: 'pending',
-        invoiceCounterValue: counterValue,
-        previousInvoiceHash: previousHash,
-      },
+      });
+
+      // Determine type
+      const isSimplified = Number(invoice.total) < 1000;
+
+      const created = await tx.zatcaInvoice.create({
+        data: {
+          invoiceId,
+          certificateId: certificate.id,
+          invoiceType: isSimplified ? 'simplified' : 'standard',
+          invoiceSubType: '0100000',
+          xmlContent,
+          xmlHash,
+          digitalSignature,
+          qrCode,
+          submissionStatus: 'pending',
+          invoiceCounterValue: counterValue,
+          previousInvoiceHash: previousHash,
+        },
+      });
+
+      this.logger.log(`ZATCA invoice created for invoice ${invoiceId}, counter=${counterValue}`);
+      return created;
+    }, {
+      isolationLevel: 'Serializable',
     });
 
-    this.logger.log(`ZATCA invoice created for invoice ${invoiceId}, counter=${counterValue}`);
     return zatcaInvoice;
   }
 

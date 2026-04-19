@@ -413,6 +413,101 @@ export class InvoicesService {
     return updated as unknown as Record<string, unknown>;
   }
 
+  /**
+   * Refund a paid invoice.
+   * - Only 'paid' invoices can be refunded
+   * - Creates a negative refund payment record
+   * - Reverses client stats (totalSpent, totalVisits)
+   * - Revokes the public token
+   * - Sets invoice status to 'refunded'
+   */
+  async refundInvoice(
+    db: TenantPrismaClient,
+    id: string,
+    reason?: string,
+  ): Promise<Record<string, unknown>> {
+    const invoice = await db.invoice.findUnique({
+      where: { id },
+      include: { payments: true },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException('الفاتورة غير موجودة');
+    }
+    if (invoice.status === 'refunded') {
+      throw new BadRequestException('الفاتورة مستردة بالفعل');
+    }
+    if (invoice.status === 'void') {
+      throw new BadRequestException('لا يمكن استرداد فاتورة ملغاة');
+    }
+    if (invoice.status !== 'paid') {
+      throw new BadRequestException('يمكن استرداد الفواتير المدفوعة بالكامل فقط');
+    }
+
+    const invoiceTotal = Number(invoice.total);
+
+    const updated = await db.$transaction(async (tx) => {
+      // 1. Create refund payment record (negative amount for accounting)
+      await tx.payment.create({
+        data: {
+          invoiceId: id,
+          amount: -invoiceTotal,
+          method: 'cash', // refunds default to cash
+          reference: reason || 'refund',
+          status: 'refunded',
+        },
+      });
+
+      // 2. Mark all existing payments as refunded
+      await tx.payment.updateMany({
+        where: { invoiceId: id, status: 'completed' },
+        data: { status: 'refunded' },
+      });
+
+      // 3. Update invoice status
+      const updatedInvoice = await tx.invoice.update({
+        where: { id },
+        data: {
+          status: 'refunded',
+          refundedAt: new Date(),
+          refundReason: reason || null,
+          // Revoke public token on refund
+          ...(invoice.publicToken && {
+            publicTokenStatus: 'revoked',
+          }),
+        },
+        include: { invoiceItems: true, payments: true },
+      });
+
+      // 4. Reverse client stats (undo what recordPayment did)
+      if (invoice.clientId) {
+        await tx.client.update({
+          where: { id: invoice.clientId },
+          data: {
+            totalSpent: { decrement: invoiceTotal },
+            totalVisits: { decrement: 1 },
+          },
+        });
+      }
+
+      return updatedInvoice;
+    });
+
+    // Audit log (fire-and-forget)
+    this.auditService.log({
+      userId: id,
+      action: 'invoice.refund',
+      entityType: 'Invoice',
+      entityId: id,
+      oldValues: { status: 'paid' },
+      newValues: { status: 'refunded', reason },
+    }).catch(() => {});
+
+    this.logger.log(`Invoice ${invoice.invoiceNumber} refunded (${invoiceTotal} SAR). Reason: ${reason || 'N/A'}`);
+
+    return updated as unknown as Record<string, unknown>;
+  }
+
   async addDiscount(
     db: TenantPrismaClient,
     id: string,
@@ -651,21 +746,29 @@ export class InvoicesService {
   }
 
   private async generateInvoiceNumber(db: TenantPrismaClient): Promise<string> {
-    const lastInvoice = await db.invoice.findFirst({
-      orderBy: { createdAt: 'desc' },
-      select: { invoiceNumber: true },
+    // Use a serializable transaction to prevent race conditions.
+    // Two concurrent invoice creates could otherwise get the same number.
+    const result = await db.$transaction(async (tx) => {
+      // Lock the latest invoice row to prevent concurrent reads
+      const lastInvoices = await tx.$queryRawUnsafe<{ invoice_number: string }[]>(
+        `SELECT invoice_number FROM invoices ORDER BY created_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED`,
+      );
+
+      let nextNumber = 1;
+      if (lastInvoices.length > 0) {
+        const parts = lastInvoices[0].invoice_number.split('-');
+        const lastNum = parseInt(parts[1], 10);
+        if (!isNaN(lastNum)) {
+          nextNumber = lastNum + 1;
+        }
+      }
+
+      return `INV-${nextNumber.toString().padStart(4, '0')}`;
+    }, {
+      isolationLevel: 'Serializable',
     });
 
-    let nextNumber = 1;
-    if (lastInvoice?.invoiceNumber) {
-      const parts = lastInvoice.invoiceNumber.split('-');
-      const lastNum = parseInt(parts[1], 10);
-      if (!isNaN(lastNum)) {
-        nextNumber = lastNum + 1;
-      }
-    }
-
-    return `INV-${nextNumber.toString().padStart(4, '0')}`;
+    return result;
   }
 
   /* ════════════════════════════════════════════════

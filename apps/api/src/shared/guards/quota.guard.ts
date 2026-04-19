@@ -10,6 +10,7 @@ import {
  * QuotaGuard: Enforces plan-based resource limits.
  * Applied globally. Only checks POST requests (resource creation).
  * Quota limits are derived from the tenant's active plan.
+ * Queries the actual resource count from the tenant database.
  */
 @Injectable()
 export class QuotaGuard implements CanActivate {
@@ -35,8 +36,11 @@ export class QuotaGuard implements CanActivate {
     const limit = this.getLimit(plan, resource);
     if (limit === -1) return true; // Unlimited
 
-    // Get current usage from request context (set by middleware)
-    const usage = request.quotaUsage?.[resource] ?? 0;
+    // Query actual usage from tenant database
+    const db = request.tenantDb;
+    if (!db) return true; // No database connection
+
+    const usage = await this.getActualUsage(db, resource);
 
     if (usage >= limit) {
       this.logger.warn(
@@ -62,6 +66,37 @@ export class QuotaGuard implements CanActivate {
     if (controller.includes('service')) return 'services';
     if (controller.includes('invoice')) return 'invoices';
     return null;
+  }
+
+  private async getActualUsage(db: any, resource: string): Promise<number> {
+    try {
+      switch (resource) {
+        case 'employees':
+          return db.employee.count({ where: { isActive: true } });
+        case 'clients':
+          return db.client.count({ where: { isActive: true, deletedAt: null } });
+        case 'services':
+          return db.service.count({ where: { isActive: true } });
+        case 'appointments': {
+          // Count this month's appointments only
+          const startOfMonth = new Date();
+          startOfMonth.setDate(1);
+          startOfMonth.setHours(0, 0, 0, 0);
+          return db.appointment.count({ where: { createdAt: { gte: startOfMonth } } });
+        }
+        case 'invoices': {
+          const invoiceStart = new Date();
+          invoiceStart.setDate(1);
+          invoiceStart.setHours(0, 0, 0, 0);
+          return db.invoice.count({ where: { createdAt: { gte: invoiceStart } } });
+        }
+        default:
+          return 0;
+      }
+    } catch (err) {
+      this.logger.error(`Failed to get usage for ${resource}: ${err}`);
+      return 0; // fail-open on DB errors
+    }
   }
 
   private getLimit(plan: any, resource: string): number {

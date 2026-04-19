@@ -34,7 +34,7 @@ const PAY_STATUS: Record<PaymentStatus, string> = {
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { accessToken } = useAuth();
+  const { accessToken, currentTenant } = useAuth();
   const qc = useQueryClient();
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -52,13 +52,13 @@ export default function InvoiceDetailPage() {
   });
 
   const payMut = useMutation({
-    mutationFn: () => api.post(`/invoices/${id}/payments`, { amount: Number(payAmount), method: payMethod }, accessToken!),
+    mutationFn: () => api.post(`/invoices/${id}/pay`, { amount: Number(payAmount), method: payMethod }, accessToken!),
     onSuccess: () => { toast.success('✅ تم تسجيل الدفعة'); qc.invalidateQueries({ queryKey: ['invoice', id] }); setShowPay(false); setPayAmount(''); },
     onError: () => toast.error('خطأ في تسجيل الدفعة'),
   });
 
   const voidMut = useMutation({
-    mutationFn: () => api.post(`/invoices/${id}/void`, {}, accessToken!),
+    mutationFn: () => api.put(`/invoices/${id}/void`, {}, accessToken!),
     onSuccess: () => { toast.success('تم إلغاء الفاتورة'); qc.invalidateQueries({ queryKey: ['invoice', id] }); },
     onError: () => toast.error('خطأ'),
   });
@@ -230,14 +230,15 @@ export default function InvoiceDetailPage() {
             {(inv as any).publicToken && (inv as any).publicTokenStatus === 'active' && (
               <>
                 <Button size="sm" variant="outline" onClick={() => {
-                  const slug = (window as any).__SERVIX_SLUG || 'salon';
+                  const slug = currentTenant?.slug || 'salon';
                   window.open(`/${slug}/invoice/${(inv as any).publicToken}`, '_blank');
                 }}>
                   <ExternalLink className="h-3.5 w-3.5" /> عرض
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => {
-                  const slug = (window as any).__SERVIX_SLUG || 'salon';
-                  const url = `https://${slug}.servix.com/invoice/${(inv as any).publicToken}`;
+                  const slug = currentTenant?.slug || 'salon';
+                  const bookingBase = process.env.NEXT_PUBLIC_BOOKING_URL || window.location.origin;
+                  const url = `${bookingBase}/${slug}/invoice/${(inv as any).publicToken}`;
                   navigator.clipboard.writeText(url);
                   toast.success('تم نسخ الرابط ✅');
                 }}>
@@ -443,23 +444,29 @@ export default function InvoiceDetailPage() {
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-6">
             <div className="rounded-2xl bg-white p-6 shadow-inner">
-              {/* Simple SVG QR placeholder — actual qrcode.react is in POS app */}
-              <div
-                className="flex items-center justify-center"
-                style={{ width: 200, height: 200 }}
-                dangerouslySetInnerHTML={{
-                  __html: `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                    <rect width="200" height="200" fill="white"/>
-                    <text x="100" y="95" text-anchor="middle" font-size="14" fill="#666">QR Code</text>
-                    <text x="100" y="115" text-anchor="middle" font-size="10" fill="#999">${inv.invoiceNumber}</text>
-                  </svg>`,
-                }}
-              />
+              {/* Real QR Code via Google Charts API — no npm package needed */}
+              {(() => {
+                const slug = currentTenant?.slug || 'salon';
+                const bookingBase = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_BOOKING_URL || window.location.origin) : '';
+                const invoiceUrl = `${bookingBase}/${slug}/invoice/${(inv as any).publicToken}`;
+                const qrSrc = `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent(invoiceUrl)}&choe=UTF-8`;
+                return (
+                  <img
+                    src={qrSrc}
+                    alt={`QR Code — ${inv.invoiceNumber}`}
+                    width={200}
+                    height={200}
+                    className="rounded-lg"
+                    style={{ imageRendering: 'pixelated' }}
+                  />
+                );
+              })()}
             </div>
             <p className="text-xs text-[var(--muted-foreground)] text-center">امسح الكود للوصول إلى صفحة الفاتورة</p>
             <Button size="sm" variant="outline" onClick={() => {
-              const slug = (window as any).__SERVIX_SLUG || 'salon';
-              const url = `https://${slug}.servix.com/invoice/${(inv as any).publicToken}`;
+              const slug = currentTenant?.slug || 'salon';
+              const bookingBase = process.env.NEXT_PUBLIC_BOOKING_URL || window.location.origin;
+              const url = `${bookingBase}/${slug}/invoice/${(inv as any).publicToken}`;
               navigator.clipboard.writeText(url);
               toast.success('تم نسخ الرابط ✅');
             }}>

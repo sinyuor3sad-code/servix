@@ -79,6 +79,7 @@ export class ReportsService {
       totalEmployees,
       monthlyAppointments,
       upcomingAppointments,
+      recentAppointments,
     ] = await Promise.all([
       db.appointment.count({
         where: { date: { gte: todayStart, lt: todayEnd } },
@@ -113,6 +114,23 @@ export class ReportsService {
         orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
         take: 10,
       }),
+      db.appointment.findMany({
+        where: {
+          date: { lte: todayStart },
+          status: 'completed',
+        },
+        include: {
+          client: { select: { id: true, fullName: true } },
+          employee: { select: { id: true, fullName: true } },
+          appointmentServices: {
+            include: {
+              service: { select: { id: true, nameAr: true, nameEn: true } },
+            },
+          },
+        },
+        orderBy: [{ date: 'desc' }, { startTime: 'desc' }],
+        take: 10,
+      }),
     ]);
 
     const todayRevenue = todayInvoices.reduce(
@@ -132,7 +150,7 @@ export class ReportsService {
       totalEmployees,
       monthlyRevenue: monthRevenue,
       monthlyAppointments,
-      recentAppointments: upcomingAppointments as unknown as Record<string, unknown>[],
+      recentAppointments: recentAppointments as unknown as Record<string, unknown>[],
       upcomingAppointments: upcomingAppointments as unknown as Record<string, unknown>[],
     };
   }

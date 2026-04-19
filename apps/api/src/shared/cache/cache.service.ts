@@ -404,6 +404,8 @@ export class CacheService implements OnModuleDestroy {
   private readonly BOOKING_OTP_TTL = 300; // 5 minutes
   private readonly BOOKING_OTP_RATE_PREFIX = 'servix:booking_otp_rate:';
   private readonly BOOKING_OTP_RATE_TTL = 60; // 1 per minute
+  private readonly BOOKING_OTP_VERIFIED_PREFIX = 'servix:booking_otp_verified:';
+  private readonly BOOKING_OTP_VERIFIED_TTL = 900; // 15 minutes — window to complete booking
 
   async setBookingOtp(phone: string, code: string): Promise<void> {
     if (!this.enabled || !this.redis) return;
@@ -423,11 +425,32 @@ export class CacheService implements OnModuleDestroy {
       const stored = await this.redis.get(`${this.BOOKING_OTP_PREFIX}${phone}`);
       if (stored === code) {
         await this.redis.del(`${this.BOOKING_OTP_PREFIX}${phone}`);
+        // Mark phone as OTP-verified for booking creation
+        await this.redis.set(
+          `${this.BOOKING_OTP_VERIFIED_PREFIX}${phone}`,
+          '1',
+          'EX',
+          this.BOOKING_OTP_VERIFIED_TTL,
+        );
         return true;
       }
       return false;
     } catch {
       return true;
+    }
+  }
+
+  /**
+   * Check if a phone number has been OTP-verified for booking.
+   * Used by createBooking to enforce backend OTP verification.
+   */
+  async isBookingOtpVerified(phone: string): Promise<boolean> {
+    if (!this.enabled || !this.redis) return true; // fallback if Redis is down
+    try {
+      const verified = await this.redis.get(`${this.BOOKING_OTP_VERIFIED_PREFIX}${phone}`);
+      return verified === '1';
+    } catch {
+      return true; // fail-open if Redis errors
     }
   }
 

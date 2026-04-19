@@ -1163,7 +1163,7 @@ export default function BookingPage(): React.ReactElement {
         employeeId: state.selectedEmployee!,
         serviceIds: state.selectedServices,
         date: state.selectedDate!,
-        time: state.selectedTime!,
+        startTime: state.selectedTime!,
         notes: state.notes.trim() || undefined,
       });
       toast.success('تم تأكيد الحجز بنجاح');

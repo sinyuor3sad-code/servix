@@ -94,7 +94,7 @@ export const dashboardService = {
     api.put<Appointment>(`/appointments/${id}/status`, { status, cancellationReason }, token!),
 
   cancelAppointment: (id: string, reason: string, token: string) =>
-    api.post<Appointment>(`/appointments/${id}/cancel`, { reason }, token),
+    api.put<Appointment>(`/appointments/${id}/status`, { status: 'cancelled', cancellationReason: reason }, token),
 
   // ─── Clients ───
   getClients: (params: ListParams, token: string) =>
@@ -222,23 +222,23 @@ export const dashboardService = {
     api.get<Shift[]>(`/shifts?date=${date}`, token),
 
   generateShifts: (data: { startDate?: string }, token: string) =>
-    api.post<{ created: number }>('/shifts/generate', data, token),
+    api.post<{ created: number }>('/shifts/generate-week', data, token),
 
   checkInShift: (shiftId: string, token: string) =>
-    api.post<Shift>(`/shifts/${shiftId}/check-in`, {}, token),
+    api.patch<Shift>(`/shifts/${shiftId}/check-in`, {}, token),
 
   checkOutShift: (shiftId: string, token: string) =>
-    api.post<Shift>(`/shifts/${shiftId}/check-out`, {}, token),
+    api.patch<Shift>(`/shifts/${shiftId}/check-out`, {}, token),
 
   // ─── Client DNA ───
   getClientDna: (clientId: string, token: string) =>
-    api.get<ClientDna>(`/client-dna/${clientId}`, token),
+    api.get<ClientDna>(`/clients/${clientId}/dna`, token),
 
   computeClientDna: (clientId: string, token: string) =>
-    api.post<void>(`/client-dna/${clientId}/compute`, {}, token),
+    api.post<void>(`/clients/${clientId}/dna/compute`, {}, token),
 
   computeAllDna: (token: string) =>
-    api.post<{ processed: number }>('/client-dna/compute-all', {}, token),
+    api.post<{ processed: number }>('/clients/dna/compute-all', {}, token),
 
   // ─── Dynamic Pricing ───
   getPricingRules: (token: string) =>
@@ -248,7 +248,7 @@ export const dashboardService = {
     api.post<PricingRule>('/pricing/rules', data, token),
 
   updatePricingRule: (id: string, data: Partial<PricingRule>, token: string) =>
-    api.put<PricingRule>(`/pricing/rules/${id}`, data, token),
+    api.patch<PricingRule>(`/pricing/rules/${id}`, data, token),
 
   calculatePrice: (serviceId: string, date: string, time: string, token: string) =>
     api.get<CalculatedPrice>(`/pricing/calculate?serviceId=${serviceId}&date=${date}&time=${time}`, token),

@@ -199,13 +199,22 @@ export class PublicService {
      GET ORDER — fetch by code
      ================================================================ */
   async getOrder(db: TenantPrismaClient, code: string) {
-    const now = new Date();
-    const monthLetter = MONTH_LETTERS[now.getMonth()];
+    const upperCode = code.toUpperCase();
+
+    // Extract monthLetter from the order code itself (first character).
+    // Previously used now.getMonth() which caused orders to "disappear"
+    // when checked after a month boundary (e.g. order A001 created Jan 31,
+    // checked Feb 1 would fail because monthLetter would be 'B' not 'A').
+    const monthLetter = upperCode.charAt(0);
+
+    if (!MONTH_LETTERS.includes(monthLetter)) {
+      throw new NotFoundException('رمز الطلب غير صالح');
+    }
 
     const order = await db.selfOrder.findUnique({
       where: {
         orderCode_monthLetter: {
-          orderCode: code.toUpperCase(),
+          orderCode: upperCode,
           monthLetter,
         },
       },

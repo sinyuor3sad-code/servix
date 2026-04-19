@@ -17,7 +17,7 @@ export class OrderExpiryService {
     private readonly publicService: PublicService,
   ) {}
 
-  @Interval(60_000) // Every 60 seconds
+  @Interval(120_000) // Every 2 minutes (30min expiry doesn't need sub-minute precision)
   async handleExpiry() {
     // Prevent overlapping runs
     if (this.running) return;
@@ -38,12 +38,21 @@ export class OrderExpiryService {
       });
 
       let totalExpired = 0;
+      let tenantsProcessed = 0;
 
       for (const tenant of tenants) {
         try {
           const db = this.tenantClientFactory.getTenantClient(
             tenant.databaseName,
           );
+
+          // Skip tenants with no expired pending orders (avoids unnecessary UPDATE queries)
+          const pendingCount = await db.selfOrder.count({
+            where: { status: 'pending', expiresAt: { lt: new Date() } },
+          });
+          if (pendingCount === 0) continue;
+
+          tenantsProcessed++;
           const expiredCodes = await this.publicService.expireOrders(db);
 
           if (expiredCodes.length > 0) {
@@ -76,7 +85,7 @@ export class OrderExpiryService {
 
       if (totalExpired > 0) {
         this.logger.log(
-          `[ExpiryJob] Total expired: ${totalExpired} across ${tenants.length} tenants`,
+          `[ExpiryJob] Expired ${totalExpired} orders across ${tenantsProcessed}/${tenants.length} tenants`,
         );
       }
     } catch (err) {

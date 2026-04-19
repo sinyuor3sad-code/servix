@@ -28,6 +28,7 @@ import { AddDiscountDto } from './dto/add-discount.dto';
 import { ApplyCouponDto } from './dto/apply-coupon.dto';
 import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { SendInvoiceDto } from './dto/send-invoice.dto';
+import { RefundInvoiceDto } from './dto/refund-invoice.dto';
 import { TenantGuard } from '../../../shared/guards';
 import { AuthenticatedRequest } from '../../../shared/types';
 
@@ -161,6 +162,29 @@ export class InvoicesController {
       success: true,
       data,
       message: 'تم إلغاء الفاتورة بنجاح',
+    };
+  }
+
+  @Post(':id/refund')
+  @ApiOperation({ summary: 'استرداد فاتورة', description: 'استرداد فاتورة مدفوعة بالكامل مع عكس إحصائيات العميل' })
+  @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
+  @ApiResponse({ status: 201, description: 'تم استرداد الفاتورة بنجاح' })
+  @ApiResponse({ status: 400, description: 'لا يمكن استرداد هذه الفاتورة' })
+  @ApiResponse({ status: 404, description: 'الفاتورة غير موجودة' })
+  async refundInvoice(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RefundInvoiceDto,
+  ): Promise<Record<string, unknown>> {
+    const data = await this.invoicesService.refundInvoice(
+      req.tenantDb!,
+      id,
+      dto.reason,
+    );
+    return {
+      success: true,
+      data,
+      message: 'تم استرداد الفاتورة بنجاح',
     };
   }
 
