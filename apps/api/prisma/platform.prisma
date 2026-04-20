@@ -59,66 +59,99 @@ enum PlatformInvoiceStatus {
 // ─────────────────── Tenants ───────────────────
 
 model Tenant {
-  id             String       @id @default(uuid()) @db.Uuid
-  nameAr         String       @map("name_ar") @db.VarChar(100)
-  nameEn         String       @map("name_en") @db.VarChar(100)
-  slug           String       @unique @db.VarChar(50)
-  logoUrl        String?      @map("logo_url") @db.VarChar(500)
-  primaryColor   String       @default("#8B5CF6") @map("primary_color") @db.VarChar(7)
-  secondaryColor String?      @map("secondary_color") @db.VarChar(7)
-  theme          TenantTheme  @default(velvet)
-  databaseName   String       @unique @map("database_name") @db.VarChar(50)
-  status         TenantStatus @default(trial)
-  trialEndsAt    DateTime?    @map("trial_ends_at") @db.Timestamptz()
-  phone          String?      @db.VarChar(15)
-  email          String?      @db.VarChar(100)
-  city           String?      @db.VarChar(50)
-  address        String?      @db.Text
-  latitude       Decimal?     @db.Decimal(10, 7)
-  longitude      Decimal?     @db.Decimal(10, 7)
-  pendingDeletionAt DateTime?  @map("pending_deletion_at") @db.Timestamptz()
-  schemaVersion  String       @default("0001_baseline") @map("schema_version") @db.VarChar(50)
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+  id                String       @id @default(uuid()) @db.Uuid
+  nameAr            String       @map("name_ar") @db.VarChar(100)
+  nameEn            String       @map("name_en") @db.VarChar(100)
+  slug              String       @unique @db.VarChar(50)
+  logoUrl           String?      @map("logo_url") @db.VarChar(500)
+  primaryColor      String       @default("#8B5CF6") @map("primary_color") @db.VarChar(7)
+  secondaryColor    String?      @map("secondary_color") @db.VarChar(7)
+  theme             TenantTheme  @default(velvet)
+  databaseName      String       @unique @map("database_name") @db.VarChar(50)
+  status            TenantStatus @default(trial)
+  trialEndsAt       DateTime?    @map("trial_ends_at") @db.Timestamptz()
+  phone             String?      @db.VarChar(15)
+  email             String?      @db.VarChar(100)
+  city              String?      @db.VarChar(50)
+  address           String?      @db.Text
+  latitude          Decimal?     @db.Decimal(10, 7)
+  longitude         Decimal?     @db.Decimal(10, 7)
+  pendingDeletionAt DateTime?    @map("pending_deletion_at") @db.Timestamptz()
+  schemaVersion     String       @default("0001_baseline") @map("schema_version") @db.VarChar(50)
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
 
-  tenantUsers      TenantUser[]
-  subscriptions    Subscription[]
-  tenantFeatures   TenantFeature[]
-  platformInvoices PlatformInvoice[]
-  auditLogs        PlatformAuditLog[]
-  usageLogs        TenantUsageLog[]
-  referralsMade    Referral[]       @relation("referrer")
-  referralsReceived Referral[]      @relation("referred")
-  backups          PlatformBackup[]
+  tenantUsers       TenantUser[]
+  subscriptions     Subscription[]
+  tenantFeatures    TenantFeature[]
+  platformInvoices  PlatformInvoice[]
+  auditLogs         PlatformAuditLog[]
+  usageLogs         TenantUsageLog[]
+  referralsMade     Referral[]         @relation("referrer")
+  referralsReceived Referral[]         @relation("referred")
+  backups           PlatformBackup[]
+  whatsappInstance  WhatsAppInstance?
 
   @@map("tenants")
+}
+
+// ─────────────────── WhatsApp Instances (Evolution API) ───────────────────
+
+enum WhatsAppInstanceStatus {
+  disconnected
+  connecting
+  connected
+  qr_pending
+  banned
+  error
+}
+
+model WhatsAppInstance {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  tenantId           String                 @unique @map("tenant_id") @db.Uuid
+  instanceName       String                 @unique @map("instance_name") @db.VarChar(100)
+  instanceToken      String                 @map("instance_token") @db.VarChar(255)
+  status             WhatsAppInstanceStatus @default(disconnected)
+  phoneNumber        String?                @map("phone_number") @db.VarChar(20)
+  profileName        String?                @map("profile_name") @db.VarChar(100)
+  profilePicUrl      String?                @map("profile_pic_url") @db.VarChar(500)
+  qrCode             String?                @map("qr_code") @db.Text
+  lastConnectedAt    DateTime?              @map("last_connected_at") @db.Timestamptz()
+  lastDisconnectedAt DateTime?              @map("last_disconnected_at") @db.Timestamptz()
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz()
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("whatsapp_instances")
 }
 
 // ─────────────────── Users ───────────────────
 
 model User {
-  id              String    @id @default(uuid()) @db.Uuid
-  fullName        String    @map("full_name") @db.VarChar(100)
-  email           String    @unique @db.VarChar(100)
-  phone           String    @unique @db.VarChar(15)
-  passwordHash    String    @map("password_hash") @db.VarChar(255)
-  avatarUrl       String?   @map("avatar_url") @db.VarChar(500)
-  isEmailVerified Boolean   @default(false) @map("is_email_verified")
-  isPhoneVerified Boolean   @default(false) @map("is_phone_verified")
+  id               String    @id @default(uuid()) @db.Uuid
+  fullName         String    @map("full_name") @db.VarChar(100)
+  email            String    @unique @db.VarChar(100)
+  phone            String    @unique @db.VarChar(15)
+  passwordHash     String    @map("password_hash") @db.VarChar(255)
+  avatarUrl        String?   @map("avatar_url") @db.VarChar(500)
+  isEmailVerified  Boolean   @default(false) @map("is_email_verified")
+  isPhoneVerified  Boolean   @default(false) @map("is_phone_verified")
   // 2FA
-  twoFactorEnabled Boolean  @default(false) @map("two_factor_enabled")
-  twoFactorSecret  String?  @map("two_factor_secret") @db.VarChar(255)
+  twoFactorEnabled Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret  String?   @map("two_factor_secret") @db.VarChar(255)
   // OAuth
-  googleId         String?  @unique @map("google_id") @db.VarChar(255)
-  authProvider     String   @default("local") @map("auth_provider") @db.VarChar(20)
-  lastLoginAt     DateTime? @map("last_login_at") @db.Timestamptz()
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  googleId         String?   @unique @map("google_id") @db.VarChar(255)
+  authProvider     String    @default("local") @map("auth_provider") @db.VarChar(20)
+  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamptz()
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
-  tenantUsers            TenantUser[]
-  auditLogs              PlatformAuditLog[]
-  passwordResets         PasswordReset[]
-  platformNotifications  PlatformNotification[]
+  tenantUsers           TenantUser[]
+  auditLogs             PlatformAuditLog[]
+  passwordResets        PasswordReset[]
+  platformNotifications PlatformNotification[]
 
   @@map("users")
 }
@@ -126,12 +159,12 @@ model User {
 // ─────────────────── Password Reset Tokens ───────────────────
 
 model PasswordReset {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  token     String   @unique @db.VarChar(64)
-  expiresAt DateTime @map("expires_at") @db.Timestamptz()
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  token     String    @unique @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz()
   usedAt    DateTime? @map("used_at") @db.Timestamptz()
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -208,38 +241,38 @@ model RolePermission {
 // ─────────────────── Plans & Features ───────────────────
 
 model Plan {
-  id                    String   @id @default(uuid()) @db.Uuid
-  name                  String   @unique @db.VarChar(50)
-  nameAr                String   @map("name_ar") @db.VarChar(50)
-  nameEn                String?  @map("name_en") @db.VarChar(100)
-  slug                  String?  @unique @db.VarChar(50)
-  priceMonthly          Decimal  @map("price_monthly") @db.Decimal(10, 2)
-  priceYearly           Decimal  @map("price_yearly") @db.Decimal(10, 2)
-  maxEmployees          Int      @map("max_employees")
-  maxClients            Int      @map("max_clients")
-  maxAppointmentsMonth  Int?     @map("max_appointments_month")
+  id                   String   @id @default(uuid()) @db.Uuid
+  name                 String   @unique @db.VarChar(50)
+  nameAr               String   @map("name_ar") @db.VarChar(50)
+  nameEn               String?  @map("name_en") @db.VarChar(100)
+  slug                 String?  @unique @db.VarChar(50)
+  priceMonthly         Decimal  @map("price_monthly") @db.Decimal(10, 2)
+  priceYearly          Decimal  @map("price_yearly") @db.Decimal(10, 2)
+  maxEmployees         Int      @map("max_employees")
+  maxClients           Int      @map("max_clients")
+  maxAppointmentsMonth Int?     @map("max_appointments_month")
   // Usage-based pricing (hybrid model)
-  revenueSharePercent   Decimal  @default(0) @map("revenue_share_percent") @db.Decimal(5, 2)
-  perAppointmentFee     Decimal  @default(0) @map("per_appointment_fee") @db.Decimal(10, 2)
-  includedAppointments  Int      @default(0) @map("included_appointments")
-  descriptionAr         String?  @map("description_ar") @db.Text
-  trialDays             Int      @default(14) @map("trial_days")
-  isActive              Boolean  @default(true) @map("is_active")
-  sortOrder             Int      @default(0) @map("sort_order")
+  revenueSharePercent  Decimal  @default(0) @map("revenue_share_percent") @db.Decimal(5, 2)
+  perAppointmentFee    Decimal  @default(0) @map("per_appointment_fee") @db.Decimal(10, 2)
+  includedAppointments Int      @default(0) @map("included_appointments")
+  descriptionAr        String?  @map("description_ar") @db.Text
+  trialDays            Int      @default(14) @map("trial_days")
+  isActive             Boolean  @default(true) @map("is_active")
+  sortOrder            Int      @default(0) @map("sort_order")
   // Plan identity & visibility
-  badge                 String?  @db.VarChar(30)  // most_popular | best_value | enterprise | null
-  isPublic              Boolean  @default(true) @map("is_public")
-  isInternal            Boolean  @default(false) @map("is_internal")
-  setupFee              Decimal  @default(0) @map("setup_fee") @db.Decimal(10, 2)
+  badge                String?  @db.VarChar(30) // most_popular | best_value | enterprise | null
+  isPublic             Boolean  @default(true) @map("is_public")
+  isInternal           Boolean  @default(false) @map("is_internal")
+  setupFee             Decimal  @default(0) @map("setup_fee") @db.Decimal(10, 2)
   // Trial behavior
-  trialEnabled          Boolean  @default(true) @map("trial_enabled")
+  trialEnabled         Boolean  @default(true) @map("trial_enabled")
   // Plan lifecycle rules
-  upgradeAllowed        Boolean  @default(true) @map("upgrade_allowed")
-  downgradeAllowed      Boolean  @default(true) @map("downgrade_allowed")
+  upgradeAllowed       Boolean  @default(true) @map("upgrade_allowed")
+  downgradeAllowed     Boolean  @default(true) @map("downgrade_allowed")
   // Flexible metadata (trial rules, billing notes, fallback plan, etc.)
-  metadata              Json?    @db.JsonB
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  metadata             Json?    @db.JsonB
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   subscriptions Subscription[]
   planFeatures  PlanFeature[]
@@ -253,7 +286,7 @@ model Feature {
   nameAr        String   @map("name_ar") @db.VarChar(100)
   nameEn        String?  @map("name_en") @db.VarChar(100)
   descriptionAr String?  @map("description_ar") @db.Text
-  category      String?  @db.VarChar(50)  // operations | customers | scheduling | pos | reports | marketing | staff | inventory | finance | integrations | ai | system
+  category      String?  @db.VarChar(50) // operations | customers | scheduling | pos | reports | marketing | staff | inventory | finance | integrations | ai | system
   isAddon       Boolean  @default(false) @map("is_addon")
   sortOrder     Int      @default(0) @map("sort_order")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
@@ -270,7 +303,7 @@ model Feature {
 model PlanFeature {
   planId     String  @map("plan_id") @db.Uuid
   featureId  String  @map("feature_id") @db.Uuid
-  limitValue Int?    @map("limit_value")    // null = unlimited, 0 = disabled, N = cap
+  limitValue Int?    @map("limit_value") // null = unlimited, 0 = disabled, N = cap
   isIncluded Boolean @default(true) @map("is_included")
 
   plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
@@ -283,23 +316,23 @@ model PlanFeature {
 // ─────────────────── Plan Add-ons ───────────────────
 
 model PlanAddon {
-  id            String   @id @default(uuid()) @db.Uuid
-  name          String   @db.VarChar(100)
-  nameAr        String   @map("name_ar") @db.VarChar(100)
-  code          String   @unique @db.VarChar(50)
-  description   String?  @db.Text
-  priceMonthly  Decimal  @default(0) @map("price_monthly") @db.Decimal(10, 2)
-  priceYearly   Decimal  @default(0) @map("price_yearly") @db.Decimal(10, 2)
-  billingMode   String   @default("recurring") @map("billing_mode") @db.VarChar(20) // recurring | one_time | usage
-  featureId     String?  @map("feature_id") @db.Uuid
-  limitBoost    Int?     @map("limit_boost")
-  applicablePlans Json?  @map("applicable_plans") @db.JsonB
-  isActive      Boolean  @default(true) @map("is_active")
-  sortOrder     Int      @default(0) @map("sort_order")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @db.VarChar(100)
+  nameAr          String   @map("name_ar") @db.VarChar(100)
+  code            String   @unique @db.VarChar(50)
+  description     String?  @db.Text
+  priceMonthly    Decimal  @default(0) @map("price_monthly") @db.Decimal(10, 2)
+  priceYearly     Decimal  @default(0) @map("price_yearly") @db.Decimal(10, 2)
+  billingMode     String   @default("recurring") @map("billing_mode") @db.VarChar(20) // recurring | one_time | usage
+  featureId       String?  @map("feature_id") @db.Uuid
+  limitBoost      Int?     @map("limit_boost")
+  applicablePlans Json?    @map("applicable_plans") @db.JsonB
+  isActive        Boolean  @default(true) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  feature  Feature? @relation(fields: [featureId], references: [id])
+  feature Feature? @relation(fields: [featureId], references: [id])
 
   @@map("plan_addons")
 }
@@ -317,7 +350,7 @@ model Subscription {
   cancelledAt        DateTime?          @map("cancelled_at") @db.Timestamptz()
   autoRenew          Boolean            @default(true) @map("auto_renew")
   notes              String?            @db.Text
-  metadata           Json?              @db.JsonB  // Overrides, billing adjustments, discount info
+  metadata           Json?              @db.JsonB // Overrides, billing adjustments, discount info
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -374,16 +407,16 @@ model PlatformInvoice {
 // ─────────────────── Referrals ───────────────────
 
 model Referral {
-  id             String    @id @default(uuid()) @db.Uuid
-  referrerTenantId String  @map("referrer_tenant_id") @db.Uuid
-  referredTenantId String? @map("referred_tenant_id") @db.Uuid
-  referralCode   String    @unique @map("referral_code") @db.VarChar(20)
-  referredEmail  String?   @map("referred_email") @db.VarChar(100)
-  referredPhone  String?   @map("referred_phone") @db.VarChar(15)
-  rewardMonths   Int       @default(1) @map("reward_months")
-  isRedeemed     Boolean   @default(false) @map("is_redeemed")
-  redeemedAt     DateTime? @map("redeemed_at") @db.Timestamptz()
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  id               String    @id @default(uuid()) @db.Uuid
+  referrerTenantId String    @map("referrer_tenant_id") @db.Uuid
+  referredTenantId String?   @map("referred_tenant_id") @db.Uuid
+  referralCode     String    @unique @map("referral_code") @db.VarChar(20)
+  referredEmail    String?   @map("referred_email") @db.VarChar(100)
+  referredPhone    String?   @map("referred_phone") @db.VarChar(15)
+  rewardMonths     Int       @default(1) @map("reward_months")
+  isRedeemed       Boolean   @default(false) @map("is_redeemed")
+  redeemedAt       DateTime? @map("redeemed_at") @db.Timestamptz()
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
 
   referrerTenant Tenant  @relation("referrer", fields: [referrerTenantId], references: [id])
   referredTenant Tenant? @relation("referred", fields: [referredTenantId], references: [id])
@@ -396,15 +429,15 @@ model Referral {
 // ─────────────────── Tenant Usage Tracking (for hybrid pricing) ───────────────────
 
 model TenantUsageLog {
-  id               String   @id @default(uuid()) @db.Uuid
-  tenantId         String   @map("tenant_id") @db.Uuid
-  month            DateTime @db.Date
-  appointmentCount Int      @default(0) @map("appointment_count")
-  totalRevenue     Decimal  @default(0) @map("total_revenue") @db.Decimal(12, 2)
-  usageFeeCharged  Decimal  @default(0) @map("usage_fee_charged") @db.Decimal(10, 2)
-  revenueShareCharged Decimal @default(0) @map("revenue_share_charged") @db.Decimal(10, 2)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  id                  String   @id @default(uuid()) @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  month               DateTime @db.Date
+  appointmentCount    Int      @default(0) @map("appointment_count")
+  totalRevenue        Decimal  @default(0) @map("total_revenue") @db.Decimal(12, 2)
+  usageFeeCharged     Decimal  @default(0) @map("usage_fee_charged") @db.Decimal(10, 2)
+  revenueShareCharged Decimal  @default(0) @map("revenue_share_charged") @db.Decimal(10, 2)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
