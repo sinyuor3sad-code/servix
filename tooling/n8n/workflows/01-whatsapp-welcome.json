@@ -1,0 +1,134 @@
+{
+  "name": "Servix — WhatsApp Welcome Message",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "servix-welcome",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1111111-1111-4111-a111-111111111111",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "servix-welcome"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "guard-phone",
+              "leftValue": "={{ $json.body.phone }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            },
+            {
+              "id": "guard-instance",
+              "leftValue": "={{ $json.body.instanceName }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1111111-1111-4111-a111-111111111111",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "msg-text",
+              "name": "text",
+              "value": "=أهلاً {{ $json.body.clientName || 'بك' }} 💜\n\nيسعدنا انضمامك إلى {{ $json.body.salonName }}!\n\nنتطلع لخدمتك في أقرب زيارة، وأي استفسار نحن بخدمتك.\n\nللإلغاء الاشتراك من الرسائل، أرسل كلمة \"الغاء\".",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1111111-1111-4111-a111-111111111111",
+      "name": "Build Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [700, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-api:8080/message/sendText/{{ $('Webhook').item.json.body.instanceName }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $('Webhook').item.json.body.instanceToken }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('Webhook').item.json.body.phone }}\",\n  \"text\": {{ JSON.stringify($json.text) }},\n  \"delay\": {{ Math.floor(1500 + Math.random() * 3000) }}\n}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "d1111111-1111-4111-a111-111111111111",
+      "name": "Evolution — Send Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"event\": \"welcome\",\n  \"phone\": \"{{ $('Webhook').item.json.body.phone }}\"\n}"
+      },
+      "id": "e1111111-1111-4111-a111-111111111111",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1140, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 400,
+        "responseBody": "={ \"success\": false, \"error\": \"missing phone or instanceName\" }"
+      },
+      "id": "f1111111-1111-4111-a111-111111111111",
+      "name": "Respond Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, 420]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validate Payload", "type": "main", "index": 0 }]]
+    },
+    "Validate Payload": {
+      "main": [
+        [{ "node": "Build Message", "type": "main", "index": 0 }],
+        [{ "node": "Respond Bad Request", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Message": {
+      "main": [[{ "node": "Evolution — Send Text", "type": "main", "index": 0 }]]
+    },
+    "Evolution — Send Text": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "saveExecutionProgress": true, "timezone": "Asia/Riyadh" },
+  "meta": { "templateId": "servix-whatsapp-welcome" },
+  "pinData": {},
+  "tags": [{ "name": "servix" }, { "name": "whatsapp" }]
+}
