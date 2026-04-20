@@ -574,6 +574,57 @@ services:
     networks:
       - servix-network
 
+  # ═══════ n8n (workflow automation) ═══════
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: servix-n8n
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n_db
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_HOST: n8n.servi-x.com
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      N8N_EDITOR_BASE_URL: https://n8n.servi-x.com
+      WEBHOOK_URL: https://n8n.servi-x.com/
+      N8N_PROXY_HOPS: 1
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_DEFAULT_LOCALE: ar
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_HIRING_BANNER_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      GENERIC_TIMEZONE: Asia/Riyadh
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+    expose:
+      - "5678"
+    networks:
+      - servix-network
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+  # ═══════ Gemini API Proxy (Cloudflare Worker relay for n8n) ═══════
+  gemini-proxy:
+    image: node:22-alpine
+    container_name: servix-gemini-proxy
+    restart: always
+    command: ["node", "/app/server.js"]
+    volumes:
+      - ./n8n-gemini-proxy/server.js:/app/server.js:ro
+    expose:
+      - "8080"
+    networks:
+      - servix-network
+
   # ═══════ Evolution API (WhatsApp gateway for n8n workflows) ═══════
   evolution-api:
     image: atendai/evolution-api:v2.2.3
@@ -640,6 +691,7 @@ volumes:
   vault_data:
   jaeger_data:
   evolution_data:
+  n8n_data:
 
 networks:
   servix-network:
