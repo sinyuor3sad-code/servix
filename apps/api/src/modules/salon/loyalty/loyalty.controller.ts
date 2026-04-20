@@ -19,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { LoyaltyService } from './loyalty.service';
 import { AdjustPointsDto } from './dto/adjust-points.dto';
+import { AdjustVisitsDto, RedeemVisitsDto } from './dto/adjust-visits.dto';
 import { UpdateLoyaltySettingsDto } from './dto/update-settings.dto';
 import { QueryTransactionsDto } from './dto/query-transactions.dto';
 import { TenantGuard } from '../../../shared/guards';
@@ -123,6 +124,49 @@ export class LoyaltyController {
       success: true,
       data: result,
       message: 'تم جلب سجل المعاملات بنجاح',
+    };
+  }
+
+  @Post('clients/:id/adjust-visits')
+  @ApiOperation({ summary: 'تعديل الزيارات', description: 'تعديل يدوي لرصيد زيارات العميل' })
+  @ApiParam({ name: 'id', description: 'معرّف العميل' })
+  @ApiResponse({ status: 201, description: 'تم تعديل الزيارات بنجاح' })
+  @ApiResponse({ status: 400, description: 'رصيد الزيارات غير كافٍ' })
+  @ApiResponse({ status: 404, description: 'العميل غير موجود' })
+  async adjustVisits(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdjustVisitsDto,
+  ): Promise<Record<string, unknown>> {
+    const data = await this.loyaltyService.adjustVisits(req.tenantDb!, id, dto);
+    return {
+      success: true,
+      data,
+      message: 'تم تعديل الزيارات بنجاح',
+    };
+  }
+
+  @Post('clients/:id/redeem-visits')
+  @ApiOperation({ summary: 'استبدال زيارات', description: 'استبدال دورة زيارات مقابل خصم' })
+  @ApiParam({ name: 'id', description: 'معرّف العميل' })
+  @ApiResponse({ status: 200, description: 'تم استبدال الزيارات بنجاح' })
+  @ApiResponse({ status: 400, description: 'رصيد الزيارات غير كافٍ أو النمط غير مناسب' })
+  @ApiResponse({ status: 404, description: 'العميل غير موجود' })
+  async redeemVisits(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RedeemVisitsDto,
+  ): Promise<Record<string, unknown>> {
+    const discount = await this.loyaltyService.redeemVisits(
+      req.tenantDb!,
+      id,
+      dto.visits,
+      dto.invoiceId,
+    );
+    return {
+      success: true,
+      data: { discount },
+      message: 'تم استبدال الزيارات بنجاح',
     };
   }
 }
