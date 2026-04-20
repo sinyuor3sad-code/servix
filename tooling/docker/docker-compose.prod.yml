@@ -486,7 +486,7 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-servix2026}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: "http://130.94.57.77:3100/"
+      GF_SERVER_ROOT_URL: "http://194.163.158.70:3100/"
       GF_SERVER_SERVE_FROM_SUB_PATH: "false"
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
@@ -574,6 +574,57 @@ services:
     networks:
       - servix-network
 
+  # ═══════ Evolution API (WhatsApp gateway for n8n workflows) ═══════
+  evolution-api:
+    image: atendai/evolution-api:v2.2.3
+    container_name: servix-evolution
+    restart: always
+    environment:
+      SERVER_URL: https://evo.servi-x.com
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/evolution_db?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_HISTORIC: "true"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://:${REDIS_PASSWORD}@redis:6379/3
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_LOCAL_ENABLED: "false"
+      LOG_LEVEL: WARN
+      LOG_COLOR: "false"
+      DEL_INSTANCE: "false"
+      LANGUAGE: ar
+      CONFIG_SESSION_PHONE_CLIENT: SERVIX
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      QRCODE_LIMIT: 10
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
+      WEBHOOK_EVENTS_CONNECTION_UPDATE: "true"
+      WEBHOOK_EVENTS_QRCODE_UPDATED: "true"
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    networks:
+      - servix-network
+    volumes:
+      - evolution_data:/evolution/instances
+
 volumes:
   postgres_data:
   redis_data:
@@ -588,6 +639,7 @@ volumes:
   uploads_data:
   vault_data:
   jaeger_data:
+  evolution_data:
 
 networks:
   servix-network:
