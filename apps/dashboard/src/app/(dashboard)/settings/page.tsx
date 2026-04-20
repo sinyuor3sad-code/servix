@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Building2, Palette, Clock, Users, Bell, CreditCard, SlidersHorizontal, UserCog, ChevronLeft, QrCode, TrendingUp, ArrowUpRight } from 'lucide-react';
+import { Building2, Palette, Clock, Users, Bell, CreditCard, SlidersHorizontal, UserCog, ChevronLeft, QrCode, TrendingUp, ArrowUpRight, MessageCircle, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const CARDS = [
@@ -12,6 +12,8 @@ const CARDS = [
   { title: 'ساعات العمل',    desc: 'الفتح والإغلاق لكل يوم',    href: '/settings/working-hours', icon: Clock,             iconColor: 'bg-amber-500/10 text-amber-600' },
   { title: 'المستخدمين',     desc: 'الأدوار والصلاحيات',          href: '/settings/users',         icon: Users,             iconColor: 'bg-emerald-500/10 text-emerald-600' },
   { title: 'الإشعارات',      desc: 'التنبيهات والإشعارات',        href: '/settings/notifications', icon: Bell,              iconColor: 'bg-red-500/10 text-red-500' },
+  { title: 'واتساب',         desc: 'ربط الرقم والرسائل التلقائية',  href: '/settings/whatsapp',      icon: MessageCircle,     iconColor: 'bg-emerald-500/10 text-emerald-600' },
+  { title: 'الولاء',         desc: 'نمط النقاط والزيارات',         href: '/settings/loyalty',       icon: Heart,             iconColor: 'bg-rose-500/10 text-rose-600' },
   { title: 'الاشتراك',       desc: 'الخطة الحالية والترقية',       href: '/settings/subscription',  icon: CreditCard,        iconColor: 'bg-indigo-500/10 text-indigo-600' },
   { title: 'التسعير الديناميكي', desc: 'قواعد الذروة والعطلات والصلاة', href: '/settings/pricing',       icon: TrendingUp,        iconColor: 'bg-lime-500/10 text-lime-600' },
   { title: 'الحساب',         desc: 'البيانات وإدارة الحساب',       href: '/settings/account',       icon: UserCog,           iconColor: 'bg-slate-500/10 text-slate-500' },
