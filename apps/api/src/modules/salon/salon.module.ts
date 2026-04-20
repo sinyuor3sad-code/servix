@@ -18,7 +18,7 @@ import { ShiftsModule } from './shifts/shifts.module';
 import { HealingModule } from './healing/healing.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ClientDnaModule } from './client-dna/client-dna.module';
-import { ZatcaModule } from './zatca/zatca.module';
+import { SalonZatcaModule } from './zatca/zatca.module';
 import { MarketingModule } from './marketing/marketing.module';
 import { DynamicPricingModule } from './dynamic-pricing/dynamic-pricing.module';
 import { PackagesModule } from './packages/packages.module';
@@ -26,6 +26,7 @@ import { DebtsModule } from './debts/debts.module';
 import { SelfOrdersModule } from './self-orders/self-orders.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { AiConsultantModule } from './ai-consultant/ai-consultant.module';
+import { WhatsAppEvolutionModule } from './whatsapp-evolution/whatsapp-evolution.module';
 
 @Module({
   imports: [
@@ -48,7 +49,7 @@ import { AiConsultantModule } from './ai-consultant/ai-consultant.module';
     HealingModule,
     InventoryModule,
     ClientDnaModule,
-    ZatcaModule,
+    SalonZatcaModule,
     MarketingModule,
     DynamicPricingModule,
     PackagesModule,
@@ -56,6 +57,7 @@ import { AiConsultantModule } from './ai-consultant/ai-consultant.module';
     SelfOrdersModule,
     FeedbackModule,
     AiConsultantModule,
+    WhatsAppEvolutionModule,
   ],
 })
 export class SalonModule {}
