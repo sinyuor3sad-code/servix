@@ -101,7 +101,7 @@ node-exporter's textfile collector.
 ### A. Restore one tenant DB from yesterday's logical backup (RTO ~5 min)
 
 ```bash
-ssh root@130.94.57.77
+ssh root@194.163.158.70
 docker exec -it servix-backup sh
 mc ls servix/servix-backups/ | tail -5         # find the right folder
 /scripts/restore.sh 20260415_180000 servix_tenant_abc123

@@ -125,6 +125,7 @@ export class SelfOrdersService {
     }
 
     // Check if expired by time (cron may not have caught it yet)
+    const now = new Date();
     if (order.expiresAt < now) {
       await db.selfOrder.update({
         where: { id: order.id },

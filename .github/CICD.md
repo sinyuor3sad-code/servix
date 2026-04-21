@@ -124,7 +124,7 @@ fail (re-pulls the image tags captured before the deploy and restarts).
 To roll back manually after the fact:
 
 ```bash
-ssh root@130.94.57.77
+ssh root@194.163.158.70
 cd /root/servix/tooling/docker
 # Find a known-good sha
 docker images | grep servix-api | head

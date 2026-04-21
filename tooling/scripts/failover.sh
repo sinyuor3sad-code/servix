@@ -6,7 +6,7 @@
 # ═══════════════════════════════════════════════════════════
 set -euo pipefail
 
-PRIMARY_IP="${PRIMARY_IP:-130.94.57.77}"
+PRIMARY_IP="${PRIMARY_IP:-194.163.158.70}"
 DR_IP="${DR_IP:?Set DR_IP environment variable}"
 CF_ZONE_ID="${CF_ZONE_ID:?Set CloudFlare zone ID}"
 CF_API_TOKEN="${CF_API_TOKEN:?Set CloudFlare API token}"

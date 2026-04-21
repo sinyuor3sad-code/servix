@@ -65,9 +65,9 @@ const navItems: NavItem[] = [
   { label: 'الكاشير', href: '/pos', icon: CreditCard, roles: 'all' },
   { label: 'كاشير سريع', href: '/pos/quick', icon: TabletSmartphone, roles: 'all' },
   { label: 'الإعدادات', href: '/settings', icon: Settings, roles: ['owner', 'manager'] },
+  { label: 'واتساب', href: '/settings/whatsapp', icon: MessageCircle, roles: ['owner', 'manager'] },
   // ── Coming Soon ──
   { label: 'الورديات', href: '/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
-  { label: 'واتساب', href: '/settings/whatsapp', icon: MessageCircle, comingSoon: true, roles: ['owner', 'manager'] },
   { label: 'ZATCA', href: '/zatca', icon: Receipt, comingSoon: true, roles: ['owner', 'manager'] },
 ];
 

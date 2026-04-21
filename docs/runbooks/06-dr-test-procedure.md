@@ -27,7 +27,7 @@ bash tooling/scripts/backup.sh
 
 ### 3. Execute Failover (T+5min)
 ```bash
-PRIMARY_IP=130.94.57.77 \
+PRIMARY_IP=194.163.158.70 \
 DR_IP=<DR_IP> \
 CF_ZONE_ID=<zone_id> \
 CF_API_TOKEN=<token> \

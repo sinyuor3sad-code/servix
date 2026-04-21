@@ -22,7 +22,7 @@ All web UIs are bound to `127.0.0.1` only — reach them via SSH tunnel:
 ```bash
 ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 \
     -L 3100:127.0.0.1:3100 -L 3200:127.0.0.1:3200 \
-    root@130.94.57.77
+    root@194.163.158.70
 ```
 
 Then open <http://localhost:3100> for Grafana, etc.
