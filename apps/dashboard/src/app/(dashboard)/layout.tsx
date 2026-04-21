@@ -21,6 +21,12 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Hydration-safe mount flag: ensures SSR and first client render are identical
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const { data: settings, isLoading: settingsLoading } = useQuery({
     queryKey: ['settings'],
@@ -42,25 +48,29 @@ export default function DashboardLayout({
   // Dev-only escape hatch: render the dashboard shell when hitting localhost
   // without a token so designers can preview without logging in. Gated on
   // NODE_ENV so production builds (and CI E2E) always enforce auth.
-  const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+  // Uses `mounted` to avoid SSR/client mismatch on `window` access.
+  const isLocalhost = mounted && typeof window !== 'undefined' && window.location.hostname === 'localhost';
   const skipAuth = process.env.NODE_ENV !== 'production' && isLocalhost && !accessToken;
 
   // Redirect unauthenticated users to login
   useEffect(() => {
+    if (!mounted) return;
     if (!skipAuth && !isLoading && !isAuthenticated) {
       router.replace('/login');
     }
-  }, [isAuthenticated, isLoading, router, skipAuth]);
+  }, [mounted, isAuthenticated, isLoading, router, skipAuth]);
 
   // Redirect to onboarding if not completed
   useEffect(() => {
+    if (!mounted) return;
     if (!skipAuth && !isLoading && !settingsLoading && isAuthenticated && !isOnboardingPage && accessToken && settings !== undefined && !onboardingCompleted) {
       router.replace('/onboarding');
     }
-  }, [skipAuth, isLoading, settingsLoading, isAuthenticated, isOnboardingPage, onboardingCompleted, router, accessToken, settings]);
+  }, [mounted, skipAuth, isLoading, settingsLoading, isAuthenticated, isOnboardingPage, onboardingCompleted, router, accessToken, settings]);
 
   // RBAC: Cashier can ONLY access /pos and /pos/quick
   useEffect(() => {
+    if (!mounted) return;
     if (skipAuth || isLoading || !isAuthenticated || !userRole) return;
 
     const isCashierOnly = userRole === 'cashier' && !isOwner;
@@ -69,9 +79,10 @@ export default function DashboardLayout({
     if (isCashierOnly && !isPosRoute) {
       router.replace('/pos');
     }
-  }, [skipAuth, isLoading, isAuthenticated, userRole, isOwner, pathname, router]);
+  }, [mounted, skipAuth, isLoading, isAuthenticated, userRole, isOwner, pathname, router]);
 
-  if (!skipAuth && isLoading) {
+  // Before mount or while loading auth — render identical spinner on server & client
+  if (!mounted || (!skipAuth && isLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner size="lg" />
