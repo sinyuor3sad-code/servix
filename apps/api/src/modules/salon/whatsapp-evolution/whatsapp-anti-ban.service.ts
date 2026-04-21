@@ -85,10 +85,10 @@ export class WhatsAppAntiBanService {
     await tenantDb.whatsAppOptOut.deleteMany({ where: { phone: normalized } });
   }
 
-  async listOptOuts(tenantDb: TenantPrismaClient): Promise<Array<{ phone: string; reason: string | null; optedOutAt: Date }>> {
+  async listOptOuts(tenantDb: TenantPrismaClient): Promise<Array<{ id: string; phone: string; reason: string | null; optedOutAt: Date }>> {
     return tenantDb.whatsAppOptOut.findMany({
       orderBy: { optedOutAt: 'desc' },
-      select: { phone: true, reason: true, optedOutAt: true },
+      select: { id: true, phone: true, reason: true, optedOutAt: true },
     });
   }
 

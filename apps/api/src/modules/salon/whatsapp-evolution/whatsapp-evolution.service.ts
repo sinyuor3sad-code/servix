@@ -128,13 +128,24 @@ export class WhatsAppEvolutionService implements OnModuleInit {
 
   async fetchQrCode(instanceName: string): Promise<string | null> {
     try {
+      // Evolution's /instance/connect endpoint both initiates connection
+      // AND returns a QR code if the instance is not yet connected.
       const data = await this.adminRequest<Record<string, unknown>>(
         'GET',
         `/instance/connect/${encodeURIComponent(instanceName)}`,
       );
+      // Evolution v2 returns { base64: "data:image/png;base64,..." }
+      // or { code: "raw-qr-string" } or { pairingCode: "..." }
       const base64 = data['base64'] as string | undefined;
       const code = data['code'] as string | undefined;
-      return base64 || code || null;
+      const pairingCode = data['pairingCode'] as string | undefined;
+      const result = base64 || code || pairingCode || null;
+      if (result) {
+        this.logger.log(`QR code fetched for ${instanceName} (length=${result.length})`);
+      } else {
+        this.logger.warn(`QR fetch returned empty for ${instanceName}: ${JSON.stringify(data).slice(0, 200)}`);
+      }
+      return result;
     } catch (err) {
       this.logger.warn(`QR fetch failed for ${instanceName}: ${(err as Error).message}`);
       return null;

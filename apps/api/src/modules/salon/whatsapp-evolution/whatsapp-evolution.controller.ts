@@ -78,7 +78,21 @@ export class WhatsAppEvolutionController {
       where: { tenantId },
     });
     if (!instance) throw new NotFoundException('لا يوجد مثيل للصالون');
+
+    // Logout first to force a fresh QR generation
+    if (instance.status === 'connected' || instance.status === 'connecting') {
+      await this.evolution.logoutInstance(instance.instanceName);
+    }
+
+    // Request fresh QR from Evolution (this also triggers connection flow)
     const qrCode = await this.evolution.fetchQrCode(instance.instanceName);
+
+    // Update DB status so the UI shows the QR section
+    await this.platformDb.whatsAppInstance.update({
+      where: { tenantId },
+      data: { status: 'qr_pending' },
+    });
+
     return { success: true, data: { qrCode } };
   }
 

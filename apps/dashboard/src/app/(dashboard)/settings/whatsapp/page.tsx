@@ -84,7 +84,15 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
 
   const reconnectMutation = useMutation({
     mutationFn: () => whatsappEvolutionService.reconnect(accessToken!),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Immediately update the cached status with the QR code from response
+      if (data?.qrCode) {
+        qc.setQueryData(['whatsapp-evolution', 'status'], (old: WhatsAppInstance | null | undefined) => ({
+          ...(old ?? { instanceName: '', phoneNumber: null, profileName: null, profilePicUrl: null, lastConnectedAt: null }),
+          status: 'qr_pending' as WhatsAppInstanceStatus,
+          qrCode: data.qrCode,
+        }));
+      }
       qc.invalidateQueries({ queryKey: ['whatsapp-evolution', 'status'] });
       toast.success('تم طلب QR جديد');
     },
@@ -155,7 +163,7 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
   const statusKey = (instance?.status ?? 'disconnected') as WhatsAppInstanceStatus;
   const statusStyle = STATUS_STYLES[statusKey];
   const isConnected = statusKey === 'connected';
-  const showQr = statusKey === 'qr_pending' && instance?.qrCode;
+  const showQr = (statusKey === 'qr_pending' || statusKey === 'disconnected') && instance?.qrCode;
 
   const toggleBool = (key: string, checked: boolean) =>
     settingsMutation.mutate([{ key, value: checked ? 'true' : 'false' }]);
@@ -270,7 +278,7 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
                   onClick={() => reconnectMutation.mutate()}
                   disabled={reconnectMutation.isPending}
                 >
-                  <RefreshCw className="h-3.5 w-3.5 ml-1.5" />
+                  <RefreshCw className="h-3.5 w-3.5 me-1.5" />
                   تجديد QR
                 </Button>
                 <Button
@@ -283,7 +291,7 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
                   disabled={disconnectMutation.isPending}
                   className="text-red-600 hover:bg-red-500/10"
                 >
-                  <Trash2 className="h-3.5 w-3.5 ml-1.5" />
+                  <Trash2 className="h-3.5 w-3.5 me-1.5" />
                   فصل الحساب
                 </Button>
               </div>
@@ -445,7 +453,7 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
               onClick={() => newOptOut && addOptOutMutation.mutate({ phone: newOptOut })}
               disabled={!newOptOut || addOptOutMutation.isPending}
             >
-              <Plus className="h-3.5 w-3.5 ml-1.5" />
+              <Plus className="h-3.5 w-3.5 me-1.5" />
               إضافة
             </Button>
           </div>
