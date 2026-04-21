@@ -36,6 +36,7 @@ const mockCacheService = {
   setBookingOtp: jest.fn().mockResolvedValue(undefined),
   markBookingOtpSent: jest.fn().mockResolvedValue(undefined),
   verifyBookingOtp: jest.fn().mockResolvedValue(true),
+  isBookingOtpVerified: jest.fn().mockResolvedValue(true),
 };
 
 const ACTIVE_TENANT = {

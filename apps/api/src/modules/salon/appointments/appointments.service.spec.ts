@@ -433,11 +433,12 @@ describe('AppointmentsService', () => {
       );
 
       expect(result).toHaveProperty('status', 'completed');
+      // Note: totalVisits/totalSpent are updated in invoices.service when the
+      // invoice is paid (prevents double counting). Completion only touches lastVisitAt.
       expect(mockDb.client.update).toHaveBeenCalledWith({
         where: { id: 'client-1' },
         data: expect.objectContaining({
-          totalVisits: { increment: 1 },
-          totalSpent: { increment: 150 },
+          lastVisitAt: expect.any(Date),
         }),
       });
     });
@@ -562,7 +563,7 @@ describe('AppointmentsService', () => {
       );
     });
 
-    it('يجب أن يزيد totalVisits و totalSpent للعميل عند الإكمال', async () => {
+    it('يجب أن يسجّل lastVisitAt للعميل عند الإكمال (totalVisits/totalSpent في invoices عند الدفع)', async () => {
       mockDb.appointment.findUnique.mockResolvedValue({
         id: 'app-1',
         status: 'in_progress',
@@ -593,8 +594,6 @@ describe('AppointmentsService', () => {
       expect(mockDb.client.update).toHaveBeenCalledWith({
         where: { id: 'client-1' },
         data: {
-          totalVisits: { increment: 1 },
-          totalSpent: { increment: 200 },
           lastVisitAt: expect.any(Date),
         },
       });
