@@ -24,6 +24,7 @@ import { settingsService } from '@/services/settings.service';
 import {
   whatsappEvolutionService,
   type WhatsAppInstanceStatus,
+  type WhatsAppInstance,
 } from '@/services/whatsapp-evolution.service';
 
 const STATUS_STYLES: Record<
