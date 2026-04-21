@@ -1,4 +1,5 @@
 {
+  "id": "wf-servix-review-0004",
   "name": "Servix — WhatsApp Review Request",
   "nodes": [
     {
@@ -135,6 +136,5 @@
   "active": false,
   "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "saveExecutionProgress": true, "timezone": "Asia/Riyadh" },
   "meta": { "templateId": "servix-whatsapp-review-request" },
-  "pinData": {},
-  "tags": [{ "name": "servix" }, { "name": "whatsapp" }]
+  "pinData": {}
 }
