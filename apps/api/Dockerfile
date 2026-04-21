@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:25-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
@@ -18,7 +18,7 @@ RUN npx prisma generate --schema=./prisma/tenant.prisma
 RUN pnpm build
 RUN pnpm --filter @servix/api deploy /app/deployed --prod --legacy
 
-FROM node:22-alpine AS runner
+FROM node:25-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
