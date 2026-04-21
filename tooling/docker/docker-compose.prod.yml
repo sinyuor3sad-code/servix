@@ -62,22 +62,19 @@ services:
       - servix-network
 
   # ═══════ PgBouncer Connection Pooler ═══════
+  # Uses custom config with wildcard (*) database support
+  # so dynamic tenant databases (servix_tenant_xxx) are routed correctly.
   pgbouncer:
     image: edoburu/pgbouncer:latest
     container_name: servix-pgbouncer
     restart: always
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-servix_platform}
-      POOL_MODE: transaction
-      DEFAULT_POOL_SIZE: 50
-      MAX_CLIENT_CONN: 300
-      MAX_DB_CONNECTIONS: 150
-      MIN_POOL_SIZE: 5
-      RESERVE_POOL_SIZE: 5
-      RESERVE_POOL_TIMEOUT: 3
-      SERVER_IDLE_TIMEOUT: 300
-      QUERY_TIMEOUT: 30
-      AUTH_TYPE: scram-sha-256
+      PGBOUNCER_USER: ${POSTGRES_USER}
+      PGBOUNCER_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -174,6 +171,8 @@ services:
       WHATSAPP_REGISTRATION_PIN: ${WHATSAPP_REGISTRATION_PIN:-}
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -220,6 +219,8 @@ services:
       WHATSAPP_REGISTRATION_PIN: ${WHATSAPP_REGISTRATION_PIN:-}
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
+      EVOLUTION_API_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
