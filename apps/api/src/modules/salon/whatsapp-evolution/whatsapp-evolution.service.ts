@@ -81,15 +81,29 @@ export class WhatsAppEvolutionService implements OnModuleInit {
     const instanceName = `salon-${tenantSlug.toLowerCase()}`;
     const instanceToken = randomBytes(24).toString('hex');
 
-    // Create on Evolution API
+    // Build webhook URL — Evolution will POST incoming messages here
+    const apiBaseUrl = this.configService.get<string>(
+      'API_BASE_URL',
+      'https://api.servi-x.com',
+    );
+    const webhookUrl = `${apiBaseUrl}/api/webhooks/evolution/${instanceName}`;
+
+    // Create on Evolution API with webhook configuration
     const created = await this.adminRequest<Record<string, unknown>>('POST', '/instance/create', {
       instanceName,
       token: instanceToken,
       qrcode: true,
       integration: 'WHATSAPP-BAILEYS',
+      webhook: {
+        url: webhookUrl,
+        byEvents: false,
+        base64: true,  // Include media as base64 in webhook (for audio/image AI processing)
+        headers: { apikey: this.configService.get<string>('EVOLUTION_API_KEY', '') },
+        events: ['messages.upsert', 'connection.update'],
+      },
     });
 
-    this.logger.log(`Evolution instance created: ${instanceName} (tenant=${tenantId})`);
+    this.logger.log(`Evolution instance created: ${instanceName} (tenant=${tenantId}, webhook=${webhookUrl})`);
     void created; // creation response ignored — we'll poll for status/QR
 
     return this.platformPrisma.whatsAppInstance.create({

@@ -1243,3 +1243,57 @@ model InvoiceFeedback {
 
   @@map("invoice_feedbacks")
 }
+
+// ─────────────────── AI Reception ───────────────────
+
+enum AIPendingActionStatus {
+  awaiting_manager
+  approved
+  rejected
+  expired
+}
+
+enum AIPendingActionType {
+  book_appointment
+  cancel_appointment
+  reschedule_appointment
+}
+
+/// Tracks conversation history between a customer and the AI receptionist.
+/// One conversation per phone number — messages are appended as JSON array.
+model AIConversation {
+  id           String   @id @default(cuid())
+  phone        String   @unique @db.VarChar(20)
+  clientId     String?  @map("client_id") @db.Uuid
+  messages     Json     @default("[]") @db.JsonB // [{role:'user'|'assistant', text, ts}]
+  lastActiveAt DateTime @map("last_active_at") @db.Timestamptz()
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  pendingActions AIPendingAction[]
+
+  @@index([lastActiveAt])
+  @@map("ai_conversations")
+}
+
+/// Tracks transactional requests (booking/cancellation/reschedule) that need
+/// manager approval before execution. Each action has a human-friendly
+/// auto-incrementing ID (per tenant) used in WhatsApp messages.
+model AIPendingAction {
+  id               Int                    @id @default(autoincrement())
+  conversationId   String                 @map("conversation_id")
+  type             AIPendingActionType
+  payload          Json                   @db.JsonB // {clientName, service, date, time, ...}
+  status           AIPendingActionStatus  @default(awaiting_manager)
+  managerMessageId String?                @map("manager_message_id") @db.VarChar(100)
+  customerPhone    String                 @map("customer_phone") @db.VarChar(20)
+  expiresAt        DateTime               @map("expires_at") @db.Timestamptz()
+  resolvedAt       DateTime?              @map("resolved_at") @db.Timestamptz()
+  resolvedBy       String?                @map("resolved_by") @db.VarChar(20) // manager phone
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz()
+
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([status, expiresAt])
+  @@index([conversationId])
+  @@map("ai_pending_actions")
+}

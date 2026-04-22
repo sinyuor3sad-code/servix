@@ -1,0 +1,160 @@
+{
+  "id": "wf-servix-ai-reception-0005",
+  "name": "Servix — AI Reception (Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "servix-ai-reception",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a5555555-5555-4555-a555-555555555551",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "servix-ai-reception"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "guard-tenantId",
+              "leftValue": "={{ $json.body.tenantId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            },
+            {
+              "id": "guard-phone",
+              "leftValue": "={{ $json.body.phone }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            },
+            {
+              "id": "guard-message",
+              "leftValue": "={{ $json.body.message }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            },
+            {
+              "id": "guard-context",
+              "leftValue": "={{ $json.body.salonContext }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a5555555-5555-4555-a555-555555555552",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "system-prompt",
+              "name": "systemPrompt",
+              "value": "={{ $json.body.systemPrompt || `أنت موظف استقبال في ${$json.body.salonContext.salonName || 'الصالون'}. تحدّث بلهجة ${$json.body.tone || 'ودية'} ومختصر.\n\nالمعلومات المتاحة عن الصالون:\n${JSON.stringify($json.body.salonContext, null, 0)}\n\nآخر المحادثة:\n${JSON.stringify(($json.body.history || []).slice(-8), null, 0)}\n\nالرسالة الجديدة من العميل: ${$json.body.message}\n\nارجع JSON **فقط** بالصيغة:\n{\n  \"intent\": \"inquiry|book|cancel|reschedule|complaint|smalltalk\",\n  \"reply\": \"نصك الموجّه للعميل\",\n  \"proposedAction\": null\n}\n\nأو إذا العميل يريد إجراء (حجز/إلغاء/تعديل):\n{\n  \"intent\": \"book\",\n  \"reply\": \"جاري التأكد من المديرة — نرد عليك خلال دقائق 🙏\",\n  \"proposedAction\": {\n    \"type\": \"book_appointment\",\n    \"payload\": { \"serviceName\": \"...\", \"date\": \"...\", \"time\": \"...\", \"clientName\": \"...\" }\n  }\n}\n\n**قواعد حتمية:**\n- لا تؤكّد أي حجز/إلغاء/تعديل — دائماً أنشئ proposedAction.\n- إذا نقصت معلومة (خدمة/تاريخ/وقت) — اطلبها في reply ولا تنشئ proposedAction.\n- لا تخترع أسعاراً/خدمات غير موجودة.\n- ارجع JSON فقط بدون أي نص إضافي.` }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a5555555-5555-4555-a555-555555555553",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [700, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": {{ JSON.stringify($json.systemPrompt) }}\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.4,\n    \"maxOutputTokens\": 500,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "options": { "timeout": 20000 }
+      },
+      "id": "a5555555-5555-4555-a555-555555555554",
+      "name": "Gemini API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Gemini response — extract JSON from the text output\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    const candidates = item.json?.candidates || [];\n    const text = candidates[0]?.content?.parts?.[0]?.text || '';\n    \n    // Try to parse the JSON directly\n    let parsed;\n    try {\n      parsed = JSON.parse(text);\n    } catch {\n      // Try to extract JSON from markdown code blocks\n      const jsonMatch = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/);\n      if (jsonMatch) {\n        parsed = JSON.parse(jsonMatch[1].trim());\n      } else {\n        // Try to find JSON object in the text\n        const objMatch = text.match(/\\{[\\s\\S]*\\}/);\n        if (objMatch) {\n          parsed = JSON.parse(objMatch[0]);\n        } else {\n          throw new Error('No JSON found in Gemini response');\n        }\n      }\n    }\n    \n    // Validate required fields\n    results.push({\n      json: {\n        intent: parsed.intent || 'inquiry',\n        reply: parsed.reply || 'عذراً، لم أتمكن من فهم طلبك. يرجى إعادة الصياغة.',\n        proposedAction: parsed.proposedAction || null,\n        success: true\n      }\n    });\n  } catch (err) {\n    results.push({\n      json: {\n        intent: 'error',\n        reply: 'مرحباً! نعتذر عن التأخير — يمكنك التواصل مباشرة مع الصالون. 🙏',\n        proposedAction: null,\n        success: false,\n        error: err.message\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "a5555555-5555-4555-a555-555555555555",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "a5555555-5555-4555-a555-555555555556",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1360, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 400,
+        "responseBody": "={ \"success\": false, \"error\": \"missing required fields: tenantId, phone, message, salonContext\" }"
+      },
+      "id": "a5555555-5555-4555-a555-555555555557",
+      "name": "Respond Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, 440]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Validate Payload", "type": "main", "index": 0 }]]
+    },
+    "Validate Payload": {
+      "main": [
+        [{ "node": "Build Prompt", "type": "main", "index": 0 }],
+        [{ "node": "Respond Bad Request", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Prompt": {
+      "main": [[{ "node": "Gemini API", "type": "main", "index": 0 }]]
+    },
+    "Gemini API": {
+      "main": [[{ "node": "Parse Response", "type": "main", "index": 0 }]]
+    },
+    "Parse Response": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "saveExecutionProgress": true, "timezone": "Asia/Riyadh" },
+  "meta": { "templateId": "servix-ai-reception" },
+  "pinData": {}
+}
