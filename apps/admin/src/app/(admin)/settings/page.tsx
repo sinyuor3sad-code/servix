@@ -4,12 +4,12 @@ import { useState, useEffect, useCallback, type ReactElement } from 'react';
 import {
   Settings, Globe, Mail, Shield, Database, Palette, Wrench,
   Save, Key, Gauge, Construction, Server, Eye, EyeOff,
-  CheckCircle, AlertTriangle, Loader2,
+  CheckCircle, AlertTriangle, Loader2, ScrollText, Building2, MessageCircle,
 } from 'lucide-react';
 import { Glass, PageTitle } from '@/components/ui/glass';
 import { adminService } from '@/services/admin.service';
 
-type Tab = 'general' | 'security' | 'billing' | 'gateways' | 'appearance' | 'advanced';
+type Tab = 'general' | 'security' | 'billing' | 'gateways' | 'appearance' | 'compliance' | 'advanced';
 
 const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'general', label: 'عام', icon: Globe },
@@ -17,11 +17,42 @@ const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'billing', label: 'الفوترة', icon: Database },
   { key: 'gateways', label: 'البوابات', icon: Mail },
   { key: 'appearance', label: 'المظهر', icon: Palette },
+  { key: 'compliance', label: 'الامتثال', icon: ScrollText },
   { key: 'advanced', label: 'متقدم', icon: Wrench },
 ];
 
-// Default settings keys and their initial values
+// Default settings keys and their initial values.
+// Compliance fields (CR, VAT, support phone/whatsapp, address, etc.) are
+// intentionally left empty — fake/placeholder identifiers must NEVER be
+// shipped to the public-facing site.
 const DEFAULTS: Record<string, string> = {
+  // ─── Compliance / merchant identity (Saudi MoC) ───
+  merchant_name_ar: 'سيرفكس',
+  merchant_name_en: 'SERVIX',
+  merchant_cr_number: '',
+  merchant_vat_number: '',
+  merchant_city: '',
+  merchant_country: 'المملكة العربية السعودية',
+  merchant_address: '',
+  merchant_maps_url: '',
+  support_email: '',
+  support_phone: '',
+  support_whatsapp: '',
+  support_hours: 'الأحد - الخميس، 9 ص - 6 م',
+  complaint_response_time_ar: 'خلال 24 ساعة عمل',
+  complaint_resolution_time_ar: 'من 3 إلى 7 أيام عمل حسب نوع الشكوى',
+  legal_terms_url: '',
+  legal_privacy_url: '',
+  legal_refund_url: '',
+  social_x: '',
+  social_instagram: '',
+  social_tiktok: '',
+  social_snapchat: '',
+  social_facebook: '',
+  social_linkedin: '',
+  service_delivery_time_ar: 'تفعيل فوري بعد تأكيد الاشتراك — لا يوجد توصيل مادي. متوسط زمن التفعيل أقل من دقيقتين.',
+  payment_methods_ar: '',
+
   platform_name: 'SERVIX',
   platform_url: 'https://app.servi-x.com',
   default_lang: 'العربية',
@@ -299,6 +330,75 @@ export default function SettingsPage(): ReactElement {
               <Field label="Compact Mode" settingKey="compact_mode" settings={settings} onChange={handleChange} type="toggle" />
             </div>
           </Section>
+        )}
+
+        {tab === 'compliance' && (
+          <>
+            <Section icon={Building2} title="بيانات المنشأة" desc="تظهر في صفحة /about والفوتر — اتركها فارغة إن لم تكن متوفرة">
+              <div className="nx-grid-2">
+                <Field label="الاسم التجاري (عربي)" settingKey="merchant_name_ar" settings={settings} onChange={handleChange} />
+                <Field label="Trade Name (English)" settingKey="merchant_name_en" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="رقم السجل التجاري" settingKey="merchant_cr_number" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="الرقم الضريبي (VAT)" settingKey="merchant_vat_number" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="المدينة" settingKey="merchant_city" settings={settings} onChange={handleChange} />
+                <Field label="الدولة" settingKey="merchant_country" settings={settings} onChange={handleChange} />
+                <Field label="العنوان التفصيلي" settingKey="merchant_address" settings={settings} onChange={handleChange} />
+                <Field label="رابط Google Maps" settingKey="merchant_maps_url" settings={settings} onChange={handleChange} dir="ltr" />
+              </div>
+              <div style={{ marginTop: 16, padding: '12px 16px', borderRadius: 12, background: 'rgba(201,168,76,0.04)', border: '1px solid rgba(201,168,76,0.12)' }}>
+                <p style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: 'var(--gold)' }}>
+                  <AlertTriangle size={14} /> تنبيه: لا تُدخل أرقاماً تجريبية. الحقول الفارغة لا تُعرض على الموقع العام.
+                </p>
+              </div>
+            </Section>
+
+            <Section icon={MessageCircle} title="قنوات الدعم" desc="تظهر في الفوتر، صفحة /about، وصفحة /contact">
+              <div className="nx-grid-2">
+                <Field label="البريد الرسمي للدعم" settingKey="support_email" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="رقم الهاتف الرسمي" settingKey="support_phone" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="رقم/رابط واتساب الدعم" settingKey="support_whatsapp" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="ساعات الدعم" settingKey="support_hours" settings={settings} onChange={handleChange} />
+              </div>
+            </Section>
+
+            <Section icon={ScrollText} title="أوقات معالجة الشكاوى" desc="تظهر في صفحة /complaints وعند تأكيد إرسال الشكوى">
+              <div className="nx-grid-2">
+                <Field label="وقت الرد على الشكوى" settingKey="complaint_response_time_ar" settings={settings} onChange={handleChange} />
+                <Field label="وقت معالجة الشكوى" settingKey="complaint_resolution_time_ar" settings={settings} onChange={handleChange} />
+              </div>
+            </Section>
+
+            <Section icon={MessageCircle} title="حسابات التواصل الاجتماعي" desc="معيار وزارة التجارة #6 — تمكين الشكوى عبر التواصل الاجتماعي. أدخل اسم المستخدم بدون @ أو رابطًا كاملاً">
+              <div className="nx-grid-3">
+                <Field label="X (تويتر)" settingKey="social_x" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="إنستقرام" settingKey="social_instagram" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="تيك توك" settingKey="social_tiktok" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="سناب شات" settingKey="social_snapchat" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="فيسبوك" settingKey="social_facebook" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="لينكدإن" settingKey="social_linkedin" settings={settings} onChange={handleChange} dir="ltr" />
+              </div>
+            </Section>
+
+            <Section icon={Database} title="وقت التفعيل ووسائل الدفع" desc="معيار وزارة التجارة #4 و #9 — يجب الإفصاح عنها قبل الشراء وفي الفاتورة">
+              <div className="nx-space-y">
+                <Field label="وقت تسليم/تفعيل الخدمة" settingKey="service_delivery_time_ar" settings={settings} onChange={handleChange} />
+                <Field label="وسائل الدفع المتاحة" settingKey="payment_methods_ar" settings={settings} onChange={handleChange} />
+                <div style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(201,168,76,0.04)', border: '1px solid rgba(201,168,76,0.12)' }}>
+                  <p style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: 'var(--gold)' }}>
+                    <AlertTriangle size={14} /> اترك «وسائل الدفع المتاحة» فارغًا حتى يتم ربط بوابة الدفع فعليًا. لا تدعِ اعتماد بوابة قبل تشغيلها.
+                  </p>
+                </div>
+              </div>
+            </Section>
+
+            <Section icon={Globe} title="روابط السياسات (اختياري)" desc="عادةً تُترك فارغة لاستخدام الصفحات الداخلية في /terms /privacy /refund-policy">
+              <div className="nx-grid-3">
+                <Field label="رابط الشروط والأحكام" settingKey="legal_terms_url" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="رابط سياسة الخصوصية" settingKey="legal_privacy_url" settings={settings} onChange={handleChange} dir="ltr" />
+                <Field label="رابط سياسة الاسترداد" settingKey="legal_refund_url" settings={settings} onChange={handleChange} dir="ltr" />
+              </div>
+            </Section>
+          </>
         )}
 
         {tab === 'advanced' && (

@@ -30,6 +30,7 @@ import { AdminModule } from './core/admin/admin.module';
 import { HealthModule } from './core/health/health.module';
 import { SalonModule } from './modules/salon/salon.module';
 import { PublicModule } from './modules/public/public.module';
+import { ComplianceModule } from './modules/compliance/compliance.module';
 import { DataRightsModule } from './modules/data-rights/data-rights.module';
 import { MetricsModule } from './shared/metrics/metrics.module';
 import { HttpMetricsInterceptor } from './shared/metrics/http-metrics.interceptor';
@@ -73,6 +74,7 @@ import { winstonConfig } from './shared/logger/winston.config';
     HealthModule,
     SalonModule,
     PublicModule,
+    ComplianceModule,
     DataRightsModule,
     MetricsModule,
     DistributedLockModule,

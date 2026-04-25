@@ -578,3 +578,37 @@ model TokenBlacklist {
   @@index([userId])
   @@map("token_blacklist")
 }
+
+// ─────────────────── Platform Complaints (MoC compliance) ───────────────────
+// Stores customer complaints submitted via the public /complaints page.
+// Required by Saudi Ministry of Commerce e-commerce trust criteria — every
+// complaint must produce a tracked reference and be auditable by the operator.
+
+enum ComplaintStatus {
+  new
+  in_review
+  resolved
+  closed
+}
+
+model PlatformComplaint {
+  id                    String          @id @default(uuid()) @db.Uuid
+  referenceNumber       String          @unique @map("reference_number") @db.VarChar(32)
+  name                  String          @db.VarChar(150)
+  phone                 String          @db.VarChar(30)
+  email                 String?         @db.VarChar(150)
+  complaintType         String          @map("complaint_type") @db.VarChar(80)
+  orderOrInvoiceNumber  String?         @map("order_or_invoice_number") @db.VarChar(80)
+  message               String          @db.Text
+  status                ComplaintStatus @default(new)
+  ipAddress             String?         @map("ip_address") @db.VarChar(45)
+  userAgent             String?         @map("user_agent") @db.Text
+  internalNotes         String?         @map("internal_notes") @db.Text
+  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt             DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([phone])
+  @@map("platform_complaints")
+}
