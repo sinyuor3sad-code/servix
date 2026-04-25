@@ -4,11 +4,11 @@ import { useState, useCallback, type FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { UserPlus, User, Mail, Phone, Lock, Store, ArrowRight } from 'lucide-react';
+import { UserPlus, User, Mail, Phone, Lock, Store, ArrowRight, Info } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { ApiError } from '@/lib/api';
 
-const LANDING_URL = 'https://servi-x.com';
+const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL || 'https://servi-x.com';
 
 interface FormFields {
   fullName: string; email: string; phone: string;
@@ -42,6 +42,7 @@ export default function RegisterPage(): React.ReactElement {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [show, setShow] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   useEffect(() => { requestAnimationFrame(() => setShow(true)); }, []);
 
@@ -65,6 +66,10 @@ export default function RegisterPage(): React.ReactElement {
 
   const handleSubmit = useCallback(async (e: FormEvent) => {
     e.preventDefault();
+    if (!agreed) {
+      toast.error('يجب الموافقة على الشروط وسياسة الخصوصية والإلغاء قبل المتابعة');
+      return;
+    }
     if (!validate()) return;
     setLoading(true);
     try {
@@ -81,7 +86,7 @@ export default function RegisterPage(): React.ReactElement {
         else toast.error(error.message);
       } else toast.error('حدث خطأ غير متوقع');
     } finally { setLoading(false); }
-  }, [form, register, router, validate]);
+  }, [form, register, router, validate, agreed]);
 
   return (
     <div style={{
@@ -117,8 +122,44 @@ export default function RegisterPage(): React.ReactElement {
             );
           })}
 
+          <div
+            className="rounded-xl border p-4 text-[13px] leading-relaxed"
+            style={{ borderColor: '#D9CDB6', background: '#FAF6EC', color: '#5A5650' }}
+          >
+            <div className="mb-2 flex items-center gap-2 font-bold" style={{ color: '#3F3A33' }}>
+              <Info className="h-4 w-4" /> قبل إنشاء الحساب
+            </div>
+            <ul className="space-y-1 ps-5" style={{ listStyle: 'disc' }}>
+              <li>التسجيل يشمل تجربة مجانية لمدة 14 يومًا — بدون بطاقة ائتمان.</li>
+              <li><strong>وقت التفعيل:</strong> فوري بعد إنشاء الحساب — الخدمة رقمية تعمل مباشرة من المتصفح، ولا يوجد توصيل مادي.</li>
+              <li>عند تفعيل أي باقة مدفوعة لاحقًا، تُعرض وسائل الدفع المتاحة وتفاصيلها في صفحة الدفع قبل إتمام العملية.</li>
+              <li>الباقات المدفوعة بالريال السعودي، يُوضح في صفحة الدفع ما إذا كان السعر شاملاً ضريبة القيمة المضافة (15%) أم مضافة عليها.</li>
+              <li>الاشتراكات المدفوعة تُجدَّد تلقائيًا في نهاية كل دورة، ويمكن إيقاف التجديد التلقائي أو الإلغاء في أي وقت من إعدادات الحساب.</li>
+              <li>سياسة الإلغاء والاسترداد تنطبق وفق ما هو منشور على الموقع.</li>
+            </ul>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
+              style={{ accentColor: '#9D7D49' }}
+            />
+            <span className="text-[13px] leading-relaxed" style={{ color: '#5A5650' }}>
+              أقرّ بأنني قرأت ووافقت على{' '}
+              <a href={`${LANDING_URL}/terms`}         target="_blank" rel="noreferrer" className="auth-link font-bold">الشروط والأحكام</a>
+              {'، و'}
+              <a href={`${LANDING_URL}/privacy`}       target="_blank" rel="noreferrer" className="auth-link font-bold">سياسة الخصوصية</a>
+              {'، و'}
+              <a href={`${LANDING_URL}/refund-policy`} target="_blank" rel="noreferrer" className="auth-link font-bold">سياسة الإلغاء والاسترداد</a>
+              {'.'}
+            </span>
+          </label>
+
           <div className="pt-2">
-            <button type="submit" disabled={loading} className="auth-btn">
+            <button type="submit" disabled={loading || !agreed} className="auth-btn">
               {loading ? <><span className="auth-spinner" /> جاري إنشاء الحساب...</>
                : <><UserPlus className="h-[18px] w-[18px]" /> إنشاء حساب</>}
             </button>
