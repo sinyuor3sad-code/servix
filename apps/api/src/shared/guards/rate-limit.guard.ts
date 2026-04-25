@@ -47,7 +47,11 @@ export class RateLimitGuard implements CanActivate {
 
     // Skip rate limiting for health checks
     const url = request.url as string;
-    if (url.startsWith('/api/v1/health') || url.startsWith('/health')) {
+    if (
+      url.startsWith('/api/v1/health') ||
+      url.startsWith('/health') ||
+      url.startsWith('/api/webhooks/evolution')
+    ) {
       return true;
     }
 

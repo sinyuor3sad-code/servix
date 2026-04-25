@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { CircuitBreakerService } from '../../../shared/resilience/circuit-breaker.service';
 import type { WhatsAppInstance, WhatsAppInstanceStatus } from '../../../../generated/platform';
+import { EVOLUTION_WEBHOOK_FULL_PATH } from './webhook-path.constant';
 
 export interface EvolutionInstanceDetails {
   status: WhatsAppInstanceStatus;
@@ -81,15 +82,29 @@ export class WhatsAppEvolutionService implements OnModuleInit {
     const instanceName = `salon-${tenantSlug.toLowerCase()}`;
     const instanceToken = randomBytes(24).toString('hex');
 
-    // Create on Evolution API
+    // Build webhook URL — Evolution will POST incoming messages here
+    const apiBaseUrl = this.configService.get<string>(
+      'API_BASE_URL',
+      'https://api.servi-x.com',
+    );
+    const webhookUrl = `${apiBaseUrl}${EVOLUTION_WEBHOOK_FULL_PATH}/${instanceName}`;
+
+    // Create on Evolution API with webhook configuration
     const created = await this.adminRequest<Record<string, unknown>>('POST', '/instance/create', {
       instanceName,
       token: instanceToken,
       qrcode: true,
       integration: 'WHATSAPP-BAILEYS',
+      webhook: {
+        url: webhookUrl,
+        byEvents: false,
+        base64: true,  // Include media as base64 in webhook (for audio/image AI processing)
+        headers: { apikey: this.configService.get<string>('EVOLUTION_API_KEY', '') },
+        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+      },
     });
 
-    this.logger.log(`Evolution instance created: ${instanceName} (tenant=${tenantId})`);
+    this.logger.log(`Evolution instance created: ${instanceName} (tenant=${tenantId}, webhook=${webhookUrl})`);
     void created; // creation response ignored — we'll poll for status/QR
 
     return this.platformPrisma.whatsAppInstance.create({

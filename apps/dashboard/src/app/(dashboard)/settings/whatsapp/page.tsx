@@ -15,6 +15,8 @@ import {
   Gauge,
   ShieldAlert,
   Plus,
+  Bot,
+  Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -76,8 +78,12 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
 
   const connectMutation = useMutation({
     mutationFn: () => whatsappEvolutionService.getOrCreateInstance(accessToken!),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['whatsapp-evolution', 'status'] });
+    onSuccess: (data) => {
+      if (data?.qrCode) {
+        qc.setQueryData(['whatsapp-evolution', 'status'], data);
+      } else {
+        qc.invalidateQueries({ queryKey: ['whatsapp-evolution', 'status'] });
+      }
       toast.success('✅ تم إنشاء المثيل — امسحي رمز QR من تطبيق واتساب');
     },
     onError: () => toast.error('فشل إنشاء المثيل'),
@@ -94,7 +100,9 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
           qrCode: data.qrCode,
         }));
       }
-      qc.invalidateQueries({ queryKey: ['whatsapp-evolution', 'status'] });
+      if (!data?.qrCode) {
+        qc.invalidateQueries({ queryKey: ['whatsapp-evolution', 'status'] });
+      }
       toast.success('تم طلب QR جديد');
     },
     onError: () => toast.error('فشل إعادة الاتصال'),
@@ -164,7 +172,9 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
   const statusKey = (instance?.status ?? 'disconnected') as WhatsAppInstanceStatus;
   const statusStyle = STATUS_STYLES[statusKey];
   const isConnected = statusKey === 'connected';
-  const showQr = (statusKey === 'qr_pending' || statusKey === 'disconnected') && instance?.qrCode;
+  const showQr =
+    (statusKey === 'qr_pending' || statusKey === 'disconnected' || statusKey === 'connecting') &&
+    instance?.qrCode;
 
   const toggleBool = (key: string, checked: boolean) =>
     settingsMutation.mutate([{ key, value: checked ? 'true' : 'false' }]);
@@ -335,6 +345,280 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
               />
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Review and reputation controls */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-yellow-500/10 flex items-center justify-center">
+              <Star className="h-4 w-4 text-yellow-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">تقييم ما بعد الزيارة</h3>
+              <p className="text-[10px] text-[var(--muted-foreground)]">طلب تقييم خاص، ورابط Google يظهر فقط للتقييمات العالية</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="flex items-center justify-between gap-4 sm:col-span-2">
+            <div>
+              <p className="text-sm font-bold">تفعيل طلب التقييم</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">الافتراضي متوقف حتى يفعّله المالك صراحة</p>
+            </div>
+            <Switch
+              checked={parseBool(settings.review_request_enabled)}
+              onCheckedChange={(c) => toggleBool('review_request_enabled', c)}
+              disabled={settingsMutation.isPending}
+            />
+          </div>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">تأخير الإرسال بالدقائق</span>
+            <Input
+              type="number"
+              min={0}
+              max={1440}
+              defaultValue={parseNum(settings.review_request_delay_minutes, 60)}
+              onBlur={(e) => updateStr('review_request_delay_minutes', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">رابط تقييم Google</span>
+            <Input
+              placeholder="https://maps.google.com/..."
+              defaultValue={settings.google_review_url || ''}
+              onBlur={(e) => updateStr('google_review_url', e.target.value.trim())}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">حد التقييم المنخفض</span>
+            <Input
+              type="number"
+              min={1}
+              max={4}
+              defaultValue={parseNum(settings.low_rating_threshold, 3)}
+              onBlur={(e) => updateStr('low_rating_threshold', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">حد التقييم العالي</span>
+            <Input
+              type="number"
+              min={2}
+              max={5}
+              defaultValue={parseNum(settings.high_rating_threshold, 4)}
+              onBlur={(e) => updateStr('high_rating_threshold', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">رسالة طلب التقييم</span>
+            <Input
+              defaultValue={settings.review_request_message || 'نسعد بمعرفة تقييمك لتجربتك من 1 إلى 5.'}
+              onBlur={(e) => updateStr('review_request_message', e.target.value)}
+            />
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">رد التقييم المنخفض</span>
+            <Input
+              defaultValue={settings.low_rating_response_message || 'نعتذر عن تجربتك. تم رفع ملاحظتك للإدارة لتحسين الخدمة.'}
+              onBlur={(e) => updateStr('low_rating_response_message', e.target.value)}
+            />
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">رد التقييم العالي</span>
+            <Input
+              defaultValue={settings.high_rating_response_message || 'شكرًا لتقييمك. يسعدنا دعمك بتقييمنا على Google: [googleReviewUrl]'}
+              onBlur={(e) => updateStr('high_rating_response_message', e.target.value)}
+            />
+            <span className="text-[10px] text-[var(--muted-foreground)]">استخدم [googleReviewUrl] لوضع الرابط داخل الرسالة</span>
+          </label>
+        </div>
+      </div>
+
+      {/* AI reception controls */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+              <Bot className="h-4 w-4 text-cyan-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">الاستقبال الذكي</h3>
+              <p className="text-[10px] text-[var(--muted-foreground)]">سياسات الرد، التصعيد، ومهلة موافقة الصالون</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="flex items-center justify-between gap-4 sm:col-span-2">
+            <div>
+              <p className="text-sm font-bold">تفعيل الاستقبال الذكي</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">إذا توقف، يرد برسالة توضح أن الاستقبال غير مفعل</p>
+            </div>
+            <Switch
+              checked={settings.ai_reception_enabled !== 'false'}
+              onCheckedChange={(c) => toggleBool('ai_reception_enabled', c)}
+              disabled={settingsMutation.isPending}
+            />
+          </div>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">رقم المدير</span>
+            <Input
+              placeholder="9665..."
+              defaultValue={settings.ai_manager_phone || ''}
+              onBlur={(e) => updateStr('ai_manager_phone', e.target.value.trim())}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">نبرة الرد</span>
+            <select
+              defaultValue={settings.ai_tone || 'light_gulf'}
+              onBlur={(e) => updateStr('ai_tone', e.target.value)}
+              className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm"
+            >
+              <option value="light_gulf">خليجية خفيفة</option>
+              <option value="formal">رسمية</option>
+              <option value="friendly">ودودة</option>
+              <option value="luxury">فاخرة</option>
+            </select>
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">رسالة الترحيب</span>
+            <Input
+              defaultValue={settings.ai_welcome_message || 'حياك الله، كيف أقدر أساعدك؟ للحجز أو الأسعار أو تعديل موعد.'}
+              onBlur={(e) => updateStr('ai_welcome_message', e.target.value)}
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">مهلة موافقة الصالون بالدقائق</span>
+            <Input
+              type="number"
+              min={1}
+              max={120}
+              defaultValue={parseNum(settings.ai_approval_timeout_minutes, 15)}
+              onBlur={(e) => updateStr('ai_approval_timeout_minutes', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">محاولات الفهم قبل التصعيد</span>
+            <Input
+              type="number"
+              min={1}
+              max={5}
+              defaultValue={parseNum(settings.ai_max_understanding_failures, 2)}
+              onBlur={(e) => updateStr('ai_max_understanding_failures', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">تهدئة التصعيد بالدقائق</span>
+            <Input
+              type="number"
+              min={1}
+              max={120}
+              defaultValue={parseNum(settings.ai_escalation_cooldown_minutes, 10)}
+              onBlur={(e) => updateStr('ai_escalation_cooldown_minutes', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">عدد الأوقات المعروضة</span>
+            <Input
+              type="number"
+              min={1}
+              max={5}
+              defaultValue={parseNum(settings.ai_available_slots_limit, 3)}
+              onBlur={(e) => updateStr('ai_available_slots_limit', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">وضع تأكيد الحجز</span>
+            <select
+              defaultValue={settings.ai_booking_confirmation_mode || 'manual'}
+              onBlur={(e) => updateStr('ai_booking_confirmation_mode', e.target.value)}
+              className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm"
+            >
+              <option value="manual">يدوي عبر موافقة المدير</option>
+              <option value="auto_if_available">تلقائي إذا متاح</option>
+            </select>
+            <span className="text-[10px] text-[var(--muted-foreground)]">التثبيت التلقائي لا يفعّل إلا عند دعم المسار بأمان</span>
+          </label>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold">إظهار أسماء الموظفات</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">افتراضيًا لا تظهر للعميل</p>
+            </div>
+            <Switch
+              checked={parseBool(settings.ai_show_employee_names_to_customers)}
+              onCheckedChange={(c) => toggleBool('ai_show_employee_names_to_customers', c)}
+              disabled={settingsMutation.isPending}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 sm:col-span-2">
+            <div>
+              <p className="text-sm font-bold">رسالة الخصوصية</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">ترسل مرة واحدة عند أول طلب حجز فقط</p>
+            </div>
+            <Switch
+              checked={parseBool(settings.ai_privacy_message_enabled)}
+              onCheckedChange={(c) => toggleBool('ai_privacy_message_enabled', c)}
+              disabled={settingsMutation.isPending}
+            />
+          </div>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">نص رسالة الخصوصية</span>
+            <textarea
+              defaultValue={settings.ai_privacy_message || 'سيتم استخدام بياناتك فقط لإدارة الحجز والتواصل بخصوص الموعد.'}
+              onBlur={(e) => updateStr('ai_privacy_message', e.target.value)}
+              rows={2}
+              className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">كلمات غير مرغوبة</span>
+            <textarea
+              defaultValue={settings.ai_avoided_phrases || 'حبيبتي\nالغالية'}
+              onBlur={(e) => updateStr('ai_avoided_phrases', e.target.value)}
+              rows={3}
+              className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">كلمات تصعيد إضافية</span>
+            <textarea
+              defaultValue={settings.ai_custom_escalation_keywords || ''}
+              onBlur={(e) => updateStr('ai_custom_escalation_keywords', e.target.value)}
+              rows={3}
+              className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </label>
         </div>
       </div>
 

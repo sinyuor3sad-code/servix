@@ -5,6 +5,10 @@ import type { PlatformPrismaClient } from '../../../shared/database/platform.cli
 import type { TenantClientFactory } from '../../../shared/database/tenant-client.factory';
 import type { WhatsAppAntiBanService } from './whatsapp-anti-ban.service';
 import type { TenantPrismaClient } from '../../../shared/types';
+import type { AIReceptionService } from '../ai-reception/ai-reception.service';
+import type { ManagerReplyHandler } from '../ai-reception/manager-reply.handler';
+import type { FeaturesService } from '../../../core/features/features.service';
+import type { ReviewRequestsService } from './review-requests.service';
 
 type Mock = jest.Mock;
 
@@ -35,12 +39,42 @@ function makeAntiBan(): WhatsAppAntiBanService {
   return {
     isOptOutKeyword: jest.fn(),
     addOptOut: jest.fn().mockResolvedValue(undefined),
+    check: jest.fn().mockResolvedValue({ allowed: true, delayMs: 0 }),
   } as unknown as WhatsAppAntiBanService;
+}
+
+function makeAIReception(): AIReceptionService {
+  return {
+    handleCustomerMessage: jest.fn().mockResolvedValue(undefined),
+    handleStopFollowUpRequest: jest.fn().mockResolvedValue('not_stop'),
+  } as unknown as AIReceptionService;
+}
+
+function makeManagerReply(): ManagerReplyHandler {
+  return {
+    handle: jest.fn().mockResolvedValue(undefined),
+  } as unknown as ManagerReplyHandler;
+}
+
+function makeFeatures(): FeaturesService {
+  return {
+    isFeatureEnabled: jest.fn().mockResolvedValue({ isEnabled: true }),
+  } as unknown as FeaturesService;
+}
+
+function makeReviewRequests(): ReviewRequestsService {
+  return {
+    handleIncomingRating: jest.fn().mockResolvedValue(false),
+  } as unknown as ReviewRequestsService;
 }
 
 describe('WhatsAppEvolutionWebhookController', () => {
   let platformDb: ReturnType<typeof makePlatformDb>;
   let antiBan: WhatsAppAntiBanService;
+  let aiReception: AIReceptionService;
+  let managerReply: ManagerReplyHandler;
+  let reviewRequests: ReviewRequestsService;
+  let features: FeaturesService;
   let tenantDb: unknown;
   let tenantFactory: TenantClientFactory;
   let controller: WhatsAppEvolutionWebhookController;
@@ -48,6 +82,10 @@ describe('WhatsAppEvolutionWebhookController', () => {
   beforeEach(() => {
     platformDb = makePlatformDb();
     antiBan = makeAntiBan();
+    aiReception = makeAIReception();
+    managerReply = makeManagerReply();
+    reviewRequests = makeReviewRequests();
+    features = makeFeatures();
     tenantDb = { marker: 'tenant-db' };
     tenantFactory = makeTenantFactory(tenantDb);
     controller = new WhatsAppEvolutionWebhookController(
@@ -55,6 +93,10 @@ describe('WhatsAppEvolutionWebhookController', () => {
       platformDb as unknown as PlatformPrismaClient,
       tenantFactory,
       antiBan,
+      aiReception,
+      managerReply,
+      reviewRequests,
+      features,
     );
   });
 
@@ -73,6 +115,10 @@ describe('WhatsAppEvolutionWebhookController', () => {
         platformDb as unknown as PlatformPrismaClient,
         tenantFactory,
         antiBan,
+        aiReception,
+        managerReply,
+        reviewRequests,
+        features,
       );
       await expect(
         c.handle('salon-acme', 'master-key', { event: 'connection.update' }),
@@ -148,8 +194,9 @@ describe('WhatsAppEvolutionWebhookController', () => {
       (antiBan.isOptOutKeyword as Mock).mockReturnValue(true);
       platformDb.whatsAppInstance.findUnique.mockResolvedValue({
         instanceName: 'salon-acme',
+        instanceToken: 'token',
         tenantId: 't1',
-        tenant: { databaseName: 'tenant_acme' },
+        tenant: { id: 't1', slug: 'acme', databaseName: 'tenant_acme', status: 'active' },
       });
 
       await controller.handle('salon-acme', 'master-key', {
@@ -184,6 +231,12 @@ describe('WhatsAppEvolutionWebhookController', () => {
 
     it('يتجاهل الرسائل غير المطابقة لكلمات الإلغاء', async () => {
       (antiBan.isOptOutKeyword as Mock).mockReturnValue(false);
+      platformDb.whatsAppInstance.findUnique.mockResolvedValue({
+        instanceName: 'salon-acme',
+        instanceToken: 'token',
+        tenantId: 't1',
+        tenant: { id: 't1', slug: 'acme', databaseName: 'tenant_acme', status: 'active' },
+      });
 
       await controller.handle('salon-acme', 'master-key', {
         event: 'messages.upsert',
@@ -194,7 +247,15 @@ describe('WhatsAppEvolutionWebhookController', () => {
       });
 
       expect(antiBan.addOptOut).not.toHaveBeenCalled();
-      expect(platformDb.whatsAppInstance.findUnique).not.toHaveBeenCalled();
+      expect(aiReception.handleCustomerMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 't1',
+          databaseName: 'tenant_acme',
+          instanceName: 'salon-acme',
+          phone: '966501234567',
+          text: 'مرحبا',
+        }),
+      );
     });
 
     it('يستخرج النص من extendedTextMessage.text أيضاً', async () => {
@@ -203,8 +264,9 @@ describe('WhatsAppEvolutionWebhookController', () => {
       );
       platformDb.whatsAppInstance.findUnique.mockResolvedValue({
         instanceName: 'salon-acme',
+        instanceToken: 'token',
         tenantId: 't1',
-        tenant: { databaseName: 'tenant_acme' },
+        tenant: { id: 't1', slug: 'acme', databaseName: 'tenant_acme', status: 'active' },
       });
 
       await controller.handle('salon-acme', 'master-key', {
@@ -216,6 +278,85 @@ describe('WhatsAppEvolutionWebhookController', () => {
       });
 
       expect(antiBan.addOptOut).toHaveBeenCalled();
+    });
+
+    it('يلغي متابعة الطلب النشط قبل تسجيل opt-out عام', async () => {
+      (aiReception.handleStopFollowUpRequest as Mock).mockResolvedValue('stopped');
+      (antiBan.isOptOutKeyword as Mock).mockReturnValue(true);
+      platformDb.whatsAppInstance.findUnique.mockResolvedValue({
+        instanceName: 'salon-acme',
+        instanceToken: 'token',
+        tenantId: 't1',
+        tenant: { id: 't1', slug: 'acme', databaseName: 'tenant_acme', status: 'active' },
+      });
+
+      await controller.handle('salon-acme', 'master-key', {
+        event: 'messages.upsert',
+        data: {
+          key: { fromMe: false, remoteJid: '966501234567@s.whatsapp.net' },
+          message: { conversation: 'stop' },
+        },
+      });
+
+      expect(aiReception.handleStopFollowUpRequest).toHaveBeenCalled();
+      expect(antiBan.addOptOut).not.toHaveBeenCalled();
+    });
+    it('routes active review ratings before Gemini AI reception', async () => {
+      (antiBan.isOptOutKeyword as Mock).mockReturnValue(false);
+      (reviewRequests.handleIncomingRating as Mock).mockResolvedValue(true);
+      platformDb.whatsAppInstance.findUnique.mockResolvedValue({
+        instanceName: 'salon-acme',
+        instanceToken: 'token',
+        tenantId: 't1',
+        tenant: { id: 't1', slug: 'acme', databaseName: 'tenant_acme', status: 'active' },
+      });
+
+      await controller.handle('salon-acme', 'master-key', {
+        event: 'messages.upsert',
+        data: {
+          key: { fromMe: false, remoteJid: '966501234567@s.whatsapp.net' },
+          message: { conversation: '5' },
+        },
+      });
+
+      expect(reviewRequests.handleIncomingRating).toHaveBeenCalledWith(expect.objectContaining({
+        phone: '966501234567',
+        text: '5',
+      }));
+      expect(aiReception.handleCustomerMessage).not.toHaveBeenCalled();
+    });
+
+    it('does not process owner decision commands from an unauthorized phone', async () => {
+      (antiBan.isOptOutKeyword as Mock).mockReturnValue(false);
+      (tenantFactory.getTenantClient as Mock).mockReturnValue({
+        setting: {
+          findUnique: jest.fn(({ where }: { where: { key: string } }) =>
+            Promise.resolve(where.key === 'ai_manager_phone' ? { value: '966511111111' } : null),
+          ),
+        },
+      });
+      platformDb.whatsAppInstance.findUnique.mockResolvedValue({
+        instanceName: 'salon-acme',
+        instanceToken: 'token',
+        tenantId: 't1',
+        tenant: { id: 't1', slug: 'acme', databaseName: 'tenant_acme', status: 'active' },
+      });
+
+      await controller.handle('salon-acme', 'master-key', {
+        event: 'messages.upsert',
+        data: {
+          key: { fromMe: false, remoteJid: '966522222222@s.whatsapp.net' },
+          message: { conversation: 'موافق 123' },
+        },
+      });
+
+      expect(managerReply.handle).not.toHaveBeenCalled();
+      expect(aiReception.handleCustomerMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          phone: '966522222222',
+          text: 'موافق 123',
+        }),
+      );
     });
   });
 

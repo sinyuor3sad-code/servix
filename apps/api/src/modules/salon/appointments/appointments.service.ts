@@ -123,7 +123,7 @@ export class AppointmentsService {
     const totalPrice = services.reduce((sum, s) => sum + Number(s.price), 0);
     const endTime = addMinutesToTime(dto.startTime, totalDuration);
 
-    const employeeIds = [...new Set(dto.services.map((s) => s.employeeId))];
+    const employeeIds = [...new Set(dto.services.map((s) => s.employeeId))].sort();
 
     // D16: Check if any employee is on vacation or day-off
     const appointmentDate = new Date(dto.date);
@@ -157,8 +157,16 @@ export class AppointmentsService {
 
     try {
       appointment = await db.$transaction(async (tx) => {
-        // 1. Lock conflicting rows with SELECT FOR UPDATE to prevent race condition
+        // Serialize appointment creation per employee/day before checking overlaps.
+        // SELECT FOR UPDATE only locks existing rows; this closes the "no row yet"
+        // race for overlapping appointments with different start times.
+        const lockDate = new Date(dto.date).toISOString().slice(0, 10);
         for (const empId of employeeIds) {
+          const lockKey = `servix:appointments:${empId}:${lockDate}`;
+          await tx.$queryRaw`
+            SELECT pg_advisory_xact_lock(hashtext(${lockKey}))
+          `;
+
           const conflicts = await tx.$queryRaw<{ id: string }[]>`
             SELECT id FROM "appointments"
             WHERE "employee_id" = ${empId}::uuid
@@ -184,6 +192,7 @@ export class AppointmentsService {
             date: new Date(dto.date),
             startTime: dto.startTime,
             endTime,
+            source: dto.source || 'dashboard',
             totalPrice,
             totalDuration,
             notes: dto.notes,

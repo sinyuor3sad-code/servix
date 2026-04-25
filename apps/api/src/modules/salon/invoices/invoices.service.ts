@@ -14,6 +14,7 @@ import { SettingsService } from '../settings/settings.service';
 import { AuditService } from '../../../core/audit/audit.service';
 import { EventsGateway } from '../../../shared/events/events.gateway';
 import { SETTINGS_KEYS } from '../settings/settings.constants';
+import { ReviewRequestsService } from '../whatsapp-evolution/review-requests.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
@@ -36,6 +37,7 @@ export class InvoicesService {
     private readonly settingsService: SettingsService,
     private readonly auditService: AuditService,
     private readonly eventsGateway: EventsGateway,
+    private readonly reviewRequests: ReviewRequestsService,
   ) {}
 
   async findAll(
@@ -374,6 +376,12 @@ export class InvoicesService {
       } catch (err) {
         this.logger.error(`Failed to emit order:paid: ${(err as Error).message}`);
       }
+    }
+
+    if (res.invoice.status === 'paid') {
+      this.reviewRequests.scheduleForPaidInvoice(db, id).catch((err: unknown) => {
+        this.logger.error(`Failed to schedule review request for invoice ${id}: ${(err as Error).message}`);
+      });
     }
 
     return result as unknown as Record<string, unknown>;

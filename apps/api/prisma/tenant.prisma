@@ -522,6 +522,7 @@ model Appointment {
   employee            Employee?            @relation(fields: [employeeId], references: [id])
   appointmentServices AppointmentService[]
   invoices            Invoice[]
+  reviewRequest       ReviewRequest?
 
   @@unique([employeeId, date, startTime], name: "unique_employee_booking")
   @@index([clientId])
@@ -589,6 +590,7 @@ model Invoice {
   client              Client               @relation(fields: [clientId], references: [id])
   selfOrder           SelfOrder?           @relation(fields: [selfOrderId], references: [id])
   feedback            InvoiceFeedback?
+  reviewRequest       ReviewRequest?
   invoiceItems        InvoiceItem[]
   payments            Payment[]
   discounts           Discount[]
@@ -1242,4 +1244,147 @@ model InvoiceFeedback {
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@map("invoice_feedbacks")
+}
+
+model ReviewRequest {
+  id             String    @id @default(uuid()) @db.Uuid
+  appointmentId  String?   @unique @map("appointment_id") @db.Uuid
+  invoiceId      String?   @unique @map("invoice_id") @db.Uuid
+  customerPhone  String    @map("customer_phone") @db.VarChar(20)
+  customerName   String?   @map("customer_name") @db.VarChar(100)
+  rating         Int?      @db.SmallInt
+  feedbackText   String?   @map("feedback_text") @db.Text
+  source         String    @default("invoice") @db.VarChar(20)
+  status         String    @default("pending") @db.VarChar(20)
+  dueAt          DateTime  @map("due_at") @db.Timestamptz()
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz()
+  requestSentAt  DateTime? @map("request_sent_at") @db.Timestamptz()
+  respondedAt    DateTime? @map("responded_at") @db.Timestamptz()
+  googleLinkSent Boolean   @default(false) @map("google_link_sent")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  invoice     Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([status, dueAt])
+  @@index([customerPhone, status, createdAt])
+  @@map("review_requests")
+}
+
+// ─────────────────── AI Reception ───────────────────
+
+enum AIPendingActionStatus {
+  awaiting_manager
+  awaiting_customer
+  customer_accepted_alternative
+  alternative_rejected
+  approved
+  rejected
+  expired
+  cancelled_by_customer
+}
+
+enum AIPendingActionType {
+  book_appointment
+  cancel_appointment
+  reschedule_appointment
+}
+
+/// Tracks conversation history between a customer and the AI receptionist.
+/// One conversation per phone number — messages are appended as JSON array.
+model AIConversation {
+  id           String   @id @default(cuid())
+  phone        String   @unique @db.VarChar(20)
+  clientId     String?  @map("client_id") @db.Uuid
+  messages     Json     @default("[]") @db.JsonB // [{role:'user'|'assistant', text, ts}]
+  state        Json     @default("{}") @db.JsonB
+  lastActiveAt DateTime @map("last_active_at") @db.Timestamptz()
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  pendingActions AIPendingAction[]
+  escalations    AIEscalation[]
+
+  @@index([lastActiveAt])
+  @@map("ai_conversations")
+}
+
+/// Tracks transactional requests (booking/cancellation/reschedule) that need
+/// manager approval before execution. Each action has a human-friendly
+/// auto-incrementing ID (per tenant) used in WhatsApp messages.
+model AIPendingAction {
+  id               Int                    @id @default(autoincrement())
+  conversationId   String                 @map("conversation_id")
+  type             AIPendingActionType
+  payload          Json                   @db.JsonB // {clientName, service, date, time, ...}
+  status           AIPendingActionStatus  @default(awaiting_manager)
+  managerMessageId String?                @map("manager_message_id") @db.VarChar(100)
+  customerPhone    String                 @map("customer_phone") @db.VarChar(20)
+  expiresAt        DateTime               @map("expires_at") @db.Timestamptz()
+  timeoutNotificationSent Boolean         @default(false) @map("timeout_notification_sent")
+  timeoutNotifiedAt       DateTime?       @map("timeout_notified_at") @db.Timestamptz()
+  doNotDisturb     Boolean                @default(false) @map("do_not_disturb")
+  cancelledAt      DateTime?              @map("cancelled_at") @db.Timestamptz()
+  cancelReason     String?                @map("cancel_reason") @db.VarChar(100)
+  resolvedAt       DateTime?              @map("resolved_at") @db.Timestamptz()
+  resolvedBy       String?                @map("resolved_by") @db.VarChar(20) // manager phone
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz()
+
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([status, expiresAt])
+  @@index([customerPhone, status, createdAt])
+  @@index([conversationId])
+  @@map("ai_pending_actions")
+}
+
+/// Records when the AI couldn't confidently answer a customer and asked the
+/// owner to step in. The owner's reply becomes training data (see
+/// AIKnowledgeSnippet) so similar questions answer themselves next time.
+model AIEscalation {
+  id               Int       @id @default(autoincrement())
+  conversationId   String    @map("conversation_id")
+  customerPhone    String    @map("customer_phone") @db.VarChar(20)
+  customerName     String?   @map("customer_name") @db.VarChar(100)
+  customerQuestion String    @map("customer_question") @db.Text
+  lastCustomerMessage String? @map("last_customer_message") @db.Text
+  customerContext  String?   @map("customer_context") @db.Text
+  escalationType   String    @default("unclear") @map("escalation_type") @db.VarChar(50)
+  uncertainReason  String?   @map("uncertain_reason") @db.VarChar(200)
+  relatedRequestId Int?      @map("related_request_id")
+  notifiedManager  Boolean   @default(false) @map("notified_manager")
+  lastNotifiedAt   DateTime? @map("last_notified_at") @db.Timestamptz()
+  occurrenceCount  Int       @default(1) @map("occurrence_count")
+  status           String    @default("pending") @db.VarChar(20) // pending, answered, expired, cancelled
+  managerAnswer    String?   @map("manager_answer") @db.Text
+  snippetId        Int?      @map("snippet_id")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  answeredAt       DateTime? @map("answered_at") @db.Timestamptz()
+
+  conversation AIConversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  snippet      AIKnowledgeSnippet? @relation(fields: [snippetId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([customerPhone])
+  @@index([conversationId, escalationType, status, createdAt])
+  @@map("ai_escalations")
+}
+
+/// Learned Q/A pairs from manager-answered escalations. Injected into the
+/// AI's context on every inbound customer message so the bot gradually
+/// encodes the salon's specifics (policies, exceptions, promos, etc.).
+model AIKnowledgeSnippet {
+  id                 Int       @id @default(autoincrement())
+  question           String    @db.Text
+  answer             String    @db.Text
+  keywords           String    @default("") @db.Text // comma-separated, lowercased
+  sourceEscalationId Int?      @map("source_escalation_id")
+  useCount           Int       @default(0) @map("use_count")
+  lastUsedAt         DateTime? @map("last_used_at") @db.Timestamptz()
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  escalations AIEscalation[]
+
+  @@index([useCount(sort: Desc), createdAt(sort: Desc)])
+  @@map("ai_knowledge_snippets")
 }

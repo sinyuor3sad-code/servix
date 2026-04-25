@@ -149,6 +149,30 @@ describe('GeminiService', () => {
     });
   });
 
+  describe('AI Reception policy prompt', () => {
+    it('builds the phase-2 booking and safety policy prompt', () => {
+      const prompt = service.buildReceptionSystemPrompt({
+        salonName: 'صالون دنتيلا',
+        workingHours: '09:00 - 22:00',
+        services: [{ name: 'قص وتصفيف', price: 150, duration: 60 }],
+        knowledgeSnippets: [],
+      }, 'friendly');
+
+      expect(prompt).toContain('وصل طلبك، بانتظار تأكيد الصالون. بنرسل لك التأكيد النهائي هنا.');
+      expect(prompt).toContain('أكيد، وش الخدمة المطلوبة؟');
+      expect(prompt).toContain('الخدمات والأسعار الرسمية');
+      expect(prompt).toContain('حاليًا لا توجد خصومات مفعّلة على هذه الخدمة.');
+      expect(prompt).toContain('لا أقدر أعرض أو أغيّر إعدادات النظام من هذا الرقم.');
+      expect(prompt).toContain('كيف أقدر أساعدك؟ تبغى حجز، أسعار، أو تعديل موعد؟');
+      expect(prompt).toContain('يسعدنا رضاك. كيف أقدر أساعدك في الحجز أو الخدمات؟');
+      expect(prompt).toContain('تمام، أعتذر. راح أستخدم أسلوبًا رسميًا.');
+      expect(prompt).toContain('السعر الحالي هو [price]. لا أقدر أغيّر السعر');
+      expect(prompt).toContain('نعتذر عن تجربتك. تم رفع ملاحظتك للإدارة');
+      expect(prompt).toContain('أحوّل طلبك للفريق لأن فيه تفصيل يحتاج تأكيد مباشر.');
+      expect(prompt).not.toContain('نادي العميلة بـ "حبيبتي"');
+    });
+  });
+
   describe('transcribeAudio', () => {
     it('should send audio buffer to Gemini and return transcription', async () => {
       const mockResponse = {
