@@ -550,7 +550,7 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
 
             {settings.ai_reception_mode === 'reply_only' && (
               <label className="block space-y-1.5">
-                <span className="text-[11px] font-bold">رسالة "زورينا مباشرة"</span>
+                <span className="text-[11px] font-bold">رسالة &quot;زورينا مباشرة&quot;</span>
                 <textarea
                   defaultValue={settings.ai_walk_in_message || 'ما نحجز حالياً عن طريق الواتساب. تقدرين تزورينا مباشرة.'}
                   onBlur={(e) => updateStr('ai_walk_in_message', e.target.value)}

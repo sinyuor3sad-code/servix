@@ -28,6 +28,7 @@ import { FeedbackModule } from './feedback/feedback.module';
 import { AiConsultantModule } from './ai-consultant/ai-consultant.module';
 import { WhatsAppEvolutionModule } from './whatsapp-evolution/whatsapp-evolution.module';
 import { AIReceptionModule } from './ai-reception/ai-reception.module';
+import { PosShiftsModule } from './pos-shifts/pos-shifts.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { AIReceptionModule } from './ai-reception/ai-reception.module';
     AiConsultantModule,
     WhatsAppEvolutionModule,
     AIReceptionModule,
+    PosShiftsModule,
   ],
 })
 export class SalonModule {}

@@ -1206,6 +1206,36 @@ model ClientDebt {
   @@map("client_debts")
 }
 
+// ─────────────────── POS Shifts (Cash Drawer) ───────────────────
+
+model PosShift {
+  id               String    @id @default(uuid()) @db.Uuid
+  openedBy         String    @map("opened_by") @db.Uuid
+  closedBy         String?   @map("closed_by") @db.Uuid
+  openingBalance   Decimal   @map("opening_balance") @db.Decimal(10, 2)
+  closingBalance   Decimal?  @map("closing_balance") @db.Decimal(10, 2)
+  expectedCash     Decimal?  @map("expected_cash") @db.Decimal(10, 2)
+  cashDifference   Decimal?  @map("cash_difference") @db.Decimal(10, 2)
+  totalSales       Decimal   @default(0) @map("total_sales") @db.Decimal(10, 2)
+  totalCash        Decimal   @default(0) @map("total_cash") @db.Decimal(10, 2)
+  totalCard        Decimal   @default(0) @map("total_card") @db.Decimal(10, 2)
+  totalTransfer    Decimal   @default(0) @map("total_transfer") @db.Decimal(10, 2)
+  totalRefunds     Decimal   @default(0) @map("total_refunds") @db.Decimal(10, 2)
+  totalDiscounts   Decimal   @default(0) @map("total_discounts") @db.Decimal(10, 2)
+  totalExpenses    Decimal   @default(0) @map("total_expenses") @db.Decimal(10, 2)
+  invoiceCount     Int       @default(0) @map("invoice_count")
+  status           String    @default("open") @db.VarChar(10) // open | closed
+  openedAt         DateTime  @default(now()) @map("opened_at") @db.Timestamptz()
+  closedAt         DateTime? @map("closed_at") @db.Timestamptz()
+  notes            String?   @db.Text
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([status])
+  @@index([openedAt])
+  @@map("pos_shifts")
+}
+
 // ─────────────────── Self Orders (Smart Menu) ───────────────────
 
 enum SelfOrderStatus {

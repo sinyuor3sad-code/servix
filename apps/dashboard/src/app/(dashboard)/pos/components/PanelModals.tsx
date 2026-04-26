@@ -5,12 +5,13 @@ import {
   Plus, Trash2, X, Pause, RotateCcw, AlertTriangle,
   Hash, Check, Split, Package,
   ClipboardCheck, LogIn, LogOut, Coffee, Clock, Users,
+  CircleDollarSign, Lock, ShieldAlert, Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import type { E } from '../pos-engine';
-import type { AttRec } from '../pos-types';
+import type { AttRec, PosShiftData } from '../pos-types';
 import { Modal } from './Modal';
 import {
   B, BS, T, TF, TN, G3, INP,
@@ -93,6 +94,32 @@ function BundlesPanel({ e }: { e: E }) {
    ════════════════════════════════════════════════════════════════ */
 
 function ReceiptPanel({ e }: { e: E }) {
+  // Load receipt settings from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('pos_receipt_settings');
+      if (raw) {
+        const s = JSON.parse(raw) as { logo?: boolean; message?: string; phone?: string };
+        if (typeof s.logo === 'boolean') e.setReceiptLogo(s.logo);
+        if (s.message) e.setReceiptMsg(s.message);
+        if (s.phone) e.setReceiptPhone(s.phone);
+      }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSave = () => {
+    try {
+      localStorage.setItem('pos_receipt_settings', JSON.stringify({
+        logo: e.receiptLogo,
+        message: e.receiptMsg,
+        phone: e.receiptPhone,
+      }));
+    } catch { /* quota */ }
+    toast.success('تم حفظ الإعدادات');
+    e.setPanel(null);
+  };
+
   return (
     <div className="space-y-3">
       <label className={`flex items-center gap-2.5 rounded-xl ${bg(3)} px-3 py-2.5 cursor-pointer ${T}`}>
@@ -101,7 +128,7 @@ function ReceiptPanel({ e }: { e: E }) {
       </label>
       <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">رسالة الشكر</label><input value={e.receiptMsg} onChange={ev => e.setReceiptMsg(ev.target.value)} className={`${INP} py-2.5 px-3 text-[11px]`} /></div>
       <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">رقم الهاتف في الإيصال</label><input value={e.receiptPhone} onChange={ev => e.setReceiptPhone(ev.target.value)} dir="ltr" className={`${INP} py-2.5 px-3 text-[11px]`} /></div>
-      <button onClick={() => { toast.success('تم حفظ الإعدادات'); e.setPanel(null); }} className={`${B} flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl text-[10px] font-bold text-black`} style={accentBg}><Check size={12} /> حفظ</button>
+      <button onClick={handleSave} className={`${B} flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl text-[10px] font-bold text-black`} style={accentBg}><Check size={12} /> حفظ</button>
     </div>
   );
 }
@@ -293,10 +320,161 @@ function AttendancePanel({ e }: { e: E }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
+   Expense Panel
+   ════════════════════════════════════════════════════════════════ */
+
+const EXP_CATS = [
+  { value: 'supplies', label: 'مستلزمات' },
+  { value: 'utilities', label: 'مشروبات / مرطبات' },
+  { value: 'other', label: 'صيانة' },
+  { value: 'rent', label: 'إيجار' },
+  { value: 'salary', label: 'رواتب' },
+  { value: 'marketing', label: 'تسويق' },
+];
+
+function ExpensePanel({ e }: { e: E }) {
+  const { accessToken } = useAuth();
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState('supplies');
+  const [desc, setDesc] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    const amt = parseFloat(amount);
+    if (isNaN(amt) || amt <= 0) { toast.error('أدخلي مبلغ صحيح'); return; }
+    if (!desc.trim()) { toast.error('أدخلي وصف المصروف'); return; }
+    setLoading(true);
+    try {
+      await api.post('/expenses', {
+        category,
+        description: desc.trim(),
+        amount: amt,
+        date: new Date().toISOString(),
+      }, accessToken!);
+      toast.success('تم تسجيل المصروف');
+      e.setPanel(null);
+    } catch { toast.error('فشل تسجيل المصروف'); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">المبلغ</label>
+        <input type="number" value={amount} onChange={ev => setAmount(ev.target.value)} placeholder="0.00" dir="ltr" className={`${INP} py-2.5 px-3 text-[14px] font-black text-center`} style={TN} />
+      </div>
+      <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">الفئة</label>
+        <select value={category} onChange={ev => setCategory(ev.target.value)} className={`${INP} py-2.5 px-3 text-[11px]`}>
+          {EXP_CATS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </div>
+      <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">الوصف / الملاحظة</label>
+        <input value={desc} onChange={ev => setDesc(ev.target.value)} placeholder="مثال: شراء أكياس تغليف" className={`${INP} py-2.5 px-3 text-[11px]`} />
+      </div>
+      <button onClick={handleSubmit} disabled={loading} className={`${B} flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl text-[10px] font-bold text-black disabled:opacity-30`} style={accentBg}>
+        {loading ? <Loader2 size={12} className="animate-spin" /> : <><CircleDollarSign size={12} /> تسجيل المصروف</>}
+      </button>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Close Shift Panel
+   ════════════════════════════════════════════════════════════════ */
+
+function CloseShiftPanel({ e, onShiftClosed }: { e: E; onShiftClosed: (data: PosShiftData) => void }) {
+  const { accessToken } = useAuth();
+  const [closingAmount, setClosingAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleClose = async () => {
+    const amt = parseFloat(closingAmount);
+    if (isNaN(amt) || amt < 0) { toast.error('أدخلي المبلغ الفعلي في الصندوق'); return; }
+    setLoading(true);
+    try {
+      const result = await api.post<PosShiftData>('/pos-shifts/close', {
+        closingBalance: amt,
+        notes: notes.trim() || undefined,
+      }, accessToken!);
+      toast.success('تم إغلاق الوردية');
+      e.setPanel(null);
+      onShiftClosed(result);
+    } catch (err: unknown) {
+      toast.error((err as Error)?.message || 'فشل إغلاق الوردية');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className={`rounded-xl ${bg(3)} p-4 text-center`}>
+        <Lock size={24} className="mx-auto mb-2 text-red-400" style={{ opacity: 0.6 }} />
+        <p className="text-[12px] font-bold text-[var(--foreground)]">إغلاق الوردية</p>
+        <p className="text-[10px] text-[var(--muted-foreground)] mt-1">أدخلي المبلغ الفعلي الموجود في الصندوق</p>
+      </div>
+      <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">المبلغ الفعلي في الصندوق</label>
+        <input type="number" value={closingAmount} onChange={ev => setClosingAmount(ev.target.value)} placeholder="0.00" dir="ltr" className={`${INP} py-3 px-3 text-[18px] font-black text-center`} style={TN} />
+      </div>
+      <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">ملاحظات (اختياري)</label>
+        <input value={notes} onChange={ev => setNotes(ev.target.value)} placeholder="ملاحظات إضافية..." className={`${INP} py-2.5 px-3 text-[11px]`} />
+      </div>
+      <button onClick={handleClose} disabled={loading} className={`${B} flex h-11 w-full items-center justify-center gap-2 rounded-2xl text-[11px] font-bold text-white shadow-xl disabled:opacity-30`} style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>
+        {loading ? <Loader2 size={14} className="animate-spin" /> : <><Lock size={14} /> إغلاق الوردية وعرض التقرير</>}
+      </button>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   PIN Override Panel (Manager Discount)
+   ════════════════════════════════════════════════════════════════ */
+
+function PinOverridePanel({ e }: { e: E }) {
+  const [pin, setPin] = useState('');
+  const MANAGER_PIN = '1234'; // TODO: Move to settings
+
+  const handleVerify = () => {
+    if (pin === MANAGER_PIN) {
+      e.setPinOverrideApproved(true);
+      toast.success('تم التأكيد — الخصم مسموح');
+      e.setPanel(null);
+    } else {
+      toast.error('PIN غير صحيح');
+      setPin('');
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-xl ${bg(3)} p-4 text-center`}>
+        <ShieldAlert size={28} className="mx-auto mb-2 text-amber-400" style={{ opacity: 0.7 }} />
+        <p className="text-[12px] font-bold text-[var(--foreground)]">تأكيد المديرة</p>
+        <p className="text-[10px] text-[var(--muted-foreground)] mt-1">الخصم يتجاوز الحد — أدخلي PIN المديرة</p>
+      </div>
+      <input
+        type="password"
+        maxLength={4}
+        value={pin}
+        onChange={ev => setPin(ev.target.value.replace(/\D/g, ''))}
+        placeholder="● ● ● ●"
+        dir="ltr"
+        className={`${INP} py-4 px-3 text-[24px] font-black text-center tracking-[0.5em]`}
+        style={TN}
+        onKeyDown={ev => { if (ev.key === 'Enter') handleVerify(); }}
+        autoFocus
+      />
+      <button onClick={handleVerify} disabled={pin.length < 4} className={`${B} flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl text-[10px] font-bold text-black disabled:opacity-30`} style={accentBg}>
+        <Check size={12} /> تأكيد
+      </button>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
    Panels Renderer
    ════════════════════════════════════════════════════════════════ */
 
-export function PanelModals({ e }: { e: E }) {
+export function PanelModals({ e, onShiftClosed }: { e: E; onShiftClosed?: (data: PosShiftData) => void }) {
   return (
     <>
       <Modal open={e.panel === 'split'} onClose={() => e.setPanel(null)} title="دفع مقسّم" wide><SplitPanel e={e} /></Modal>
@@ -305,6 +483,9 @@ export function PanelModals({ e }: { e: E }) {
       <Modal open={e.panel === 'bundles'} onClose={() => e.setPanel(null)} title="الباقات"><BundlesPanel e={e} /></Modal>
       <Modal open={e.panel === 'receipt'} onClose={() => e.setPanel(null)} title="إعدادات الإيصال"><ReceiptPanel e={e} /></Modal>
       <Modal open={e.panel === 'attendance'} onClose={() => e.setPanel(null)} title="تحضير الموظفات" wide><AttendancePanel e={e} /></Modal>
+      <Modal open={e.panel === 'expense'} onClose={() => e.setPanel(null)} title="تسجيل مصروف سريع"><ExpensePanel e={e} /></Modal>
+      <Modal open={e.panel === 'close-shift'} onClose={() => e.setPanel(null)} title="إغلاق الوردية"><CloseShiftPanel e={e} onShiftClosed={onShiftClosed ?? (() => {})} /></Modal>
+      <Modal open={e.panel === 'pin-override'} onClose={() => e.setPanel(null)} title="تأكيد المديرة"><PinOverridePanel e={e} /></Modal>
     </>
   );
 }

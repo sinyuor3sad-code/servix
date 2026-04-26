@@ -35,7 +35,7 @@ export interface ServiceBundle {
   savings: number;
 }
 
-export type PanelId = null | 'split' | 'hold-list' | 'refund' | 'receipt' | 'bundles' | 'attendance';
+export type PanelId = null | 'split' | 'hold-list' | 'refund' | 'receipt' | 'bundles' | 'attendance' | 'expense' | 'close-shift' | 'shift-report' | 'pin-override';
 
 export interface AttRec {
   id: string | null;
@@ -46,3 +46,26 @@ export interface AttRec {
   computedStatus?: string;
   employee: { id: string; fullName: string; role: string };
 }
+
+export interface PosShiftData {
+  id: string;
+  openedBy: string;
+  closedBy?: string;
+  openingBalance: number;
+  closingBalance?: number;
+  expectedCash?: number;
+  cashDifference?: number;
+  totalSales: number;
+  totalCash: number;
+  totalCard: number;
+  totalTransfer: number;
+  totalRefunds: number;
+  totalDiscounts: number;
+  totalExpenses: number;
+  invoiceCount: number;
+  status: string;
+  openedAt: string;
+  closedAt?: string;
+  notes?: string;
+}
+

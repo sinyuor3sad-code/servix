@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useDeferredValue } from 'react';
+import { useState, useMemo, useCallback, useEffect, useDeferredValue, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -42,8 +42,17 @@ export function useDeviceMode() {
    POS ENGINE — Shared business logic for both layouts
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* ── localStorage helpers (SSR-safe) ── */
+function lsGet<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) as T : fallback; } catch { return fallback; }
+}
+function lsSet(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
+}
+
 export function usePOSEngine() {
-  const { accessToken } = useAuth();
+  const { accessToken, isOwner, userRole } = useAuth();
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selCat, setSelCat] = useState<string | null>(null);
@@ -62,12 +71,12 @@ export function usePOSEngine() {
   const [sendMail, setSendMail] = useState(false);
   const [selfOrderId, setSelfOrderId] = useState<string | null>(null);
   const [panel, setPanel] = useState<PanelId>(null);
-  const [held, setHeld] = useState<HeldBill[]>([]);
+  const [held, setHeld] = useState<HeldBill[]>(() => lsGet<HeldBill[]>('pos_held_bills', []));
   const [splits, setSplits] = useState<SplitEntry[]>([]);
   const [refId, setRefId] = useState('');
   const [refReason, setRefReason] = useState('');
   const [online, setOnline] = useState(true);
-  const [favIds, setFavIds] = useState<string[]>(DEFAULT_FAVS);
+  const [favIds, setFavIds] = useState<string[]>(() => lsGet<string[]>('pos_favs', DEFAULT_FAVS));
   const [showFavs, setShowFavs] = useState(false);
   const [showBundles, setShowBundles] = useState(false);
   const [receiptLogo, setReceiptLogo] = useState(true);
@@ -81,8 +90,30 @@ export function usePOSEngine() {
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponApplied, setCouponApplied] = useState(false);
   const [couponMsg, setCouponMsg] = useState('');
+  const [cashReceived, setCashReceived] = useState('');
+  const [discountReason, setDiscountReason] = useState('');
+  const [pinOverrideApproved, setPinOverrideApproved] = useState(false);
 
   const dSearch = useDeferredValue(svcSearch);
+
+  /* ── Persist held bills to localStorage ── */
+  useEffect(() => { lsSet('pos_held_bills', held); }, [held]);
+  /* ── Persist favourites to localStorage ── */
+  useEffect(() => { lsSet('pos_favs', favIds); }, [favIds]);
+
+  /* ── Walk-in "زائر" singleton client ── */
+  const walkInClientId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!accessToken || isDev(accessToken)) return;
+    (async () => {
+      try {
+        const res = await dashboardService.getClients({ search: 'زائر', limit: 1 }, accessToken);
+        if (res?.items?.length) { walkInClientId.current = res.items[0].id; return; }
+        const c = await dashboardService.createClient({ fullName: 'زائر', phone: '0000000000', source: 'walk_in' }, accessToken);
+        walkInClientId.current = c.id;
+      } catch { /* best effort */ }
+    })();
+  }, [accessToken]);
 
   /* ── Offline ── */
   useEffect(() => {
@@ -172,8 +203,9 @@ export function usePOSEngine() {
     setCart([]); setClient(null); setWalkName(''); setWalkPhone('');
     setWalkInMode(false); setGlobalDisc(''); setTipInput(''); setCustNote('');
     setSelfOrderId(null); setPublicToken(null); setShowQRModal(false);
-    setSelectedPayMethod('cash');
+    setSelectedPayMethod('cash'); setCashReceived('');
     setCouponCode(''); setCouponDiscount(0); setCouponApplied(false); setCouponMsg('');
+    setDiscountReason(''); setPinOverrideApproved(false);
   }, []);
 
   /* ── Calculations ── */
@@ -197,6 +229,35 @@ export function usePOSEngine() {
   const tax = afterCoupon * TAX;
   const tip = 0;
   const total = afterCoupon + tax;
+
+  /* ── Change calculator ── */
+  const changeAmount = useMemo(() => {
+    const received = parseFloat(cashReceived);
+    if (isNaN(received)) return 0;
+    return received - total;
+  }, [cashReceived, total]);
+
+  /* ── Discount protection ── */
+  const maxDiscountPercent = useMemo(() => {
+    if (isOwner) return 100;
+    if (userRole === 'manager') return 50;
+    return 10;
+  }, [isOwner, userRole]);
+
+  // Check if current discount exceeds the role limit
+  const discountExceedsLimit = useMemo(() => {
+    const v = parseFloat(globalDisc);
+    if (isNaN(v) || v <= 0) return false;
+    if (globalDiscType === 'percentage') return v > maxDiscountPercent;
+    // For fixed: calculate what percentage it represents
+    if (subtotal <= 0) return false;
+    return (v / subtotal) * 100 > maxDiscountPercent;
+  }, [globalDisc, globalDiscType, maxDiscountPercent, subtotal]);
+
+  // Discount needs reason to proceed
+  const discountNeedsReason = useMemo(() => {
+    return gDiscVal > 0 && !discountReason.trim();
+  }, [gDiscVal, discountReason]);
 
   /* ── Coupon validation ── */
   const couponMut = useMutation({
@@ -278,6 +339,7 @@ export function usePOSEngine() {
 
   /* ── Payment ── */
   const canPay = cart.length > 0;
+  const canPayWithDiscount = canPay && !discountNeedsReason && (!discountExceedsLimit || pinOverrideApproved);
 
   const payMut = useMutation({
     mutationFn: async (method: string) => {
@@ -288,15 +350,25 @@ export function usePOSEngine() {
         const c = await dashboardService.createClient({ fullName: walkName.trim(), phone: walkPhone.trim(), source: 'walk_in' }, accessToken!);
         clientId = c.id;
       }
-      // Auto-create anonymous walk-in if still no client
+      // Use the singleton "زائر" client instead of creating a new one every time
       if (!clientId) {
-        const ts = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-        const c = await dashboardService.createClient({
-          fullName: `زائر ${ts}`,
-          phone: `0500000${Math.floor(Math.random() * 9000 + 1000)}`,
-          source: 'walk_in',
-        }, accessToken!);
-        clientId = c.id;
+        if (walkInClientId.current) {
+          clientId = walkInClientId.current;
+        } else {
+          // Fallback: try to find/create the singleton now
+          try {
+            const res = await dashboardService.getClients({ search: 'زائر', limit: 1 }, accessToken!);
+            if (res?.items?.length) { clientId = res.items[0].id; walkInClientId.current = clientId; }
+            else {
+              const c = await dashboardService.createClient({ fullName: 'زائر', phone: '0000000000', source: 'walk_in' }, accessToken!);
+              clientId = c.id; walkInClientId.current = clientId;
+            }
+          } catch {
+            // Last resort: create with timestamp (should rarely happen)
+            const c = await dashboardService.createClient({ fullName: 'زائر', phone: '0000000000', source: 'walk_in' }, accessToken!);
+            clientId = c.id; walkInClientId.current = clientId;
+          }
+        }
       }
       // Determine a fallback employee (first available)
       const fallbackEmpId = emps.length > 0 ? emps[0].id : null;
@@ -313,7 +385,7 @@ export function usePOSEngine() {
         })),
       }, accessToken!);
       // Apply global manual discount
-      if (gDiscVal > 0) await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: gDiscVal }, accessToken!);
+      if (gDiscVal > 0) await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: gDiscVal, reason: discountReason || undefined }, accessToken!);
       // Redeem coupon (validate + increment usedCount atomically)
       if (couponApplied && couponCode.trim() && couponDiscount > 0) {
         try {
@@ -361,6 +433,9 @@ export function usePOSEngine() {
     panel, held, splits, refId, refReason,
     online, favIds, showFavs, showBundles, receiptLogo, receiptMsg, receiptPhone,
     couponCode, couponDiscount, couponApplied, couponMsg,
+    cashReceived, setCashReceived, changeAmount,
+    discountReason, setDiscountReason, pinOverrideApproved, setPinOverrideApproved,
+    maxDiscountPercent, discountExceedsLimit, discountNeedsReason, canPayWithDiscount,
     setCart, setSelCat, setSvcSearch, setCliSearch, setClient, setDefEmployee,
     setGlobalDisc, setGlobalDiscType, setTipInput, setCustNote,
     setWalkName, setWalkPhone, setWalkInMode, setSendWA, setSendMail,

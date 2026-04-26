@@ -171,7 +171,7 @@ export default function ZatcaPage(): React.ReactElement {
                 <ol className="list-decimal list-inside space-y-1 text-xs">
                   <li>ادخل بياناتك الضريبية في <strong>إعدادات الصالون</strong> أولاً</li>
                   <li>ادخل على <a href="https://fatoora.zatca.gov.sa" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">fatoora.zatca.gov.sa</a> واطلب OTP</li>
-                  <li>أدخل الـ OTP هنا واضغط "تسجيل"</li>
+                  <li>أدخل الـ OTP هنا واضغط &quot;تسجيل&quot;</li>
                   <li>النظام يسوي الباقي تلقائياً ✅</li>
                 </ol>
               </div>
