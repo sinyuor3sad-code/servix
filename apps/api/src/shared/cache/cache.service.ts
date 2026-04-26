@@ -549,6 +549,60 @@ export class CacheService implements OnModuleDestroy {
     } catch { /* noop */ }
   }
 
+  // ─── Generic JSON cache (for AI memory, semantic cache, analytics) ───
+
+  /**
+   * Read a JSON value from Redis. Returns null on miss / parse error / Redis down.
+   * Caller owns the key namespace — use `servix:<feature>:<id>` style.
+   */
+  async getJson<T = unknown>(key: string): Promise<T | null> {
+    if (!this.enabled || !this.redis) return null;
+    try {
+      const raw = await this.redis.get(key);
+      if (!raw) return null;
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Write a JSON value with TTL. Silent on Redis down. */
+  async setJson<T = unknown>(key: string, value: T, ttlSeconds: number): Promise<void> {
+    if (!this.enabled || !this.redis) return;
+    try {
+      await this.redis.setex(key, ttlSeconds, JSON.stringify(value));
+    } catch (err) {
+      this.logger.warn(`setJson failed for ${key}: ${(err as Error).message}`);
+    }
+  }
+
+  /** Delete an arbitrary key. Silent on Redis down. */
+  async deleteKey(key: string): Promise<void> {
+    if (!this.enabled || !this.redis) return;
+    try {
+      await this.redis.del(key);
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Atomic increment of an integer key (creates if missing). On first
+   * increment, sets the TTL. Useful for counters with a sliding window.
+   */
+  async incrementInt(key: string, ttlSeconds: number, by = 1): Promise<number> {
+    if (!this.enabled || !this.redis) return 0;
+    try {
+      const value = await this.redis.incrby(key, by);
+      if (value === by) {
+        await this.redis.expire(key, ttlSeconds);
+      }
+      return value;
+    } catch {
+      return 0;
+    }
+  }
+
   // ─── Global Rate Limiting ───
 
   /** Increment rate limit counter for a key, returns current count */

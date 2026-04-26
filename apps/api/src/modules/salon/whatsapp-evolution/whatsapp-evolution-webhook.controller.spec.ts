@@ -97,6 +97,15 @@ describe('WhatsAppEvolutionWebhookController', () => {
       managerReply,
       reviewRequests,
       features,
+      {
+        sendButtons: jest.fn().mockResolvedValue(undefined),
+        sendList: jest.fn().mockResolvedValue(undefined),
+        sendImage: jest.fn().mockResolvedValue(undefined),
+        sendLocation: jest.fn().mockResolvedValue(undefined),
+        downloadMediaAsBuffer: jest.fn().mockResolvedValue(null),
+      } as never,
+      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
+      { transcribeVoice: jest.fn().mockResolvedValue('') } as never,
     );
   });
 
@@ -119,6 +128,15 @@ describe('WhatsAppEvolutionWebhookController', () => {
         managerReply,
         reviewRequests,
         features,
+        {
+          sendButtons: jest.fn().mockResolvedValue(undefined),
+          sendList: jest.fn().mockResolvedValue(undefined),
+          sendImage: jest.fn().mockResolvedValue(undefined),
+          sendLocation: jest.fn().mockResolvedValue(undefined),
+          downloadMediaAsBuffer: jest.fn().mockResolvedValue(null),
+        } as never,
+        { sendText: jest.fn().mockResolvedValue(undefined) } as never,
+        { transcribeVoice: jest.fn().mockResolvedValue('') } as never,
       );
       await expect(
         c.handle('salon-acme', 'master-key', { event: 'connection.update' }),

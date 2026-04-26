@@ -7,6 +7,8 @@ import { WhatsAppService } from '../../../shared/whatsapp/whatsapp.service';
 import { SmsService } from '../../../shared/sms/sms.service';
 import { SettingsService } from '../settings/settings.service';
 import { EventsGateway } from '../../../shared/events/events.gateway';
+import { ReviewRequestsService } from '../whatsapp-evolution/review-requests.service';
+import { SalonZatcaService } from '../zatca/zatca.service';
 import type { TenantPrismaClient } from '../../../shared/types';
 import { RecordPaymentDto, PaymentMethodEnum } from './dto/record-payment.dto';
 import { AddDiscountDto, DiscountTypeEnum } from './dto/add-discount.dto';
@@ -47,6 +49,17 @@ describe('InvoicesService', () => {
         { provide: SettingsService, useValue: {} },
         { provide: AuditService, useValue: mockAuditService },
         { provide: EventsGateway, useValue: { emitToTenant: jest.fn(), emitToOrder: jest.fn() } },
+        { provide: ReviewRequestsService, useValue: {
+          handleIncomingRating: jest.fn(),
+          createPendingRequest: jest.fn(),
+          scheduleForPaidInvoice: jest.fn().mockResolvedValue(undefined),
+        } },
+        { provide: SalonZatcaService, useValue: {
+          issueInvoice: jest.fn(),
+          submitClearance: jest.fn(),
+          getStatus: jest.fn(),
+          submitInvoice: jest.fn().mockResolvedValue(undefined),
+        } },
       ],
     }).compile();
 

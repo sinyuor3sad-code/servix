@@ -285,6 +285,12 @@ model SalonInfo {
   currency      String   @default("SAR") @db.VarChar(3)
   taxPercentage Decimal  @default(15.0) @map("tax_percentage") @db.Decimal(5, 2)
   taxNumber     String?  @map("tax_number") @db.VarChar(20)
+  // ──── ZATCA Required Fields ────
+  commercialRegistration String? @map("commercial_registration") @db.VarChar(20)
+  street                String? @db.VarChar(200)
+  district              String? @db.VarChar(100)
+  buildingNumber        String? @map("building_number") @db.VarChar(10)
+  postalCode            String? @map("postal_code") @db.VarChar(10)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 

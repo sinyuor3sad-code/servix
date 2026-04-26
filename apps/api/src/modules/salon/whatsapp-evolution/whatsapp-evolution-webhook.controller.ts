@@ -14,11 +14,14 @@ import { Public } from '../../../shared/decorators';
 import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { TenantClientFactory } from '../../../shared/database/tenant-client.factory';
 import { WhatsAppAntiBanService } from './whatsapp-anti-ban.service';
+import { WhatsAppRichMediaService } from './whatsapp-rich-media.service';
+import { WhatsAppEvolutionService } from './whatsapp-evolution.service';
 import { EVOLUTION_WEBHOOK_BASE } from './webhook-path.constant';
 import { AIReceptionService } from '../ai-reception/ai-reception.service';
 import { ManagerReplyHandler } from '../ai-reception/manager-reply.handler';
 import { FeaturesService } from '../../../core/features/features.service';
 import { ReviewRequestsService } from './review-requests.service';
+import { AIProviderService } from '../../../shared/ai/ai-provider.service';
 import type { WhatsAppInstanceStatus } from '../../../../generated/platform';
 import type { TenantPrismaClient } from '../../../shared/types';
 
@@ -41,6 +44,9 @@ export class WhatsAppEvolutionWebhookController {
     private readonly managerReply: ManagerReplyHandler,
     private readonly reviewRequests: ReviewRequestsService,
     private readonly features: FeaturesService,
+    private readonly richMedia: WhatsAppRichMediaService,
+    private readonly evolutionService: WhatsAppEvolutionService,
+    private readonly aiProvider: AIProviderService,
   ) {}
 
   /**
@@ -140,10 +146,13 @@ export class WhatsAppEvolutionWebhookController {
     const message = data['message'] as Record<string, unknown> | undefined;
     if (!message) return;
 
-    const text =
+    let text =
       (message['conversation'] as string) ||
       ((message['extendedTextMessage'] as Record<string, unknown> | undefined)?.['text'] as string) ||
       '';
+
+    const audioMessage = message['audioMessage'] as Record<string, unknown> | undefined;
+    let voiceMetadata: { isVoiceMessage: true; durationSeconds?: number } | undefined;
 
     // ── Resolve tenant ──
     const instanceRecord = await this.platformDb.whatsAppInstance.findUnique({
@@ -160,6 +169,51 @@ export class WhatsAppEvolutionWebhookController {
     if (tenant.status !== 'active' && tenant.status !== 'trial') return;
 
     const tenantDb = this.tenantFactory.getTenantClient(tenant.databaseName) as unknown as TenantPrismaClient;
+
+    // ── Voice transcription (audio message → text via Whisper) ──
+    if (!text && audioMessage) {
+      voiceMetadata = {
+        isVoiceMessage: true,
+        durationSeconds: typeof audioMessage['seconds'] === 'number'
+          ? audioMessage['seconds'] as number
+          : undefined,
+      };
+
+      const downloaded = await this.richMedia.downloadMediaAsBuffer({
+        instanceName,
+        instanceToken: instanceRecord.instanceToken,
+        messageKey: {
+          id: key.id || '',
+          remoteJid: key.remoteJid || '',
+          fromMe: key.fromMe,
+        },
+      });
+
+      if (downloaded?.buffer) {
+        text = (await this.aiProvider.transcribeVoice(
+          downloaded.buffer,
+          downloaded.filename || 'voice.ogg',
+        )).trim();
+        if (text) {
+          this.logger.log(`🎤 Voice transcribed for ${phone}: "${text.slice(0, 80)}..."`);
+        }
+      }
+
+      if (!text) {
+        this.logger.warn(`Voice transcription failed for ${phone} — sending fallback`);
+        try {
+          await this.evolutionService.sendText({
+            instanceName,
+            instanceToken: instanceRecord.instanceToken,
+            to: phone,
+            message: 'ما قدرت أفهم الصوتية، ممكن تكتبين لي؟',
+          });
+        } catch (err) {
+          this.logger.error(`Failed to send voice fallback to ${phone}: ${(err as Error).message}`);
+        }
+        return;
+      }
+    }
 
     // ────────────────────────────────────────────
     // [1] STOP FOLLOW-UP — cancels active AI pending action before generic opt-out
@@ -249,6 +303,7 @@ export class WhatsAppEvolutionWebhookController {
       instanceToken: instanceRecord.instanceToken,
       phone,
       text,
+      voiceMetadata,
     }).catch((err: unknown) => {
       this.logger.error(
         `AI Reception error for ${phone}: ${(err as Error).message}`,

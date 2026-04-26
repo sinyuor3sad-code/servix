@@ -47,6 +47,7 @@ export default function ZatcaPage(): React.ReactElement {
   const queryClient = useQueryClient();
   const [showOnboard, setShowOnboard] = useState(false);
   const [orgUnit, setOrgUnit] = useState('');
+  const [otp, setOtp] = useState('');
 
   const { data: certificates, isLoading } = useQuery({
     queryKey: ['zatca', 'certificates'],
@@ -56,16 +57,17 @@ export default function ZatcaPage(): React.ReactElement {
 
   const onboardMutation = useMutation({
     mutationFn: () => dashboardService.onboardZatca(
-      { organizationUnitName: orgUnit || undefined, isProduction: false },
+      { otp, organizationUnitName: orgUnit || undefined, isProduction: false },
       accessToken!,
     ),
     onSuccess: () => {
-      toast.success('تم إنشاء الشهادة بنجاح');
+      toast.success('تم التسجيل بنجاح — الشهادة مفعّلة');
       queryClient.invalidateQueries({ queryKey: ['zatca'] });
       setShowOnboard(false);
       setOrgUnit('');
+      setOtp('');
     },
-    onError: () => toast.error('فشل إنشاء الشهادة'),
+    onError: () => toast.error('فشل التسجيل — تأكد من صحة OTP والبيانات الضريبية'),
   });
 
   const hasActiveCert = certificates?.some(c => c.isActive);
@@ -135,6 +137,25 @@ export default function ZatcaPage(): React.ReactElement {
           <CardContent>
             <div className="max-w-md space-y-4">
               <div>
+                <label className="mb-1.5 block text-sm font-bold">رمز OTP من بوابة فاتورة *</label>
+                <Input
+                  placeholder="أدخل رمز OTP (6 أرقام)"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  dir="ltr"
+                  maxLength={10}
+                  className="text-center text-lg font-mono tracking-widest"
+                />
+                <a
+                  href="https://fatoora.zatca.gov.sa"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 block text-xs text-blue-600 hover:underline"
+                >
+                  🔗 احصل على OTP من fatoora.zatca.gov.sa
+                </a>
+              </div>
+              <div>
                 <label className="mb-1.5 block text-sm font-medium">اسم الوحدة التنظيمية (اختياري)</label>
                 <Input
                   placeholder="مثال: الفرع الرئيسي"
@@ -143,18 +164,23 @@ export default function ZatcaPage(): React.ReactElement {
                 />
               </div>
               <div className="rounded-xl bg-[var(--muted)] p-3 text-sm text-[var(--muted-foreground)]">
-                <p className="flex items-center gap-2 mb-1">
+                <p className="flex items-center gap-2 mb-2 font-bold">
                   <AlertCircle className="h-4 w-4" />
-                  ملاحظة مهمة
+                  خطوات التسجيل
                 </p>
-                <p>سيتم إنشاء مفتاح ECDSA P-256 وتوليد CSR. في البيئة التجريبية (Sandbox) يتم حفظ الشهادة محلياً.</p>
+                <ol className="list-decimal list-inside space-y-1 text-xs">
+                  <li>ادخل بياناتك الضريبية في <strong>إعدادات الصالون</strong> أولاً</li>
+                  <li>ادخل على <a href="https://fatoora.zatca.gov.sa" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">fatoora.zatca.gov.sa</a> واطلب OTP</li>
+                  <li>أدخل الـ OTP هنا واضغط "تسجيل"</li>
+                  <li>النظام يسوي الباقي تلقائياً ✅</li>
+                </ol>
               </div>
               <div className="flex gap-2">
                 <Button
                   onClick={() => onboardMutation.mutate()}
-                  disabled={onboardMutation.isPending}
+                  disabled={onboardMutation.isPending || otp.length < 4}
                 >
-                  {onboardMutation.isPending ? 'جاري الإنشاء...' : 'إنشاء الشهادة'}
+                  {onboardMutation.isPending ? 'جاري التسجيل...' : '🔐 تسجيل الشهادة'}
                 </Button>
                 <Button variant="outline" onClick={() => setShowOnboard(false)}>إلغاء</Button>
               </div>

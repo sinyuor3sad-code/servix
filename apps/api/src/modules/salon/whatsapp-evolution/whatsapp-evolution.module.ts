@@ -3,6 +3,7 @@ import { WhatsAppEvolutionController } from './whatsapp-evolution.controller';
 import { WhatsAppEvolutionWebhookController } from './whatsapp-evolution-webhook.controller';
 import { WhatsAppEvolutionService } from './whatsapp-evolution.service';
 import { WhatsAppAntiBanService } from './whatsapp-anti-ban.service';
+import { WhatsAppRichMediaService } from './whatsapp-rich-media.service';
 import { ReviewRequestsService } from './review-requests.service';
 import { SettingsModule } from '../settings/settings.module';
 import { AIReceptionModule } from '../ai-reception/ai-reception.module';
@@ -14,9 +15,10 @@ import { FeaturesService } from '../../../core/features/features.service';
   providers: [
     WhatsAppEvolutionService,
     WhatsAppAntiBanService,
+    WhatsAppRichMediaService,
     ReviewRequestsService,
     FeaturesService,
   ],
-  exports: [WhatsAppEvolutionService, WhatsAppAntiBanService, ReviewRequestsService],
+  exports: [WhatsAppEvolutionService, WhatsAppAntiBanService, WhatsAppRichMediaService, ReviewRequestsService],
 })
 export class WhatsAppEvolutionModule {}

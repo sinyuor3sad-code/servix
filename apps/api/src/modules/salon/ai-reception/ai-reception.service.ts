@@ -5,12 +5,17 @@ import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { CacheService } from '../../../shared/cache/cache.service';
 import { WhatsAppEvolutionService } from '../whatsapp-evolution/whatsapp-evolution.service';
 import { WhatsAppAntiBanService } from '../whatsapp-evolution/whatsapp-anti-ban.service';
+import { WhatsAppRichMediaService } from '../whatsapp-evolution/whatsapp-rich-media.service';
 import { FeaturesService } from '../../../core/features/features.service';
-import { GeminiService, AIReceptionResponse, hasProposedAction } from '../../../shared/ai/gemini.service';
+import { GeminiService, hasProposedAction } from '../../../shared/ai/gemini.service';
+import { AIProviderService, AIProviderResponse } from '../../../shared/ai/ai-provider.service';
 import { AIContextBuilder, SalonContextForAI } from './ai-context.builder';
-import { N8nClient } from './n8n.client';
 import { AIReceptionBookingService, AvailabilityResult } from './ai-reception-booking.service';
 import { AIReceptionRuntimeSettings, AIReceptionSettingsService } from './ai-reception-settings.service';
+import { AISafetyNetService } from './ai-safety-net.service';
+import { AIClientMemoryService } from './ai-client-memory.service';
+import { AISemanticCacheService } from './ai-semantic-cache.service';
+import { AIAnalyticsService, AIModelUsed } from './ai-analytics.service';
 import type { TenantPrismaClient } from '../../../shared/types';
 
 // ─────────────────── Constants ───────────────────
@@ -18,11 +23,13 @@ import type { TenantPrismaClient } from '../../../shared/types';
 const MAX_CONVERSATION_MESSAGES = 10;
 const REPLY_COOLDOWN_PREFIX = 'servix:ai_reception_cd:';
 const REPLY_COOLDOWN_SECONDS = 3;
-const BOOKING_CANCELLED_REPLY = 'تم إلغاء طلب الحجز الحالي.';
-const FORMAL_TONE_REPLY = 'تمام، أعتذر. راح أستخدم أسلوبًا رسميًا.';
-const AMBIGUOUS_REPLY = 'كيف أقدر أساعدك؟ تبغى حجز، أسعار، أو تعديل موعد؟';
 const PENDING_APPROVAL_REPLY = 'وصل طلبك، بانتظار تأكيد الصالون. بنرسل لك التأكيد النهائي هنا.';
 const STOP_FOLLOW_UP_REPLY = 'تم، أوقفنا المتابعة لهذا الطلب.';
+const MSG_COUNTER_PREFIX = 'servix:ai_msg_count:';
+// 35 days = whole month + buffer; Redis auto-resets the bucket each month.
+const MSG_COUNTER_TTL_SECONDS = 35 * 24 * 60 * 60;
+const TIER_BASIC_REPLY = 'حياك الله! للحجز أو الاستفسار تواصلي مع الصالون مباشرة.';
+const TIER_LIMIT_REACHED_REPLY = 'عذراً، المساعد غير متاح حالياً. تواصلي مع الصالون مباشرة.';
 
 type StopFollowUpResult = 'not_stop' | 'stopped' | 'no_active_request';
 type ReceptionServiceItem = SalonContextForAI['services'][number];
@@ -34,12 +41,6 @@ type EscalationType =
   | 'billing_issue'
   | 'angry_customer'
   | 'abuse_or_threat';
-
-interface EscalationDetection {
-  type: EscalationType;
-  reply: string;
-  reason: string;
-}
 
 type BookingStep =
   | 'idle'
@@ -83,15 +84,17 @@ interface AIConversationState {
 }
 
 /**
- * AI Reception Service — Main orchestrator for the smart receptionist.
+ * AI Reception Service — Main orchestrator for the smart receptionist (V2).
  *
  * Flow:
  *  1. Upsert conversation (append user message)
  *  2. Build salon context via AIContextBuilder
- *  3. Call n8n workflow (primary) → GeminiService (fallback)
- *  4. Route response:
- *     - proposedAction present → create AIPendingAction + notify manager + interim reply
- *     - no action → send reply directly to customer
+ *  3. Call AIProviderService (GPT-5-nano/mini → Gemini fallback)
+ *  4. Route response by AI's `action`:
+ *     - proposedAction / submit_booking → AIPendingAction + notify manager
+ *     - escalate / needs_human → handleEscalation
+ *     - cancel → reset state + cancel pending actions
+ *     - default → reply via WhatsApp (text / buttons / list)
  */
 @Injectable()
 export class AIReceptionService {
@@ -105,16 +108,30 @@ export class AIReceptionService {
     private readonly features: FeaturesService,
     private readonly evolutionService: WhatsAppEvolutionService,
     private readonly antiBan: WhatsAppAntiBanService,
+    private readonly richMedia: WhatsAppRichMediaService,
     private readonly contextBuilder: AIContextBuilder,
-    private readonly n8n: N8nClient,
     private readonly gemini: GeminiService,
+    private readonly aiProvider: AIProviderService,
+    private readonly safetyNet: AISafetyNetService,
     private readonly booking: AIReceptionBookingService,
     private readonly receptionSettings: AIReceptionSettingsService,
+    private readonly clientMemory: AIClientMemoryService,
+    private readonly semanticCache: AISemanticCacheService,
+    private readonly analytics: AIAnalyticsService,
   ) {}
 
   /**
-   * Handle an incoming customer message — main entry point.
-   * Called from the webhook controller (fire-and-forget).
+   * V2 entry point. Order of operations:
+   *  1. Cooldown + AI-enabled check
+   *  2. Upsert user message
+   *  3. Build salon context + state
+   *  4. Code Router fast paths (no AI call):
+   *     - awaiting owner approval     → static reply
+   *     - awaiting final fixation     → static reply
+   *     - awaiting alt confirmation   → handleCustomerAlternativeDecision
+   *  5. AI call (AIProvider with V2 envelope)
+   *  6. Safety net on the reply
+   *  7. Route by AI's `action`: cancel | escalate | submit_booking | answer_only/collect_info
    */
   async handleCustomerMessage(params: {
     tenantId: string;
@@ -123,25 +140,17 @@ export class AIReceptionService {
     instanceToken: string;
     phone: string;
     text: string;
+    voiceMetadata?: { isVoiceMessage: true; durationSeconds?: number };
   }): Promise<void> {
-    const { tenantId, databaseName, instanceName, instanceToken, phone, text } = params;
+    const { tenantId, databaseName, instanceName, instanceToken, phone, text, voiceMetadata } = params;
+    const startTime = Date.now();
 
-    this.logger.log(`📨 AI Reception: ${phone} → "${text.slice(0, 60)}..."`);
+    this.logger.log(
+      `📨 AI Reception V2: ${phone}${voiceMetadata ? ' [voice]' : ''} → "${text.slice(0, 60)}..."`,
+    );
 
     const tenantDb = this.tenantFactory.getTenantClient(databaseName) as unknown as TenantPrismaClient;
 
-    const stopResult = await this.handleStopFollowUpRequest({
-      tenantDb,
-      instanceName,
-      instanceToken,
-      phone,
-      text,
-    });
-    if (stopResult !== 'not_stop') {
-      return;
-    }
-
-    // ── Per-phone cooldown ──
     const cooldownKey = `${REPLY_COOLDOWN_PREFIX}${instanceName}:${phone}`;
     const count = await this.cache.incrementRateLimit(cooldownKey, REPLY_COOLDOWN_SECONDS);
     if (count > 1) {
@@ -160,140 +169,250 @@ export class AIReceptionService {
       return;
     }
 
-    // ── 1. Upsert conversation (append user message) ──
     const now = new Date();
+
+    // ── Operating mode (V2 §4.1): vacation / custom short-circuit before AI ──
+    const modeReply = this.resolveModeShortCircuit(settings, now);
+    if (modeReply) {
+      const conversation = await this.upsertConversation(tenantDb, phone, {
+        role: 'user',
+        text,
+        ts: now.toISOString(),
+      });
+      void conversation;
+      await this.sendAndPersistAssistant({
+        tenantDb,
+        instanceName,
+        instanceToken,
+        phone,
+        reply: modeReply,
+      });
+      return;
+    }
+
+    // ── Tier gate (V2 §5.2): basic plan = no AI ──
+    if (settings.tier === 'basic') {
+      await this.upsertConversation(tenantDb, phone, { role: 'user', text, ts: now.toISOString() });
+      await this.sendAndPersistAssistant({
+        tenantDb,
+        instanceName,
+        instanceToken,
+        phone,
+        reply: settings.welcomeMessage || TIER_BASIC_REPLY,
+      });
+      return;
+    }
+
+    // ── Monthly message limit ──
+    if (settings.monthlyMessageLimit > 0) {
+      const used = await this.getMonthlyUsage(tenantId, now);
+      if (used >= settings.monthlyMessageLimit) {
+        await this.upsertConversation(tenantDb, phone, { role: 'user', text, ts: now.toISOString() });
+        await this.sendAndPersistAssistant({
+          tenantDb,
+          instanceName,
+          instanceToken,
+          phone,
+          reply: TIER_LIMIT_REACHED_REPLY,
+        });
+        this.logger.warn(`Monthly AI limit reached for tenant ${tenantId} (${used}/${settings.monthlyMessageLimit})`);
+        return;
+      }
+    }
+
     const conversation = await this.upsertConversation(tenantDb, phone, {
       role: 'user',
       text,
       ts: now.toISOString(),
     });
 
-    // ── 2. Build salon context ──
     const salonContext = await this.contextBuilder.buildForTenant(databaseName, phone);
+    let state = this.normalizeConversationState(conversation.state);
 
-    const systemPrompt = this.gemini.buildReceptionSystemPrompt(
-      salonContext,
-      settings.tone,
-      settings.systemPromptOverride,
-    );
-
-    const currentState = this.normalizeConversationState(conversation.state);
-    if (this.isGreetingOnlyText(text) && !this.hasPriorAssistantMessages(conversation.messages)) {
-      const reply = this.applyAvoidedPhrases(settings.welcomeMessage, settings);
-      await this.sendReply(instanceName, instanceToken, phone, reply);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: reply,
-        ts: new Date().toISOString(),
-      });
+    // ── Router fast paths (code-only, no AI call) ──
+    if (state.bookingStep === 'awaiting_customer_alternative_confirmation') {
+      const accepted = this.isAffirmativeText(text) || this.isAlternativeAcceptedText(text);
+      const rejected = this.isNegativeText(text) || this.isAlternativeRejectedText(text);
+      if (accepted || rejected) {
+        await this.handleCustomerAlternativeDecision({
+          tenantDb,
+          instanceName,
+          instanceToken,
+          phone,
+          state,
+          settings,
+          accepted,
+        });
+        return;
+      }
+      const reply = state.alternativeTime
+        ? `الصالون اقترح وقتًا بديلًا: ${state.alternativeTime}.\nيناسبك هذا الموعد؟`
+        : 'يناسبك الوقت البديل المقترح؟';
+      await this.sendAndPersistAssistant({ tenantDb, instanceName, instanceToken, phone, reply });
       return;
     }
 
-    const directEscalation = this.detectDirectEscalation(text, currentState, salonContext.services, settings);
-    if (directEscalation) {
-      const escalationState = {
-        ...(directEscalation.type === 'special_discount'
-          ? this.applyBookingDetections(currentState, text, salonContext.services)
-          : currentState),
-        currentIntent: directEscalation.type,
-        updatedAt: new Date().toISOString(),
-      };
-      await this.persistConversationState(tenantDb, phone, escalationState);
-      await this.handleEscalation({
+    if (state.bookingStep === 'awaiting_owner_approval' && state.requestId) {
+      const reply = 'طلبك بانتظار تأكيد الصالون.';
+      await this.sendAndPersistAssistant({ tenantDb, instanceName, instanceToken, phone, reply });
+      return;
+    }
+
+    if (state.bookingStep === 'awaiting_final_fixation') {
+      const reply = 'موافقتك وصلت للصالون، وبانتظار تثبيت الموعد من الفريق.';
+      await this.sendAndPersistAssistant({ tenantDb, instanceName, instanceToken, phone, reply });
+      return;
+    }
+
+    // ── AI path ──
+    const history = (conversation.messages as Array<{ role: string; text: string; ts: string }>)
+      .slice(-MAX_CONVERSATION_MESSAGES, -1);
+    const memoryContext = await this.clientMemory.buildMemoryContext(tenantId, phone);
+    const baseStateContext = this.buildStateContextBlock(state);
+    const voiceLine = voiceMetadata
+      ? `\n- ملاحظة: هذه رسالة صوتية مفرّغة عبر Whisper${voiceMetadata.durationSeconds ? ` (${voiceMetadata.durationSeconds} ثانية)` : ''}، قد تحتوي أخطاء بسيطة في النص.`
+      : '';
+    const modeLine = settings.mode === 'reply_only'
+      ? `\n- وضع التشغيل: رد فقط — الحجز معطّل. لا تقترح proposedAction أبداً، ولا تستخدم action="submit_booking". وجّه العميل لزيارة الصالون مباشرة لو سأل عن الحجز.`
+      : '';
+    const assistantLine = settings.assistantName
+      ? `- اسم المساعد: ${settings.assistantName}`
+      : '';
+    const stateContext = [baseStateContext, assistantLine, voiceLine.trim(), modeLine.trim(), '', memoryContext]
+      .filter(Boolean)
+      .join('\n');
+    const systemPrompt = this.gemini.buildReceptionV2SystemPrompt({
+      salonContext,
+      tone: settings.tone,
+      stateContext,
+      systemPromptOverride: settings.systemPromptOverride,
+    });
+
+    // ── Semantic cache — short-circuit common questions before paying for AI ──
+    const cached = await this.semanticCache.findCachedResponse(tenantId, text);
+    if (cached) {
+      const safeCached = this.safetyNet.sanitize(cached.reply, {
+        services: salonContext.services,
+        settings,
+      }).reply;
+      await this.sendAndPersistAssistant({
         tenantDb,
-        tenantId,
         instanceName,
         instanceToken,
         phone,
-        customerQuestion: text,
-        replyToCustomer: this.applyAvoidedPhrases(directEscalation.reply, settings),
-        uncertainReason: directEscalation.reason,
-        escalationType: directEscalation.type,
-        settings,
-        conversationId: conversation.id,
-        historyForContext: conversation.messages as Array<{ role: string; text: string; ts: string }>,
-        state: escalationState,
+        reply: safeCached,
       });
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: this.applyAvoidedPhrases(directEscalation.reply, settings),
-        ts: new Date().toISOString(),
+      await this.analytics.trackConversation(tenantId, {
+        intent: cached.intent,
+        wasEscalated: false,
+        wasBooked: false,
+        responseTimeMs: Date.now() - startTime,
+        modelUsed: 'cached',
+        wasVoice: !!voiceMetadata,
+        wasCached: true,
+        serviceName: null,
       });
+      // Cache hits don't burn AI tokens, but they still count against the
+      // monthly message budget so a runaway tenant can't bypass the limit.
+      await this.incrementMessageCount(tenantId, now);
       return;
     }
 
-    const stateHandled = await this.tryHandleConversationState({
-      tenantDb,
-      tenantId,
-      instanceName,
-      instanceToken,
-      phone,
-      text,
-      conversation,
-      salonContext,
-      settings,
-    });
-    if (stateHandled) {
-      return;
-    }
+    const messages = [
+      { role: 'system' as const, content: systemPrompt },
+      ...history.map((h) => ({
+        role: (h.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: h.text,
+      })),
+      { role: 'user' as const, content: text },
+    ];
 
-    if (await this.handlePriceNegotiationRequest({
-      tenantDb,
-      instanceName,
-      instanceToken,
-      phone,
-      text,
-      salonContext,
-    })) {
-      return;
-    }
+    // Tier comes from the explicit ai_tier setting (V2 §5.2). The basic plan
+    // has already been short-circuited above, so only standard/premium reach
+    // the model — premium picks up GPT-5-mini when the turn looks complex.
+    const tier: 'standard' | 'premium' = settings.tier === 'premium' ? 'premium' : 'standard';
+    const complexity = this.estimateComplexity(state, text);
 
-    // ── 4. Get conversation history (last N messages) ──
-    const history = (conversation.messages as Array<{ role: string; text: string; ts: string }>)
-      .slice(-MAX_CONVERSATION_MESSAGES);
-
-    // ── 5. Call AI (n8n primary → GeminiService fallback) ──
-    let response: AIReceptionResponse;
-
-    try {
-      // Primary: n8n workflow (5 providers inside n8n)
-      response = await this.n8n.callAIReception({
-        tenantId,
-        phone,
-        message: text,
-        salonContext,
-        history: history as Array<{ role: 'user' | 'assistant'; text: string; ts: string }>,
-        tone: settings.tone,
-        systemPrompt,
-      });
-    } catch (n8nErr) {
-      this.logger.warn(`n8n failed, falling back to GeminiService: ${(n8nErr as Error).message}`);
-
-      // Fallback: GeminiService direct (5 providers in code)
-      response = await this.gemini.receptionChat({
+    const response: AIProviderResponse = await this.aiProvider.chat({
+      messages,
+      complexity,
+      tier,
+      fallbackContext: {
         salonContext,
         phone,
         message: text,
         history: history as Array<{ role: 'user' | 'assistant'; text: string; ts: string }>,
         tone: settings.tone,
         systemPromptOverride: systemPrompt,
+      },
+    });
+
+    // Persist learnings + cacheable Q/A — both are tolerant of failures so we
+    // don't await-block the customer reply if Redis is down.
+    await this.clientMemory.updateFromAIResponse(tenantId, phone, response).catch((err: unknown) => {
+      this.logger.warn(`Memory update failed for ${phone}: ${(err as Error).message}`);
+    });
+    await this.semanticCache.cacheResponse(tenantId, text, response).catch((err: unknown) => {
+      this.logger.warn(`Cache update failed for ${tenantId}: ${(err as Error).message}`);
+    });
+    // Bump monthly usage now that the AI call succeeded (or its safety-net
+    // fallback ran); failures are silent — better to under-count than block.
+    await this.incrementMessageCount(tenantId, now);
+
+    const trackAnalytics = (overrides: Partial<{
+      wasEscalated: boolean;
+      wasBooked: boolean;
+      intent: string;
+    }> = {}) =>
+      this.analytics.trackConversation(tenantId, {
+        intent: overrides.intent ?? response.intent,
+        wasEscalated: overrides.wasEscalated ?? false,
+        wasBooked: overrides.wasBooked ?? false,
+        responseTimeMs: Date.now() - startTime,
+        modelUsed: this.modelLabel(response.modelUsed),
+        wasVoice: !!voiceMetadata,
+        wasCached: false,
+        serviceName: response.extractedData?.serviceName ?? null,
       });
+
+    const safe = this.safetyNet.sanitize(response.reply, {
+      services: salonContext.services,
+      settings,
+    });
+    let assistantReplyText = safe.reply;
+
+    // Merge any data the AI extracted into conversation state (so the next
+    // turn has it), even before deciding the route.
+    state = this.mergeExtractedDataIntoState(state, response.extractedData, salonContext.services);
+
+    // ── 1. cancel ──
+    if (response.wantsToCancel || response.action === 'cancel') {
+      const cancelled = this.resetBookingState({
+        ...state,
+        currentIntent: 'cancelled_by_customer',
+        bookingStep: 'cancelled',
+        doNotDisturb: true,
+      });
+      await this.persistConversationState(tenantDb, phone, cancelled);
+      await this.cancelLatestAwaitingActionByCustomer(tenantDb, phone);
+      const reply = assistantReplyText || STOP_FOLLOW_UP_REPLY;
+      await this.sendAndPersistAssistant({ tenantDb, instanceName, instanceToken, phone, reply });
+      await trackAnalytics({ intent: 'cancel' });
+      return;
     }
 
-    // ── 6. Route response ──
-    // Escalate when the AI flagged uncertainty (either via the `needs_human`
-    // intent or a non-empty uncertainReason — models aren't always consistent
-    // about setting both, so we trust either signal).
-    const shouldEscalate =
+    // ── 2. escalate ──
+    const needsEscalation =
+      response.needsEscalation === true ||
+      response.action === 'escalate' ||
       response.intent === 'needs_human' ||
       !!(response.uncertainReason && response.uncertainReason.trim());
-    let assistantReplyText = this.sanitizePrematureConfirmation(
-      response.reply,
-      'ما أقدر أؤكد الحجز قبل تأكيد الصالون. أرسل لي الخدمة والتاريخ والوقت وأرفع طلبك للتأكيد.',
-    );
-    assistantReplyText = this.applyAvoidedPhrases(assistantReplyText, settings);
-
-    if (shouldEscalate) {
+    if (needsEscalation) {
+      await this.persistConversationState(tenantDb, phone, {
+        ...state,
+        currentIntent: 'needs_human',
+        updatedAt: new Date().toISOString(),
+      });
       await this.handleEscalation({
         tenantDb,
         tenantId,
@@ -302,362 +421,32 @@ export class AIReceptionService {
         phone,
         customerQuestion: text,
         replyToCustomer: assistantReplyText,
-        uncertainReason: response.uncertainReason || null,
-        escalationType: this.escalationTypeFromReason(response.uncertainReason || null),
+        uncertainReason: response.escalationReason || response.uncertainReason || 'ai_uncertain',
+        escalationType: 'unclear',
         settings,
         conversationId: conversation.id,
         historyForContext: history as Array<{ role: string; text: string; ts: string }>,
-        state: this.normalizeConversationState(conversation.state),
+        state,
       });
-    } else if (hasProposedAction(response)) {
-      const guardedPayload = this.applyOfficialPricingToPayload(response.proposedAction.payload, salonContext.services);
-      const missingActionReply = this.getMissingActionReply(response.proposedAction.type, guardedPayload);
-      if (missingActionReply) {
-        assistantReplyText = missingActionReply;
-        await this.sendReply(instanceName, instanceToken, phone, assistantReplyText);
-      } else {
-        assistantReplyText = PENDING_APPROVAL_REPLY;
-        await this.handleProposedAction({
-          tenantDb,
-          tenantId,
-          instanceName,
-          instanceToken,
-          phone,
-          reply: assistantReplyText,
-          proposedAction: { ...response.proposedAction, payload: guardedPayload },
-          settings,
-          conversationId: conversation.id,
-          services: salonContext.services,
-        });
-      }
-    } else {
-      // Direct reply — no manager approval needed
-      await this.sendReply(instanceName, instanceToken, phone, assistantReplyText);
-    }
-
-    // ── 7. Append assistant message to conversation ──
-    await this.upsertConversation(tenantDb, phone, {
-      role: 'assistant',
-      text: assistantReplyText,
-      ts: new Date().toISOString(),
-    });
-  }
-
-  async handleStopFollowUpRequest(params: {
-    tenantDb: TenantPrismaClient;
-    instanceName: string;
-    instanceToken: string;
-    phone: string;
-    text: string;
-  }): Promise<StopFollowUpResult> {
-    const { tenantDb, instanceName, instanceToken, phone, text } = params;
-    if (!this.isStopFollowUpText(text)) {
-      return 'not_stop';
-    }
-
-    const stoppedAction = await this.cancelLatestAwaitingActionByCustomer(tenantDb, phone);
-    if (!stoppedAction) {
-      this.logger.debug(`Stop follow-up requested by ${phone}, but no active pending action was found.`);
-      return 'no_active_request';
-    }
-
-    const now = new Date().toISOString();
-    const conversation = await this.upsertConversation(tenantDb, phone, { role: 'user', text, ts: now });
-    const state = this.resetBookingState({
-      ...this.normalizeConversationState(conversation.state),
-      currentIntent: 'cancelled_by_customer',
-      bookingStep: 'cancelled',
-      doNotDisturb: true,
-    });
-    await this.persistConversationState(tenantDb, phone, state);
-    await this.sendReply(instanceName, instanceToken, phone, STOP_FOLLOW_UP_REPLY);
-    await this.upsertConversation(tenantDb, phone, {
-      role: 'assistant',
-      text: STOP_FOLLOW_UP_REPLY,
-      ts: new Date().toISOString(),
-    });
-
-    this.logger.log(`Customer ${phone} cancelled follow-up for pending action #${stoppedAction.id}`);
-    return 'stopped';
-  }
-
-  // ═══════════════════════════════════════════
-  // Proposed Action → Manager Approval Flow
-  // ═══════════════════════════════════════════
-
-  private async tryHandleConversationState(params: {
-    tenantDb: TenantPrismaClient;
-    tenantId: string;
-    instanceName: string;
-    instanceToken: string;
-    phone: string;
-    text: string;
-    conversation: { id: string; state?: unknown; messages?: unknown };
-    salonContext: SalonContextForAI;
-    settings: AIReceptionRuntimeSettings;
-  }): Promise<boolean> {
-    const {
-      tenantDb,
-      tenantId,
-      instanceName,
-      instanceToken,
-      phone,
-      text,
-      conversation,
-      salonContext,
-      settings,
-    } = params;
-
-    const now = new Date().toISOString();
-    let state = this.normalizeConversationState(conversation.state);
-    state = { ...state, lastUserMessageAt: now, updatedAt: now };
-
-    if (this.isFormalToneRequest(text)) {
-      state = {
-        ...state,
-        tonePreference: 'formal',
-        failedUnderstandingCount: 0,
-        updatedAt: new Date().toISOString(),
-      };
-      await this.persistConversationState(tenantDb, phone, state);
-      await this.sendReply(instanceName, instanceToken, phone, FORMAL_TONE_REPLY);
       await this.upsertConversation(tenantDb, phone, {
         role: 'assistant',
-        text: FORMAL_TONE_REPLY,
+        text: assistantReplyText,
         ts: new Date().toISOString(),
       });
-      return true;
+      await trackAnalytics({ wasEscalated: true });
+      return;
     }
 
-    const activeBooking = this.isActiveBookingStep(state.bookingStep);
-    const bookingIntent = this.isBookingIntentText(text);
-    const ambiguous = this.isAmbiguousText(text);
-
-    if (!activeBooking && ambiguous) {
-      state = {
-        ...state,
-        currentIntent: 'inquiry',
-        failedUnderstandingCount: (state.failedUnderstandingCount || 0) + 1,
-        updatedAt: new Date().toISOString(),
-      };
-      await this.persistConversationState(tenantDb, phone, state);
-      await this.sendReply(instanceName, instanceToken, phone, AMBIGUOUS_REPLY);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: AMBIGUOUS_REPLY,
-        ts: new Date().toISOString(),
-      });
-      return true;
-    }
-
-    if (!activeBooking && !bookingIntent) {
-      return false;
-    }
-
-    if (state.bookingStep === 'awaiting_customer_alternative_confirmation') {
-      if (this.isNegativeText(text) || this.isAlternativeRejectedText(text)) {
-        const alternativeResult = await this.handleCustomerAlternativeDecision({
-          tenantDb,
-          instanceName,
-          instanceToken,
-          phone,
-          state,
-          settings,
-          accepted: false,
-        });
-        return alternativeResult;
-      }
-
-      if (this.isAffirmativeText(text) || this.isAlternativeAcceptedText(text)) {
-        const alternativeResult = await this.handleCustomerAlternativeDecision({
-          tenantDb,
-          instanceName,
-          instanceToken,
-          phone,
-          state,
-          settings,
-          accepted: true,
-        });
-        return alternativeResult;
-      }
-
-      const reply = state.alternativeTime
-        ? `الصالون اقترح وقتًا بديلًا: ${state.alternativeTime}.\nيناسبك هذا الموعد؟`
-        : 'يناسبك الوقت البديل المقترح؟';
-      await this.sendReply(instanceName, instanceToken, phone, reply);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: reply,
-        ts: new Date().toISOString(),
-      });
-      return true;
-    }
-
-    if (state.bookingStep === 'awaiting_final_fixation') {
-      const reply = 'موافقتك وصلت للصالون، وبانتظار تثبيت الموعد من الفريق.';
-      await this.sendReply(instanceName, instanceToken, phone, reply);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: reply,
-        ts: new Date().toISOString(),
-      });
-      return true;
-    }
-
-    if (this.isBookingCancelText(text)) {
-      const cancelledState = this.resetBookingState({
-        ...state,
-        currentIntent: 'booking',
-        bookingStep: 'cancelled',
-      });
-      await this.persistConversationState(tenantDb, phone, cancelledState);
-      await this.sendReply(instanceName, instanceToken, phone, BOOKING_CANCELLED_REPLY);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: BOOKING_CANCELLED_REPLY,
-        ts: new Date().toISOString(),
-      });
-      return true;
-    }
-
-    if (state.bookingStep === 'awaiting_owner_approval' && state.requestId) {
-      const reply = 'طلبك بانتظار تأكيد الصالون.';
-      await this.persistConversationState(tenantDb, phone, {
-        ...state,
-        currentIntent: 'booking',
-        awaitingOwnerApproval: true,
-        updatedAt: new Date().toISOString(),
-      });
-      await this.sendReply(instanceName, instanceToken, phone, reply);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: reply,
-        ts: new Date().toISOString(),
-      });
-      return true;
-    }
-
-    state = this.applyBookingDetections(state, text, salonContext.services);
-
-    if (this.isPriceNegotiationText(text)) {
-      const service = this.getSelectedService(state, salonContext.services) ||
-        this.findServiceInText(text, salonContext.services);
-      const reply = service
-        ? `السعر الحالي هو ${this.formatPrice(service.price)}. لا أقدر أغيّر السعر، لكن أقدر أرسل طلبك للصالون إذا تحب/تحبين.`
-        : 'لا أقدر أغيّر الأسعار أو أؤكد خصم غير موجود. أقدر أرسل طلبك للصالون للتأكيد إذا تحب/تحبين.';
-      state = {
-        ...state,
-        currentIntent: 'booking',
-        quotedPrice: service?.price ?? state.quotedPrice,
-        discountApplied: false,
-        failedUnderstandingCount: 0,
-        updatedAt: new Date().toISOString(),
-      };
-      await this.persistConversationState(tenantDb, phone, state);
-      await this.sendReply(instanceName, instanceToken, phone, reply);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: reply,
-        ts: new Date().toISOString(),
-      });
-      return true;
-    }
-
-    if (this.isMenuRequestText(text)) {
-      const nextStep = this.getNextBookingStep(state);
-      const reply = `${this.formatServicesMenu(salonContext.services)}\n\n${this.getNextBookingQuestion(state)}`;
-      state = {
-        ...state,
-        currentIntent: 'booking',
-        bookingStep: nextStep,
-        lastBotQuestion: nextStep,
-        failedUnderstandingCount: 0,
-        updatedAt: new Date().toISOString(),
-      };
-      await this.persistConversationState(tenantDb, phone, state);
-      await this.sendReply(instanceName, instanceToken, phone, reply);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: reply,
-        ts: new Date().toISOString(),
-      });
-      return true;
-    }
-
-    if (this.isPriceQuestionText(text)) {
-      const service = this.getSelectedService(state, salonContext.services) ||
-        this.findServiceInText(text, salonContext.services);
-      if (service) {
-        const nextStep = this.getNextBookingStep(state);
-        const question = this.getNextBookingQuestion(state);
-        const reply = `سعر ${service.name} هو ${this.formatPrice(service.price)}.\n\n${question}`;
-        state = {
-          ...state,
-          currentIntent: 'booking',
-          selectedServiceId: service.id,
-          selectedServiceName: service.name,
-          quotedPrice: service.price,
-          bookingStep: nextStep,
-          lastBotQuestion: nextStep,
-          failedUnderstandingCount: 0,
-          updatedAt: new Date().toISOString(),
-        };
-        await this.persistConversationState(tenantDb, phone, state);
-        await this.sendReply(instanceName, instanceToken, phone, reply);
-        await this.upsertConversation(tenantDb, phone, {
-          role: 'assistant',
-          text: reply,
-          ts: new Date().toISOString(),
-        });
-        return true;
-      }
-    }
-
-    const availabilityGuard = await this.applyAvailabilitySafeguard(tenantDb, state, settings);
-    state = availabilityGuard.state;
-    if (availabilityGuard.reply) {
-      const prepared = this.prepareBookingReply(availabilityGuard.reply, state, settings);
-      state = prepared.state;
-      await this.persistConversationState(tenantDb, phone, state);
-      await this.sendReply(instanceName, instanceToken, phone, prepared.reply);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: prepared.reply,
-        ts: new Date().toISOString(),
-      });
-      return true;
-    }
-
-    if (this.isAwaitingSendConfirmation(state) && this.isAffirmativeText(text)) {
-      const sendGuard = await this.applyAvailabilitySafeguard(tenantDb, state, settings, true);
-      state = sendGuard.state;
-      if (sendGuard.reply) {
-        await this.persistConversationState(tenantDb, phone, state);
-        await this.sendReply(instanceName, instanceToken, phone, sendGuard.reply);
-        await this.upsertConversation(tenantDb, phone, {
-          role: 'assistant',
-          text: sendGuard.reply,
-          ts: new Date().toISOString(),
-        });
-        return true;
-      }
-
-      const missingReply = this.getMissingStateReply(state);
-      if (missingReply) {
-        const nextStep = this.getNextBookingStep(state);
-        await this.persistConversationState(tenantDb, phone, {
-          ...state,
-          bookingStep: nextStep,
-          lastBotQuestion: nextStep,
-          updatedAt: new Date().toISOString(),
-        });
-        await this.sendReply(instanceName, instanceToken, phone, missingReply);
-        await this.upsertConversation(tenantDb, phone, {
-          role: 'assistant',
-          text: missingReply,
-          ts: new Date().toISOString(),
-        });
-        return true;
+    // ── 3. submit_booking ──
+    const proposedAction = response.proposedAction
+      || this.buildProposedActionFromExtractedData(response.extractedData, state);
+    if (proposedAction && (response.action === 'submit_booking' || hasProposedAction(response))) {
+      const guardedPayload = this.applyOfficialPricingToPayload(proposedAction.payload, salonContext.services);
+      const missing = this.getMissingActionReply(proposedAction.type, guardedPayload);
+      if (missing) {
+        await this.sendAndPersistAssistant({ tenantDb, instanceName, instanceToken, phone, reply: missing });
+        await trackAnalytics();
+        return;
       }
 
       const actionId = await this.handleProposedAction({
@@ -667,15 +456,11 @@ export class AIReceptionService {
         instanceToken,
         phone,
         reply: PENDING_APPROVAL_REPLY,
-        proposedAction: {
-          type: 'book_appointment',
-          payload: this.buildBookingActionPayload(state),
-        },
+        proposedAction: { ...proposedAction, payload: guardedPayload },
         settings,
         conversationId: conversation.id,
         services: salonContext.services,
       });
-
       await this.persistConversationState(tenantDb, phone, {
         ...state,
         currentIntent: 'booking',
@@ -683,7 +468,6 @@ export class AIReceptionService {
         requestId: actionId ?? state.requestId,
         awaitingOwnerApproval: Boolean(actionId),
         timeoutNotificationSent: false,
-        failedUnderstandingCount: 0,
         updatedAt: new Date().toISOString(),
       });
       await this.upsertConversation(tenantDb, phone, {
@@ -691,82 +475,285 @@ export class AIReceptionService {
         text: actionId ? PENDING_APPROVAL_REPLY : 'تعذر إرسال الطلب للصالون حاليًا.',
         ts: new Date().toISOString(),
       });
-      return true;
+      await trackAnalytics({ wasBooked: Boolean(actionId), intent: 'book_appointment' });
+      return;
     }
 
-    if (this.isAwaitingSendConfirmation(state) && this.isNegativeText(text)) {
-      const cancelledState = this.resetBookingState({
-        ...state,
-        currentIntent: 'booking',
-        bookingStep: 'cancelled',
-      });
-      await this.persistConversationState(tenantDb, phone, cancelledState);
-      await this.sendReply(instanceName, instanceToken, phone, BOOKING_CANCELLED_REPLY);
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: BOOKING_CANCELLED_REPLY,
-        ts: new Date().toISOString(),
-      });
-      return true;
+    // ── 4. collect_info / answer_only / general ──
+    await this.persistConversationState(tenantDb, phone, state);
+    await this.sendAIReply({
+      tenantDb,
+      instanceName,
+      instanceToken,
+      phone,
+      reply: assistantReplyText,
+      response,
+      salonContext,
+    });
+    await trackAnalytics();
+  }
+
+  /**
+   * V2: cancel intent is now detected by the AI via `wantsToCancel`. The
+   * webhook still calls this for backwards compatibility, so it stays a
+   * no-op — `not_stop` lets the message fall through to the AI flow.
+   */
+  async handleStopFollowUpRequest(_params: {
+    tenantDb: TenantPrismaClient;
+    instanceName: string;
+    instanceToken: string;
+    phone: string;
+    text: string;
+  }): Promise<StopFollowUpResult> {
+    return 'not_stop';
+  }
+
+  // ═══════════════════════════════════════════
+  // V2 Helpers — Router, prompt context, extraction
+  // ═══════════════════════════════════════════
+
+  /**
+   * V2 §4.1 — bypass the AI entirely for `vacation` and `custom` modes.
+   * Returns the static reply when the mode short-circuits, or null for
+   * `full` / `reply_only` (which still flow through the AI, with the prompt
+   * instructing the model to disable booking in `reply_only`).
+   *
+   * Vacation respects the [start, end] window from the existing
+   * `vacation_start_date` / `vacation_end_date` settings — out-of-window
+   * vacation mode falls through to normal AI handling.
+   */
+  private resolveModeShortCircuit(
+    settings: AIReceptionRuntimeSettings,
+    now: Date,
+  ): string | null {
+    if (settings.mode === 'vacation') {
+      const start = settings.vacationStartDate ? new Date(settings.vacationStartDate) : null;
+      const end = settings.vacationEndDate ? new Date(settings.vacationEndDate) : null;
+      const startedOk = !start || Number.isNaN(start.getTime()) || now >= start;
+      const notEndedYet = !end || Number.isNaN(end.getTime()) || now <= end;
+      if (startedOk && notEndedYet) {
+        return settings.vacationMessage || 'الصالون مغلق حالياً، نرحّب بك بعد العودة.';
+      }
+      return null;
     }
-
-    const nextReply = this.getMissingStateReply(state) || this.buildBookingSummary(state);
-    const nextStep = this.getNextBookingStep(state);
-    const understood = this.didUnderstandBookingMessage(text, state, salonContext.services) || bookingIntent;
-    const failedUnderstandingCount = understood ? 0 : (state.failedUnderstandingCount || 0) + 1;
-
-    if (!understood && failedUnderstandingCount >= settings.maxUnderstandingFailures) {
-      const escalationState = {
-        ...state,
-        currentIntent: 'needs_human',
-        bookingStep: nextStep,
-        failedUnderstandingCount,
-        updatedAt: new Date().toISOString(),
-      };
-      const reply = 'ما قدرت أفهم طلبك بشكل كافٍ. أحوّله للفريق لمساعدتك بشكل أفضل.';
-      await this.persistConversationState(tenantDb, phone, escalationState);
-      await this.handleEscalation({
-        tenantDb,
-        tenantId,
-        instanceName,
-        instanceToken,
-        phone,
-        customerQuestion: text,
-        replyToCustomer: reply,
-        uncertainReason: 'failed_understanding_twice',
-        escalationType: 'unclear',
-        settings,
-        conversationId: conversation.id,
-        historyForContext: conversation.messages as Array<{ role: string; text: string; ts: string }>,
-        state: escalationState,
-      });
-      await this.upsertConversation(tenantDb, phone, {
-        role: 'assistant',
-        text: reply,
-        ts: new Date().toISOString(),
-      });
-      return true;
+    if (settings.mode === 'custom') {
+      return settings.customRedirectMessage
+        || 'تواصلي معنا مباشرة لأي طلب، شكراً لك.';
     }
+    return null;
+  }
 
-    const finalState = {
-      ...state,
-      currentIntent: 'booking',
-      bookingStep: nextStep,
-      lastBotQuestion: nextStep,
-      failedUnderstandingCount,
-      updatedAt: new Date().toISOString(),
+  /** State block injected into the AI's system prompt (V2 plan §1.4). */
+  private buildStateContextBlock(state: AIConversationState): string {
+    return [
+      `- المرحلة: ${state.bookingStep || 'بداية'}`,
+      `- الخدمة المختارة: ${state.selectedServiceName || 'لم تُختر'}`,
+      `- التاريخ: ${state.selectedDate || 'لم يُحدد'}`,
+      `- الوقت: ${state.selectedTime || 'لم يُحدد'}`,
+      `- اسم العميل: ${state.customerName || 'غير معروف'}`,
+      `- رقم الطلب: ${state.requestId || 'لا يوجد'}`,
+      `- ينتظر موافقة: ${state.awaitingOwnerApproval ? 'نعم' : 'لا'}`,
+    ].join('\n');
+  }
+
+  /** V2 plan §1.3 — when to bump to GPT-5-mini instead of GPT-5-nano. */
+  private estimateComplexity(
+    state: AIConversationState,
+    text: string,
+  ): 'simple' | 'complex' {
+    if ((state.failedUnderstandingCount ?? 0) > 0) return 'complex';
+    if (text.length > 200) return 'complex';
+    return 'simple';
+  }
+
+  /** Map AIProvider's `modelUsed` string into the analytics enum. */
+  private modelLabel(modelUsed?: string): AIModelUsed {
+    if (!modelUsed) return 'unknown';
+    if (modelUsed.includes('mini')) return 'mini';
+    if (modelUsed.includes('nano')) return 'nano';
+    if (modelUsed.includes('gemini')) return 'gemini';
+    return 'unknown';
+  }
+
+  /**
+   * Monthly message counter — Redis-backed with a 35-day TTL so the bucket
+   * resets itself at the start of each calendar month without a cron.
+   */
+  private monthlyCounterKey(tenantId: string, when: Date): string {
+    const yyyy = when.getUTCFullYear();
+    const mm = String(when.getUTCMonth() + 1).padStart(2, '0');
+    return `${MSG_COUNTER_PREFIX}${tenantId}:${yyyy}-${mm}`;
+  }
+
+  private async getMonthlyUsage(tenantId: string, when: Date): Promise<number> {
+    const value = await this.cache.getJson<number>(this.monthlyCounterKey(tenantId, when));
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  }
+
+  private async incrementMessageCount(tenantId: string, when: Date): Promise<void> {
+    try {
+      await this.cache.incrementInt(this.monthlyCounterKey(tenantId, when), MSG_COUNTER_TTL_SECONDS);
+    } catch (err) {
+      this.logger.warn(`Monthly counter increment failed for ${tenantId}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Folds the model's `extractedData` into the conversation state so the next
+   * turn already has it. Service is matched against the official catalogue;
+   * unknown names are ignored so the model can't invent services.
+   */
+  private mergeExtractedDataIntoState(
+    state: AIConversationState,
+    data: AIProviderResponse['extractedData'],
+    services: ReceptionServiceItem[],
+  ): AIConversationState {
+    if (!data) return state;
+    const next: AIConversationState = { ...state, updatedAt: new Date().toISOString() };
+    if (data.serviceName) {
+      const matched = this.findServiceInText(data.serviceName, services);
+      if (matched) {
+        next.selectedServiceId = matched.id;
+        next.selectedServiceName = matched.name;
+        next.quotedPrice = matched.price;
+      }
+    }
+    if (data.date) next.selectedDate = data.date;
+    if (data.time) next.selectedTime = data.time;
+    if (data.customerName) next.customerName = data.customerName;
+    return next;
+  }
+
+  /**
+   * If the model emitted `extractedData` but no `proposedAction`, build the
+   * action from state + extracted fields so a complete booking can still be
+   * submitted on this turn.
+   */
+  private buildProposedActionFromExtractedData(
+    data: AIProviderResponse['extractedData'],
+    state: AIConversationState,
+  ): { type: string; payload: Record<string, unknown> } | null {
+    const merged = {
+      serviceName: data?.serviceName || state.selectedServiceName,
+      date: data?.date || state.selectedDate,
+      time: data?.time || state.selectedTime,
+      clientName: data?.customerName || state.customerName,
     };
-    const prepared = this.prepareBookingReply(nextReply, finalState, settings);
-    await this.persistConversationState(tenantDb, phone, prepared.state);
-    const preparedNextReply = prepared.reply;
-    await this.sendReply(instanceName, instanceToken, phone, preparedNextReply);
+    if (!merged.serviceName || !merged.date || !merged.time) return null;
+    return {
+      type: 'book_appointment',
+      payload: {
+        serviceId: state.selectedServiceId,
+        serviceName: merged.serviceName,
+        date: merged.date,
+        time: merged.time,
+        appointmentDate: merged.date,
+        appointmentStartTime: merged.time,
+        clientName: merged.clientName,
+        price: state.quotedPrice,
+        quotedPrice: state.quotedPrice,
+        discountApplied: false,
+      },
+    };
+  }
+
+  /** Send a reply and append it to the conversation in one shot. */
+  private async sendAndPersistAssistant(params: {
+    tenantDb: TenantPrismaClient;
+    instanceName: string;
+    instanceToken: string;
+    phone: string;
+    reply: string;
+  }): Promise<void> {
+    const { tenantDb, instanceName, instanceToken, phone, reply } = params;
+    await this.sendReply(instanceName, instanceToken, phone, reply);
     await this.upsertConversation(tenantDb, phone, {
       role: 'assistant',
-      text: preparedNextReply,
+      text: reply,
       ts: new Date().toISOString(),
     });
-    return true;
   }
+
+  /**
+   * Sends the AI's reply choosing the WhatsApp surface based on `messageType`:
+   *   - "buttons" + non-empty buttons → WhatsApp quick-reply buttons (max 3)
+   *   - "list"                       → interactive list of services from salon context
+   *   - anything else                → plain text
+   *
+   * Falls back to plain text if the chosen surface fails or required fields
+   * are missing — the customer must always get *some* reply.
+   */
+  private async sendAIReply(params: {
+    tenantDb: TenantPrismaClient;
+    instanceName: string;
+    instanceToken: string;
+    phone: string;
+    reply: string;
+    response: AIProviderResponse;
+    salonContext: SalonContextForAI;
+  }): Promise<void> {
+    const { tenantDb, instanceName, instanceToken, phone, reply, response, salonContext } = params;
+    const { messageType, buttons } = response;
+    const persistAssistantText = () => this.upsertConversation(tenantDb, phone, {
+      role: 'assistant',
+      text: reply,
+      ts: new Date().toISOString(),
+    });
+
+    if (messageType === 'buttons' && buttons && buttons.length > 0) {
+      try {
+        await this.richMedia.sendButtons({
+          instanceName,
+          instanceToken,
+          to: phone,
+          body: reply,
+          buttons,
+          delayMs: this.randomDelay(),
+        });
+        await persistAssistantText();
+        return;
+      } catch (err) {
+        this.logger.warn(`Buttons send failed for ${phone}, falling back to text: ${(err as Error).message}`);
+      }
+    }
+
+    if (messageType === 'list') {
+      const services = salonContext.services.slice(0, 10);
+      if (services.length > 0) {
+        try {
+          await this.richMedia.sendList({
+            instanceName,
+            instanceToken,
+            to: phone,
+            body: reply,
+            buttonText: 'عرض الخدمات',
+            sections: [{
+              title: 'خدماتنا',
+              rows: services.map((s, i) => ({
+                rowId: `service_${s.id || i}`,
+                title: s.name,
+                description: this.formatPrice(s.price),
+              })),
+            }],
+            delayMs: this.randomDelay(),
+          });
+          await persistAssistantText();
+          return;
+        } catch (err) {
+          this.logger.warn(`List send failed for ${phone}, falling back to text: ${(err as Error).message}`);
+        }
+      } else {
+        this.logger.debug(`AI requested list for ${phone} but no services available — sending text`);
+      }
+    }
+
+    await this.sendAndPersistAssistant({ tenantDb, instanceName, instanceToken, phone, reply });
+  }
+
+  // ═══════════════════════════════════════════
+  // Proposed Action → Manager Approval Flow
+  // ═══════════════════════════════════════════
+
 
   private async handleProposedAction(params: {
     tenantDb: TenantPrismaClient;
@@ -1069,110 +1056,6 @@ export class AIReceptionService {
   // Helpers
   // ═══════════════════════════════════════════
 
-  private detectDirectEscalation(
-    text: string,
-    state: AIConversationState,
-    services: ReceptionServiceItem[],
-    settings: AIReceptionRuntimeSettings,
-  ): EscalationDetection | null {
-    const normalized = this.normalizeArabicText(text);
-    const selectedService = this.getSelectedService(state, services) || this.findServiceInText(text, services);
-
-    if (settings.customEscalationKeywords.length > 0 && this.containsAny(normalized, settings.customEscalationKeywords)) {
-      return {
-        type: 'complaint',
-        reply: 'أحوّل طلبك للفريق لأن فيه تفصيل يحتاج تأكيد مباشر.',
-        reason: 'custom_escalation_keyword',
-      };
-    }
-
-    if (this.containsAny(normalized, [
-      'استرجاع', 'استرداد', 'فلوسي', 'تعويض', 'فاتوره', 'الفاتوره', 'مبلغ', 'خلاف مالي',
-    ])) {
-      return {
-        type: 'billing_issue',
-        reply: 'أحوّل طلبك للفريق لأن فيه تفصيل يحتاج تأكيد مباشر.',
-        reason: 'billing_issue',
-      };
-    }
-
-    if (this.containsAny(normalized, [
-      'تهديد', 'ابلغ عليكم', 'بشتكي عليكم', 'حراميه', 'نصابين', 'سارقين',
-    ])) {
-      return {
-        type: 'abuse_or_threat',
-        reply: 'تم تحويل المحادثة للفريق للتعامل معها.',
-        reason: 'abuse_or_threat',
-      };
-    }
-
-    if (this.containsAny(normalized, [
-      'شكوي', 'اشتكي', 'ابغي اشتكي', 'ابي اشتكي', 'زعلانه', 'زعلان', 'سيء', 'سيئه',
-      'تاخير', 'ما عجبني', 'الموظفه اخطات', 'خدمه سيئه', 'ابي الاداره', 'ابي اكلم المسؤول',
-      'ابي المدير', 'ابغي المدير', 'المسؤول',
-    ])) {
-      return {
-        type: this.containsAny(normalized, ['زعلانه', 'زعلان', 'سيء', 'سيئه']) ? 'angry_customer' : 'complaint',
-        reply: 'نعتذر عن تجربتك. تم رفع ملاحظتك للإدارة، وسيتم التواصل معك بأقرب وقت.',
-        reason: 'complaint_or_angry_customer',
-      };
-    }
-
-    if (this.isPriceNegotiationText(text)) {
-      const reply = selectedService
-        ? `السعر الحالي هو ${this.formatPrice(selectedService.price)}. لا أقدر أغيّر السعر، لكن أقدر أرفع طلبك للفريق للمراجعة.`
-        : 'لا أقدر أغيّر الأسعار أو أؤكد خصم غير موجود. أقدر أرفع طلبك للفريق للمراجعة.';
-      return {
-        type: 'special_discount',
-        reply,
-        reason: 'special_discount_request',
-      };
-    }
-
-    if (this.looksLikeUnavailableServiceRequest(normalized, services)) {
-      return {
-        type: 'unavailable_service',
-        reply: 'ما عندي هذه الخدمة ضمن القائمة الحالية. أحوّل طلبك للفريق للتأكيد.',
-        reason: 'unavailable_service',
-      };
-    }
-
-    return null;
-  }
-
-  private escalationTypeFromReason(reason: string | null): EscalationType {
-    const normalized = this.normalizeArabicText(reason || '');
-    if (this.containsAny(normalized, ['خصم', 'discount', 'price'])) return 'special_discount';
-    if (this.containsAny(normalized, ['شكوي', 'complaint'])) return 'complaint';
-    if (this.containsAny(normalized, ['فاتوره', 'billing', 'refund', 'تعويض'])) return 'billing_issue';
-    if (this.containsAny(normalized, ['خدمه غير', 'unavailable_service'])) return 'unavailable_service';
-    if (this.containsAny(normalized, ['غضب', 'angry'])) return 'angry_customer';
-    if (this.containsAny(normalized, ['تهديد', 'abuse', 'threat'])) return 'abuse_or_threat';
-    return 'unclear';
-  }
-
-  private looksLikeUnavailableServiceRequest(
-    normalizedText: string,
-    services: ReceptionServiceItem[],
-  ): boolean {
-    if (!normalizedText || this.findServiceInText(normalizedText, services) || this.isMenuRequestText(normalizedText)) {
-      return false;
-    }
-
-    const serviceLikeWords = [
-      'مساج', 'ليزر', 'اظافر', 'مكياج', 'حمام', 'بروتين', 'كيراتين', 'تنظيف بشره',
-      'حنه', 'بدكير', 'منكير', 'رموش', 'واكس', 'صبغ حواجب',
-    ];
-    const requestWords = ['عندكم', 'تسوون', 'تعملون', 'ابي', 'ابغي', 'ابغى', 'احتاج', 'خدمه'];
-
-    return this.containsAny(normalizedText, serviceLikeWords) &&
-      this.containsAny(normalizedText, requestWords);
-  }
-
-  private containsAny(normalizedText: string, phrases: string[]): boolean {
-    return phrases.some((phrase) => normalizedText.includes(this.normalizeArabicText(phrase)));
-  }
-
   private normalizeConversationState(raw: unknown): AIConversationState {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return { bookingStep: 'idle', failedUnderstandingCount: 0 };
@@ -1184,58 +1067,6 @@ export class AIReceptionService {
       bookingStep: state.bookingStep || 'idle',
       failedUnderstandingCount: state.failedUnderstandingCount || 0,
     };
-  }
-
-  private prepareBookingReply(
-    reply: string,
-    state: AIConversationState,
-    settings: AIReceptionRuntimeSettings,
-  ): { reply: string; state: AIConversationState } {
-    let preparedReply = this.applyAvoidedPhrases(reply, settings);
-    let preparedState = state;
-
-    if (
-      settings.privacyMessageEnabled &&
-      settings.privacyMessage &&
-      !state.privacyMessageSent &&
-      this.isActiveBookingStep(state.bookingStep)
-    ) {
-      preparedReply = `${preparedReply}\n\n${settings.privacyMessage}`;
-      preparedState = {
-        ...state,
-        privacyMessageSent: true,
-      };
-    }
-
-    return { reply: preparedReply, state: preparedState };
-  }
-
-  private applyAvoidedPhrases(message: string, settings: AIReceptionRuntimeSettings): string {
-    let sanitized = message;
-    for (const phrase of settings.avoidedPhrases) {
-      const normalizedPhrase = phrase.trim();
-      if (!normalizedPhrase) continue;
-      sanitized = sanitized.replace(new RegExp(this.escapeRegExp(normalizedPhrase), 'gi'), 'حياك الله');
-    }
-    return sanitized.replace(/\s{2,}/g, ' ').trim();
-  }
-
-  private escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  private hasPriorAssistantMessages(messages: unknown): boolean {
-    return Array.isArray(messages) &&
-      messages.some((message) =>
-        !!message &&
-        typeof message === 'object' &&
-        (message as { role?: unknown }).role === 'assistant',
-      );
-  }
-
-  private isGreetingOnlyText(text: string): boolean {
-    const normalized = this.normalizeArabicText(text);
-    return ['هلا', 'مرحبا', 'السلام عليكم', 'السلام', 'هاي', 'hello', 'hi'].includes(normalized);
   }
 
   private mergeActionPayloadMetadata(
@@ -1560,113 +1391,12 @@ export class AIReceptionService {
     return !!step && !['idle', 'completed', 'cancelled', 'expired'].includes(step);
   }
 
-  private applyBookingDetections(
-    state: AIConversationState,
-    text: string,
-    services: ReceptionServiceItem[],
-  ): AIConversationState {
-    const detectedService = this.findServiceInText(text, services);
-    const detectedDate = this.extractDateText(text);
-    const detectedTime = this.extractTimeText(text);
-    const awaitingName = state.bookingStep === 'ask_customer_name';
-    const detectedName = awaitingName && !this.isControlText(text) ? text.trim() : undefined;
-    const serviceChanged = Boolean(detectedService && detectedService.id !== state.selectedServiceId);
-
-    return {
-      ...state,
-      currentIntent: 'booking',
-      selectedServiceId: detectedService?.id ?? state.selectedServiceId,
-      selectedServiceName: detectedService?.name ?? state.selectedServiceName,
-      selectedDate: detectedDate ?? state.selectedDate,
-      selectedTime: detectedTime ?? state.selectedTime,
-      selectedEmployeeId: serviceChanged ? undefined : state.selectedEmployeeId,
-      customerName: detectedName || state.customerName,
-      quotedPrice: detectedService?.price ?? state.quotedPrice,
-      discountApplied: detectedService ? false : state.discountApplied,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  private getSelectedService(
-    state: AIConversationState,
-    services: ReceptionServiceItem[],
-  ): ReceptionServiceItem | null {
-    if (!state.selectedServiceName) return null;
-    return services.find((service) => service.name === state.selectedServiceName) ||
-      this.findServiceInText(state.selectedServiceName, services);
-  }
-
   private getNextBookingStep(state: AIConversationState): BookingStep {
     if (!state.selectedServiceName) return 'ask_service';
     if (!state.selectedDate) return 'ask_date';
     if (!state.selectedTime) return 'ask_time';
     if (!state.customerName) return 'ask_customer_name';
     return 'show_summary';
-  }
-
-  private getNextBookingQuestion(state: AIConversationState): string {
-    const nextStep = this.getNextBookingStep(state);
-    switch (nextStep) {
-      case 'ask_service':
-        return 'ولإكمال الحجز، وش الخدمة المطلوبة؟';
-      case 'ask_date':
-        return 'متى يناسبك الموعد؟';
-      case 'ask_time':
-        return state.selectedDate
-          ? `أي وقت يناسبك ${state.selectedDate}؟`
-          : 'أي وقت يناسبك؟';
-      case 'ask_customer_name':
-        return 'ممكن الاسم للتأكيد؟';
-      default:
-        return 'أرسل الطلب للصالون للتأكيد؟';
-    }
-  }
-
-  private getMissingStateReply(state: AIConversationState): string | null {
-    const nextStep = this.getNextBookingStep(state);
-    switch (nextStep) {
-      case 'ask_service':
-        return 'أكيد، وش الخدمة المطلوبة؟';
-      case 'ask_date':
-        return 'متى يناسبك الموعد؟';
-      case 'ask_time':
-        return state.selectedDate
-          ? `أي وقت يناسبك ${state.selectedDate}؟`
-          : 'أي وقت يناسبك؟';
-      case 'ask_customer_name':
-        return 'ممكن الاسم للتأكيد؟';
-      default:
-        return null;
-    }
-  }
-
-  private buildBookingSummary(state: AIConversationState): string {
-    return [
-      'ملخص طلبك:',
-      `الخدمة: ${state.selectedServiceName}`,
-      `التاريخ: ${state.selectedDate}`,
-      `الوقت: ${state.selectedTime}`,
-      `السعر: ${this.formatPrice(Number(state.quotedPrice))}`,
-      '',
-      'أرسل الطلب للصالون للتأكيد؟',
-    ].join('\n');
-  }
-
-  private buildBookingActionPayload(state: AIConversationState): Record<string, unknown> {
-    return {
-      serviceId: state.selectedServiceId,
-      serviceName: state.selectedServiceName,
-      date: state.selectedDate,
-      time: state.selectedTime,
-      employeeId: state.selectedEmployeeId,
-      appointmentDate: state.selectedDate,
-      appointmentStartTime: state.selectedTime,
-      clientName: state.customerName,
-      price: state.quotedPrice,
-      quotedPrice: state.quotedPrice,
-      discountApplied: false,
-      previousRequestId: state.requestId,
-    };
   }
 
   private getMissingActionReply(
@@ -1681,27 +1411,6 @@ export class AIReceptionService {
     if (!payload.time) return 'أي وقت يناسبك؟';
     if (!payload.clientName && !payload.customerName) return 'ممكن الاسم للتأكيد؟';
     return null;
-  }
-
-  private isAwaitingSendConfirmation(state: AIConversationState): boolean {
-    return this.getNextBookingStep(state) === 'show_summary' &&
-      (state.bookingStep === 'show_summary' || state.bookingStep === 'ask_confirm_send_request');
-  }
-
-  private didUnderstandBookingMessage(
-    text: string,
-    state: AIConversationState,
-    services: ReceptionServiceItem[],
-  ): boolean {
-    return Boolean(
-      this.findServiceInText(text, services) ||
-      this.extractDateText(text) ||
-      this.extractTimeText(text) ||
-      (state.bookingStep === 'ask_customer_name' && !this.isControlText(text)) ||
-      this.isMenuRequestText(text) ||
-      this.isPriceQuestionText(text) ||
-      this.isPriceNegotiationText(text),
-    );
   }
 
   private resetBookingState(state: AIConversationState): AIConversationState {
@@ -1725,77 +1434,6 @@ export class AIReceptionService {
       lastBotQuestion: undefined,
       updatedAt: new Date().toISOString(),
     };
-  }
-
-  private formatServicesMenu(services: ReceptionServiceItem[]): string {
-    if (!services.length) {
-      return 'ما عندي قائمة خدمات محدثة حاليًا.';
-    }
-    return services
-      .slice(0, 8)
-      .map((service) => `${service.name}: ${this.formatPrice(service.price)}`)
-      .join('\n');
-  }
-
-  private extractDateText(text: string): string | null {
-    const normalized = this.normalizeArabicText(text);
-    const weekdays = [
-      'الاحد',
-      'الاثنين',
-      'الثلاثاء',
-      'الاربعاء',
-      'الخميس',
-      'الجمعه',
-      'السبت',
-    ];
-    if (normalized.includes('بكره') || normalized.includes('غدا')) return 'بكرة';
-    if (normalized.includes('اليوم')) return 'اليوم';
-    const weekday = weekdays.find((day) => normalized.includes(day));
-    if (weekday) return weekday;
-    const dateMatch = text.match(/\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/);
-    return dateMatch ? dateMatch[0] : null;
-  }
-
-  private extractTimeText(text: string): string | null {
-    const normalized = this.normalizeArabicText(this.normalizeArabicDigits(text));
-    const clockMatch = normalized.match(/\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(ص|صباحا|م|مساء|مساءا|الظهر|العصر|المغرب|الليل)?\b/);
-    if (!clockMatch) return null;
-    const suffix = clockMatch[3] ? ` ${clockMatch[3]}` : '';
-    return `${clockMatch[1]}${clockMatch[2] ? `:${clockMatch[2]}` : ''}${suffix}`.trim();
-  }
-
-  private normalizeArabicDigits(text: string): string {
-    const arabic = '٠١٢٣٤٥٦٧٨٩';
-    const persian = '۰۱۲۳۴۵۶۷۸۹';
-    return text.replace(/[٠-٩۰-۹]/g, (char) => {
-      const arabicIndex = arabic.indexOf(char);
-      if (arabicIndex >= 0) return String(arabicIndex);
-      return String(persian.indexOf(char));
-    });
-  }
-
-  private isBookingIntentText(text: string): boolean {
-    const normalized = this.normalizeArabicText(text);
-    const phrases = ['حجز', 'موعد', 'احجز', 'ابي احجز', 'ابغى احجز', 'ابغا حجز'];
-    return phrases.some((phrase) => normalized.includes(this.normalizeArabicText(phrase)));
-  }
-
-  private isMenuRequestText(text: string): boolean {
-    const normalized = this.normalizeArabicText(text);
-    const phrases = ['وش الخدمات', 'ايش الخدمات', 'شنو الخدمات', 'الخدمات', 'المنيو', 'القائمه', 'الخدمات عندكم'];
-    return phrases.some((phrase) => normalized.includes(this.normalizeArabicText(phrase)));
-  }
-
-  private isPriceQuestionText(text: string): boolean {
-    const normalized = this.normalizeArabicText(text);
-    const phrases = ['كم', 'بكم', 'سعر', 'الاسعار', 'اسعار'];
-    return phrases.some((phrase) => normalized.includes(this.normalizeArabicText(phrase)));
-  }
-
-  private isBookingCancelText(text: string): boolean {
-    const normalized = this.normalizeArabicText(text);
-    const phrases = ['الغاء', 'الغي', 'كنسل', 'cancel'];
-    return phrases.some((phrase) => normalized.includes(this.normalizeArabicText(phrase)));
   }
 
   private isAffirmativeText(text: string): boolean {
@@ -1823,25 +1461,6 @@ export class AIReceptionService {
     const normalized = this.normalizeArabicText(text);
     const phrases = ['لا', 'ما ابي', 'لا ترسل', 'الغاء', 'كنسل', 'no'];
     return phrases.some((phrase) => normalized === this.normalizeArabicText(phrase) || normalized.includes(this.normalizeArabicText(phrase)));
-  }
-
-  private isAmbiguousText(text: string): boolean {
-    const normalized = this.normalizeArabicText(text);
-    return ['ا', 'طيب', 'تمام', 'اوك', '؟', '?'].includes(normalized) || normalized.length <= 1;
-  }
-
-  private isFormalToneRequest(text: string): boolean {
-    const normalized = this.normalizeArabicText(text);
-    const phrases = ['لا تقول حبيبتي', 'لا تقولين حبيبتي', 'لا تكلمني كذا', 'تكلم رسمي', 'تكلمي رسمي', 'بدون دلع'];
-    return phrases.some((phrase) => normalized.includes(this.normalizeArabicText(phrase)));
-  }
-
-  private isControlText(text: string): boolean {
-    return this.isAffirmativeText(text) ||
-      this.isNegativeText(text) ||
-      this.isMenuRequestText(text) ||
-      this.isPriceQuestionText(text) ||
-      this.isBookingCancelText(text);
   }
 
   private async cancelLatestAwaitingActionByCustomer(
@@ -1873,53 +1492,6 @@ export class AIReceptionService {
     ) as Array<{ id: number }>;
 
     return rows[0] || null;
-  }
-
-  private async handlePriceNegotiationRequest(params: {
-    tenantDb: TenantPrismaClient;
-    instanceName: string;
-    instanceToken: string;
-    phone: string;
-    text: string;
-    salonContext: SalonContextForAI;
-  }): Promise<boolean> {
-    const { tenantDb, instanceName, instanceToken, phone, text, salonContext } = params;
-    if (!this.isPriceNegotiationText(text)) {
-      return false;
-    }
-
-    const service =
-      this.findServiceInText(text, salonContext.services) ||
-      await this.findServiceFromLatestPendingAction(tenantDb, phone, salonContext.services);
-
-    const reply = service
-      ? `السعر الحالي هو ${this.formatPrice(service.price)}. لا أقدر أغيّر السعر، لكن أقدر أرسل طلبك للصالون إذا تحب/تحبين.`
-      : 'لا أقدر أغيّر الأسعار أو أؤكد خصم غير موجود. أقدر أرسل طلبك للصالون للتأكيد إذا تحب/تحبين.';
-
-    await this.sendReply(instanceName, instanceToken, phone, reply);
-    await this.upsertConversation(tenantDb, phone, {
-      role: 'assistant',
-      text: reply,
-      ts: new Date().toISOString(),
-    });
-    return true;
-  }
-
-  private async findServiceFromLatestPendingAction(
-    tenantDb: TenantPrismaClient,
-    phone: string,
-    services: ReceptionServiceItem[],
-  ): Promise<ReceptionServiceItem | null> {
-    const action = await (tenantDb as any).aIPendingAction.findFirst({
-      where: {
-        customerPhone: phone,
-        status: 'awaiting_manager',
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    const payload = action?.payload as Record<string, unknown> | undefined;
-    const serviceName = typeof payload?.serviceName === 'string' ? payload.serviceName : '';
-    return this.findServiceInText(serviceName, services);
   }
 
   private applyOfficialPricingToPayload(
@@ -1973,36 +1545,6 @@ export class AIReceptionService {
       const serviceName = this.normalizeArabicText(service.name);
       return !!serviceName && normalizedText.includes(serviceName);
     }) || null;
-  }
-
-  private isStopFollowUpText(text: string): boolean {
-    const normalized = this.normalizeArabicText(text);
-    const phrases = ['توقف', 'وقف', 'لا ترسل', 'ازعاج', 'خلاص', 'stop'];
-    return phrases.some((phrase) => normalized.includes(this.normalizeArabicText(phrase)));
-  }
-
-  private isPriceNegotiationText(text: string): boolean {
-    const normalized = this.normalizeArabicText(text);
-    const phrases = [
-      'خصم',
-      'تخفيض',
-      'ارخص',
-      'اقل',
-      'نزلي',
-      'نزل',
-      'ينزل',
-      'اخر سعر',
-      'سعر اقل',
-      'يصير',
-      'ما يصير',
-      'سوي لي خصم',
-      'غير السعر',
-      'بسعر اقل',
-      'discount',
-      'cheaper',
-      'lower price',
-    ];
-    return phrases.some((phrase) => normalized.includes(this.normalizeArabicText(phrase)));
   }
 
   private normalizeArabicText(text: string): string {

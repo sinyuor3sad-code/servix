@@ -22,7 +22,7 @@ export interface WhatsAppOptOut {
   id: string;
   phone: string;
   reason: string | null;
-  createdAt: string;
+  optedOutAt: string;
 }
 
 const BASE = '/salon/whatsapp/evolution';

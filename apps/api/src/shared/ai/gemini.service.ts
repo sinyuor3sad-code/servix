@@ -908,6 +908,77 @@ ${JSON.stringify(data, null, 2)}`;
   }
 
   /**
+   * V2 system prompt — requests the richer JSON envelope described in
+   * AI_RECEPTION_V2_PLAN.md §1.5 and embeds the live conversation state
+   * (§1.4) so the model can interpret short turns like "خلاص" correctly.
+   */
+  buildReceptionV2SystemPrompt(params: {
+    salonContext: any;
+    tone?: ReceptionTone;
+    stateContext: string;
+    systemPromptOverride?: string;
+  }): string {
+    const { salonContext, tone = 'light_gulf', stateContext, systemPromptOverride } = params;
+    const base = systemPromptOverride?.trim()
+      ? systemPromptOverride
+      : (() => {
+          const { anonymizedContext } = this.anonymizeContext(salonContext);
+          return this.buildReceptionPrompt(anonymizedContext, tone);
+        })();
+
+    return `${base}
+
+═══ حالة المحادثة الحالية ═══
+${stateContext}
+
+═══ صيغة الإخراج (JSON فقط — لا نص خارج الـ JSON) ═══
+أخرج JSON واحد فقط بهذه الصيغة الحرفية. كل الحقول مطلوبة، استخدم null للحقول غير المتوفرة:
+{
+  "reply": "رد العميل القصير",
+  "intent": "book_appointment | ask_price | ask_service | complaint | greeting | cancel | general | needs_human",
+  "action": "collect_info | submit_booking | escalate | answer_only | cancel",
+  "extractedData": {
+    "serviceName": null,
+    "date": null,
+    "time": null,
+    "customerName": null
+  },
+  "nextQuestion": null,
+  "messageType": "text",
+  "buttons": null,
+  "needsEscalation": false,
+  "escalationReason": null,
+  "sentiment": "neutral",
+  "confidence": 0.5,
+  "wantsToCancel": false,
+  "isNegotiatingPrice": false,
+  "uncertainReason": null,
+  "proposedAction": null
+}
+
+قواعد الـ action:
+- "collect_info": تنقص بيانات للحجز — اسأل سؤالاً واحداً.
+- "submit_booking": اكتملت كل بيانات الحجز (الخدمة + التاريخ + الوقت + الاسم) — املأ proposedAction.
+- "escalate": يحتاج إنسان — املأ needsEscalation=true و escalationReason.
+- "answer_only": سؤال معلوماتي يُجاب من البيانات بدون حجز.
+- "cancel": العميل يريد إلغاء الطلب أو إيقاف المتابعة — اضبط wantsToCancel=true.
+
+عند submit_booking يجب أن يكون:
+{
+  "proposedAction": {
+    "type": "book_appointment",
+    "payload": {
+      "serviceName": "...",
+      "date": "...",
+      "time": "...",
+      "clientName": "..."
+    }
+  }
+}
+ويجب أن يكون reply حرفيًا: "وصل طلبك، بانتظار تأكيد الصالون. بنرسل لك التأكيد النهائي هنا."`;
+  }
+
+  /**
    * 5-provider fallback chain — tries each provider in order.
    * Each call has its own timeout and error handling.
    */

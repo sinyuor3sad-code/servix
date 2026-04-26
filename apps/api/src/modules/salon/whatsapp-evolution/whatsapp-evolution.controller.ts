@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
   BadRequestException,
+  BadGatewayException,
   ForbiddenException,
   NotFoundException,
   HttpCode,
@@ -80,7 +81,10 @@ export class WhatsAppEvolutionController {
 
     // Logout first to force a fresh QR generation
     if (instance.status === 'connected' || instance.status === 'connecting') {
-      await this.evolution.logoutInstance(instance.instanceName);
+      const logoutOk = await this.evolution.logoutInstance(instance.instanceName);
+      if (!logoutOk) {
+        throw new BadGatewayException('تعذر فصل جلسة واتساب من مزود الربط. حاول مرة أخرى بعد قليل.');
+      }
     }
 
     // Request fresh QR from Evolution (this also triggers connection flow)
@@ -106,7 +110,10 @@ export class WhatsAppEvolutionController {
     if (!instance) return { success: true };
 
     await this.evolution.logoutInstance(instance.instanceName);
-    await this.evolution.deleteInstance(instance.instanceName);
+    const deletedFromEvolution = await this.evolution.deleteInstance(instance.instanceName);
+    if (!deletedFromEvolution) {
+      throw new BadGatewayException('تعذر حذف مثيل واتساب من مزود الربط. لم يتم حذف سجل المنصة حتى لا تتعطل إعادة الربط.');
+    }
     await this.platformDb.whatsAppInstance.delete({ where: { tenantId } });
     return { success: true };
   }

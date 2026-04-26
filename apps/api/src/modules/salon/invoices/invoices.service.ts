@@ -13,6 +13,7 @@ import { SmsService } from '../../../shared/sms/sms.service';
 import { SettingsService } from '../settings/settings.service';
 import { AuditService } from '../../../core/audit/audit.service';
 import { EventsGateway } from '../../../shared/events/events.gateway';
+import { SalonZatcaService } from '../zatca/zatca.service';
 import { SETTINGS_KEYS } from '../settings/settings.constants';
 import { ReviewRequestsService } from '../whatsapp-evolution/review-requests.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
@@ -23,6 +24,7 @@ import { ApplyCouponDto } from './dto/apply-coupon.dto';
 import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { InvoiceSendChannel } from './dto/send-invoice.dto';
 import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
+
 
 
 @Injectable()
@@ -38,6 +40,7 @@ export class InvoicesService {
     private readonly auditService: AuditService,
     private readonly eventsGateway: EventsGateway,
     private readonly reviewRequests: ReviewRequestsService,
+    private readonly salonZatcaService: SalonZatcaService,
   ) {}
 
   async findAll(
@@ -381,6 +384,14 @@ export class InvoicesService {
     if (res.invoice.status === 'paid') {
       this.reviewRequests.scheduleForPaidInvoice(db, id).catch((err: unknown) => {
         this.logger.error(`Failed to schedule review request for invoice ${id}: ${(err as Error).message}`);
+      });
+
+      // ZATCA auto-submit: fire-and-forget (don't block POS)
+      this.salonZatcaService.submitInvoice(db, id).then(() => {
+        this.logger.log(`ZATCA invoice submitted for ${id}`);
+      }).catch((err: unknown) => {
+        // Non-fatal: invoice is still valid, ZATCA submission can be retried
+        this.logger.warn(`ZATCA auto-submit skipped for ${id}: ${(err as Error).message}`);
       });
     }
 

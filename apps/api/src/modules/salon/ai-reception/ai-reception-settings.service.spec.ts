@@ -60,6 +60,63 @@ describe('AIReceptionSettingsService', () => {
     expect(result.avoidedPhrases).toEqual(['حبيبتي', 'الغالية']);
     expect(result.customEscalationKeywords).toEqual(['استرجاع', 'تعويض']);
   });
+
+  describe('V2 fields', () => {
+    it('defaults mode=full, tier=premium, and feature toggles to true', async () => {
+      const { service } = makeService({});
+
+      const result = await service.get({} as never, 'tenant-1');
+
+      expect(result.mode).toBe('full');
+      expect(result.tier).toBe('premium');
+      expect(result.voiceEnabled).toBe(true);
+      expect(result.richMediaEnabled).toBe(true);
+      expect(result.clientMemoryEnabled).toBe(true);
+      expect(result.weeklyReportEnabled).toBe(true);
+      expect(result.proactiveFollowUpEnabled).toBe(true);
+      expect(result.proactiveReEngagementEnabled).toBe(false);
+    });
+
+    it('parses explicit mode and tier values', async () => {
+      const { service } = makeService({
+        ai_reception_mode: 'reply_only',
+        ai_tier: 'standard',
+        ai_assistant_name: 'سارة',
+      });
+
+      const result = await service.get({} as never, 'tenant-1');
+
+      expect(result.mode).toBe('reply_only');
+      expect(result.tier).toBe('standard');
+      expect(result.assistantName).toBe('سارة');
+    });
+
+    it('clamps invalid mode/tier back to safe defaults', async () => {
+      const { service } = makeService({
+        ai_reception_mode: 'invalid_mode',
+        ai_tier: 'enterprise',
+      });
+
+      const result = await service.get({} as never, 'tenant-1');
+
+      expect(result.mode).toBe('full');
+      expect(result.tier).toBe('premium');
+    });
+
+    it('mirrors vacation window from existing vacation_* settings', async () => {
+      const { service } = makeService({
+        vacation_start_date: '2026-05-01',
+        vacation_end_date: '2026-05-15',
+        vacation_message_ar: 'في إجازة',
+      });
+
+      const result = await service.get({} as never, 'tenant-1');
+
+      expect(result.vacationStartDate).toBe('2026-05-01');
+      expect(result.vacationEndDate).toBe('2026-05-15');
+      expect(result.vacationMessage).toBe('في إجازة');
+    });
+  });
 });
 
 describe('AI reception setting validation', () => {

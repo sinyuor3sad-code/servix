@@ -5,6 +5,8 @@ import { SETTINGS_DEFAULTS, SETTINGS_KEYS } from '../settings/settings.constants
 
 export type AIReceptionTone = 'formal' | 'friendly' | 'light_gulf' | 'luxury';
 export type AIReceptionBookingConfirmationMode = 'manual' | 'auto_if_available';
+export type AIReceptionMode = 'full' | 'reply_only' | 'vacation' | 'custom';
+export type AIReceptionTier = 'basic' | 'standard' | 'premium';
 
 export interface AIReceptionRuntimeSettings {
   aiReceptionEnabled: boolean;
@@ -22,6 +24,25 @@ export interface AIReceptionRuntimeSettings {
   showEmployeeNamesToCustomers: boolean;
   availableSlotsLimit: number;
   systemPromptOverride?: string;
+  // V2 — modes, features, plan
+  mode: AIReceptionMode;
+  walkInMessage: string;
+  customRedirectMessage: string;
+  assistantName: string;
+  voiceEnabled: boolean;
+  richMediaEnabled: boolean;
+  clientMemoryEnabled: boolean;
+  weeklyReportEnabled: boolean;
+  tier: AIReceptionTier;
+  monthlyMessageLimit: number;
+  messagesUsedThisMonth: number;
+  proactiveFollowUpEnabled: boolean;
+  proactiveReEngagementEnabled: boolean;
+  // Vacation window (re-uses pre-existing vacation_* settings — surfaced
+  // here so the AI Reception layer can decide without re-querying).
+  vacationStartDate: string;
+  vacationEndDate: string;
+  vacationMessage: string;
 }
 
 @Injectable()
@@ -54,7 +75,36 @@ export class AIReceptionSettingsService {
       showEmployeeNamesToCustomers: this.parseBool(value(SETTINGS_KEYS.ai_show_employee_names_to_customers), false),
       availableSlotsLimit: this.parseIntRange(value(SETTINGS_KEYS.ai_available_slots_limit), 1, 5, 3),
       systemPromptOverride: raw.ai_system_prompt_override?.trim() || undefined,
+      // V2
+      mode: this.parseMode(value(SETTINGS_KEYS.ai_reception_mode)),
+      walkInMessage: value(SETTINGS_KEYS.ai_walk_in_message) || SETTINGS_DEFAULTS[SETTINGS_KEYS.ai_walk_in_message],
+      customRedirectMessage: value(SETTINGS_KEYS.ai_custom_redirect_message),
+      assistantName: value(SETTINGS_KEYS.ai_assistant_name) || SETTINGS_DEFAULTS[SETTINGS_KEYS.ai_assistant_name],
+      voiceEnabled: this.parseBool(value(SETTINGS_KEYS.ai_voice_enabled), true),
+      richMediaEnabled: this.parseBool(value(SETTINGS_KEYS.ai_rich_media_enabled), true),
+      clientMemoryEnabled: this.parseBool(value(SETTINGS_KEYS.ai_client_memory_enabled), true),
+      weeklyReportEnabled: this.parseBool(value(SETTINGS_KEYS.ai_weekly_report_enabled), true),
+      tier: this.parseTier(value(SETTINGS_KEYS.ai_tier)),
+      monthlyMessageLimit: this.parseIntRange(value(SETTINGS_KEYS.ai_monthly_message_limit), 0, 1_000_000, 5000),
+      messagesUsedThisMonth: this.parseIntRange(value(SETTINGS_KEYS.ai_messages_used_this_month), 0, 1_000_000, 0),
+      proactiveFollowUpEnabled: this.parseBool(value(SETTINGS_KEYS.ai_proactive_followup_enabled), true),
+      proactiveReEngagementEnabled: this.parseBool(value(SETTINGS_KEYS.ai_proactive_re_engagement_enabled), false),
+      vacationStartDate: value('vacation_start_date'),
+      vacationEndDate: value('vacation_end_date'),
+      vacationMessage: value('vacation_message_ar'),
     };
+  }
+
+  private parseMode(value: string): AIReceptionMode {
+    return ['full', 'reply_only', 'vacation', 'custom'].includes(value)
+      ? value as AIReceptionMode
+      : 'full';
+  }
+
+  private parseTier(value: string): AIReceptionTier {
+    return ['basic', 'standard', 'premium'].includes(value)
+      ? value as AIReceptionTier
+      : 'premium';
   }
 
   private parseBool(value: string, fallback: boolean): boolean {

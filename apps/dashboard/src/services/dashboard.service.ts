@@ -273,7 +273,7 @@ export const dashboardService = {
   getZatcaCertificates: (token: string) =>
     api.get<ZatcaCertificate[]>('/zatca/certificates', token),
 
-  onboardZatca: (data: { organizationUnitName?: string; isProduction?: boolean }, token: string) =>
+  onboardZatca: (data: { otp: string; organizationUnitName?: string; isProduction?: boolean }, token: string) =>
     api.post<ZatcaCertificate>('/zatca/onboard', data, token),
 
   submitZatcaInvoice: (invoiceId: string, token: string) =>
