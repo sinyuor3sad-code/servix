@@ -47,7 +47,7 @@ export class InvoicesService {
     db: TenantPrismaClient,
     query: QueryInvoicesDto,
   ) {
-    const { page, sort, order, status, clientId, dateFrom, dateTo } = query;
+    const { page, sort, order, status, clientId, dateFrom, dateTo, terminalId } = query;
     const limit = effectiveLimit(query);
     const skip = (page - 1) * limit;
 
@@ -59,6 +59,10 @@ export class InvoicesService {
 
     if (clientId) {
       where.clientId = clientId;
+    }
+
+    if (terminalId) {
+      where.terminalId = terminalId;
     }
 
     if (dateFrom || dateTo) {

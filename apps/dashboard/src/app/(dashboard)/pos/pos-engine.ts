@@ -174,7 +174,7 @@ export function usePOSEngine() {
   /* ── Salon info (for dynamic tax) ── */
   const { data: salonInfo } = useQuery({
     queryKey: ['pos-salon-info'],
-    queryFn: () => api.get('/salon-info', accessToken!),
+    queryFn: () => api.get('/salon', accessToken!),
     enabled: !!accessToken && !isDev(accessToken),
   });
 

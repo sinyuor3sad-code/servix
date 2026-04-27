@@ -1,4 +1,4 @@
-import { IsOptional, IsEnum, IsUUID, IsDateString } from 'class-validator';
+import { IsOptional, IsEnum, IsUUID, IsDateString, IsString, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationDto } from '../../../../shared/dto/pagination.dto';
 
@@ -30,4 +30,10 @@ export class QueryInvoicesDto extends PaginationDto {
   @IsOptional()
   @IsDateString({}, { message: 'التاريخ إلى يجب أن يكون تاريخاً صالحاً' })
   dateTo?: string;
+
+  @ApiPropertyOptional({ description: 'تصفية حسب معرّف جهاز POS (NFC)' })
+  @IsOptional()
+  @IsString({ message: 'معرّف الجهاز يجب أن يكون نصاً' })
+  @MaxLength(50, { message: 'معرّف الجهاز يجب ألا يتجاوز 50 حرفاً' })
+  terminalId?: string;
 }

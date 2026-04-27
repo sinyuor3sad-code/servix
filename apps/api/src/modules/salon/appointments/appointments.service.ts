@@ -163,7 +163,9 @@ export class AppointmentsService {
         const lockDate = new Date(dto.date).toISOString().slice(0, 10);
         for (const empId of employeeIds) {
           const lockKey = `servix:appointments:${empId}:${lockDate}`;
-          await tx.$queryRaw`
+          // pg_advisory_xact_lock returns void; $queryRaw can't deserialize it.
+          // Use $executeRaw which discards rows.
+          await tx.$executeRaw`
             SELECT pg_advisory_xact_lock(hashtext(${lockKey}))
           `;
 
