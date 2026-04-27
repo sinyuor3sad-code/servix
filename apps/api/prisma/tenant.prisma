@@ -592,6 +592,10 @@ model Invoice {
   // ──── ربط بالطلب الذاتي ────
   selfOrderId String? @unique @map("self_order_id") @db.Uuid
 
+  // ──── NFC Tap-to-Invoice ────
+  terminalId        String?   @map("terminal_id") @db.VarChar(50)
+  nfcClaimedAt      DateTime? @map("nfc_claimed_at") @db.Timestamptz()
+
   appointment         Appointment?         @relation(fields: [appointmentId], references: [id])
   client              Client               @relation(fields: [clientId], references: [id])
   selfOrder           SelfOrder?           @relation(fields: [selfOrderId], references: [id])
@@ -607,6 +611,7 @@ model Invoice {
   @@index([clientId])
   @@index([status])
   @@index([createdAt])
+  @@index([terminalId, nfcClaimedAt])
   @@map("invoices")
 }
 

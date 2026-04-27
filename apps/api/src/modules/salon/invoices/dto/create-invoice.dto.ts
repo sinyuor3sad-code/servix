@@ -69,4 +69,10 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsString({ message: 'الملاحظات يجب أن تكون نصاً' })
   notes?: string;
+
+  @ApiPropertyOptional({ description: 'Terminal ID for NFC Tap-to-Invoice' })
+  @IsOptional()
+  @IsString({ message: 'Terminal ID يجب أن يكون نصاً' })
+  @MaxLength(50, { message: 'Terminal ID يجب ألا يتجاوز 50 حرف' })
+  terminalId?: string;
 }

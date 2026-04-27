@@ -5,10 +5,12 @@ import {
   Patch,
   Param,
   Body,
+  Res,
   Logger,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { Public } from '../../shared/decorators/public.decorator';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
@@ -175,5 +177,67 @@ export class PublicController {
     const { db } = await this.resolveTenant(slug);
     await this.publicService.trackGoogleClick(db, token);
     return { success: true };
+  }
+
+  /* ════════════════════════════════════════
+     GET /public/tap/:salonSlug/:terminalId
+     NFC Tap-to-Invoice — public, no auth
+     ════════════════════════════════════════ */
+  @Get('tap/:salonSlug/:terminalId')
+  @ApiOperation({ summary: 'NFC Tap — جلب فاتورة العميلة من الـ terminal' })
+  @ApiParam({ name: 'salonSlug', description: 'معرّف الصالون (slug)' })
+  @ApiParam({ name: 'terminalId', description: 'معرّف جهاز الكاشير' })
+  @ApiResponse({ status: 302, description: 'Redirect to invoice or no-invoice page' })
+  async nfcTap(
+    @Param('salonSlug') slug: string,
+    @Param('terminalId') terminalId: string,
+    @Res() res: Response,
+  ) {
+    this.logger.log(`[NFC] Tap from terminal ${terminalId} for salon ${slug}`);
+
+    // 1. Resolve tenant
+    let tenantDb: ReturnType<typeof this.tenantClientFactory.getTenantClient>;
+    try {
+      const { db } = await this.resolveTenant(slug);
+      tenantDb = db;
+    } catch {
+      return res.redirect(`/${slug}/no-invoice`);
+    }
+
+    // 2. Find oldest unclaimed paid invoice from this terminal (last 30 min)
+    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const invoice = await tenantDb.invoice.findFirst({
+      where: {
+        terminalId: terminalId,
+        nfcClaimedAt: null,
+        status: 'paid',
+        createdAt: { gte: thirtyMinAgo },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, publicToken: true },
+    });
+
+    if (!invoice || !invoice.publicToken) {
+      return res.redirect(`/${slug}/no-invoice`);
+    }
+
+    // 3. Atomic claim — prevents race conditions
+    const claimed = await tenantDb.invoice.updateMany({
+      where: {
+        id: invoice.id,
+        nfcClaimedAt: null, // atomic condition
+      },
+      data: {
+        nfcClaimedAt: new Date(),
+      },
+    });
+
+    if (claimed.count === 0) {
+      // Someone else claimed it
+      return res.redirect(`/${slug}/no-invoice`);
+    }
+
+    // 4. Redirect to public invoice page
+    return res.redirect(`/${slug}/invoice/${invoice.publicToken}`);
   }
 }

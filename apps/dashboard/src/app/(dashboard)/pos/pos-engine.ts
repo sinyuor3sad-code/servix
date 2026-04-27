@@ -9,10 +9,11 @@ import { api } from '@/lib/api';
 import type { Service, Client, Employee, PaginatedResponse, ServiceCategory } from '@/types';
 import type { CartItem, SplitEntry, HeldBill, PanelId } from './pos-types';
 import {
-  TAX, uid, now, isDev, fmt, DEFAULT_FAVS,
+  uid, now, isDev, fmt, DEFAULT_FAVS,
   M_CATS, M_SVCS, M_EMP, M_CLI, M_BUNDLES,
 } from './pos-constants';
 import type { ServiceBundle } from './pos-types';
+import { playBeep, playSuccess, playError } from './pos-sounds';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    SMART DEVICE DETECTION
@@ -79,6 +80,9 @@ export function usePOSEngine() {
   const [favIds, setFavIds] = useState<string[]>(() => lsGet<string[]>('pos_favs', DEFAULT_FAVS));
   const [showFavs, setShowFavs] = useState(false);
   const [showBundles, setShowBundles] = useState(false);
+  const [showAppointments, setShowAppointments] = useState(false);
+  const [appointmentId, setAppointmentId] = useState<string | null>(null);
+  const [lastPaidMethod, setLastPaidMethod] = useState<string>('cash');
   const [receiptLogo, setReceiptLogo] = useState(true);
   const [receiptMsg, setReceiptMsg] = useState('شكراً لزيارتكم');
   const [receiptPhone, setReceiptPhone] = useState('+966501234567');
@@ -93,6 +97,18 @@ export function usePOSEngine() {
   const [cashReceived, setCashReceived] = useState('');
   const [discountReason, setDiscountReason] = useState('');
   const [pinOverrideApproved, setPinOverrideApproved] = useState(false);
+  const [loyaltyPoints, setLoyaltyPoints] = useState<number | null>(null);
+  const [todaySales, setTodaySales] = useState(0);
+  const [todayInvoices, setTodayInvoices] = useState(0);
+  const [terminalId] = useState(() => {
+    const key = 'pos_terminal_id';
+    let id = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+    if (!id) {
+      id = `T-${Date.now().toString(36)}`;
+      if (typeof window !== 'undefined') localStorage.setItem(key, id);
+    }
+    return id;
+  });
 
   const dSearch = useDeferredValue(svcSearch);
 
@@ -125,6 +141,18 @@ export function usePOSEngine() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
+  /* ── Loyalty: fetch points when client changes ── */
+  useEffect(() => {
+    if (!client || !accessToken || isDev(accessToken) || client.fullName === 'زائر') { setLoyaltyPoints(null); return; }
+    api.get(`/loyalty/clients/${client.id}`, accessToken)
+      .then((res: unknown) => {
+        const r = res as Record<string, unknown>;
+        const d = r?.data as Record<string, unknown> | undefined;
+        setLoyaltyPoints(Number(d?.points ?? (r as Record<string, unknown>)?.points ?? 0));
+      })
+      .catch(() => setLoyaltyPoints(null));
+  }, [client, accessToken]);
+
   /* ── Queries ── */
   const { data: cats } = useQuery<ServiceCategory[]>({
     queryKey: ['pos-cats'],
@@ -142,6 +170,21 @@ export function usePOSEngine() {
       ? Promise.resolve({ items: M_EMP, total: M_EMP.length, page: 1, limit: 50, totalPages: 1 } as PaginatedResponse<Employee>)
       : dashboardService.getEmployees({ limit: 50 }, accessToken!),
   });
+
+  /* ── Salon info (for dynamic tax) ── */
+  const { data: salonInfo } = useQuery({
+    queryKey: ['pos-salon-info'],
+    queryFn: () => api.get('/salon-info', accessToken!),
+    enabled: !!accessToken && !isDev(accessToken),
+  });
+
+  const taxRate = useMemo(() => {
+    if (isDev(accessToken)) return 0.15;
+    const si = salonInfo as Record<string, unknown> | undefined;
+    const d = si?.data as Record<string, unknown> | undefined;
+    const pct = d?.taxPercentage ?? si?.taxPercentage;
+    return pct ? Number(pct) / 100 : 0.15;
+  }, [salonInfo, accessToken]);
 
   const mockCli = useMemo(() => {
     if (!isDev(accessToken) || cliSearch.length < 2) return [];
@@ -175,6 +218,7 @@ export function usePOSEngine() {
       if (ex) return prev.map(i => i.id === ex.id ? { ...i, quantity: i.quantity + 1 } : i);
       return [...prev, { id: uid(), service: svc, quantity: 1, employeeId: defEmployee?.id ?? null, employeeName: defEmployee?.fullName ?? 'غير محدد', discount: 0, discountType: 'fixed' as const, note: '' }];
     });
+    playBeep();
   }, [defEmployee]);
 
   const addBundle = useCallback((bundle: ServiceBundle) => {
@@ -206,6 +250,7 @@ export function usePOSEngine() {
     setSelectedPayMethod('cash'); setCashReceived('');
     setCouponCode(''); setCouponDiscount(0); setCouponApplied(false); setCouponMsg('');
     setDiscountReason(''); setPinOverrideApproved(false);
+    setAppointmentId(null);
   }, []);
 
   /* ── Calculations ── */
@@ -226,9 +271,20 @@ export function usePOSEngine() {
 
   const afterDisc = Math.max(0, subtotal - gDiscVal);
   const afterCoupon = Math.max(0, afterDisc - couponDiscount);
-  const tax = afterCoupon * TAX;
+  const tax = afterCoupon * taxRate;
   const tip = 0;
   const total = afterCoupon + tax;
+
+  /* ── Redeem loyalty (simple: all points → 1 SAR per 10 pts) ── */
+  const redeemLoyalty = useCallback(() => {
+    if (!loyaltyPoints || loyaltyPoints <= 0) return;
+    const value = Math.floor(loyaltyPoints / 10);
+    if (value <= 0) { toast.error('النقاط غير كافية للاستبدال'); return; }
+    setGlobalDisc(String(value));
+    setGlobalDiscType('fixed');
+    setDiscountReason('استبدال نقاط ولاء');
+    toast.success(`تم تطبيق خصم ${value} ر.س من ${loyaltyPoints} نقطة`);
+  }, [loyaltyPoints]);
 
   /* ── Change calculator ── */
   const changeAmount = useMemo(() => {
@@ -258,6 +314,32 @@ export function usePOSEngine() {
   const discountNeedsReason = useMemo(() => {
     return gDiscVal > 0 && !discountReason.trim();
   }, [gDiscVal, discountReason]);
+
+  /* ── Load Appointment into cart ── */
+  const loadAppointment = useCallback((appt: { id: string; client: { id: string; fullName: string; phone: string } | null; appointmentServices: Array<{ serviceId: string; employeeId?: string; employee?: { id: string; fullName: string } }>; }) => {
+    clearAll();
+    if (appt.client) setClient(appt.client as Client);
+    let loaded = 0;
+    for (const as of appt.appointmentServices) {
+      const svc = allSvcs.find(s => s.id === as.serviceId);
+      if (!svc) { toast.error(`خدمة محذوفة — تم تجاهلها`); continue; }
+      const emp = as.employeeId ? emps.find(e => e.id === as.employeeId) : (as.employee ? emps.find(e => e.id === as.employee!.id) : defEmployee);
+      setCart(prev => [...prev, {
+        id: uid(),
+        service: svc,
+        quantity: 1,
+        employeeId: emp?.id ?? null,
+        employeeName: emp?.fullName ?? 'غير محدد',
+        discount: 0,
+        discountType: 'fixed' as const,
+        note: '',
+      }]);
+      loaded++;
+    }
+    setAppointmentId(appt.id);
+    setShowAppointments(false);
+    toast.success(`تم تحميل موعد ${appt.client?.fullName ?? 'عميلة'} — ${loaded} خدمات`);
+  }, [clearAll, allSvcs, emps, defEmployee]);
 
   /* ── Coupon validation ── */
   const couponMut = useMutation({
@@ -383,6 +465,8 @@ export function usePOSEngine() {
           unitPrice: i.service.price,
           employeeId: i.employeeId || fallbackEmpId,
         })),
+        appointmentId: appointmentId || undefined,
+        terminalId: terminalId,
       }, accessToken!);
       // Apply global manual discount
       if (gDiscVal > 0) await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: gDiscVal, reason: discountReason || undefined }, accessToken!);
@@ -401,20 +485,34 @@ export function usePOSEngine() {
       return { ...inv, _paymentResult: paymentResult };
     },
     onSuccess: (inv) => {
+      playSuccess();
       // Extract publicToken from the payment result
       const payRes = inv._paymentResult as Record<string, unknown> | undefined;
       const token = payRes?.publicToken as string | undefined;
-      // Save total BEFORE clearing cart (so QR modal can display it)
+      // Save total + method BEFORE clearing cart (so receipt/QR modal can display it)
       setLastPaidTotal(total);
+      setLastPaidMethod(selectedPayMethod);
+      // Update session performance counters
+      setTodaySales(prev => prev + total);
+      setTodayInvoices(prev => prev + 1);
       if (token) {
         setPublicToken(token);
         setShowQRModal(true);
       }
+      // If this was from an appointment, mark it as completed
+      if (appointmentId && accessToken) {
+        api.put(`/appointments/${appointmentId}/status`, { status: 'completed' }, accessToken).catch(() => {});
+      }
+      // Redeem loyalty points if discount reason indicates it
+      if (client && accessToken && loyaltyPoints && loyaltyPoints > 0 && discountReason === 'استبدال نقاط ولاء') {
+        api.post(`/loyalty/clients/${client.id}/adjust`, { type: 'redeem', points: -loyaltyPoints, description: 'استبدال نقاط من الكاشير' }, accessToken).catch(() => {});
+      }
       setCart([]); setClient(null); setWalkName(''); setWalkPhone('');
       setWalkInMode(false); setGlobalDisc(''); setTipInput(''); setCustNote('');
-      setSelfOrderId(null); setPanel(null);
+      setSelfOrderId(null); setPanel(null); setAppointmentId(null);
+      setLoyaltyPoints(null);
     },
-    onError: (e: Error) => toast.error(e.message || 'خطأ'),
+    onError: (err: Error) => { playError(); toast.error(err.message || 'خطأ'); },
   });
 
   function pay(m: string) { if (!canPay) { toast.error('أكمل بيانات العميل'); return; } payMut.mutate(m); }
@@ -422,8 +520,8 @@ export function usePOSEngine() {
 
   const refMut = useMutation({
     mutationFn: async () => { if (isDev(accessToken)) { await new Promise(r => setTimeout(r, 400)); return; } await api.post(`/invoices/${refId}/refund`, { reason: refReason }, accessToken!); },
-    onSuccess: () => { toast.success('تم الإرجاع'); setRefId(''); setRefReason(''); setPanel(null); },
-    onError: () => toast.error('فشل الإرجاع'),
+    onSuccess: () => { playBeep(); toast.success('تم الإرجاع'); setRefId(''); setRefReason(''); setPanel(null); },
+    onError: () => { playError(); toast.error('فشل الإرجاع'); },
   });
 
   return {
@@ -431,21 +529,26 @@ export function usePOSEngine() {
     globalDisc, globalDiscType, tipInput, custNote,
     walkName, walkPhone, walkInMode, sendWA, sendMail,
     panel, held, splits, refId, refReason,
-    online, favIds, showFavs, showBundles, receiptLogo, receiptMsg, receiptPhone,
+    online, favIds, showFavs, showBundles, showAppointments, appointmentId,
+    receiptLogo, receiptMsg, receiptPhone,
     couponCode, couponDiscount, couponApplied, couponMsg,
     cashReceived, setCashReceived, changeAmount,
     discountReason, setDiscountReason, pinOverrideApproved, setPinOverrideApproved,
     maxDiscountPercent, discountExceedsLimit, discountNeedsReason, canPayWithDiscount,
+    loyaltyPoints, redeemLoyalty, taxRate,
+    todaySales, todayInvoices, terminalId,
     setCart, setSelCat, setSvcSearch, setCliSearch, setClient, setDefEmployee,
     setGlobalDisc, setGlobalDiscType, setTipInput, setCustNote,
     setWalkName, setWalkPhone, setWalkInMode, setSendWA, setSendMail,
     setPanel, setHeld, setSplits, setRefId, setRefReason,
-    setFavIds, setShowFavs, setShowBundles, setReceiptLogo, setReceiptMsg, setReceiptPhone,
+    setFavIds, setShowFavs, setShowBundles, setShowAppointments,
+    setReceiptLogo, setReceiptMsg, setReceiptPhone,
     setCouponCode, applyCoupon, removeCoupon, couponMut,
     cats, allSvcs, emps, cliResults, filtered, favSvcs,
     itemTotals, subtotal, cartCount, gDiscVal, afterDisc, tax, tip, total,
     comms, totalComm, splitRem, canPay, selectedPayMethod, setSelectedPayMethod,
-    addToCart, updateQty, removeItem, clearAll, addBundle, toggleFav,
+    lastPaidMethod,
+    addToCart, updateQty, removeItem, clearAll, addBundle, toggleFav, loadAppointment,
     setItemEmp, setItemDisc, setItemNote,
     holdBill, recallBill, payMut, pay, paySplit, refMut,
     selfOrderId, setSelfOrderId,

@@ -126,6 +126,7 @@ export class InvoicesService {
         clientId: dto.clientId,
         appointmentId: dto.appointmentId,
         selfOrderId: dto.selfOrderId,
+        terminalId: dto.terminalId || null,
         invoiceNumber,
         subtotal,
         taxAmount,

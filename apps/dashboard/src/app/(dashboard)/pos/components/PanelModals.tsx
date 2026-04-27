@@ -59,16 +59,166 @@ function HoldPanel({ e }: { e: E }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   Refund Panel
+   Refund Panel — Advanced: Search → Preview → Confirm
+   // TODO: partial refund when API supports it
    ════════════════════════════════════════════════════════════════ */
 
 function RefundPanel({ e }: { e: E }) {
+  const { accessToken } = useAuth();
+  const [searchId, setSearchId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [invoice, setInvoice] = useState<Record<string, unknown> | null>(null);
+  const [reason, setReason] = useState('');
+  const [refunding, setRefunding] = useState(false);
+
+  const handleSearch = async () => {
+    if (!searchId.trim()) return;
+    setLoading(true);
+    setInvoice(null);
+    try {
+      // Try direct ID lookup first
+      const inv = await api.get<Record<string, unknown>>(`/invoices/${searchId.trim()}`, accessToken!);
+      setInvoice(inv);
+    } catch {
+      // Try search
+      try {
+        const res = await api.get<{ items: Record<string, unknown>[] }>(`/invoices?search=${encodeURIComponent(searchId.trim())}&limit=1`, accessToken!);
+        if (res?.items?.length) setInvoice(res.items[0]);
+        else toast.error('الفاتورة غير موجودة');
+      } catch { toast.error('الفاتورة غير موجودة'); }
+    }
+    setLoading(false);
+  };
+
+  const handleRefund = async () => {
+    if (!invoice || !reason.trim()) return;
+    setRefunding(true);
+    try {
+      await api.post(`/invoices/${invoice.id}/refund`, { reason: reason.trim() }, accessToken!);
+      toast.success('تم الإرجاع بنجاح');
+      setInvoice(null); setSearchId(''); setReason('');
+      e.setPanel(null);
+    } catch (err: unknown) {
+      toast.error((err as Error)?.message || 'فشل الإرجاع');
+    }
+    setRefunding(false);
+  };
+
+  const isPaid = invoice?.status === 'paid' || invoice?.status === 'partially_paid';
+  const items = (invoice?.invoiceItems ?? invoice?.items ?? []) as Array<{ id?: string; description?: string; quantity?: number; unitPrice?: number; total?: number }>;
+  const payments = (invoice?.payments ?? []) as Array<{ method?: string; amount?: number }>;
+  const client = invoice?.client as { fullName?: string } | undefined;
+
+  const PAY_L: Record<string, string> = { cash: 'نقدي', card: 'بطاقة', bank_transfer: 'تحويل', wallet: 'محفظة' };
+
   return (
     <div className="space-y-3">
-      <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">رقم الفاتورة</label><div className="relative"><Hash size={11} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} /><input value={e.refId} onChange={ev => e.setRefId(ev.target.value)} placeholder="INV-XXXX" dir="ltr" className={`${INP} py-2.5 ps-8 pe-3 text-[11px]`} /></div></div>
-      <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">سبب الإرجاع</label><textarea value={e.refReason} onChange={ev => e.setRefReason(ev.target.value)} placeholder="السبب..." rows={3} className={`w-full rounded-xl ${brd(6)} border ${bg(4)} p-3 text-[10px] text-[var(--foreground)] resize-none placeholder:text-[var(--muted-foreground)] focus:outline-none ${T}`} /></div>
-      <div className="flex items-center gap-2 rounded-xl bg-red-500/10 p-2.5"><AlertTriangle size={12} className="text-red-400" /><p className="text-[8px] text-red-400">سيتم إرجاع المبلغ وتسجيل العملية</p></div>
-      <button onClick={() => e.refMut.mutate()} disabled={!e.refId.trim() || !e.refReason.trim() || e.refMut.isPending} className={`${B} flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-red-500 text-[10px] font-bold text-white shadow-lg disabled:opacity-20`}>{e.refMut.isPending ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <><RotateCcw size={12} /> تأكيد الإرجاع</>}</button>
+      {/* Step 1: Search */}
+      <div>
+        <label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">بحث بر قم الفاتورة</label>
+        <div className="flex gap-1.5">
+          <div className="relative flex-1">
+            <Hash size={11} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} />
+            <input
+              value={searchId}
+              onChange={ev => setSearchId(ev.target.value)}
+              onKeyDown={ev => { if (ev.key === 'Enter') handleSearch(); }}
+              placeholder="INV-XXXX أو UUID"
+              dir="ltr"
+              className={`${INP} py-2.5 ps-8 pe-3 text-[11px]`}
+            />
+          </div>
+          <button onClick={handleSearch} disabled={loading || !searchId.trim()} className={`${B} rounded-xl px-4 text-[10px] font-bold text-black disabled:opacity-30`} style={accentBg}>
+            {loading ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : 'بحث'}
+          </button>
+        </div>
+      </div>
+
+      {/* Step 2: Invoice Preview */}
+      {invoice && (
+        <div className={`rounded-xl ${brd(4)} border ${bg(2)} p-3 space-y-2`}>
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-[var(--foreground)]" dir="ltr">{String(invoice.invoiceNumber || invoice.id).slice(0, 20)}</span>
+            <span className={`rounded-md px-2 py-0.5 text-[8px] font-bold ${isPaid ? 'bg-emerald-500/10 text-emerald-400' : invoice.status === 'refunded' ? 'bg-red-500/10 text-red-400' : 'bg-zinc-500/10 text-zinc-400'}`}>
+              {invoice.status === 'paid' ? 'مدفوعة' : invoice.status === 'refunded' ? 'مُرجعة' : invoice.status === 'void' ? 'ملغاة' : String(invoice.status)}
+            </span>
+          </div>
+
+          {/* Client */}
+          {client?.fullName && (
+            <div className="flex items-center gap-1 text-[9px] text-[var(--muted-foreground)]">
+              <Users size={9} /> {client.fullName}
+            </div>
+          )}
+
+          {/* Items */}
+          <div className={`rounded-lg ${bg(3)} p-2 space-y-1`}>
+            {items.map((item, idx) => (
+              <div key={item.id ?? idx} className="flex justify-between text-[9px]">
+                <span className="text-[var(--foreground)] truncate max-w-[60%]">{item.description || '—'}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-[var(--muted-foreground)]" style={TN}>×{item.quantity ?? 1}</span>
+                  <span className="font-bold text-[var(--foreground)]" style={TN}>{fmt(Number(item.total ?? item.unitPrice ?? 0))}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Total */}
+          <div className="flex justify-between">
+            <span className="text-[10px] font-bold text-[var(--foreground)]">الإجمالي</span>
+            <span className="text-[14px] font-black" style={{ ...TN, ...accentColor }}>{fmt(Number(invoice.total ?? 0))}</span>
+          </div>
+
+          {/* Payment methods */}
+          {payments.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {payments.map((p, i) => (
+                <span key={i} className={`rounded-md ${bg(3)} px-2 py-0.5 text-[8px] font-semibold text-[var(--muted-foreground)]`}>
+                  {PAY_L[p.method ?? ''] ?? p.method} — {fmt(Number(p.amount ?? 0))}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Non-refundable warning */}
+          {!isPaid && (
+            <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-2">
+              <AlertTriangle size={11} className="text-red-400" />
+              <span className="text-[9px] text-red-400">لا يمكن إرجاع هذه الفاتورة — الحالة: {String(invoice.status)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Step 3: Reason + Confirm */}
+      {invoice && isPaid && (
+        <>
+          <div>
+            <label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">سبب الإرجاع (إلزامي)</label>
+            <textarea
+              value={reason}
+              onChange={ev => setReason(ev.target.value)}
+              placeholder="اكتب سبب الإرجاع..."
+              rows={2}
+              className={`w-full rounded-xl ${brd(6)} border ${bg(4)} p-3 text-[10px] text-[var(--foreground)] resize-none placeholder:text-[var(--muted-foreground)] focus:outline-none ${T}`}
+            />
+          </div>
+          <div className="flex items-center gap-2 rounded-xl bg-red-500/10 p-2.5">
+            <AlertTriangle size={12} className="text-red-400" />
+            <p className="text-[8px] text-red-400">سيتم إرجاع المبلغ كاملاً وتسجيل العملية. هذا الإجراء لا يمكن التراجع عنه.</p>
+          </div>
+          <button
+            onClick={handleRefund}
+            disabled={!reason.trim() || refunding}
+            className={`${B} flex h-11 w-full items-center justify-center gap-2 rounded-2xl text-[10px] font-bold text-white shadow-lg disabled:opacity-20`}
+            style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}
+          >
+            {refunding ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <><RotateCcw size={12} /> تأكيد الإرجاع</>}
+          </button>
+        </>
+      )}
     </div>
   );
 }

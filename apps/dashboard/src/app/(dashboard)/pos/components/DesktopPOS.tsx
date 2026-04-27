@@ -26,10 +26,13 @@ import { ClientSection } from './ClientSection';
 import { EmployeePicker } from './EmployeePicker';
 import { CategoryBar } from './CategoryBar';
 import { ServiceGrid } from './ServiceGrid';
+import { AppointmentGrid } from './AppointmentGrid';
 import { PanelModals } from './PanelModals';
 import { OrderInput } from './OrderInput';
 import { QRSuccessModal } from './QRSuccessModal';
 import { ShiftReport } from './ShiftReport';
+import { ReceiptPrint } from './ReceiptPrint';
+import { NfcInvoiceBar } from './NfcInvoiceBar';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
@@ -56,6 +59,14 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
           <div><span className="text-[13px] font-black tracking-tight text-[var(--foreground)]">SERVIX</span><span className="ms-1.5 text-[9px] font-bold" style={accentColor}>POS</span></div>
           <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[8px] font-bold ${e.online ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/15 text-red-400 animate-pulse'}`}>{e.online ? <Wifi size={9} /> : <WifiOff size={9} />}{e.online ? 'متصل' : 'غير متصل'}</div>
         </div>
+        {/* Performance bar */}
+        <div className="hidden items-center gap-3 xl:flex">
+          <span className="text-[9px] text-[var(--muted-foreground)]">مبيعات: <span style={{...TN, ...accentColor}} className="font-bold">{fmt(e.todaySales)}</span></span>
+          <span className="h-3 w-px bg-[var(--muted-foreground)]" style={{opacity:0.15}} />
+          <span className="text-[9px] text-[var(--muted-foreground)]">فواتير: <span style={TN} className="font-bold text-[var(--foreground)]">{e.todayInvoices}</span></span>
+          <span className="h-3 w-px bg-[var(--muted-foreground)]" style={{opacity:0.15}} />
+          <span className="text-[9px] text-[var(--muted-foreground)]">متوسط: <span style={TN} className="font-bold text-[var(--foreground)]">{e.todayInvoices > 0 ? fmt(e.todaySales / e.todayInvoices) : '0'}</span></span>
+        </div>
         <div className="flex items-center gap-1">
           <button onClick={e.holdBill} className={`${B} group relative flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Pause size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] sm:inline">تعليق</span>{e.held.length > 0 && <span className="absolute -end-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[7px] font-black text-black" style={accentBg}>{e.held.length}</span>}</button>
           <button onClick={() => e.setPanel('hold-list')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Play size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] sm:inline">استدعاء</span></button>
@@ -70,6 +81,9 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
           </>}
         </div>
       </header>
+
+      {/* NFC Invoice Bar */}
+      <NfcInvoiceBar e={e} salonSlug={currentTenant?.slug} />
 
       {/* 3-COLUMN BODY */}
       <div className="flex flex-1 min-h-0">
@@ -107,7 +121,9 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
             </div>
           </div>
           <CategoryBar e={e} />
-          <div className="flex-1 overflow-y-auto p-3 pt-1"><ServiceGrid e={e} /></div>
+          <div className="flex-1 overflow-y-auto p-3 pt-1">
+            {e.showAppointments ? <AppointmentGrid e={e} /> : <ServiceGrid e={e} />}
+          </div>
         </main>
 
         {/* COL 3: CART */}
@@ -190,7 +206,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
                 <div className="flex justify-between text-[9px]"><span className="text-[var(--muted-foreground)]">المجموع الفرعي</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.subtotal)}</span></div>
                 {e.gDiscVal > 0 && <div className="flex justify-between text-[9px]"><span className="text-emerald-400">الخصم</span><span className="font-semibold text-emerald-400" style={TN}>-{fmt(e.gDiscVal)}</span></div>}
                 {e.couponDiscount > 0 && <div className="flex justify-between text-[9px]"><span className="text-[var(--brand-primary)]"><Ticket size={8} className="inline me-0.5" />كوبون</span><span className="font-semibold text-[var(--brand-primary)]" style={TN}>-{fmt(e.couponDiscount)}</span></div>}
-                <div className="flex justify-between text-[9px]"><span className="text-[var(--muted-foreground)]">ضريبة 15%</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.tax)}</span></div>
+                <div className="flex justify-between text-[9px]"><span className="text-[var(--muted-foreground)]">ضريبة {Math.round(e.taxRate * 100)}%</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.tax)}</span></div>
                 <div className={`flex items-baseline justify-between ${brd(4)} border-t pt-1.5`}><span className="text-[10px] font-bold text-[var(--foreground)]">الإجمالي</span><span className="text-[24px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)} <span className="text-[10px] font-semibold opacity-40">ر.س</span></span></div>
               </div>
               <div className="grid grid-cols-4 gap-1">{PAY.map(pm => (<button key={pm.id} onClick={() => e.setSelectedPayMethod(pm.id)} disabled={e.payMut.isPending || !e.canPay} className={`${BS} flex flex-col items-center gap-1.5 rounded-xl ${brd(4)} border py-3.5 disabled:opacity-15 disabled:pointer-events-none transition-all duration-150 ${e.selectedPayMethod === pm.id ? 'text-black ring-2 ring-[var(--brand-accent)]/40' : `${bg(2)} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}`} style={e.selectedPayMethod === pm.id ? { ...accentBg, borderColor: 'var(--brand-accent)' } : undefined}><pm.icon size={19} strokeWidth={1.5} /><span className="text-[9px] font-bold">{pm.label}</span></button>))}</div>
@@ -218,7 +234,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
                 </div>
               )}
               <button onClick={() => e.pay(e.selectedPayMethod)} disabled={e.payMut.isPending || !e.canPayWithDiscount} className={`${B} relative flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[13px] font-black shadow-xl disabled:opacity-15 disabled:pointer-events-none overflow-hidden`} style={e.canPayWithDiscount ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))', color: '#000' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{e.payMut.isPending ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Receipt size={14} /> إصدار فاتورة — {fmt(e.total)}</>}</button>
-              <div className="flex gap-1"><button className={`${B} flex flex-1 items-center justify-center gap-1 rounded-xl ${brd(4)} border py-1.5 text-[8px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><Printer size={10} /> طباعة</button><button className={`${B} flex flex-1 items-center justify-center gap-1 rounded-xl ${brd(4)} border py-1.5 text-[8px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><QrCode size={10} /> ZATCA</button></div>
+              <div className="flex gap-1"><button onClick={() => { if (e.lastPaidTotal > 0) window.print(); }} disabled={e.lastPaidTotal <= 0} className={`${B} flex flex-1 items-center justify-center gap-1 rounded-xl ${brd(4)} border py-1.5 text-[8px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-20`}><Printer size={10} /> طباعة</button><button className={`${B} flex flex-1 items-center justify-center gap-1 rounded-xl ${brd(4)} border py-1.5 text-[8px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><QrCode size={10} /> ZATCA</button></div>
             </div>
           )}
         </aside>
@@ -232,6 +248,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
 
       <PanelModals e={e} onShiftClosed={(data) => { setClosedShiftData(data); setShowReport(true); }} />
       <ShiftReport shift={closedShiftData} isOpen={showReport} onClose={() => { setShowReport(false); setClosedShiftData(null); window.location.reload(); }} />
+      <ReceiptPrint e={e} tenantName={currentTenant?.nameAr || 'SERVIX'} />
       <QRSuccessModal
         isOpen={e.showQRModal}
         onClose={() => { e.setShowQRModal(false); e.clearAll(); }}
