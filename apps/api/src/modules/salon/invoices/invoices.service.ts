@@ -445,10 +445,11 @@ export class InvoicesService {
     db: TenantPrismaClient,
     id: string,
     reason?: string,
+    itemIds?: string[],
   ): Promise<Record<string, unknown>> {
     const invoice = await db.invoice.findUnique({
       where: { id },
-      include: { payments: true },
+      include: { payments: true, invoiceItems: true },
     });
 
     if (!invoice) {
@@ -464,66 +465,87 @@ export class InvoicesService {
       throw new BadRequestException('يمكن استرداد الفواتير المدفوعة بالكامل فقط');
     }
 
-    const invoiceTotal = Number(invoice.total);
+    const isPartial = itemIds && itemIds.length > 0 && itemIds.length < invoice.invoiceItems.length;
+    let refundAmount: number;
+
+    if (isPartial) {
+      const selectedItems = invoice.invoiceItems.filter(item => itemIds.includes(item.id));
+      if (selectedItems.length === 0) {
+        throw new BadRequestException('العناصر المحددة غير موجودة في الفاتورة');
+      }
+      refundAmount = selectedItems.reduce((sum, item) => sum + Number(item.totalPrice), 0);
+    } else {
+      refundAmount = Number(invoice.total);
+    }
 
     const updated = await db.$transaction(async (tx) => {
-      // 1. Create refund payment record (negative amount for accounting)
+      // 1. Create refund payment record (negative amount)
       await tx.payment.create({
         data: {
           invoiceId: id,
-          amount: -invoiceTotal,
-          method: 'cash', // refunds default to cash
+          amount: -refundAmount,
+          method: 'cash',
           reference: reason || 'refund',
           status: 'refunded',
         },
       });
 
-      // 2. Mark all existing payments as refunded
-      await tx.payment.updateMany({
-        where: { invoiceId: id, status: 'completed' },
-        data: { status: 'refunded' },
-      });
-
-      // 3. Update invoice status
-      const updatedInvoice = await tx.invoice.update({
-        where: { id },
-        data: {
-          status: 'refunded',
-          refundedAt: new Date(),
-          refundReason: reason || null,
-          // Revoke public token on refund
-          ...(invoice.publicToken && {
-            publicTokenStatus: 'revoked',
-          }),
-        },
-        include: { invoiceItems: true, payments: true },
-      });
-
-      // 4. Reverse client stats (undo what recordPayment did)
-      if (invoice.clientId) {
-        await tx.client.update({
-          where: { id: invoice.clientId },
+      if (isPartial) {
+        // Partial refund — keep invoice status as paid
+        const updatedInvoice = await tx.invoice.update({
+          where: { id },
           data: {
-            totalSpent: { decrement: invoiceTotal },
-            totalVisits: { decrement: 1 },
+            refundReason: `[جزئي] ${reason || 'إرجاع جزئي'} — ${itemIds!.length} عنصر — ${refundAmount} ر.س`,
           },
+          include: { invoiceItems: true, payments: true },
         });
+        if (invoice.clientId) {
+          await tx.client.update({
+            where: { id: invoice.clientId },
+            data: { totalSpent: { decrement: refundAmount } },
+          }).catch(() => {});
+        }
+        return updatedInvoice;
+      } else {
+        // Full refund — original logic
+        await tx.payment.updateMany({
+          where: { invoiceId: id, status: 'completed' },
+          data: { status: 'refunded' },
+        });
+        const updatedInvoice = await tx.invoice.update({
+          where: { id },
+          data: {
+            status: 'refunded',
+            refundedAt: new Date(),
+            refundReason: reason || null,
+            ...(invoice.publicToken && { publicTokenStatus: 'revoked' }),
+          },
+          include: { invoiceItems: true, payments: true },
+        });
+        if (invoice.clientId) {
+          await tx.client.update({
+            where: { id: invoice.clientId },
+            data: {
+              totalSpent: { decrement: refundAmount },
+              totalVisits: { decrement: 1 },
+            },
+          }).catch(() => {});
+        }
+        return updatedInvoice;
       }
-
-      return updatedInvoice;
     });
 
     // Audit log (fire-and-forget)
     this.auditService.log({
       userId: id,
-      action: 'invoice.refund',
+      action: isPartial ? 'invoice.partial_refund' : 'invoice.refund',
       entityType: 'Invoice',
       entityId: id,
       oldValues: { status: 'paid' },
-      newValues: { status: 'refunded', reason },
+      newValues: { status: isPartial ? 'paid' : 'refunded', reason, refundAmount, itemIds },
     }).catch(() => {});
 
-    this.logger.log(`Invoice ${invoice.invoiceNumber} refunded (${invoiceTotal} SAR). Reason: ${reason || 'N/A'}`);
+    this.logger.log(`Invoice ${invoice.invoiceNumber} ${isPartial ? 'partially ' : ''}refunded (${refundAmount} SAR). Reason: ${reason || 'N/A'}`);
 
     return updated as unknown as Record<string, unknown>;
   }

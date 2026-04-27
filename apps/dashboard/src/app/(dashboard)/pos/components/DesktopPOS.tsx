@@ -33,8 +33,10 @@ import { QRSuccessModal } from './QRSuccessModal';
 import { ShiftReport } from './ShiftReport';
 import { ReceiptPrint } from './ReceiptPrint';
 import { NfcInvoiceBar } from './NfcInvoiceBar';
+import { usePosSocket } from '../usePosSocket';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import { Bell } from 'lucide-react';
 
 export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
   const { currentTenant, userRole, isOwner } = useAuth();
@@ -43,6 +45,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [closedShiftData, setClosedShiftData] = useState<PosShiftData | null>(null);
+  const socket = usePosSocket();
 
   useEffect(() => {
     const h = (ev: KeyboardEvent) => { if (ev.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName ?? '')) { ev.preventDefault(); searchRef.current?.focus(); } };
@@ -75,6 +78,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
           <button onClick={() => e.setPanel('attendance')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><ClipboardCheck size={12} className="text-[var(--muted-foreground)] group-hover:text-emerald-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-emerald-400 sm:inline">تحضير</span></button>
           <button onClick={() => e.setPanel('expense')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><CircleDollarSign size={12} className="text-[var(--muted-foreground)] group-hover:text-orange-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-orange-400 sm:inline">مصروف</span></button>
           <button onClick={() => e.setPanel('close-shift')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Lock size={12} className="text-[var(--muted-foreground)] group-hover:text-red-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-red-400 sm:inline">إغلاق</span></button>
+          <button onClick={() => { socket.clearNotifications(); e.setPanel('notifications'); }} className={`${B} group relative flex h-8 w-8 items-center justify-center rounded-xl ${G3}`}><Bell size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" />{socket.unreadCount > 0 && <span className="absolute -end-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[7px] font-black text-white animate-pulse">{socket.unreadCount}</span>}</button>
           {!isCashierOnly && <>
             <div className={`mx-0.5 h-4 w-px ${bg(6)}`} />
             <Link href="/" className={`${B} flex h-8 w-8 items-center justify-center rounded-xl ${G3} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><ArrowLeft size={13} /></Link>
@@ -246,7 +250,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
         <div className="flex items-center gap-2">{e.cartCount > 0 && <span className="flex h-6 min-w-6 items-center justify-center rounded-lg px-1.5 text-[10px] font-black text-black" style={{ ...TN, ...accentBg }}>{e.cartCount}</span>}<button onClick={() => e.pay('cash')} disabled={e.payMut.isPending || !e.canPay} className={`${B} rounded-2xl px-6 py-2.5 text-[12px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>{e.payMut.isPending ? '...' : 'ادفع'}</button></div>
       </div>
 
-      <PanelModals e={e} onShiftClosed={(data) => { setClosedShiftData(data); setShowReport(true); }} />
+      <PanelModals e={e} onShiftClosed={(data) => { setClosedShiftData(data); setShowReport(true); }} notifications={socket.notifications} onDismissNotif={socket.dismissNotification} onClearNotifs={() => { socket.clearNotifications(); }} />
       <ShiftReport shift={closedShiftData} isOpen={showReport} onClose={() => { setShowReport(false); setClosedShiftData(null); window.location.reload(); }} />
       <ReceiptPrint e={e} tenantName={currentTenant?.nameAr || 'SERVIX'} />
       <QRSuccessModal

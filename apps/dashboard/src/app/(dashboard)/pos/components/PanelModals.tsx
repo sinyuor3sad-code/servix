@@ -6,6 +6,7 @@ import {
   Hash, Check, Split, Package,
   ClipboardCheck, LogIn, LogOut, Coffee, Clock, Users,
   CircleDollarSign, Lock, ShieldAlert, Loader2,
+  ShoppingCart, Calendar, Bell, AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
@@ -58,11 +59,6 @@ function HoldPanel({ e }: { e: E }) {
   );
 }
 
-/* ════════════════════════════════════════════════════════════════
-   Refund Panel — Advanced: Search → Preview → Confirm
-   // TODO: partial refund when API supports it
-   ════════════════════════════════════════════════════════════════ */
-
 function RefundPanel({ e }: { e: E }) {
   const { accessToken } = useAuth();
   const [searchId, setSearchId] = useState('');
@@ -70,17 +66,19 @@ function RefundPanel({ e }: { e: E }) {
   const [invoice, setInvoice] = useState<Record<string, unknown> | null>(null);
   const [reason, setReason] = useState('');
   const [refunding, setRefunding] = useState(false);
+  const [refundMode, setRefundMode] = useState<'full' | 'partial'>('full');
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
   const handleSearch = async () => {
     if (!searchId.trim()) return;
     setLoading(true);
     setInvoice(null);
+    setRefundMode('full');
+    setSelectedItems(new Set());
     try {
-      // Try direct ID lookup first
       const inv = await api.get<Record<string, unknown>>(`/invoices/${searchId.trim()}`, accessToken!);
       setInvoice(inv);
     } catch {
-      // Try search
       try {
         const res = await api.get<{ items: Record<string, unknown>[] }>(`/invoices?search=${encodeURIComponent(searchId.trim())}&limit=1`, accessToken!);
         if (res?.items?.length) setInvoice(res.items[0]);
@@ -90,13 +88,36 @@ function RefundPanel({ e }: { e: E }) {
     setLoading(false);
   };
 
+  const toggleItem = (id: string) => {
+    setSelectedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const isPaid = invoice?.status === 'paid' || invoice?.status === 'partially_paid';
+  const items = (invoice?.invoiceItems ?? invoice?.items ?? []) as Array<{ id?: string; description?: string; quantity?: number; unitPrice?: number; total?: number; totalPrice?: number }>;
+  const payments = (invoice?.payments ?? []) as Array<{ method?: string; amount?: number }>;
+  const client = invoice?.client as { fullName?: string } | undefined;
+  const invoiceTotal = Number(invoice?.total ?? 0);
+
+  const refundAmount = refundMode === 'full' ? invoiceTotal :
+    items.filter(item => item.id && selectedItems.has(item.id))
+         .reduce((sum, item) => sum + Number(item.totalPrice ?? item.total ?? item.unitPrice ?? 0), 0);
+
+  const canRefund = reason.trim().length > 0 && refundAmount > 0 && (refundMode === 'full' || selectedItems.size > 0);
+
   const handleRefund = async () => {
-    if (!invoice || !reason.trim()) return;
+    if (!invoice || !canRefund) return;
     setRefunding(true);
     try {
-      await api.post(`/invoices/${invoice.id}/refund`, { reason: reason.trim() }, accessToken!);
-      toast.success('تم الإرجاع بنجاح');
-      setInvoice(null); setSearchId(''); setReason('');
+      await api.post(`/invoices/${invoice.id}/refund`, {
+        reason: reason.trim(),
+        itemIds: refundMode === 'partial' ? Array.from(selectedItems) : undefined,
+      }, accessToken!);
+      toast.success(refundMode === 'partial' ? 'تم الإرجاع الجزئي' : 'تم الإرجاع بنجاح');
+      setInvoice(null); setSearchId(''); setReason(''); setSelectedItems(new Set()); setRefundMode('full');
       e.setPanel(null);
     } catch (err: unknown) {
       toast.error((err as Error)?.message || 'فشل الإرجاع');
@@ -104,18 +125,13 @@ function RefundPanel({ e }: { e: E }) {
     setRefunding(false);
   };
 
-  const isPaid = invoice?.status === 'paid' || invoice?.status === 'partially_paid';
-  const items = (invoice?.invoiceItems ?? invoice?.items ?? []) as Array<{ id?: string; description?: string; quantity?: number; unitPrice?: number; total?: number }>;
-  const payments = (invoice?.payments ?? []) as Array<{ method?: string; amount?: number }>;
-  const client = invoice?.client as { fullName?: string } | undefined;
-
   const PAY_L: Record<string, string> = { cash: 'نقدي', card: 'بطاقة', bank_transfer: 'تحويل', wallet: 'محفظة' };
 
   return (
     <div className="space-y-3">
       {/* Step 1: Search */}
       <div>
-        <label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">بحث بر قم الفاتورة</label>
+        <label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">بحث برقم الفاتورة</label>
         <div className="flex gap-1.5">
           <div className="relative flex-1">
             <Hash size={11} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" style={{ opacity: 0.3 }} />
@@ -152,23 +168,48 @@ function RefundPanel({ e }: { e: E }) {
             </div>
           )}
 
+          {/* Refund Mode Toggle */}
+          {isPaid && items.length > 1 && (
+            <div className={`flex rounded-xl ${bg(3)} p-0.5`}>
+              <button onClick={() => { setRefundMode('full'); setSelectedItems(new Set()); }} className={`${BS} flex-1 rounded-lg py-1.5 text-[9px] font-bold ${refundMode === 'full' ? 'text-black shadow-sm' : 'text-[var(--muted-foreground)]'}`} style={refundMode === 'full' ? accentBg : undefined}>
+                <RotateCcw size={9} className="inline me-1" />إرجاع كامل
+              </button>
+              <button onClick={() => setRefundMode('partial')} className={`${BS} flex-1 rounded-lg py-1.5 text-[9px] font-bold ${refundMode === 'partial' ? 'text-white shadow-sm' : 'text-[var(--muted-foreground)]'}`} style={refundMode === 'partial' ? { background: 'linear-gradient(135deg, #f59e0b, #d97706)' } : undefined}>
+                <Check size={9} className="inline me-1" />إرجاع جزئي
+              </button>
+            </div>
+          )}
+
           {/* Items */}
           <div className={`rounded-lg ${bg(3)} p-2 space-y-1`}>
-            {items.map((item, idx) => (
-              <div key={item.id ?? idx} className="flex justify-between text-[9px]">
-                <span className="text-[var(--foreground)] truncate max-w-[60%]">{item.description || '—'}</span>
-                <span className="flex items-center gap-2">
-                  <span className="text-[var(--muted-foreground)]" style={TN}>×{item.quantity ?? 1}</span>
-                  <span className="font-bold text-[var(--foreground)]" style={TN}>{fmt(Number(item.total ?? item.unitPrice ?? 0))}</span>
-                </span>
-              </div>
-            ))}
+            {items.map((item, idx) => {
+              const isSelected = item.id ? selectedItems.has(item.id) : false;
+              const itemTotal = Number(item.totalPrice ?? item.total ?? item.unitPrice ?? 0);
+              return (
+                <div
+                  key={item.id ?? idx}
+                  onClick={() => { if (refundMode === 'partial' && item.id) toggleItem(item.id); }}
+                  className={`flex items-center gap-2 rounded-lg p-1.5 ${T} ${refundMode === 'partial' ? 'cursor-pointer hover:' + bg(4) : ''} ${isSelected ? 'ring-1 ring-amber-500/40 bg-amber-500/5' : ''}`}
+                >
+                  {refundMode === 'partial' && (
+                    <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${isSelected ? 'border-amber-500 bg-amber-500' : brd(8)}`}>
+                      {isSelected && <Check size={9} className="text-white" />}
+                    </div>
+                  )}
+                  <span className="text-[9px] text-[var(--foreground)] truncate flex-1">{item.description || '—'}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className="text-[var(--muted-foreground)] text-[8px]" style={TN}>×{item.quantity ?? 1}</span>
+                    <span className={`font-bold text-[9px] ${isSelected ? 'text-amber-400' : 'text-[var(--foreground)]'}`} style={TN}>{fmt(itemTotal)}</span>
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           {/* Total */}
           <div className="flex justify-between">
             <span className="text-[10px] font-bold text-[var(--foreground)]">الإجمالي</span>
-            <span className="text-[14px] font-black" style={{ ...TN, ...accentColor }}>{fmt(Number(invoice.total ?? 0))}</span>
+            <span className="text-[14px] font-black" style={{ ...TN, ...accentColor }}>{fmt(invoiceTotal)}</span>
           </div>
 
           {/* Payment methods */}
@@ -205,17 +246,41 @@ function RefundPanel({ e }: { e: E }) {
               className={`w-full rounded-xl ${brd(6)} border ${bg(4)} p-3 text-[10px] text-[var(--foreground)] resize-none placeholder:text-[var(--muted-foreground)] focus:outline-none ${T}`}
             />
           </div>
-          <div className="flex items-center gap-2 rounded-xl bg-red-500/10 p-2.5">
-            <AlertTriangle size={12} className="text-red-400" />
-            <p className="text-[8px] text-red-400">سيتم إرجاع المبلغ كاملاً وتسجيل العملية. هذا الإجراء لا يمكن التراجع عنه.</p>
+
+          {/* Refund Amount Summary */}
+          <div className={`flex items-center justify-between rounded-xl ${bg(3)} p-3`}>
+            <span className="text-[9px] text-[var(--muted-foreground)]">المبلغ المسترد</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[15px] font-black text-red-400" style={TN}>{fmt(refundAmount)} <span className="text-[9px]">ر.س</span></span>
+              {refundMode === 'partial' && (
+                <span className="text-[8px] text-[var(--muted-foreground)]">(من أصل {fmt(invoiceTotal)})</span>
+              )}
+            </div>
           </div>
+
+          {/* Partial summary */}
+          {refundMode === 'partial' && selectedItems.size > 0 && (
+            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 p-2">
+              <AlertTriangle size={10} className="text-amber-400" />
+              <span className="text-[8px] text-amber-400">سيتم إرجاع {selectedItems.size} من {items.length} خدمات بمبلغ {fmt(refundAmount)} ر.س — الفاتورة تبقى مدفوعة</span>
+            </div>
+          )}
+
+          {/* Full refund warning */}
+          {refundMode === 'full' && (
+            <div className="flex items-center gap-2 rounded-xl bg-red-500/10 p-2.5">
+              <AlertTriangle size={12} className="text-red-400" />
+              <p className="text-[8px] text-red-400">سيتم إرجاع المبلغ كاملاً وتسجيل العملية. هذا الإجراء لا يمكن التراجع عنه.</p>
+            </div>
+          )}
+
           <button
             onClick={handleRefund}
-            disabled={!reason.trim() || refunding}
+            disabled={!canRefund || refunding}
             className={`${B} flex h-11 w-full items-center justify-center gap-2 rounded-2xl text-[10px] font-bold text-white shadow-lg disabled:opacity-20`}
-            style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}
+            style={{ background: refundMode === 'partial' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #ef4444, #dc2626)' }}
           >
-            {refunding ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <><RotateCcw size={12} /> تأكيد الإرجاع</>}
+            {refunding ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <><RotateCcw size={12} /> {refundMode === 'partial' ? `إرجاع ${selectedItems.size} خدمات` : 'تأكيد الإرجاع الكامل'}</>}
           </button>
         </>
       )}
@@ -621,10 +686,75 @@ function PinOverridePanel({ e }: { e: E }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
+   Notifications Panel
+   ════════════════════════════════════════════════════════════════ */
+
+import type { PosNotification } from '../usePosSocket';
+
+const NOTIF_STYLE: Record<string, { color: string; bg: string; Icon: typeof Bell }> = {
+  order:       { color: 'text-emerald-400', bg: 'bg-emerald-500/10', Icon: ShoppingCart },
+  appointment: { color: 'text-blue-400',    bg: 'bg-blue-500/10',    Icon: Calendar },
+  attendance:  { color: 'text-purple-400',  bg: 'bg-purple-500/10',  Icon: Users },
+  alert:       { color: 'text-red-400',     bg: 'bg-red-500/10',     Icon: AlertCircle },
+};
+
+function NotificationsPanel({ notifications, onDismiss, onClearAll }: {
+  notifications: PosNotification[];
+  onDismiss: (id: string) => void;
+  onClearAll: () => void;
+}) {
+  if (notifications.length === 0) {
+    return (
+      <div className="py-10 text-center">
+        <Bell size={28} className="mx-auto mb-3 text-[var(--muted-foreground)]" style={{ opacity: 0.15 }} />
+        <p className="text-[11px] font-bold text-[var(--foreground)]">لا توجد إشعارات</p>
+        <p className="text-[9px] text-[var(--muted-foreground)] mt-1">ستظهر هنا الإشعارات الحية</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] text-[var(--muted-foreground)]">{notifications.length} إشعار</span>
+        <button onClick={onClearAll} className={`${BS} text-[8px] font-bold text-red-400 hover:underline`}>مسح الكل</button>
+      </div>
+      {notifications.map(n => {
+        const style = NOTIF_STYLE[n.type] || NOTIF_STYLE.alert;
+        const { Icon } = style;
+        return (
+          <div key={n.id} className={`flex items-start gap-2.5 rounded-xl ${bg(2)} p-3 ${T}`}>
+            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${style.bg}`}>
+              <Icon size={14} className={style.color} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-bold ${style.color}`}>{n.title}</span>
+                <span className="text-[7px] text-[var(--muted-foreground)]" style={TN}>{n.time}</span>
+              </div>
+              <p className="text-[9px] text-[var(--muted-foreground)] mt-0.5 truncate">{n.body}</p>
+            </div>
+            <button onClick={() => onDismiss(n.id)} className={`${BS} shrink-0 mt-0.5 text-[var(--muted-foreground)] hover:text-red-400`}>
+              <X size={10} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
    Panels Renderer
    ════════════════════════════════════════════════════════════════ */
 
-export function PanelModals({ e, onShiftClosed }: { e: E; onShiftClosed?: (data: PosShiftData) => void }) {
+export function PanelModals({ e, onShiftClosed, notifications, onDismissNotif, onClearNotifs }: {
+  e: E;
+  onShiftClosed?: (data: PosShiftData) => void;
+  notifications?: PosNotification[];
+  onDismissNotif?: (id: string) => void;
+  onClearNotifs?: () => void;
+}) {
   return (
     <>
       <Modal open={e.panel === 'split'} onClose={() => e.setPanel(null)} title="دفع مقسّم" wide><SplitPanel e={e} /></Modal>
@@ -636,6 +766,9 @@ export function PanelModals({ e, onShiftClosed }: { e: E; onShiftClosed?: (data:
       <Modal open={e.panel === 'expense'} onClose={() => e.setPanel(null)} title="تسجيل مصروف سريع"><ExpensePanel e={e} /></Modal>
       <Modal open={e.panel === 'close-shift'} onClose={() => e.setPanel(null)} title="إغلاق الوردية"><CloseShiftPanel e={e} onShiftClosed={onShiftClosed ?? (() => {})} /></Modal>
       <Modal open={e.panel === 'pin-override'} onClose={() => e.setPanel(null)} title="تأكيد المديرة"><PinOverridePanel e={e} /></Modal>
+      <Modal open={e.panel === 'notifications'} onClose={() => e.setPanel(null)} title="الإشعارات">
+        <NotificationsPanel notifications={notifications ?? []} onDismiss={onDismissNotif ?? (() => {})} onClearAll={onClearNotifs ?? (() => {})} />
+      </Modal>
     </>
   );
 }

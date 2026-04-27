@@ -180,6 +180,7 @@ export class InvoicesController {
       req.tenantDb!,
       id,
       dto.reason,
+      dto.itemIds,
     );
     return {
       success: true,
