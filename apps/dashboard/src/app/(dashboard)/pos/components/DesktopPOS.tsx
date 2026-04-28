@@ -259,6 +259,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
         invoiceTotal={e.lastPaidTotal}
         publicToken={e.publicToken}
         tenantSlug={currentTenant?.slug || ''}
+        invoiceId={e.lastInvoiceId}
       />
     </div>
   );

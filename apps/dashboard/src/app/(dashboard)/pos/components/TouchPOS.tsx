@@ -299,6 +299,7 @@ export function TouchPOS({ e }: { e: E }) {
         invoiceTotal={e.lastPaidTotal}
         publicToken={e.publicToken}
         tenantSlug={currentTenant?.slug || ''}
+        invoiceId={e.lastInvoiceId}
       />
     </div>
   );

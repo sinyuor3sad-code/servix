@@ -89,6 +89,7 @@ export function usePOSEngine() {
   const [publicToken, setPublicToken] = useState<string | null>(null);
   const [showQRModal, setShowQRModal] = useState(false);
   const [lastPaidTotal, setLastPaidTotal] = useState(0);
+  const [lastInvoiceId, setLastInvoiceId] = useState<string | null>(null);
   const [selectedPayMethod, setSelectedPayMethod] = useState<string>('cash');
   const [couponCode, setCouponCode] = useState('');
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -480,8 +481,7 @@ export function usePOSEngine() {
       let paymentResult: Record<string, unknown> | undefined;
       if (method === 'split') { for (const e of splits) { if (e.amount > 0) paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: e.amount, method: (e.method === 'apple_pay' ? 'card' : e.method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>; } }
       else paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: total, method: (method === 'apple_pay' ? 'card' : method) as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>;
-      if (sendWA) { try { await dashboardService.sendInvoice(inv.id, 'whatsapp', accessToken!); } catch { /* ok */ } }
-      if (sendMail) { try { await dashboardService.sendInvoice(inv.id, 'email', accessToken!); } catch { /* ok */ } }
+      // WhatsApp/Email sending is now done from the success modal via user action
       return { ...inv, _paymentResult: paymentResult };
     },
     onSuccess: (inv) => {
@@ -492,6 +492,7 @@ export function usePOSEngine() {
       // Save total + method BEFORE clearing cart (so receipt/QR modal can display it)
       setLastPaidTotal(total);
       setLastPaidMethod(selectedPayMethod);
+      setLastInvoiceId(inv.id);
       // Update session performance counters
       setTodaySales(prev => prev + total);
       setTodayInvoices(prev => prev + 1);
@@ -552,7 +553,7 @@ export function usePOSEngine() {
     setItemEmp, setItemDisc, setItemNote,
     holdBill, recallBill, payMut, pay, paySplit, refMut,
     selfOrderId, setSelfOrderId,
-    publicToken, setPublicToken, showQRModal, setShowQRModal, lastPaidTotal,
+    publicToken, setPublicToken, showQRModal, setShowQRModal, lastPaidTotal, lastInvoiceId,
   };
 }
 

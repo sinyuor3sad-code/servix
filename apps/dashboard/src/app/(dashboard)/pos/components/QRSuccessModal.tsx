@@ -1,7 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { CheckCircle2, X, QrCode } from 'lucide-react';
+import { CheckCircle2, X, QrCode, MessageCircle, Mail, Loader2, Check } from 'lucide-react';
+import { dashboardService } from '@/services/dashboard.service';
+import { useAuth } from '@/hooks/useAuth';
 import {
   B, T, TN,
   G1, brd, bg,
@@ -15,7 +18,10 @@ interface QRSuccessModalProps {
   invoiceTotal: number;
   publicToken: string | null;
   tenantSlug: string;
+  invoiceId: string | null;
 }
+
+type SendStatus = 'idle' | 'sending' | 'sent' | 'error';
 
 export function QRSuccessModal({
   isOpen,
@@ -23,19 +29,43 @@ export function QRSuccessModal({
   invoiceTotal,
   publicToken,
   tenantSlug,
+  invoiceId,
 }: QRSuccessModalProps) {
+  const { accessToken } = useAuth();
+  const [waStat, setWaStat] = useState<SendStatus>('idle');
+  const [mailStat, setMailStat] = useState<SendStatus>('idle');
+
   if (!isOpen) return null;
 
   const invoiceUrl = publicToken
     ? `https://booking.servi-x.com/${tenantSlug}/invoice/${publicToken}`
     : null;
 
+  const handleSend = async (channel: 'whatsapp' | 'email') => {
+    if (!invoiceId || !accessToken) return;
+    const setter = channel === 'whatsapp' ? setWaStat : setMailStat;
+    setter('sending');
+    try {
+      await dashboardService.sendInvoice(invoiceId, channel, accessToken);
+      setter('sent');
+    } catch {
+      setter('error');
+      setTimeout(() => setter('idle'), 3000);
+    }
+  };
+
+  const handleClose = () => {
+    setWaStat('idle');
+    setMailStat('idle');
+    onClose();
+  };
+
   return (
     <>
       {/* Backdrop */}
       <div
         className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm animate-fade-in"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
       {/* Modal */}
@@ -47,7 +77,7 @@ export function QRSuccessModal({
           {/* Close button */}
           <div className="flex justify-end p-3 pb-0">
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className={`${B} flex h-8 w-8 items-center justify-center rounded-xl ${bg(3)} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}
             >
               <X size={14} />
@@ -93,7 +123,7 @@ export function QRSuccessModal({
                 >
                   <QRCodeSVG
                     value={invoiceUrl}
-                    size={220}
+                    size={180}
                     level="M"
                     bgColor="transparent"
                     fgColor="var(--foreground)"
@@ -112,9 +142,58 @@ export function QRSuccessModal({
               </div>
             )}
 
+            {/* ─── Send Buttons ─── */}
+            {invoiceId && (
+              <div className="flex gap-3">
+                {/* WhatsApp Button */}
+                <button
+                  onClick={() => handleSend('whatsapp')}
+                  disabled={waStat === 'sending' || waStat === 'sent'}
+                  className={`${B} flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 ${
+                    waStat === 'sent'
+                      ? 'bg-emerald-500 text-white'
+                      : waStat === 'error'
+                      ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                      : 'bg-[#25D366]/10 text-[#25D366] border border-[#25D366]/20 hover:bg-[#25D366]/20'
+                  }`}
+                >
+                  {waStat === 'sending' ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : waStat === 'sent' ? (
+                    <Check size={16} />
+                  ) : (
+                    <MessageCircle size={16} />
+                  )}
+                  {waStat === 'sent' ? 'تم ✓' : waStat === 'error' ? 'فشل!' : waStat === 'sending' ? 'جاري...' : 'واتساب'}
+                </button>
+
+                {/* Email Button */}
+                <button
+                  onClick={() => handleSend('email')}
+                  disabled={mailStat === 'sending' || mailStat === 'sent'}
+                  className={`${B} flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 ${
+                    mailStat === 'sent'
+                      ? 'bg-emerald-500 text-white'
+                      : mailStat === 'error'
+                      ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                      : `${bg(3)} text-[var(--foreground)] border ${brd(4)} hover:${bg(4)}`
+                  }`}
+                >
+                  {mailStat === 'sending' ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : mailStat === 'sent' ? (
+                    <Check size={16} />
+                  ) : (
+                    <Mail size={16} />
+                  )}
+                  {mailStat === 'sent' ? 'تم ✓' : mailStat === 'error' ? 'فشل!' : mailStat === 'sending' ? 'جاري...' : 'إيميل'}
+                </button>
+              </div>
+            )}
+
             {/* Close button */}
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className={`${B} w-full rounded-2xl py-3.5 text-sm font-bold text-black shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]`}
               style={accentBg}
             >
