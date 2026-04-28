@@ -45,12 +45,14 @@ export class RateLimitGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
 
-    // Skip rate limiting for health checks
+    // Skip rate limiting for health checks, auth refresh, and webhook paths
     const url = request.url as string;
     if (
       url.startsWith('/api/v1/health') ||
       url.startsWith('/health') ||
-      url.startsWith('/api/webhooks/evolution')
+      url.startsWith('/api/webhooks/evolution') ||
+      url.startsWith('/api/v1/auth/refresh') ||
+      url.startsWith('/api/v1/auth/me')
     ) {
       return true;
     }
@@ -62,7 +64,7 @@ export class RateLimitGuard implements CanActivate {
       handler,
     );
 
-    const limit = customLimit?.limit ?? await this.platformSettings.getNumber('rate_limit_rpm', 100);
+    const limit = customLimit?.limit ?? await this.platformSettings.getNumber('rate_limit_rpm', 300);
     const windowSeconds = customLimit?.windowSeconds ?? 60;
 
     // Extract IP from request
