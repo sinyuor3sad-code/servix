@@ -1,6 +1,30 @@
-# خطة تنفيذ: الاستقبال الذكي (AI Reception)
+# خطة تنفيذ: الاستقبال الذكي (AI Reception) — V1
 
-> نسخة: v1.0 • التاريخ: 2026-04-22 • للمطور التالي
+---
+
+> [!CAUTION]
+> ## ⛔ هذه الخطة مُستبدَلة — SUPERSEDED BY V2
+>
+> **تاريخ الأرشفة:** 2026-04-28
+>
+> هذه الخطة تصف **V1 القديم** الذي كان يعتمد على n8n + Gemini.
+> **V1 أُلغي بالكامل واستُبدل بـ V2.**
+>
+> | V1 (هذا الملف — ملغي) | V2 (المُنفذ الآن) |
+> |------------------------|-----------------|
+> | n8n webhook كـ AI bridge | AIProviderService مباشر |
+> | Gemini كـ AI أساسي | GPT-5-nano/mini (Gemini = fallback فقط) |
+> | n8n.client.ts | مُعطَّل — "لا تعيد ربطه" (CLAUDE.md) |
+> | لا ذاكرة عميل | ai-client-memory.service.ts (90 يوم) |
+> | لا semantic cache | ai-semantic-cache.service.ts (Jaccard) |
+> | لا rich media | whatsapp-rich-media.service.ts |
+> | لا voice support | Whisper عبر Groq |
+>
+> **المرجع الصحيح:** `docs/features/AI_RECEPTION_V2_PLAN.md` — جميع مراحله مكتملة ✅
+
+---
+
+> نسخة: v1.0 • التاريخ: 2026-04-22 • **مؤرشف — للرجوع التاريخي فقط**
 
 ---
 

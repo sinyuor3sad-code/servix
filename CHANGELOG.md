@@ -7,22 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added — WhatsApp AI Bot & Smart Consultant
-- **WhatsApp AI Bot** — Gemini-powered chatbot for customer booking, inquiries, and service info
-- **Voice Message Support** — Automatic transcription of WhatsApp voice notes via Gemini multimodal
-- **Image Understanding** — AI analyzes customer-sent photos in salon context
-- **Calendar Integration** — Auto-generated Google Calendar links with dual VALARM reminders (1hr + 24hr)
-- **AI Business Consultant** — In-dashboard AI advisor for salon managers (revenue analysis, employee performance, marketing ideas)
-- **Speech-to-Text Dashboard** — Voice input via Web Speech API (ar-SA) for consultant chat
-- **Text-to-Speech Dashboard** — AI responses can be read aloud via SpeechSynthesis API
-- **PDPL Compliance** — Client names/phones anonymized before sending to Gemini AI
-- **WhatsApp Settings Page** — Bot toggle, webhook config, test connection, 7-step setup guide
-- **Nginx Webhook Route** — Dedicated reverse proxy route for Meta callbacks (no auth, 20MB body)
+> [!NOTE]
+> **تحديث 2026-04-28:** هذا القسم يصف التطورات بعد الإصدار 1.1.0 (11 أبريل 2026)
+
+### Added — AI Reception V2 (أبريل 2026)
+- **AI Reception V2 (22 ملف، ~170KB)** — تطور جذري من V1 (n8n+Gemini) إلى معمارية V2 المباشرة
+- **GPT-5-nano** — النموذج الأساسي (80% من المحادثات، تكلفة ~$0.05/M token)
+- **GPT-5-mini** — للمحادثات المعقدة (شكاوى، تردد، باقة Premium)
+- **Gemini Flash** — fallback فقط عند انقطاع OpenAI (وليس أساسياً)
+- **Whisper عبر Groq** — تحويل الرسائل الصوتية (مجاني)
+- **AI Smart Router** — 70% من الرسائل تُعالج بدون AI (opt-out, vacation, DB answers, buttons)
+- **AI Safety Net** — 6 فلاتر (أسعار، تأكيد وهمي، هوية AI، كلمات محظورة، طول، إيموجي)
+- **Client Memory** — ذاكرة العميل في Redis بـ TTL 90 يوم
+- **Semantic Cache** — كاش الأسئلة المتكررة بـ Jaccard similarity (24 ساعة)
+- **WhatsApp Rich Media** — أزرار + قوائم + صور + موقع عبر Evolution API
+- **Voice Support** — تنزيل + تحويل الرسائل الصوتية عبر Whisper/Groq
+- **Manager Approval Flow** — موافقة/رفض المديرة على الإجراءات عبر WhatsApp
+- **AI Analytics** — تقرير أسبوعي تلقائي (Cron الأحد 9 صباحاً)
+- **Proactive Messages** — متابعة الحجوزات المعلقة + إعادة تفاعل العملاء الغائبين
+- **AI Settings Page** — 4 أوضاع تشغيل + نبرة + باقات + إحصائيات في Dashboard
+
+### Added — POS V2 Enhancements (أبريل 2026)
+- **WebSocket Notifications** — إشعارات فورية للكاشير (طلبات جديدة، مواعيد)
+- **Partial Refunds DTO** — بنية البيانات للإرجاع الجزئي (Frontend قيد التنفيذ)
+
+### Added — WhatsApp Evolution (أبريل 2026)
+- **WhatsApp Evolution Integration** — استبدل n8n كلياً بتكامل NestJS مباشر
+- **Anti-Ban Protection** — Circuit Breaker + rate limiting + opt-out management
 
 ### Security
 - Webhook verify token loaded from environment variable (not hardcoded)
 - WhatsApp tokens stored per-tenant in isolated databases
-- Gemini API key server-side only (never exposed to frontend)
+- OpenAI/Gemini API keys server-side only (never exposed to frontend)
 - Client PII stripped from all AI requests (PDPL compliance)
 - Salon data cached in Redis (15min TTL) to reduce DB load
 

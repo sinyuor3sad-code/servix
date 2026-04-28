@@ -3,6 +3,28 @@
 
 ---
 
+> [!WARNING]
+> ## ⚠️ وثيقة انتهت صلاحيتها جزئياً — آخر تحديث: 2026-04-28
+>
+> **حالة المراحل:**
+>
+> | المرحلة | الحالة | الملاحظة |
+> |---------|--------|---------|
+> | Phase 1 (أسابيع 1-4): البنية الأساسية | ✅ **مكتملة 100%** | Schema, Commitments, Shifts, Healing, ZATCA |
+> | Phase 2 (أسابيع 5-8): التكاملات | ✅ **مكتملة ~90%** | Inventory, DNA, Dynamic Pricing, WhatsApp ✅ |
+> | Phase 3 (أسابيع 9-12): التوسع | ⚠️ **~60% مكتمل** | Marketing ✅, Dashboard ✅, WIRE ❌, Usage Pricing ❌ |
+> | Phase 4 (أسابيع 13-16): الاستقلالية | ⚠️ **~40% مكتمل** | AI WhatsApp ✅ (أضخم من الخطة), Predictive ❌ |
+>
+> **ميزات كبيرة مُنفذة لا تذكرها هذه الخطة:**
+> - **AI Reception V2** (22 ملف، 170KB) — GPT-5 nano/mini + Client Memory + Semantic Cache + Rich Media
+> - **POS V2** (13 صفحة) — درج نقدي، تقارير وردية، WebSocket notifications
+> - **Smart Menu** — 5 ثيمات سينمائية (Luxe, Bloom, Glamour, Golden, Banan)
+> - **Debts, Feedback, Review Requests, Loyalty Visits** — modules مكتملة
+>
+> للوضع الكامل الحالي: راجع `ROADMAP.md`
+
+---
+
 ## الأولويات (مرتبة حسب التأثير والاعتماديات)
 
 ```

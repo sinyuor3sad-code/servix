@@ -35,6 +35,7 @@ export interface SendMediaArgs extends SendTextArgs {
   mediaType: 'image' | 'document' | 'audio' | 'video';
   filename?: string;
   caption?: string;
+  mimetype?: string;
 }
 
 @Injectable()
@@ -267,6 +268,7 @@ export class WhatsAppEvolutionService implements OnModuleInit {
     };
     if (args.filename) body.fileName = args.filename;
     if (args.caption) body.caption = args.caption;
+    if (args.mimetype) body.mimetype = args.mimetype;
     await this.sendMediaBreaker.fire(url, body, args.instanceToken);
     this.logger.log(`Evolution media sent via ${args.instanceName} → ${args.to}`);
   }

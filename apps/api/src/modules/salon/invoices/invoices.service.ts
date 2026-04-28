@@ -9,6 +9,8 @@ import { TenantPrismaClient } from '../../../shared/types';
 import { PdfService } from '../../../shared/pdf/pdf.service';
 import { MailService } from '../../../shared/mail/mail.service';
 import { WhatsAppService } from '../../../shared/whatsapp/whatsapp.service';
+import { WhatsAppEvolutionService } from '../whatsapp-evolution/whatsapp-evolution.service';
+import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { SmsService } from '../../../shared/sms/sms.service';
 import { SettingsService } from '../settings/settings.service';
 import { AuditService } from '../../../core/audit/audit.service';
@@ -41,6 +43,8 @@ export class InvoicesService {
     private readonly eventsGateway: EventsGateway,
     private readonly reviewRequests: ReviewRequestsService,
     private readonly salonZatcaService: SalonZatcaService,
+    private readonly evolutionService: WhatsAppEvolutionService,
+    private readonly platformPrisma: PlatformPrismaClient,
   ) {}
 
   async findAll(
@@ -743,28 +747,47 @@ export class InvoicesService {
 
     switch (channel) {
       case InvoiceSendChannel.whatsapp: {
-        const settings = tenantId ? await this.settingsService.getAll(db, tenantId) : {};
+        // ── Unified: send via Evolution API (Baileys) ──
+        if (!tenantId) {
+          throw new BadRequestException('لا يمكن تحديد الصالون لإرسال واتساب');
+        }
+
+        // Check settings
+        const settings = await this.settingsService.getAll(db, tenantId);
         if (settings[SETTINGS_KEYS.whatsapp_enabled] !== 'true') {
           throw new BadRequestException('إرسال واتساب غير مفعّل في إعدادات الصالون');
         }
         if (settings[SETTINGS_KEYS.whatsapp_invoice_send] !== 'true') {
           throw new BadRequestException('إرسال الفواتير عبر واتساب غير مفعّل');
         }
-        const waCredentials = settings[SETTINGS_KEYS.whatsapp_token] && settings[SETTINGS_KEYS.whatsapp_phone_number_id]
-          ? { token: settings[SETTINGS_KEYS.whatsapp_token], phoneNumberId: settings[SETTINGS_KEYS.whatsapp_phone_number_id] }
-          : null;
-        if (!waCredentials) {
-          throw new BadRequestException('لم يتم ربط حساب واتساب للصالون. أضف التوكن ورقم الهاتف في الإعدادات');
+
+        // Look up the Evolution instance for this tenant
+        const waInstance = await this.platformPrisma.whatsAppInstance.findUnique({
+          where: { tenantId },
+        });
+        if (!waInstance || waInstance.status !== 'connected') {
+          throw new BadRequestException(
+            'واتساب غير متصل. افتح إعدادات واتساب وأعد المسح بالـ QR',
+          );
         }
-        await this.whatsAppService.sendDocument(
-          {
-            to: whatsappPhone,
-            document: pdfBuffer,
-            filename,
-            caption: `فاتورة ${invoice.invoiceNumber} من ${tenantBranding.nameAr}\nالإجمالي: ${Number(invoice.total).toFixed(2)} ر.س`,
-          },
-          waCredentials,
-        );
+
+        // Convert PDF buffer → base64 (strip prefix)
+        const base64Pdf = pdfBuffer.toString('base64');
+
+        // Send document via Evolution sendMedia
+        await this.evolutionService.sendMedia({
+          instanceName: waInstance.instanceName,
+          instanceToken: waInstance.instanceToken,
+          to: whatsappPhone,
+          message: `فاتورة ${invoice.invoiceNumber} من ${tenantBranding.nameAr}\nالإجمالي: ${Number(invoice.total).toFixed(2)} ر.س`,
+          mediaUrl: base64Pdf,
+          mediaType: 'document',
+          mimetype: 'application/pdf',
+          filename,
+          caption: `فاتورة ${invoice.invoiceNumber} من ${tenantBranding.nameAr}\nالإجمالي: ${Number(invoice.total).toFixed(2)} ر.س`,
+        });
+
+        this.logger.log(`Invoice ${invoice.invoiceNumber} sent via Evolution WhatsApp to ${whatsappPhone}`);
         return { message: 'تم إرسال الفاتورة عبر واتساب بنجاح' };
       }
       case InvoiceSendChannel.email:

@@ -1,8 +1,8 @@
 # 📋 SERVIX — التقرير الموحد الشامل
 # Unified Status Report — فحص حقيقي مقابل الكود
 
-> **تاريخ الفحص:** 11 أبريل 2026
-> **المنهج:** فحص كل ملف في الكود ومقارنته بالتقارير (ROADMAP.md + MASTER_PLAN.md + IMPLEMENTATION_ROADMAP.md + CHANGELOG.md)
+> **تاريخ الفحص:** 11 أبريل 2026 | **آخر تحديث:** 28 أبريل 2026 (تصحيح 3 أخطاء واقعية)
+> **المنهج:** فحص كل ملف في الكود ومقارنته بالتقارير
 > **النتيجة:** هذا الملف يجمع كل التقارير في مكان واحد مع تصحيح المعلومات الخاطئة
 
 ---
@@ -13,9 +13,9 @@
 |---------|--------------|------------------------|
 | ملفات API (بدون tests) | **310 ملف** | 504 ملف (MASTER_PLAN — كان يشمل كل شي) |
 | سطور كود API | **~24,000 سطر** | 180,919 سطر (كان يشمل المشروع كاملاً) |
-| ملفات الاختبار Backend | **46 ملف spec** | 7 ملفات (MASTER_PLAN كان قديم — تمت إضافة الكثير!) ✅ |
-| ملفات الاختبار Frontend | **17 ملف test** | 0 (MASTER_PLAN كان قديم — تمت إضافة!) ✅ |
-| اختبارات E2E | **5 ملفات** | 0 (MASTER_PLAN قديم — تمت إضافة!) ✅ |
+| ملفات الاختبار Backend | **64 ملف spec** | كان 46 في 11 أبريل — زادت بعد AI Reception V2 ✅ |
+| ملفات الاختبار Frontend | **18 ملف test** | كان 17 — زاد ملف ✅ |
+| اختبارات E2E | **5 ملفات** | لم تتغير |
 | صفحات Dashboard | **~61 صفحة TSX** | 36 صفحة (تمت زيادتها كثيراً!) ✅ |
 | Modules في salon/ | **27 module** | — |
 | Modules في shared/ | **29 module** | — |
@@ -80,7 +80,10 @@
 | Reports module | ✅ مُنجز | `reports/` — 4 ملفات + اختبار |
 | Marketing/Campaigns | ✅ مُنجز | `marketing/` — 4 ملفات + اختبار |
 | Dashboard (7 صفحات تقارير) | ✅ مُنجز | revenue, appointments, clients, employees, expenses, services, profit |
-| تصدير PDF/Excel | ❌ **لم يُنجز** | لا يوجد export endpoint |
+| تصدير PDF/Excel | ✅ **مُنجز** | `report-export.service.ts` (9.3KB) + 11 API endpoint (revenue/employees/services/expenses/clients — PDF+CSV) |
+
+> [!NOTE]
+> **تصحيح 2026-04-28:** كان مكتوباً "لم يُنجز" — هذا خطأ. التصدير مُنفذ كاملاً.
 
 ---
 
@@ -144,17 +147,16 @@
 |--------|-------|---------|
 | **بوابة الدفع الإلكتروني (Moyasar/Tap)** | `payments/` فارغ — فقط spec mock | 🔴 عالية (تجارياً) |
 | **ZATCA ربط رسمي** | الكود جاهز لكن ما تم التسجيل في بوابة الزكاة | 🟡 متوسطة (حكومياً) |
-| **تصدير PDF/Excel للتقارير** | لا يوجد في الكود | 🟢 منخفضة |
 | **React Native App** | هيكل فقط `apps/mobile/` | 🟢 مستقبلي |
 
 ### ⚠️ مذكور في CHANGELOG لكن **مشكوك في اكتماله**
 | ادعاء الـ CHANGELOG | الحقيقة |
 |---------------------|--------|
-| "K3s Kubernetes cluster" | ملف `terraform.yml` موجود لكن **لا دليل على cluster حقيقي** — على الأغلب توثيق مستقبلي |
-| "Terraform infrastructure as code" | `terraform.yml` workflow موجود، لكن **لا ملفات Terraform (.tf) في المشروع** |
+| "K3s Kubernetes cluster" | ملف `terraform.yml` موجود + `tooling/k8s/` فيه 11 ملف — لكن لا دليل على cluster حقيقي في الإنتاج حالياً |
+| **~~"لا ملفات Terraform"~~** | **تصحيح 2026-04-28:** `tooling/terraform/` فيه 9 ملفات .tf كاملة (main, servers, dns, firewall, volumes, outputs, variables, README) ✅ |
 | "Blue-green deployment" | **لا دليل في الكود** — CI/CD يعمل rolling restart عادي |
-| "70% test coverage + CI gate" | 46 ملف spec + 17 frontend test + 5 E2E = **كثير أكثر من 7 ملفات**! لكن **لا نعرف النسبة الحقيقية بدون تشغيل jest --coverage** |
-| "6+ Grafana dashboards" | `metrics/` module موجود لكن **لا docker-compose للـ Grafana** |
+| "70% test coverage" | 64 spec backend + 18 frontend + 5 E2E = 87 ملف — لكن النسبة الحقيقية تحتاج `jest --coverage` |
+| **~~"لا Grafana dashboards"~~** | **تصحيح 2026-04-28:** `tooling/grafana/` فيه 5 dashboards + alertmanager + provisioning ✅ |
 | "Mutation testing (Stryker)" | **لا دليل في الكود** |
 | "Chaos testing (5 scenarios)" | **لا دليل في الكود** |
 | "Read replica for reports" | **لا دليل في الكود** |
@@ -241,11 +243,11 @@ components/    → announcement-bar, booking-hero, pwa-install, salon-footer, se
 الميزات الأساسية          [██████████] 100% ✅
 الحماية والاستقرار        [██████████] 100% ✅ (كل شي أُصلح)
 الميزات الجاهزة          [█████████░]  95% ✅ (ZATCA ينقصه تسجيل رسمي فقط)
-التكاملات الخارجية        [███████░░░]  70% 🟡 (واتساب ✅ SMS ✅ دفع ❌)
-التقارير والذكاء          [█████████░]  95% ✅ (تصدير PDF ينقص)
+التكاملات الخارجية        [████████░░]  85% 🟡 (واتساب ✅ SMS كود جاهز ⚠️ دفع ❌)
+التقارير والذكاء          [██████████] 100% ✅ (شامل PDF+CSV ✅)
 الجوال                    [██████████] 100% ✅ (PWA)
-DevOps                    [██████████] 100% ✅
-الميزات الإضافية          [██████████] 100% ✅ (Smart Menu, Self-Orders, Healing, etc.)
+DevOps                    [██████████] 100% ✅ (Prometheus+Grafana جاهزان ✅)
+الميزات الإضافية          [██████████] 100% ✅ (AI Reception V2 + POS V2 + Smart Menu + Debts + Feedback)
 ```
 
 **التقييم الحقيقي: ~90% مُنجز** — أعلى بكثير من تقييم MASTER_PLAN (6.2/10) لأن كثير من المشاكل أُصلحت بعده.
@@ -261,11 +263,10 @@ DevOps                    [██████████] 100% ✅
 
 ### 2. 🟡 قريب (الأسبوعين الجايين)
 - [ ] **بوابة الدفع (Moyasar)** — أهم ميزة تجارية ناقصة
-- [ ] **تصحيح CHANGELOG.md** — حذف الادعاءات غير المثبتة
-- [ ] **تحديث SERVIX_PROJECT_PROMPT.md** — عكس الحالة الحالية
+- [ ] **Partial Refunds Frontend** — الـ DTO جاهز، تحتاج صفحة واجهة
+- [ ] **ZATCA credentials** — الكود جاهز، يحتاج تسجيل رسمي في هيئة الزكاة
+- [ ] **SMS credentials** — الكود جاهز، يحتاج UNIFONIC_API_KEY
 
 ### 3. 🟢 مستقبلي
-- [ ] **ZATCA تسجيل رسمي** — يحتاج إجراء حكومي
-- [ ] **تصدير التقارير PDF/Excel**
-- [ ] **Prometheus + Grafana dashboards فعلية**
 - [ ] **React Native App** (عند 50+ صالون)
+- [ ] **تغطية اختبارات** — تشغيل `jest --coverage` لمعرفة النسبة الحقيقية
