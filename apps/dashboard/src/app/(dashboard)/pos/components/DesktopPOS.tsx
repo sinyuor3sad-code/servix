@@ -22,7 +22,6 @@ import {
   accentBg, accentColor, accentMix, primaryBg,
   fmt, PAY,
 } from '../pos-constants';
-import { ClientSection } from './ClientSection';
 import { EmployeePicker } from './EmployeePicker';
 import { CategoryBar } from './CategoryBar';
 import { ServiceGrid } from './ServiceGrid';
@@ -97,9 +96,8 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
 
       {/* 3-COLUMN BODY */}
       <div className="flex flex-1 min-h-0">
-        {/* COL 1: CLIENT */}
+        {/* COL 1: EMPLOYEES + COMMISSIONS */}
         <aside className={`hidden w-[270px] shrink-0 flex-col ${brd(4)} border-e lg:flex ${G1}`}>
-          <ClientSection e={e} />
           <EmployeePicker e={e} />
           {e.comms.length > 0 && (
             <div className={`shrink-0 ${brd(4)} border-b p-3 space-y-1.5`}>
