@@ -1,15 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
-import { CheckCircle2, X, QrCode, MessageCircle, Mail, Loader2, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { CheckCircle2, X, Phone, MessageCircle, Mail, Loader2, Check } from 'lucide-react';
 import { dashboardService } from '@/services/dashboard.service';
 import { useAuth } from '@/hooks/useAuth';
 import {
   B, T, TN,
   G1, brd, bg,
-  accentBg, accentColor, primaryBg,
-  fmt,
+  accentBg, accentColor,
+  fmt, INP,
 } from '../pos-constants';
 
 interface QRSuccessModalProps {
@@ -19,6 +18,7 @@ interface QRSuccessModalProps {
   publicToken: string | null;
   tenantSlug: string;
   invoiceId: string | null;
+  clientPhone?: string | null;
 }
 
 type SendStatus = 'idle' | 'sending' | 'sent' | 'error';
@@ -30,19 +30,25 @@ export function QRSuccessModal({
   publicToken,
   tenantSlug,
   invoiceId,
+  clientPhone,
 }: QRSuccessModalProps) {
   const { accessToken } = useAuth();
   const [waStat, setWaStat] = useState<SendStatus>('idle');
   const [mailStat, setMailStat] = useState<SendStatus>('idle');
+  const [phone, setPhone] = useState('');
+
+  // Pre-fill phone from client data when modal opens
+  useEffect(() => {
+    if (isOpen && clientPhone) {
+      setPhone(clientPhone);
+    }
+  }, [isOpen, clientPhone]);
 
   if (!isOpen) return null;
 
-  const invoiceUrl = publicToken
-    ? `https://booking.servi-x.com/${tenantSlug}/invoice/${publicToken}`
-    : null;
-
   const handleSend = async (channel: 'whatsapp' | 'email') => {
     if (!invoiceId || !accessToken) return;
+    if (channel === 'whatsapp' && !phone.trim()) return;
     const setter = channel === 'whatsapp' ? setWaStat : setMailStat;
     setter('sending');
     try {
@@ -57,8 +63,11 @@ export function QRSuccessModal({
   const handleClose = () => {
     setWaStat('idle');
     setMailStat('idle');
+    setPhone('');
     onClose();
   };
+
+  const isPhoneValid = /^(05|5|966|\+966)\d{8,9}$/.test(phone.replace(/\s/g, ''));
 
   return (
     <>
@@ -104,9 +113,7 @@ export function QRSuccessModal({
             </div>
 
             {/* Total amount */}
-            <div
-              className={`rounded-2xl ${bg(2)} py-4`}
-            >
+            <div className={`rounded-2xl ${bg(2)} py-4`}>
               <span
                 className="text-3xl font-black"
                 style={{ ...TN, ...accentColor }}
@@ -116,33 +123,25 @@ export function QRSuccessModal({
               </span>
             </div>
 
-            {/* QR Code */}
-            {invoiceUrl ? (
-              <div className="space-y-3">
-                <div
-                  className={`mx-auto flex items-center justify-center rounded-2xl ${bg(2)} p-5`}
-                  style={{ width: 'fit-content' }}
-                >
-                  <QRCodeSVG
-                    value={invoiceUrl}
-                    size={180}
-                    level="M"
-                    bgColor="transparent"
-                    fgColor="var(--foreground)"
-                    includeMargin={false}
-                  />
-                </div>
-                <div className="flex items-center justify-center gap-1.5 text-xs text-[var(--muted-foreground)]">
-                  <QrCode size={12} />
-                  <span>امسحي الكود لعرض فاتورتك</span>
-                </div>
-              </div>
-            ) : (
-              <div className={`rounded-2xl ${bg(2)} py-8 text-center`}>
-                <QrCode size={32} className="mx-auto mb-2 text-[var(--muted-foreground)]" style={{ opacity: 0.2 }} />
-                <p className="text-xs text-[var(--muted-foreground)]" style={{ opacity: 0.5 }}>QR غير متوفر</p>
-              </div>
-            )}
+            {/* Phone Number Input */}
+            <div className="space-y-2 text-start">
+              <label className="block text-xs font-bold text-[var(--muted-foreground)]">
+                <Phone size={12} className="inline me-1.5 opacity-60" />
+                رقم جوال العميل
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(ev) => setPhone(ev.target.value)}
+                placeholder="05XXXXXXXX"
+                dir="ltr"
+                className={`${INP} py-3 px-4 text-[15px] font-bold text-center tracking-wider`}
+                style={TN}
+              />
+              {phone && !isPhoneValid && (
+                <p className="text-[10px] text-red-400 text-center">أدخل رقم جوال صحيح</p>
+              )}
+            </div>
 
             {/* ─── Send Buttons ─── */}
             {invoiceId && (
@@ -150,8 +149,8 @@ export function QRSuccessModal({
                 {/* WhatsApp Button */}
                 <button
                   onClick={() => handleSend('whatsapp')}
-                  disabled={waStat === 'sending' || waStat === 'sent'}
-                  className={`${B} flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 ${
+                  disabled={waStat === 'sending' || waStat === 'sent' || !isPhoneValid}
+                  className={`${B} flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 ${
                     waStat === 'sent'
                       ? 'bg-emerald-500 text-white'
                       : waStat === 'error'
@@ -204,7 +203,6 @@ export function QRSuccessModal({
           </div>
         </div>
       </div>
-
     </>
   );
 }

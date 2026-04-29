@@ -314,6 +314,7 @@ export function TouchPOS({ e }: { e: E }) {
         publicToken={e.publicToken}
         tenantSlug={currentTenant?.slug || ''}
         invoiceId={e.lastInvoiceId}
+        clientPhone={e.client?.phone}
       />
     </div>
   );
