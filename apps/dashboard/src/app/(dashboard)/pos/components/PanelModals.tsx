@@ -37,8 +37,14 @@ function SplitPanel({ e }: { e: E }) {
         </div>
       ))}
       <button onClick={() => e.setSplits(p => [...p, { method: 'card', amount: 0 }])} className={`${B} flex w-full items-center justify-center gap-1 rounded-xl border border-dashed ${brd(6)} py-2 text-[9px] text-[var(--muted-foreground)]`}><Plus size={10} /> إضافة</button>
-      <div className={`flex justify-between rounded-xl ${bg(3)} p-3`}><span className="text-[10px] text-[var(--muted-foreground)]">المتبقي</span><span className={`text-[13px] font-black ${e.splitRem > 0.01 ? 'text-red-400' : 'text-emerald-400'}`} style={TN}>{fmt(e.splitRem)}</span></div>
-      <button onClick={e.paySplit} disabled={e.splitRem > 0.01 || e.payMut.isPending} className={`${B} flex h-11 w-full items-center justify-center gap-2 rounded-2xl text-[11px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>{e.payMut.isPending ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Split size={13} /> تأكيد</>}</button>
+      {e.splits.some(entry => entry.method === 'cash') && (
+        <div className={`flex items-center gap-2 rounded-xl ${bg(3)} p-3`}>
+          <span className="text-[10px] text-[var(--muted-foreground)]">المستلم نقداً</span>
+          <input type="number" value={e.cashReceived} onChange={ev => e.setCashReceived(ev.target.value)} placeholder="0.00" dir="ltr" className={`min-w-0 flex-1 rounded-lg ${brd(5)} border ${bg(2)} px-2 py-1.5 text-center text-[11px] text-[var(--foreground)] focus:outline-none ${T}`} style={TN} />
+        </div>
+      )}
+      <div className={`flex justify-between rounded-xl ${bg(3)} p-3`}><span className="text-[10px] text-[var(--muted-foreground)]">{e.splitRem < -0.01 ? 'الزائد' : 'المتبقي'}</span><span className={`text-[13px] font-black ${Math.abs(e.splitRem) > 0.01 ? 'text-red-400' : 'text-emerald-400'}`} style={TN}>{fmt(Math.abs(e.splitRem))}</span></div>
+      <button onClick={e.paySplit} disabled={!e.splitPaymentReady || e.payMut.isPending} className={`${B} flex h-11 w-full items-center justify-center gap-2 rounded-2xl text-[11px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>{e.payMut.isPending ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Split size={13} /> تأكيد</>}</button>
     </div>
   );
 }
@@ -641,45 +647,27 @@ function CloseShiftPanel({ e, onShiftClosed }: { e: E; onShiftClosed: (data: Pos
 }
 
 /* ════════════════════════════════════════════════════════════════
-   PIN Override Panel (Manager Discount)
+   Manager Approval Panel (Manager Discount)
    ════════════════════════════════════════════════════════════════ */
 
 function PinOverridePanel({ e }: { e: E }) {
-  const [pin, setPin] = useState('');
-  const MANAGER_PIN = '1234'; // TODO: Move to settings
-
-  const handleVerify = () => {
-    if (pin === MANAGER_PIN) {
-      e.setPinOverrideApproved(true);
-      toast.success('تم التأكيد — الخصم مسموح');
-      e.setPanel(null);
-    } else {
-      toast.error('PIN غير صحيح');
-      setPin('');
-    }
+  const closePanel = () => {
+    e.setPinOverrideApproved(false);
+    e.setPanel(null);
   };
 
   return (
     <div className="space-y-4">
       <div className={`rounded-xl ${bg(3)} p-4 text-center`}>
         <ShieldAlert size={28} className="mx-auto mb-2 text-amber-400" style={{ opacity: 0.7 }} />
-        <p className="text-[12px] font-bold text-[var(--foreground)]">تأكيد المديرة</p>
-        <p className="text-[10px] text-[var(--muted-foreground)] mt-1">الخصم يتجاوز الحد — أدخلي PIN المديرة</p>
+        <p className="text-[12px] font-bold text-[var(--foreground)]">اعتماد المدير غير مفعل</p>
+        <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">
+          الخصم المالي لا يمكن تجاوزه من هذا الجهاز.
+        </p>
       </div>
-      <input
-        type="password"
-        maxLength={4}
-        value={pin}
-        onChange={ev => setPin(ev.target.value.replace(/\D/g, ''))}
-        placeholder="● ● ● ●"
-        dir="ltr"
-        className={`${INP} py-4 px-3 text-[24px] font-black text-center tracking-[0.5em]`}
-        style={TN}
-        onKeyDown={ev => { if (ev.key === 'Enter') handleVerify(); }}
-        autoFocus
-      />
-      <button onClick={handleVerify} disabled={pin.length < 4} className={`${B} flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl text-[10px] font-bold text-black disabled:opacity-30`} style={accentBg}>
-        <Check size={12} /> تأكيد
+      {/* TODO/RISK Phase 2: replace this disabled local approval path with server-side manager approval + audit log. */}
+      <button onClick={closePanel} className={`${B} flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl text-[10px] font-bold text-black`} style={accentBg}>
+        <AlertTriangle size={12} /> إغلاق
       </button>
     </div>
   );

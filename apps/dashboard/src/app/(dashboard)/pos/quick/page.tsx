@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Search, Minus, Plus, Trash2, Banknote, CreditCard, Building2,
   ShoppingCart, UserPlus, Smartphone, Receipt,
-  Printer, MessageCircle, Crown, Clock, Scissors, Sparkles,
+  Printer, Crown, Clock, Scissors, Sparkles,
   X, User, Phone, Star, Zap,
   Pause, Play, RotateCcw, Heart, StickyNote,
   Split, Users, AlertTriangle,
@@ -16,8 +16,24 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { dashboardService } from '@/services/dashboard.service';
+import type { PosReceiptSnapshot } from '@/services/dashboard.service';
 import { api } from '@/lib/api';
 import type { Service, ServiceCategory, Client, Employee, PaginatedResponse } from '@/types';
+import { evaluateQuickPOSPaymentGuard } from './payment-guard';
+import {
+  buildPOSCheckoutPayload,
+  buildPOSCheckoutPayments,
+  appendCheckoutDiagnostic,
+  buildCheckoutDiagnostic,
+  checkoutTotalsMismatch,
+  checkoutFingerprint,
+  createPOSCheckoutIdempotencyKey,
+  isAtomicPOSCheckoutEnabled,
+  logCheckoutDiagnostic,
+  normalizeServerReceiptSnapshot,
+  type CheckoutDiagnostic,
+} from '../pos-engine';
+import type { PosShiftData } from '../pos-types';
 
 /* ═══════════════════════════════════════════════════════════════════════
    TYPES
@@ -221,7 +237,6 @@ export default function QuickPOSPage(): React.ReactElement {
   const [walkName, setWalkName] = useState('');
   const [walkPhone, setWalkPhone] = useState('');
   const [walkInMode, setWalkInMode] = useState(false);
-  const [sendWA, setSendWA] = useState(true);
   const [panel, setPanel] = useState<PanelType>(null);
   const [held, setHeld] = useState<HeldBill[]>([]);
   const [splits, setSplits] = useState<SplitEntry[]>([]);
@@ -234,6 +249,28 @@ export default function QuickPOSPage(): React.ReactElement {
   const [receiptMsg, setReceiptMsg] = useState('شكراً لزيارتكم');
   const [receiptPhone, setReceiptPhone] = useState('+966501234567');
   const [showCart, setShowCart] = useState(false);
+  const [cashReceived, setCashReceived] = useState('');
+  const [lastPaidSnapshot, setLastPaidSnapshot] = useState<ReturnType<typeof normalizeServerReceiptSnapshot> | null>(null);
+  const [lastCheckoutDiagnostic, setLastCheckoutDiagnostic] = useState<CheckoutDiagnostic | null>(null);
+  const [checkoutDiagnostics, setCheckoutDiagnostics] = useState<CheckoutDiagnostic[]>([]);
+  const [terminalId] = useState(() => {
+    const key = 'pos_terminal_id';
+    let id = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+    if (!id) {
+      id = `T-${Date.now().toString(36)}`;
+      if (typeof window !== 'undefined') localStorage.setItem(key, id);
+    }
+    return id;
+  });
+  const checkoutAttemptRef = useRef<{ key: string; fingerprint: string } | null>(null);
+  const checkoutRequestMetaRef = useRef<{
+    startedAtMs: number;
+    idempotencyKey: string;
+    terminalId: string;
+    shiftId: string;
+    previewTotal: number;
+    paymentMethods: string[];
+  } | null>(null);
 
   /* ── Offline detection ── */
   useEffect(() => {
@@ -261,6 +298,13 @@ export default function QuickPOSPage(): React.ReactElement {
     queryFn: () => isDev(accessToken)
       ? Promise.resolve({ items: M_EMP, total: M_EMP.length, page: 1, limit: 50, totalPages: 1 } as PaginatedResponse<Employee>)
       : dashboardService.getEmployees({ limit: 50 }, accessToken!),
+  });
+  const { data: currentShift } = useQuery<PosShiftData | null>({
+    queryKey: ['pos-shift-current'],
+    queryFn: () => isDev(accessToken)
+      ? Promise.resolve({ id: 'dev-shift', status: 'open' } as PosShiftData)
+      : api.get<PosShiftData>('/pos-shifts/current', accessToken!),
+    enabled: !!accessToken,
   });
 
   const mockCliSearch = useMemo(() => {
@@ -319,6 +363,7 @@ export default function QuickPOSPage(): React.ReactElement {
   const clearAll = useCallback(() => {
     setCart([]); setClient(null); setWalkName(''); setWalkPhone('');
     setWalkInMode(false); setDiscInput(''); setTipInput(''); setCustNote('');
+    setCashReceived('');
   }, []);
 
   /* ── Calculations ── */
@@ -380,41 +425,281 @@ export default function QuickPOSPage(): React.ReactElement {
   }, [held, cart, holdBill]);
 
   /* ── Split ── */
-  const splitRem = useMemo(() => Math.max(0, total - splits.reduce((s, e) => s + (e.amount || 0), 0)), [splits, total]);
+  const splitTotal = useMemo(() => splits.reduce((s, e) => s + (e.amount || 0), 0), [splits]);
+  const splitRem = useMemo(() => total - splitTotal, [splitTotal, total]);
 
   /* ── Payment ── */
-  const canPay = cart.length > 0 && (client || (walkInMode && walkName.trim() && walkPhone.trim()));
+  const canPay = cart.length > 0;
+  const quickPaymentGuard = useCallback((method: string) => evaluateQuickPOSPaymentGuard({
+    canPay: Boolean(canPay),
+    total,
+    method,
+    cashReceived,
+    splits,
+  }), [canPay, total, cashReceived, splits]);
+  const cashPaymentGuard = useMemo(() => quickPaymentGuard('cash'), [quickPaymentGuard]);
+  const splitPaymentGuard = useMemo(() => quickPaymentGuard('split'), [quickPaymentGuard]);
+
+  const recordCheckoutDiagnostic = useCallback((diagnostic: CheckoutDiagnostic) => {
+    setLastCheckoutDiagnostic(diagnostic);
+    setCheckoutDiagnostics(prev => appendCheckoutDiagnostic(prev, diagnostic));
+    logCheckoutDiagnostic(diagnostic);
+  }, []);
+
+  const recordBlockedCheckout = useCallback((method: string, errorCode: string, errorMessage: string) => {
+    recordCheckoutDiagnostic(buildCheckoutDiagnostic({
+      source: 'quick-pos',
+      status: 'blocked',
+      terminalId,
+      shiftId: currentShift?.id,
+      previewTotal: total,
+      paymentMethods: method === 'split'
+        ? splits.filter(entry => Number(entry.amount) > 0).map(entry => entry.method)
+        : [method],
+      errorCode,
+      errorMessage,
+    }));
+  }, [currentShift?.id, recordCheckoutDiagnostic, splits, terminalId, total]);
 
   const payMut = useMutation({
     mutationFn: async (method: string) => {
-      if (isDev(accessToken)) { await new Promise(r => setTimeout(r, 500)); return { id: 'Q-' + Date.now() }; }
-      let clientId = client?.id;
-      if (!clientId && walkInMode && walkName.trim() && walkPhone.trim()) {
-        const c = await dashboardService.createClient({ fullName: walkName.trim(), phone: walkPhone.trim(), source: 'walk_in' }, accessToken!);
-        clientId = c.id;
+      const startedAtMs = Date.now();
+      if (!isAtomicPOSCheckoutEnabled()) {
+        const message = 'Atomic POS checkout is disabled';
+        recordCheckoutDiagnostic(buildCheckoutDiagnostic({
+          source: 'quick-pos',
+          status: 'blocked',
+          startedAtMs,
+          terminalId,
+          shiftId: currentShift?.id,
+          previewTotal: total,
+          paymentMethods: method === 'split'
+            ? splits.filter(entry => Number(entry.amount) > 0).map(entry => entry.method)
+            : [method],
+          errorCode: 'atomic_checkout_disabled',
+          errorMessage: message,
+        }));
+        throw new Error(message);
       }
-      if (!clientId) throw new Error('العميل مطلوب');
-      const inv = await api.post<{ id: string }>('/invoices', {
-        clientId, notes: custNote || undefined,
-        items: cart.map(i => ({ serviceId: i.service.id, description: i.service.nameAr, quantity: i.quantity, unitPrice: i.service.price, employeeId: i.employeeId })),
-      }, accessToken!);
-      if (gDisc > 0) await dashboardService.addInvoiceDiscount(inv.id, { type: 'fixed', value: gDisc }, accessToken!);
-      let paymentResult: Record<string, unknown> | undefined;
-      if (method === 'split') {
-        for (const e of splits) { if (e.amount > 0) { const m = e.method === 'apple_pay' ? 'card' : e.method; paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: e.amount, method: m as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>; } }
-      } else {
-        const m = method === 'apple_pay' ? 'card' : method;
-        paymentResult = await dashboardService.recordInvoicePayment(inv.id, { amount: total, method: m as 'cash' | 'card' | 'bank_transfer' }, accessToken!) as Record<string, unknown>;
+
+      const guard = quickPaymentGuard(method);
+      if (!guard.ok) {
+        const message = guard.message || 'Cannot process payment';
+        recordCheckoutDiagnostic(buildCheckoutDiagnostic({
+          source: 'quick-pos',
+          status: 'blocked',
+          startedAtMs,
+          terminalId,
+          shiftId: currentShift?.id,
+          previewTotal: total,
+          paymentMethods: method === 'split'
+            ? splits.filter(entry => Number(entry.amount) > 0).map(entry => entry.method)
+            : [method],
+          errorCode: 'payment_guard_failed',
+          errorMessage: message,
+        }));
+        throw new Error(message);
       }
-      if (sendWA) { try { await dashboardService.sendInvoice(inv.id, 'whatsapp', accessToken!); } catch { /* ok */ } }
-      return { ...inv, _paymentResult: paymentResult };
+      const fallbackEmpId = emps[0]?.id;
+      if (!fallbackEmpId) {
+        const message = 'No active employee is available for checkout';
+        recordCheckoutDiagnostic(buildCheckoutDiagnostic({
+          source: 'quick-pos',
+          status: 'blocked',
+          startedAtMs,
+          terminalId,
+          shiftId: currentShift?.id,
+          previewTotal: total,
+          paymentMethods: [method],
+          errorCode: 'missing_employee',
+          errorMessage: message,
+        }));
+        throw new Error(message);
+      }
+      const shiftId = currentShift?.id;
+      if (!shiftId) {
+        const message = 'Open POS shift is required';
+        recordCheckoutDiagnostic(buildCheckoutDiagnostic({
+          source: 'quick-pos',
+          status: 'blocked',
+          startedAtMs,
+          terminalId,
+          previewTotal: total,
+          paymentMethods: [method],
+          errorCode: 'missing_shift',
+          errorMessage: message,
+        }));
+        throw new Error(message);
+      }
+
+      const payments = buildPOSCheckoutPayments({ method, total, splits, cashReceived });
+      const rawDiscountValue = Number.parseFloat(discInput);
+      const manualDiscount = gDisc > 0
+        ? {
+          type: discType,
+          value: discType === 'percentage' ? rawDiscountValue : gDisc,
+          reason: 'Quick POS manual discount',
+        }
+        : undefined;
+      const basePayload = buildPOSCheckoutPayload({
+        idempotencyKey: 'pending',
+        terminalId,
+        shiftId,
+        cart,
+        fallbackEmployeeId: fallbackEmpId,
+        client,
+        walkInMode,
+        walkName,
+        walkPhone,
+        manualDiscount,
+        payments,
+        notes: custNote,
+      });
+      const fingerprint = checkoutFingerprint(basePayload);
+      if (!checkoutAttemptRef.current || checkoutAttemptRef.current.fingerprint !== fingerprint) {
+        checkoutAttemptRef.current = {
+          key: createPOSCheckoutIdempotencyKey('qpos'),
+          fingerprint,
+        };
+      }
+      const payload = {
+        ...basePayload,
+        idempotencyKey: checkoutAttemptRef.current.key,
+      };
+      checkoutRequestMetaRef.current = {
+        startedAtMs,
+        idempotencyKey: payload.idempotencyKey,
+        terminalId,
+        shiftId,
+        previewTotal: total,
+        paymentMethods: payments.map(payment => payment.method),
+      };
+      setLastCheckoutDiagnostic(buildCheckoutDiagnostic({
+        source: 'quick-pos',
+        status: 'started',
+        ...checkoutRequestMetaRef.current,
+      }));
+
+      if (isDev(accessToken)) {
+        await new Promise(r => setTimeout(r, 500));
+        const receiptSnapshot: PosReceiptSnapshot = {
+          invoiceId: 'Q-' + Date.now(),
+          invoiceNumber: 'DEV',
+          publicToken: 'dev-token',
+          issuedAt: new Date().toISOString(),
+          terminalId,
+          shiftId,
+          client: { fullName: client?.fullName ?? (walkInMode ? walkName : undefined) },
+          items: cart.map((item) => {
+            const info = itemTotals.find((entry) => entry.id === item.id);
+            return {
+              serviceId: item.service.id,
+              description: item.service.nameAr,
+              employeeId: item.employeeId ?? fallbackEmpId,
+              employeeName: item.employeeName,
+              quantity: item.quantity,
+              total: info?.net ?? item.service.price * item.quantity,
+            };
+          }),
+          discounts: gDisc > 0 ? [{ kind: 'manual', amount: gDisc }] : [],
+          subtotal,
+          discountTotal: gDisc,
+          taxRatePercent: TAX * 100,
+          taxAmount: tax,
+          total,
+          payments,
+        };
+        return {
+          checkoutId: payload.idempotencyKey,
+          idempotencyKey: payload.idempotencyKey,
+          invoice: {
+            id: receiptSnapshot.invoiceId!,
+            invoiceNumber: 'DEV',
+            status: 'paid',
+            total,
+            publicToken: receiptSnapshot.publicToken,
+          },
+          receiptSnapshot,
+          nextActions: { canSendInvoice: true, canSubmitZatca: true },
+        };
+      }
+
+      return dashboardService.posCheckout(payload, accessToken!);
     },
-    onSuccess: (inv) => { clearAll(); setPanel(null); setShowCart(false); },
-    onError: (e: Error) => toast.error(e.message || 'خطأ'),
+    onSuccess: (checkout, method) => {
+      const receiptSnapshot = normalizeServerReceiptSnapshot(checkout.receiptSnapshot, method);
+      const diagnosticMeta = checkoutRequestMetaRef.current;
+      const diagnosticWarning = diagnosticMeta && checkoutTotalsMismatch(diagnosticMeta.previewTotal, receiptSnapshot.total)
+        ? 'preview_total_mismatch'
+        : undefined;
+      recordCheckoutDiagnostic(buildCheckoutDiagnostic({
+        source: 'quick-pos',
+        status: 'completed',
+        startedAtMs: diagnosticMeta?.startedAtMs,
+        idempotencyKey: diagnosticMeta?.idempotencyKey ?? checkout.idempotencyKey,
+        terminalId: diagnosticMeta?.terminalId ?? checkout.receiptSnapshot.terminalId,
+        shiftId: diagnosticMeta?.shiftId ?? checkout.receiptSnapshot.shiftId,
+        previewTotal: diagnosticMeta?.previewTotal,
+        serverTotal: receiptSnapshot.total,
+        paymentMethods: diagnosticMeta?.paymentMethods ?? (checkout.receiptSnapshot.payments ?? []).map(payment => String(payment.method ?? 'unknown')),
+        warning: diagnosticWarning,
+      }));
+      setLastPaidSnapshot(receiptSnapshot);
+      checkoutAttemptRef.current = null;
+      checkoutRequestMetaRef.current = null;
+      toast.success(`تم الدفع: ${fmt(receiptSnapshot.total)}`);
+      clearAll(); setPanel(null); setShowCart(false);
+    },
+    onError: (e: Error) => {
+      const diagnosticMeta = checkoutRequestMetaRef.current;
+      if (diagnosticMeta) {
+        recordCheckoutDiagnostic(buildCheckoutDiagnostic({
+          source: 'quick-pos',
+          status: 'failed',
+          startedAtMs: diagnosticMeta.startedAtMs,
+          idempotencyKey: diagnosticMeta.idempotencyKey,
+          terminalId: diagnosticMeta.terminalId,
+          shiftId: diagnosticMeta.shiftId,
+          previewTotal: diagnosticMeta.previewTotal,
+          paymentMethods: diagnosticMeta.paymentMethods,
+          errorCode: 'checkout_failed',
+          errorMessage: e.message || 'Checkout failed',
+        }));
+      }
+      toast.error(e.message || 'خطأ');
+    },
   });
 
-  function pay(m: string) { if (!canPay) { toast.error('أكمل بيانات العميل'); return; } payMut.mutate(m); }
-  function paySplit() { if (!canPay) { toast.error('أكمل بيانات العميل'); return; } if (splitRem > 0.01) { toast.error('المبلغ المتبقي غير صفر'); return; } payMut.mutate('split'); }
+  function pay(m: string) {
+    if (!isAtomicPOSCheckoutEnabled()) {
+      recordBlockedCheckout(m, 'atomic_checkout_disabled', 'Atomic POS checkout is disabled');
+      toast.error('Atomic POS checkout is disabled');
+      return;
+    }
+    const guard = quickPaymentGuard(m);
+    if (!guard.ok) {
+      const message = guard.message || 'لا يمكن تنفيذ الدفع';
+      recordBlockedCheckout(m, 'payment_guard_failed', message);
+      toast.error(message);
+      return;
+    }
+    payMut.mutate(m);
+  }
+  function paySplit() {
+    if (!isAtomicPOSCheckoutEnabled()) {
+      recordBlockedCheckout('split', 'atomic_checkout_disabled', 'Atomic POS checkout is disabled');
+      toast.error('Atomic POS checkout is disabled');
+      return;
+    }
+    const guard = quickPaymentGuard('split');
+    if (!guard.ok) {
+      const message = guard.message || 'لا يمكن تنفيذ الدفع المقسم';
+      recordBlockedCheckout('split', 'payment_guard_failed', message);
+      toast.error(message);
+      return;
+    }
+    payMut.mutate('split');
+  }
 
   const refMut = useMutation({
     mutationFn: async () => { if (isDev(accessToken)) { await new Promise(r => setTimeout(r, 400)); return; } await api.post(`/invoices/${refId}/refund`, { reason: refReason }, accessToken!); },
@@ -429,7 +714,13 @@ export default function QuickPOSPage(): React.ReactElement {
   const displayList = showFavs ? favSvcs : filtered;
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--background)]" dir="rtl">
+    <div
+      className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--background)]"
+      dir="rtl"
+      data-checkout-status={lastCheckoutDiagnostic?.status}
+      data-last-receipt-source={lastPaidSnapshot?.source}
+      data-checkout-diagnostics-count={checkoutDiagnostics.length}
+    >
 
       {/* ══════════ HEADER — large touch targets ══════════ */}
       <header className={`flex shrink-0 items-center justify-between px-4 py-2.5 ${G2} ${brd(4)} border-b`}>
@@ -542,7 +833,7 @@ export default function QuickPOSPage(): React.ReactElement {
                   const isFav = favIds.includes(svc.id);
                   return (
                     <div key={svc.id} className="relative group">
-                      <button onClick={() => addToCart(svc)}
+                      <button data-testid={`quick-pos-service-${svc.id}`} onClick={() => addToCart(svc)}
                         className={`${BS} flex w-full flex-col items-start gap-1.5 rounded-2xl border p-5 text-start min-h-[120px] ${qty > 0 ? `${brd(0)} shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--brand-primary)_25%,transparent)]` : `${brd(4)} ${bg(2)} hover:${brd(8)} hover:${bg(4)}`}`}
                         style={qty > 0 ? { background: 'color-mix(in srgb, var(--brand-primary) 5%, transparent)' } : undefined}>
                         {qty > 0 && <span className="absolute end-3 top-3 flex h-8 w-8 items-center justify-center rounded-xl text-[12px] font-black text-white" style={{ ...TN, ...primaryBg }}>{qty}</span>}
@@ -724,21 +1015,24 @@ export default function QuickPOSPage(): React.ReactElement {
                   <span className="text-[22px] font-black" style={{ ...TN, ...accentColor }}>{fmt(total)} <span className="text-[10px] font-semibold opacity-40">ر.س</span></span>
                 </div>
               </div>
-
-              {/* WhatsApp toggle */}
-              <label className={`flex items-center gap-2.5 rounded-xl px-3 py-2 cursor-pointer ${T} hover:${bg(3)}`}>
-                <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${sendWA ? 'border-transparent' : brd(10)}`} style={sendWA ? accentBg : undefined}>
-                  {sendWA && <Check size={11} className="text-black" />}
-                </div>
-                <input type="checkbox" checked={sendWA} onChange={e => setSendWA(e.target.checked)} className="sr-only" />
-                <MessageCircle size={14} className="text-emerald-400" />
-                <span className="text-[12px] text-[var(--muted-foreground)]">إرسال واتساب</span>
-              </label>
+              <div className={`rounded-xl ${bg(3)} p-3`}>
+                <label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">المستلم نقداً</label>
+                <input
+                  data-testid="quick-pos-cash-received"
+                  type="number"
+                  value={cashReceived}
+                  onChange={ev => setCashReceived(ev.target.value)}
+                  placeholder="0.00"
+                  dir="ltr"
+                  className={`w-full rounded-xl border ${brd(6)} ${bg(2)} px-3 py-2.5 text-center text-[16px] font-black text-[var(--foreground)] focus:outline-none ${T}`}
+                  style={TN}
+                />
+              </div>
 
               {/* Payment grid — BIG buttons */}
               <div className="grid grid-cols-4 gap-2">
                 {PAY_METHODS.map(pm => (
-                  <button key={pm.id} onClick={() => pay(pm.id)} disabled={payMut.isPending || !canPay}
+                  <button key={pm.id} data-testid={`quick-pos-payment-${pm.id}`} onClick={() => pay(pm.id)} disabled={payMut.isPending || !quickPaymentGuard(pm.id).ok}
                     className={`${BS} flex flex-col items-center gap-1.5 rounded-2xl border ${brd(4)} ${bg(2)} py-3.5 text-[var(--muted-foreground)] hover:${brd(8)} hover:text-[var(--foreground)] disabled:opacity-15 disabled:pointer-events-none`}>
                     <pm.icon size={20} strokeWidth={1.5} />
                     <span className="text-[10px] font-bold">{pm.label}</span>
@@ -747,15 +1041,15 @@ export default function QuickPOSPage(): React.ReactElement {
               </div>
 
               {/* Split pay */}
-              <button onClick={() => { setSplits([{ method: 'cash', amount: 0 }, { method: 'card', amount: 0 }]); setPanel('split'); }} disabled={!canPay}
+              <button data-testid="quick-pos-split-open" onClick={() => { setSplits([{ method: 'cash', amount: 0 }, { method: 'card', amount: 0 }]); setPanel('split'); }} disabled={!canPay}
                 className={`${B} flex w-full items-center justify-center gap-2 rounded-2xl border ${brd(4)} py-3 text-[12px] font-semibold text-[var(--muted-foreground)] hover:${brd(8)} hover:text-[var(--foreground)] disabled:opacity-15`}>
                 <Split size={14} /> دفع مقسّم
               </button>
 
               {/* MAIN PAY */}
-              <button onClick={() => pay('cash')} disabled={payMut.isPending || !canPay}
+              <button data-testid="quick-pos-checkout-button" onClick={() => pay('cash')} disabled={payMut.isPending || !cashPaymentGuard.ok}
                 className={`${B} relative flex h-16 w-full items-center justify-center gap-3 rounded-2xl text-[16px] font-black text-black shadow-xl disabled:opacity-15 disabled:pointer-events-none overflow-hidden`}
-                style={canPay ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}>
+                style={cashPaymentGuard.ok ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}>
                 {payMut.isPending
                   ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black" />
                   : <><Receipt size={18} /> إصدار فاتورة — {fmt(total)}</>}
@@ -772,13 +1066,22 @@ export default function QuickPOSPage(): React.ReactElement {
           <p className="text-[22px] font-black" style={{ ...TN, ...accentColor }}>{fmt(total)}</p>
         </div>
         <div className="flex items-center gap-3">
+          <input
+            type="number"
+            value={cashReceived}
+            onChange={ev => setCashReceived(ev.target.value)}
+            placeholder="نقداً"
+            dir="ltr"
+            className={`w-20 rounded-xl border ${brd(6)} ${bg(2)} px-2 py-3 text-center text-[12px] font-bold text-[var(--foreground)] focus:outline-none ${T}`}
+            style={TN}
+          />
           {cartCount > 0 && (
             <button onClick={() => setShowCart(!showCart)} className={`${B} flex items-center gap-2 rounded-2xl px-4 py-3 ${G1}`}>
               <ShoppingCart size={16} style={accentColor} />
               <span className="text-[13px] font-black text-[var(--foreground)]" style={TN}>{cartCount}</span>
             </button>
           )}
-          <button onClick={() => pay('cash')} disabled={payMut.isPending || !canPay}
+          <button onClick={() => pay('cash')} disabled={payMut.isPending || !cashPaymentGuard.ok}
             className={`${B} rounded-2xl px-8 py-3.5 text-[14px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>
             {payMut.isPending ? '...' : 'ادفع'}
           </button>
@@ -801,17 +1104,32 @@ export default function QuickPOSPage(): React.ReactElement {
                 className={`rounded-xl border ${brd(6)} ${bg(3)} px-3 py-3 text-[13px] text-[var(--foreground)] focus:outline-none`}>
                 {PAY_METHODS.map(pm => <option key={pm.id} value={pm.id}>{pm.label}</option>)}
               </select>
-              <input type="number" value={e.amount || ''} onChange={ev => setSplits(p => p.map((x, j) => j === i ? { ...x, amount: parseFloat(ev.target.value) || 0 } : x))}
+              <input data-testid={`quick-pos-split-amount-${i}`} type="number" value={e.amount || ''} onChange={ev => setSplits(p => p.map((x, j) => j === i ? { ...x, amount: parseFloat(ev.target.value) || 0 } : x))}
                 placeholder="المبلغ" className={`flex-1 rounded-xl border ${brd(6)} ${bg(3)} px-3 py-3 text-[13px] text-center text-[var(--foreground)] focus:outline-none ${T}`} style={TN} />
               {splits.length > 1 && <button onClick={() => setSplits(p => p.filter((_, j) => j !== i))} className={`${BS} text-red-400`}><X size={16} /></button>}
             </div>
           ))}
           <button onClick={() => setSplits(p => [...p, { method: 'card', amount: 0 }])} className={`${B} flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed ${brd(6)} py-3.5 text-[12px] text-[var(--muted-foreground)]`}><Plus size={14} /> إضافة</button>
+          {splits.some(entry => entry.method === 'cash') && (
+            <div className={`flex items-center gap-3 rounded-2xl ${bg(3)} p-4`}>
+              <span className="text-[12px] text-[var(--muted-foreground)]">المستلم نقداً</span>
+              <input
+                data-testid="quick-pos-split-cash-received"
+                type="number"
+                value={cashReceived}
+                onChange={ev => setCashReceived(ev.target.value)}
+                placeholder="0.00"
+                dir="ltr"
+                className={`min-w-0 flex-1 rounded-xl border ${brd(6)} ${bg(2)} px-3 py-3 text-center text-[13px] text-[var(--foreground)] focus:outline-none ${T}`}
+                style={TN}
+              />
+            </div>
+          )}
           <div className={`flex justify-between rounded-2xl ${bg(3)} p-4`}>
-            <span className="text-[13px] text-[var(--muted-foreground)]">المتبقي</span>
-            <span className={`text-[18px] font-black ${splitRem > 0.01 ? 'text-red-400' : 'text-emerald-400'}`} style={TN}>{fmt(splitRem)}</span>
+            <span className="text-[13px] text-[var(--muted-foreground)]">{splitRem < -0.01 ? 'زيادة' : 'المتبقي'}</span>
+            <span className={`text-[18px] font-black ${Math.abs(splitRem) > 0.01 ? 'text-red-400' : 'text-emerald-400'}`} style={TN}>{fmt(Math.abs(splitRem))}</span>
           </div>
-          <button onClick={paySplit} disabled={splitRem > 0.01 || payMut.isPending}
+          <button data-testid="quick-pos-split-confirm" onClick={paySplit} disabled={!splitPaymentGuard.ok || payMut.isPending}
             className={`${B} flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-[14px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>
             {payMut.isPending ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Split size={16} /> تأكيد الدفع المقسّم</>}
           </button>

@@ -8,6 +8,7 @@ const PAY_LABELS: Record<string, string> = {
   card: 'بطاقة / مدى',
   bank_transfer: 'تحويل بنكي',
   apple_pay: 'Apple Pay',
+  split: 'دفع مقسّم',
 };
 
 interface ReceiptPrintProps {
@@ -21,11 +22,23 @@ interface ReceiptPrintProps {
  * with the ShiftReport print (#shift-report-print).
  */
 export function ReceiptPrint({ e, tenantName }: ReceiptPrintProps) {
-  const date = new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: '2-digit', day: '2-digit' });
-  const time = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-  const method = PAY_LABELS[e.lastPaidMethod] ?? e.lastPaidMethod;
-  const cashRcv = parseFloat(e.cashReceived);
-  const showChange = e.lastPaidMethod === 'cash' && !isNaN(cashRcv) && cashRcv > 0;
+  const snapshot = e.lastPaidSnapshot;
+  const issuedAt = snapshot?.issuedAt ? new Date(snapshot.issuedAt) : new Date();
+  const date = issuedAt.toLocaleDateString('ar-SA', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const time = issuedAt.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+  const hasServerSnapshot = snapshot?.source === 'server';
+  const receiptMethod = snapshot?.method ?? e.lastPaidMethod;
+  const method = PAY_LABELS[receiptMethod] ?? receiptMethod;
+  const cashRcv = parseFloat(snapshot?.cashReceived ?? e.cashReceived);
+  const showChange = receiptMethod === 'cash' && !isNaN(cashRcv) && cashRcv > 0;
+  const clientName = snapshot?.clientName ?? e.client?.fullName;
+  const receiptItems = snapshot?.items;
+  const receiptSubtotal = snapshot?.subtotal ?? (e.subtotal || e.lastPaidTotal / 1.15);
+  const receiptDiscount = snapshot?.discount ?? e.gDiscVal;
+  const receiptCouponDiscount = snapshot?.couponDiscount ?? e.couponDiscount;
+  const receiptTaxRate = snapshot?.taxRate ?? e.taxRate;
+  const receiptTax = snapshot?.tax ?? (e.tax || e.lastPaidTotal - (e.lastPaidTotal / (1 + e.taxRate)));
+  const receiptTotal = snapshot?.total ?? (e.total || e.lastPaidTotal);
 
   return (
     <>
@@ -46,10 +59,10 @@ export function ReceiptPrint({ e, tenantName }: ReceiptPrintProps) {
           <div>الوقت: {time}</div>
 
           {/* Client */}
-          {e.client && (
+          {clientName && (
             <>
               <div style={{ borderTop: '1px dashed #999', margin: '2mm 0' }} />
-              <div>العميلة: {e.client.fullName}</div>
+              <div>العميلة: {clientName}</div>
             </>
           )}
 
@@ -66,7 +79,18 @@ export function ReceiptPrint({ e, tenantName }: ReceiptPrintProps) {
           <div style={{ borderTop: '1px solid #ccc', margin: '1mm 0' }} />
 
           {/* Items */}
-          {e.cart.length > 0 ? (
+          {receiptItems?.length ? (
+            receiptItems.map(item => (
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5mm 0' }}>
+                <span style={{ maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                <span style={{ display: 'flex', gap: '12px', fontVariantNumeric: 'tabular-nums' }}>
+                  <span style={{ minWidth: '20px', textAlign: 'center' }}>{item.quantity}</span>
+                  <span style={{ minWidth: '45px', textAlign: 'left' }}>{fmt(item.amount)}</span>
+                </span>
+              </div>
+            ))
+          ) : !hasServerSnapshot && e.cart.length > 0 ? (
+            /* Legacy fallback only: atomic checkout should provide lastPaidSnapshot. */
             e.cart.map(item => {
               const info = e.itemTotals.find(t => t.id === item.id);
               return (
@@ -89,30 +113,30 @@ export function ReceiptPrint({ e, tenantName }: ReceiptPrintProps) {
           {/* Totals */}
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>المجموع الفرعي:</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(e.subtotal || e.lastPaidTotal / 1.15)}</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(receiptSubtotal)}</span>
           </div>
-          {e.gDiscVal > 0 && (
+          {receiptDiscount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>الخصم:</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>-{fmt(e.gDiscVal)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>-{fmt(receiptDiscount)}</span>
             </div>
           )}
-          {e.couponDiscount > 0 && (
+          {receiptCouponDiscount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>كوبون:</span>
-              <span style={{ fontVariantNumeric: 'tabular-nums' }}>-{fmt(e.couponDiscount)}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' }}>-{fmt(receiptCouponDiscount)}</span>
             </div>
           )}
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>ضريبة {Math.round(e.taxRate * 100)}%:</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(e.tax || e.lastPaidTotal - (e.lastPaidTotal / (1 + e.taxRate)))}</span>
+            <span>ضريبة {Math.round(receiptTaxRate * 100)}%:</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(receiptTax)}</span>
           </div>
 
           <div style={{ borderTop: '2px solid #333', margin: '2mm 0' }} />
 
           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '13px' }}>
             <span>الإجمالي:</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(e.total || e.lastPaidTotal)}</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(receiptTotal)}</span>
           </div>
 
           <div style={{ borderTop: '1px dashed #999', margin: '2mm 0' }} />
@@ -122,7 +146,7 @@ export function ReceiptPrint({ e, tenantName }: ReceiptPrintProps) {
           {showChange && (
             <>
               <div>المبلغ المستلم: {fmt(cashRcv)}</div>
-              <div>الباقي: {fmt(cashRcv - (e.total || e.lastPaidTotal))}</div>
+              <div>الباقي: {fmt(cashRcv - receiptTotal)}</div>
             </>
           )}
 

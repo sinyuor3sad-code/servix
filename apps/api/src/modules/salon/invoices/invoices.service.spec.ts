@@ -8,7 +8,9 @@ import { SmsService } from '../../../shared/sms/sms.service';
 import { SettingsService } from '../settings/settings.service';
 import { EventsGateway } from '../../../shared/events/events.gateway';
 import { ReviewRequestsService } from '../whatsapp-evolution/review-requests.service';
+import { WhatsAppEvolutionService } from '../whatsapp-evolution/whatsapp-evolution.service';
 import { SalonZatcaService } from '../zatca/zatca.service';
+import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import type { TenantPrismaClient } from '../../../shared/types';
 import { RecordPaymentDto, PaymentMethodEnum } from './dto/record-payment.dto';
 import { AddDiscountDto, DiscountTypeEnum } from './dto/add-discount.dto';
@@ -16,6 +18,7 @@ import { AddDiscountDto, DiscountTypeEnum } from './dto/add-discount.dto';
 const mockDb = {
   client: { findFirst: jest.fn(), update: jest.fn() },
   appointment: { findUnique: jest.fn() },
+  service: { findMany: jest.fn() },
   invoice: {
     findFirst: jest.fn(),
     findUnique: jest.fn(),
@@ -26,6 +29,8 @@ const mockDb = {
   payment: { create: jest.fn() },
   discount: { create: jest.fn(), findMany: jest.fn() },
   coupon: { findUnique: jest.fn(), update: jest.fn() },
+  $executeRawUnsafe: jest.fn(),
+  $queryRawUnsafe: jest.fn(),
   $transaction: jest.fn(),
 };
 
@@ -60,11 +65,18 @@ describe('InvoicesService', () => {
           getStatus: jest.fn(),
           submitInvoice: jest.fn().mockResolvedValue(undefined),
         } },
+        { provide: WhatsAppEvolutionService, useValue: {} },
+        { provide: PlatformPrismaClient, useValue: {} },
       ],
     }).compile();
 
     service = module.get<InvoicesService>(InvoicesService);
     jest.clearAllMocks();
+    mockDb.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
+      fn(mockDb),
+    );
+    mockDb.$executeRawUnsafe.mockResolvedValue(1);
+    mockDb.$queryRawUnsafe.mockResolvedValue([{ invoice_number: 'INV-0001' }]);
   });
 
   describe('create - إنشاء الفاتورة', () => {
@@ -110,6 +122,82 @@ describe('InvoicesService', () => {
           }),
         }),
       );
+    });
+
+    it('uses advisory locking for invoiceNumber generation without SKIP LOCKED', async () => {
+      mockDb.client.findFirst.mockResolvedValue({ id: 'client-1', fullName: 'Client One' });
+      mockDb.salonInfo.findFirst.mockResolvedValue(null);
+      mockDb.invoice.create.mockResolvedValue({
+        id: 'inv-1',
+        invoiceNumber: 'INV-0002',
+        subtotal: 100,
+        taxAmount: 15,
+        total: 115,
+        clientId: 'client-1',
+        invoiceItems: [],
+        client: { id: 'client-1', fullName: 'Client One', phone: '0501234567' },
+      });
+
+      await service.create(
+        mockDb as unknown as TenantPrismaClient,
+        {
+          clientId: 'client-1',
+          items: [{ description: 'Haircut', quantity: 1, unitPrice: 100, employeeId: 'emp-1' }],
+        } as never,
+        'user-1',
+      );
+
+      expect(mockDb.$executeRawUnsafe).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(91827364, 51020264)',
+      );
+      const invoiceNumberQuery = mockDb.$queryRawUnsafe.mock.calls
+        .map((call: [string]) => call[0])
+        .find((query: string) => query.includes('invoice_number'));
+      expect(invoiceNumberQuery).toBeDefined();
+      expect(invoiceNumberQuery).not.toContain('SKIP LOCKED');
+      expect(invoiceNumberQuery).not.toContain('FOR UPDATE');
+    });
+
+    it('retries invoice creation once when invoiceNumber collides', async () => {
+      mockDb.client.findFirst.mockResolvedValue({ id: 'client-1', fullName: 'Client One' });
+      mockDb.salonInfo.findFirst.mockResolvedValue(null);
+      let invoiceNumberReads = 0;
+      mockDb.$queryRawUnsafe.mockImplementation(() => {
+        invoiceNumberReads += 1;
+        return Promise.resolve([
+          { invoice_number: invoiceNumberReads === 1 ? 'INV-0001' : 'INV-0002' },
+        ]);
+      });
+      mockDb.invoice.create
+        .mockRejectedValueOnce({ code: 'P2002', meta: { target: ['invoice_number'] } })
+        .mockResolvedValueOnce({
+          id: 'inv-2',
+          invoiceNumber: 'INV-0003',
+          subtotal: 100,
+          taxAmount: 15,
+          total: 115,
+          clientId: 'client-1',
+          invoiceItems: [],
+          client: { id: 'client-1', fullName: 'Client One', phone: '0501234567' },
+        });
+
+      const result = await service.create(
+        mockDb as unknown as TenantPrismaClient,
+        {
+          clientId: 'client-1',
+          items: [{ description: 'Haircut', quantity: 1, unitPrice: 100, employeeId: 'emp-1' }],
+        } as never,
+        'user-1',
+      );
+
+      expect(mockDb.$transaction).toHaveBeenCalledTimes(2);
+      expect(mockDb.invoice.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        data: expect.objectContaining({ invoiceNumber: 'INV-0002' }),
+      }));
+      expect(mockDb.invoice.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        data: expect.objectContaining({ invoiceNumber: 'INV-0003' }),
+      }));
+      expect(result).toHaveProperty('id', 'inv-2');
     });
 
     it('يجب رمي NotFoundException عندما العميل غير موجود', async () => {
@@ -177,6 +265,97 @@ describe('InvoicesService', () => {
         }),
       );
     });
+
+    it('uses server-side service prices instead of tampered unitPrice values', async () => {
+      mockDb.client.findFirst.mockResolvedValue({ id: 'client-1' });
+      mockDb.invoice.findFirst.mockResolvedValue(null);
+      mockDb.salonInfo.findFirst.mockResolvedValue(null);
+      mockDb.service.findMany.mockResolvedValue([
+        { id: 'service-1', nameAr: 'Service A', nameEn: null, price: 125 },
+        { id: 'service-2', nameAr: 'Service B', nameEn: null, price: 75 },
+      ]);
+      mockDb.invoice.create.mockResolvedValue({
+        id: 'inv-1',
+        subtotal: 325,
+        taxAmount: 48.75,
+        total: 373.75,
+        invoiceItems: [],
+        client: {},
+      });
+
+      const dto = {
+        clientId: 'client-1',
+        items: [
+          {
+            serviceId: 'service-1',
+            description: 'Tampered A',
+            quantity: 2,
+            unitPrice: 1,
+            employeeId: 'emp-1',
+          },
+          {
+            serviceId: 'service-2',
+            description: 'Tampered B',
+            quantity: 1,
+            unitPrice: 9999,
+            employeeId: 'emp-1',
+          },
+        ],
+      };
+
+      await service.create(mockDb as unknown as TenantPrismaClient, dto as never, 'user-1');
+
+      expect(mockDb.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            subtotal: 325,
+            taxAmount: 48.75,
+            total: 373.75,
+            invoiceItems: expect.objectContaining({
+              create: [
+                expect.objectContaining({
+                  serviceId: 'service-1',
+                  description: 'Service A',
+                  unitPrice: 125,
+                  totalPrice: 250,
+                }),
+                expect.objectContaining({
+                  serviceId: 'service-2',
+                  description: 'Service B',
+                  unitPrice: 75,
+                  totalPrice: 75,
+                }),
+              ],
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('rejects invoice items with unknown or inactive serviceId', async () => {
+      mockDb.client.findFirst.mockResolvedValue({ id: 'client-1' });
+      mockDb.service.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.create(
+          mockDb as unknown as TenantPrismaClient,
+          {
+            clientId: 'client-1',
+            items: [
+              {
+                serviceId: 'missing-service',
+                description: 'Tampered',
+                quantity: 1,
+                unitPrice: 1,
+                employeeId: 'emp-1',
+              },
+            ],
+          } as never,
+          'user-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDb.invoice.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('recordPayment - تسجيل الدفع', () => {
@@ -206,7 +385,11 @@ describe('InvoicesService', () => {
       });
       mockDb.client.update.mockResolvedValue({});
 
-      const dto: RecordPaymentDto = { amount: 230, method: PaymentMethodEnum.cash };
+      const dto: RecordPaymentDto = {
+        amount: 230,
+        method: PaymentMethodEnum.cash,
+        cashReceived: 230,
+      };
 
       const result = await service.recordPayment(
         mockDb as unknown as TenantPrismaClient,
@@ -304,7 +487,53 @@ describe('InvoicesService', () => {
         payments: [{ amount: 100 }],
       });
 
-      const dto: RecordPaymentDto = { amount: 200, method: PaymentMethodEnum.cash };
+      const dto: RecordPaymentDto = {
+        amount: 200,
+        method: PaymentMethodEnum.cash,
+        cashReceived: 200,
+      };
+
+      await expect(
+        service.recordPayment(mockDb as unknown as TenantPrismaClient, 'inv-1', dto),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDb.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects cash payment when cashReceived is less than the cash amount', async () => {
+      mockDb.invoice.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        clientId: 'client-1',
+        total: 230,
+        status: 'draft',
+        payments: [],
+      });
+
+      const dto: RecordPaymentDto = {
+        amount: 230,
+        method: PaymentMethodEnum.cash,
+        cashReceived: 200,
+      };
+
+      await expect(
+        service.recordPayment(mockDb as unknown as TenantPrismaClient, 'inv-1', dto),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDb.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects modern POS cash payment when cashReceived is missing', async () => {
+      mockDb.invoice.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        clientId: 'client-1',
+        terminalId: 'T-1',
+        total: 230,
+        status: 'draft',
+        payments: [],
+      });
+
+      const dto: RecordPaymentDto = {
+        amount: 230,
+        method: PaymentMethodEnum.cash,
+      };
 
       await expect(
         service.recordPayment(mockDb as unknown as TenantPrismaClient, 'inv-1', dto),

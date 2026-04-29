@@ -90,6 +90,12 @@ enum PaymentStatus {
   refunded
 }
 
+enum PosCheckoutAttemptStatus {
+  in_progress
+  completed
+  failed
+}
+
 enum DiscountType {
   percentage
   fixed
@@ -566,6 +572,7 @@ model AppointmentService {
 model Invoice {
   id             String        @id @default(uuid()) @db.Uuid
   appointmentId  String?       @map("appointment_id") @db.Uuid
+  posShiftId     String?       @map("pos_shift_id") @db.Uuid
   clientId       String        @map("client_id") @db.Uuid
   invoiceNumber  String        @unique @map("invoice_number") @db.VarChar(20)
   subtotal       Decimal       @default(0) @db.Decimal(10, 2)
@@ -573,6 +580,8 @@ model Invoice {
   taxAmount      Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
   total          Decimal       @default(0) @db.Decimal(10, 2)
   status         InvoiceStatus @default(draft)
+  receiptSnapshot        Json? @map("receipt_snapshot") @db.JsonB
+  receiptSnapshotVersion Int   @default(1) @map("receipt_snapshot_version")
   notes          String?       @db.Text
   createdBy      String        @map("created_by") @db.Uuid
   paidAt         DateTime?     @map("paid_at") @db.Timestamptz()
@@ -597,6 +606,7 @@ model Invoice {
   nfcClaimedAt      DateTime? @map("nfc_claimed_at") @db.Timestamptz()
 
   appointment         Appointment?         @relation(fields: [appointmentId], references: [id])
+  posShift            PosShift?            @relation(fields: [posShiftId], references: [id])
   client              Client               @relation(fields: [clientId], references: [id])
   selfOrder           SelfOrder?           @relation(fields: [selfOrderId], references: [id])
   feedback            InvoiceFeedback?
@@ -607,10 +617,12 @@ model Invoice {
   loyaltyTransactions LoyaltyTransaction[]
   zatcaInvoice        ZatcaInvoice?
   clientDebt          ClientDebt[]
+  posCheckoutAttempts PosCheckoutAttempt[]
 
   @@index([clientId])
   @@index([status])
   @@index([createdAt])
+  @@index([posShiftId])
   @@index([terminalId, nfcClaimedAt])
   @@map("invoices")
 }
@@ -640,14 +652,16 @@ model InvoiceItem {
 // ─────────────────── Payments ───────────────────
 
 model Payment {
-  id        String        @id @default(uuid()) @db.Uuid
-  invoiceId String        @map("invoice_id") @db.Uuid
-  amount    Decimal       @db.Decimal(10, 2)
-  method    PaymentMethod
-  reference String?       @db.VarChar(100)
-  status    PaymentStatus @default(completed)
-  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  id           String        @id @default(uuid()) @db.Uuid
+  invoiceId    String        @map("invoice_id") @db.Uuid
+  amount       Decimal       @db.Decimal(10, 2)
+  method       PaymentMethod
+  cashReceived Decimal?      @map("cash_received") @db.Decimal(10, 2)
+  changeAmount Decimal?      @map("change_amount") @db.Decimal(10, 2)
+  reference    String?       @db.VarChar(100)
+  status       PaymentStatus @default(completed)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
@@ -1236,9 +1250,29 @@ model PosShift {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
+  invoices         Invoice[]
+
   @@index([status])
   @@index([openedAt])
   @@map("pos_shifts")
+}
+
+model PosCheckoutAttempt {
+  id             String                   @id @default(uuid()) @db.Uuid
+  idempotencyKey String                   @unique @map("idempotency_key") @db.VarChar(100)
+  requestHash    String                   @map("request_hash") @db.VarChar(64)
+  status         PosCheckoutAttemptStatus @default(in_progress)
+  invoiceId      String?                  @map("invoice_id") @db.Uuid
+  responseJson   Json?                    @map("response_json") @db.JsonB
+  createdBy      String                   @map("created_by") @db.Uuid
+  createdAt      DateTime                 @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime                 @updatedAt @map("updated_at") @db.Timestamptz()
+
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([status])
+  @@index([invoiceId])
+  @@map("pos_checkout_attempts")
 }
 
 // ─────────────────── Self Orders (Smart Menu) ───────────────────

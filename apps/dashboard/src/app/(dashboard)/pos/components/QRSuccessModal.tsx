@@ -71,12 +71,14 @@ export function QRSuccessModal({
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none">
         <div
+          data-testid="pos-success-modal"
           className={`pointer-events-auto w-full max-w-sm rounded-3xl ${G1} shadow-2xl border ${brd(4)} overflow-hidden animate-fade-in-up`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Close button */}
           <div className="flex justify-end p-3 pb-0">
             <button
+              data-testid="pos-success-close"
               onClick={handleClose}
               className={`${B} flex h-8 w-8 items-center justify-center rounded-xl ${bg(3)} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}
             >

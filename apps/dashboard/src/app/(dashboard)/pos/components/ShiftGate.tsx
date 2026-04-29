@@ -41,8 +41,8 @@ export function ShiftGate({ children }: ShiftGateProps) {
       if (isNaN(balance) || balance < 0) throw new Error('أدخل مبلغ صحيح');
       return api.post<PosShiftData>('/pos-shifts/open', { openingBalance: balance }, accessToken!);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['pos-shift-current'] });
+    onSuccess: (shift) => {
+      queryClient.setQueryData(['pos-shift-current'], shift);
       toast.success('تم فتح الوردية');
       setOpeningAmount('');
     },
@@ -84,6 +84,7 @@ export function ShiftGate({ children }: ShiftGateProps) {
         <div className="space-y-2">
           <label className="block text-[10px] font-bold text-[var(--muted-foreground)]">مبلغ البداية في الصندوق</label>
           <input
+            data-testid="pos-open-shift-amount"
             type="number"
             value={openingAmount}
             onChange={e => setOpeningAmount(e.target.value)}
@@ -112,6 +113,7 @@ export function ShiftGate({ children }: ShiftGateProps) {
 
         {/* Open Button */}
         <button
+          data-testid="pos-open-shift-button"
           onClick={() => openMut.mutate()}
           disabled={openMut.isPending}
           className={`${B} flex h-14 w-full items-center justify-center gap-3 rounded-2xl text-[14px] font-black shadow-xl disabled:opacity-30`}

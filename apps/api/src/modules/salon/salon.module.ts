@@ -29,6 +29,7 @@ import { AiConsultantModule } from './ai-consultant/ai-consultant.module';
 import { WhatsAppEvolutionModule } from './whatsapp-evolution/whatsapp-evolution.module';
 import { AIReceptionModule } from './ai-reception/ai-reception.module';
 import { PosShiftsModule } from './pos-shifts/pos-shifts.module';
+import { PosCheckoutModule } from './pos-checkout/pos-checkout.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { PosShiftsModule } from './pos-shifts/pos-shifts.module';
     WhatsAppEvolutionModule,
     AIReceptionModule,
     PosShiftsModule,
+    PosCheckoutModule,
   ],
 })
 export class SalonModule {}

@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { TenantPrismaClient } from '../../../shared/types';
@@ -18,7 +19,7 @@ import { EventsGateway } from '../../../shared/events/events.gateway';
 import { SalonZatcaService } from '../zatca/zatca.service';
 import { SETTINGS_KEYS } from '../settings/settings.constants';
 import { ReviewRequestsService } from '../whatsapp-evolution/review-requests.service';
-import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { CreateInvoiceDto, InvoiceItemDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { AddDiscountDto } from './dto/add-discount.dto';
@@ -27,6 +28,16 @@ import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { InvoiceSendChannel } from './dto/send-invoice.dto';
 import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
+type NormalizedInvoiceItem = {
+  serviceId?: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  employeeId: string;
+};
+
+type InvoiceNumberClient = Pick<TenantPrismaClient, '$executeRawUnsafe' | '$queryRawUnsafe'>;
 
 
 @Injectable()
@@ -46,6 +57,61 @@ export class InvoicesService {
     private readonly evolutionService: WhatsAppEvolutionService,
     private readonly platformPrisma: PlatformPrismaClient,
   ) {}
+
+  private async normalizeInvoiceItems(
+    db: TenantPrismaClient,
+    items: InvoiceItemDto[],
+  ): Promise<NormalizedInvoiceItem[]> {
+    const serviceIds = Array.from(
+      new Set(
+        items
+          .map((item) => item.serviceId)
+          .filter((serviceId): serviceId is string => Boolean(serviceId)),
+      ),
+    );
+
+    const services = serviceIds.length
+      ? await db.service.findMany({
+          where: { id: { in: serviceIds }, isActive: true },
+          select: { id: true, nameAr: true, nameEn: true, price: true },
+        })
+      : [];
+
+    if (services.length !== serviceIds.length) {
+      throw new BadRequestException('Invalid invoice service');
+    }
+
+    const serviceById = new Map(services.map((service) => [service.id, service]));
+
+    return items.map((item) => {
+      if (!item.serviceId) {
+        const unitPrice = Number(item.unitPrice);
+        return {
+          serviceId: undefined,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice,
+          totalPrice: item.quantity * unitPrice,
+          employeeId: item.employeeId,
+        };
+      }
+
+      const service = serviceById.get(item.serviceId);
+      if (!service) {
+        throw new BadRequestException('Invalid invoice service');
+      }
+
+      const unitPrice = Number(service.price);
+      return {
+        serviceId: service.id,
+        description: service.nameAr || service.nameEn || item.description,
+        quantity: item.quantity,
+        unitPrice,
+        totalPrice: item.quantity * unitPrice,
+        employeeId: item.employeeId,
+      };
+    });
+  }
 
   async findAll(
     db: TenantPrismaClient,
@@ -117,48 +183,64 @@ export class InvoicesService {
       }
     }
 
-    const invoiceNumber = await this.generateInvoiceNumber(db);
-
     const salonInfo = await db.salonInfo.findFirst();
     const taxPercentage = salonInfo ? Number(salonInfo.taxPercentage) : 15;
+    const items = await this.normalizeInvoiceItems(db, dto.items);
 
-    const subtotal = dto.items.reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
-      0,
-    );
+    const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
     const taxAmount = (subtotal * taxPercentage) / 100;
     const total = subtotal + taxAmount;
 
-    const invoice = await db.invoice.create({
-      data: {
-        clientId: dto.clientId,
-        appointmentId: dto.appointmentId,
-        selfOrderId: dto.selfOrderId,
-        terminalId: dto.terminalId || null,
-        invoiceNumber,
-        subtotal,
-        taxAmount,
-        total,
-        notes: dto.notes,
-        createdBy,
-        invoiceItems: {
-          create: dto.items.map((item) => ({
-            serviceId: item.serviceId,
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            totalPrice: item.quantity * item.unitPrice,
-            employeeId: item.employeeId,
-          })),
-        },
-      },
-      include: {
-        invoiceItems: true,
-        client: {
-          select: { id: true, fullName: true, phone: true },
-        },
-      },
-    });
+    let invoice: Awaited<ReturnType<TenantPrismaClient['invoice']['create']>> | null = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        invoice = await db.$transaction(async (tx) => {
+          const invoiceNumber = await this.generateInvoiceNumber(tx);
+          return tx.invoice.create({
+            data: {
+              clientId: dto.clientId,
+              appointmentId: dto.appointmentId,
+              selfOrderId: dto.selfOrderId,
+              terminalId: dto.terminalId || null,
+              invoiceNumber,
+              subtotal,
+              taxAmount,
+              total,
+              notes: dto.notes,
+              createdBy,
+              invoiceItems: {
+                create: items.map((item) => ({
+                  serviceId: item.serviceId,
+                  description: item.description,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  totalPrice: item.totalPrice,
+                  employeeId: item.employeeId,
+                })),
+              },
+            },
+            include: {
+              invoiceItems: true,
+              client: {
+                select: { id: true, fullName: true, phone: true },
+              },
+            },
+          });
+        }, {
+          isolationLevel: 'Serializable',
+        });
+        break;
+      } catch (error) {
+        if (this.isInvoiceNumberConflict(error) && attempt < 2) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (!invoice) {
+      throw new ConflictException('Unable to allocate a unique invoice number');
+    }
 
     // Audit log (fire-and-forget)
     this.auditService.log({
@@ -218,27 +300,27 @@ export class InvoicesService {
 
     const salonInfo = await db.salonInfo.findFirst();
     const taxPercentage = salonInfo ? Number(salonInfo.taxPercentage) : 15;
+    const normalizedItems = dto.items
+      ? await this.normalizeInvoiceItems(db, dto.items)
+      : null;
 
     const invoice = await db.$transaction(async (tx) => {
-      if (dto.items) {
+      if (normalizedItems) {
         await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
 
         await tx.invoiceItem.createMany({
-          data: dto.items.map((item) => ({
+          data: normalizedItems.map((item) => ({
             invoiceId: id,
             serviceId: item.serviceId,
             description: item.description,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            totalPrice: item.quantity * item.unitPrice,
+            totalPrice: item.totalPrice,
             employeeId: item.employeeId,
           })),
         });
 
-        const subtotal = dto.items.reduce(
-          (sum, item) => sum + item.quantity * item.unitPrice,
-          0,
-        );
+        const subtotal = normalizedItems.reduce((sum, item) => sum + item.totalPrice, 0);
         const currentDiscount = Number(existing.discountAmount);
         const taxableAmount = subtotal - currentDiscount;
         const taxAmount = (taxableAmount * taxPercentage) / 100;
@@ -291,6 +373,18 @@ export class InvoicesService {
       0,
     );
     const remaining = Number(invoice.total) - totalPaid;
+
+    if (dto.method === 'cash') {
+      const isModernPosInvoice = Boolean(invoice.terminalId);
+      // Legacy non-terminal invoice payments predate cashReceived. Modern POS invoices
+      // carry terminalId and must send cashReceived explicitly until atomic checkout owns this fully.
+      if (isModernPosInvoice && dto.cashReceived === undefined) {
+        throw new BadRequestException('Cash received is required for POS cash payments');
+      }
+      if (dto.cashReceived !== undefined && dto.cashReceived < dto.amount) {
+        throw new BadRequestException('Cash received is less than the cash payment amount');
+      }
+    }
 
     if (dto.amount > remaining) {
       throw new BadRequestException(
@@ -814,30 +908,34 @@ export class InvoicesService {
     }
   }
 
-  private async generateInvoiceNumber(db: TenantPrismaClient): Promise<string> {
-    // Use a serializable transaction to prevent race conditions.
-    // Two concurrent invoice creates could otherwise get the same number.
-    const result = await db.$transaction(async (tx) => {
-      // Lock the latest invoice row to prevent concurrent reads
-      const lastInvoices = await tx.$queryRawUnsafe<{ invoice_number: string }[]>(
-        `SELECT invoice_number FROM invoices ORDER BY created_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED`,
-      );
+  private async generateInvoiceNumber(db: InvoiceNumberClient): Promise<string> {
+    await db.$executeRawUnsafe('SELECT pg_advisory_xact_lock(91827364, 51020264)');
 
-      let nextNumber = 1;
-      if (lastInvoices.length > 0) {
-        const parts = lastInvoices[0].invoice_number.split('-');
-        const lastNum = parseInt(parts[1], 10);
-        if (!isNaN(lastNum)) {
-          nextNumber = lastNum + 1;
-        }
+    const lastInvoices = await db.$queryRawUnsafe<{ invoice_number: string }[]>(
+      `SELECT invoice_number
+       FROM invoices
+       WHERE invoice_number ~ '^INV-[0-9]+$'
+       ORDER BY CAST(SPLIT_PART(invoice_number, '-', 2) AS INTEGER) DESC
+       LIMIT 1`,
+    );
+
+    let nextNumber = 1;
+    if (lastInvoices.length > 0) {
+      const parts = lastInvoices[0].invoice_number.split('-');
+      const lastNum = parseInt(parts[1], 10);
+      if (!Number.isNaN(lastNum)) {
+        nextNumber = lastNum + 1;
       }
+    }
 
-      return `INV-${nextNumber.toString().padStart(4, '0')}`;
-    }, {
-      isolationLevel: 'Serializable',
-    });
+    return `INV-${nextNumber.toString().padStart(4, '0')}`;
+  }
 
-    return result;
+  private isInvoiceNumberConflict(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false;
+    const candidate = error as { code?: string; meta?: { target?: unknown } };
+    if (candidate.code !== 'P2002') return false;
+    return JSON.stringify(candidate.meta?.target ?? '').includes('invoice_number');
   }
 
   /* ════════════════════════════════════════════════

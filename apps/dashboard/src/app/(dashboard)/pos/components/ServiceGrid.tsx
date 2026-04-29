@@ -27,7 +27,7 @@ export function ServiceGrid({ e, lg }: { e: E; lg?: boolean }) {
         const isFav = e.favIds.includes(svc.id);
         return (
           <div key={svc.id} className="relative group">
-            <button onClick={() => e.addToCart(svc)} className={`${BS} flex w-full flex-col items-start gap-0.5 rounded-xl border ${lg ? 'p-5 min-h-[120px] rounded-2xl gap-1.5' : 'p-3'} text-start ${qty > 0 ? `${brd(0)} shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--brand-primary)_25%,transparent)]` : `${brd(3)} ${bg(2)} hover:${bg(4)}`}`} style={qty > 0 ? { background: 'color-mix(in srgb, var(--brand-primary) 5%, transparent)' } : undefined}>
+            <button data-testid={`pos-service-${svc.id}`} onClick={() => e.addToCart(svc)} className={`${BS} flex w-full flex-col items-start gap-0.5 rounded-xl border ${lg ? 'p-5 min-h-[120px] rounded-2xl gap-1.5' : 'p-3'} text-start ${qty > 0 ? `${brd(0)} shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--brand-primary)_25%,transparent)]` : `${brd(3)} ${bg(2)} hover:${bg(4)}`}`} style={qty > 0 ? { background: 'color-mix(in srgb, var(--brand-primary) 5%, transparent)' } : undefined}>
               {qty > 0 && <span className={`absolute end-2 top-2 flex items-center justify-center rounded-md text-[8px] font-black text-white ${lg ? 'h-8 w-8 rounded-xl text-[12px]' : 'h-5 w-5'}`} style={{ ...TN, ...primaryBg }}>{qty}</span>}
               <span className={`${lg ? 'text-[15px]' : 'text-[14px]'} font-semibold leading-snug text-[var(--foreground)] line-clamp-2`}>{svc.nameAr}</span>
               <span className={`flex items-center gap-1 ${lg ? 'text-[11px]' : 'text-[10px]'} text-[var(--muted-foreground)]`} style={{ opacity: 0.5 }}><Clock size={lg ? 11 : 10} />{svc.duration}د</span>
