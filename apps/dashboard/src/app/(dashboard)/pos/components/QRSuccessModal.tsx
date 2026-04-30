@@ -1,10 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Phone, MessageCircle, Loader2, Check, Send } from 'lucide-react';
+import { X, Phone, Loader2, Check, Send, ChevronDown } from 'lucide-react';
 import { dashboardService } from '@/services/dashboard.service';
 import { useAuth } from '@/hooks/useAuth';
 import { B, T, TN, fmt } from '../pos-constants';
+
+const GCC_CODES = [
+  { code: '+966', flag: '🇸🇦', label: 'السعودية', len: 9 },
+  { code: '+971', flag: '🇦🇪', label: 'الإمارات', len: 9 },
+  { code: '+965', flag: '🇰🇼', label: 'الكويت',   len: 8 },
+  { code: '+973', flag: '🇧🇭', label: 'البحرين',  len: 8 },
+  { code: '+974', flag: '🇶🇦', label: 'قطر',      len: 8 },
+  { code: '+968', flag: '🇴🇲', label: 'عمان',     len: 8 },
+] as const;
 
 interface QRSuccessModalProps {
   isOpen: boolean;
@@ -30,6 +39,9 @@ export function QRSuccessModal({
   const { accessToken } = useAuth();
   const [waStat, setWaStat] = useState<SendStatus>('idle');
   const [phone, setPhone] = useState('');
+  const [countryIdx, setCountryIdx] = useState(0);
+  const [showCodes, setShowCodes] = useState(false);
+  const country = GCC_CODES[countryIdx];
 
   useEffect(() => {
     if (isOpen && clientPhone) setPhone(clientPhone);
@@ -52,10 +64,13 @@ export function QRSuccessModal({
   const handleClose = () => {
     setWaStat('idle');
     setPhone('');
+    setCountryIdx(0);
+    setShowCodes(false);
     onClose();
   };
 
-  const isPhoneValid = /^(05|5|966|\+966)\d{8,9}$/.test(phone.replace(/\s/g, ''));
+  const digits = phone.replace(/\D/g, '');
+  const isPhoneValid = digits.length === country.len;
 
   return (
     <>
@@ -147,21 +162,68 @@ export function QRSuccessModal({
                 <Phone size={11} />
                 رقم جوال العميل
               </label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(ev) => setPhone(ev.target.value)}
-                placeholder="05X XXX XXXX"
-                dir="ltr"
-                className={`w-full rounded-xl px-4 py-3 text-[16px] font-bold text-center text-white tracking-[0.12em] placeholder:text-white/15 placeholder:tracking-[0.05em] placeholder:font-normal focus:outline-none ${T}`}
-                style={{
-                  ...TN,
-                  background: 'rgba(255,255,255,0.04)',
-                  border: `1.5px solid ${phone && !isPhoneValid ? 'rgba(239,68,68,0.4)' : isPhoneValid ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.06)'}`,
-                }}
-              />
-              {phone && !isPhoneValid && (
-                <p className="text-[10px] text-red-400/80 text-center">رقم غير صحيح</p>
+              <div className="relative flex items-stretch gap-0" dir="ltr">
+                {/* Country code selector */}
+                <button
+                  type="button"
+                  onClick={() => setShowCodes(p => !p)}
+                  className={`${B} flex items-center gap-1 rounded-s-xl px-3 text-[13px] font-bold text-white/80 shrink-0`}
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    borderTop: '1.5px solid rgba(255,255,255,0.08)',
+                    borderBottom: '1.5px solid rgba(255,255,255,0.08)',
+                    borderLeft: '1.5px solid rgba(255,255,255,0.08)',
+                    borderRight: 'none',
+                  }}
+                >
+                  <span className="text-[16px] leading-none">{country.flag}</span>
+                  <span style={TN}>{country.code}</span>
+                  <ChevronDown size={10} className="text-white/30" />
+                </button>
+                {/* Dropdown */}
+                {showCodes && (
+                  <div
+                    className="absolute top-full start-0 z-10 mt-1 w-[200px] rounded-xl overflow-hidden shadow-xl"
+                    style={{ background: '#1e1e36', border: '1px solid rgba(255,255,255,0.08)' }}
+                  >
+                    {GCC_CODES.map((c, i) => (
+                      <button
+                        key={c.code}
+                        onClick={() => { setCountryIdx(i); setShowCodes(false); }}
+                        className={`${B} flex w-full items-center gap-3 px-3.5 py-2.5 text-start text-[12px] hover:bg-white/5 ${
+                          i === countryIdx ? 'bg-white/8 text-white' : 'text-white/60'
+                        }`}
+                      >
+                        <span className="text-[18px]">{c.flag}</span>
+                        <span className="flex-1 font-semibold">{c.label}</span>
+                        <span className="font-bold text-white/30" style={TN}>{c.code}</span>
+                        {i === countryIdx && <Check size={12} className="text-emerald-400" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Number */}
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(ev) => setPhone(ev.target.value.replace(/\D/g, ''))}
+                  placeholder={country.code === '+966' ? '5XXXXXXXX' : 'XXXXXXXX'}
+                  dir="ltr"
+                  className={`flex-1 min-w-0 rounded-e-xl px-4 py-3 text-[16px] font-bold text-white tracking-[0.1em] placeholder:text-white/15 placeholder:tracking-[0.05em] placeholder:font-normal focus:outline-none ${T}`}
+                  style={{
+                    ...TN,
+                    background: 'rgba(255,255,255,0.04)',
+                    borderTop: `1.5px solid ${digits && !isPhoneValid ? 'rgba(239,68,68,0.4)' : isPhoneValid ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                    borderBottom: `1.5px solid ${digits && !isPhoneValid ? 'rgba(239,68,68,0.4)' : isPhoneValid ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                    borderRight: `1.5px solid ${digits && !isPhoneValid ? 'rgba(239,68,68,0.4)' : isPhoneValid ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                    borderLeft: 'none',
+                  }}
+                />
+              </div>
+              {digits && !isPhoneValid && (
+                <p className="text-[10px] text-red-400/80 text-center">
+                  أدخل {country.len} أرقام بعد الكود
+                </p>
               )}
             </div>
 
