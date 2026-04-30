@@ -68,7 +68,7 @@ const navItems: NavItem[] = [
   { label: 'واتساب', href: '/settings/whatsapp', icon: MessageCircle, roles: ['owner', 'manager'] },
   // ── Coming Soon ──
   { label: 'الورديات', href: '/shifts', icon: Clock, comingSoon: true, roles: ['owner', 'manager'] },
-  { label: 'ZATCA', href: '/zatca', icon: Receipt, roles: ['owner', 'manager'] },
+  { label: 'الفوترة والضرائب', href: '/settings/billing', icon: Receipt, roles: ['owner', 'manager'] },
 ];
 
 interface SidebarProps {

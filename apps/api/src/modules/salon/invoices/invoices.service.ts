@@ -885,9 +885,13 @@ export class InvoicesService {
           );
         }
 
+        const salonInfo = await db.salonInfo.findFirst({
+          select: { taxNumber: true },
+        });
         const caption = this.buildInvoiceWhatsAppCaption(
           invoice,
           tenantBranding.nameAr,
+          salonInfo?.taxNumber ?? null,
         );
 
         // Convert PDF buffer → base64 (no data: prefix; Evolution v2 expects raw base64)
@@ -966,6 +970,7 @@ export class InvoicesService {
       invoiceItems: { description: string; quantity: number; unitPrice: unknown; totalPrice: unknown }[];
     },
     salonName: string,
+    taxNumber: string | null,
   ): string {
     const fmt = (v: unknown) => Number(v ?? 0).toFixed(2);
     const dateStr = new Intl.DateTimeFormat('ar-SA', {
@@ -977,7 +982,11 @@ export class InvoicesService {
     }).format(invoice.createdAt);
 
     const lines: string[] = [];
+    // ZATCA-required header for B2C simplified invoices.
+    lines.push('فاتورة ضريبية مبسطة');
     lines.push(`*${salonName}*`);
+    if (taxNumber) lines.push(`الرقم الضريبي: ${taxNumber}`);
+    lines.push('──────────────');
     lines.push(`فاتورة رقم: ${invoice.invoiceNumber}`);
     if (invoice.client.fullName) lines.push(`العميل: ${invoice.client.fullName}`);
     lines.push(`التاريخ: ${dateStr}`);

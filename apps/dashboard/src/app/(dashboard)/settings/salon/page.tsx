@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowRight, Building2, Phone, Mail, MapPin, Receipt } from 'lucide-react';
+import { ArrowRight, Building2, Phone, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button, Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -21,17 +21,20 @@ const schema = z.object({
   address: z.string().optional(),
   city: z.string().optional(),
   description: z.string().optional(),
-  // ZATCA fields
-  taxNumber: z.string().optional(),
-  commercialRegistration: z.string().optional(),
-  street: z.string().optional(),
-  district: z.string().optional(),
-  buildingNumber: z.string().optional(),
-  postalCode: z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
 
-interface SalonInfo { salonNameAr?: string; salonNameEn?: string; nameAr?: string; nameEn?: string; phone: string; email?: string; address?: string; city?: string; description?: string; taxNumber?: string; commercialRegistration?: string; street?: string; district?: string; buildingNumber?: string; postalCode?: string; }
+interface SalonInfo {
+  salonNameAr?: string;
+  salonNameEn?: string;
+  nameAr?: string;
+  nameEn?: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  description?: string;
+}
 
 const inputClass = "w-full px-4 py-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] text-sm focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition-all";
 
@@ -50,20 +53,25 @@ export default function SalonSettingsPage() {
 
   useEffect(() => {
     if (info) reset({
-      salonNameAr: info.salonNameAr ?? info.nameAr ?? '', salonNameEn: info.salonNameEn ?? info.nameEn ?? '',
-      phone: info.phone ?? '', email: info.email ?? '', address: info.address ?? '', city: info.city ?? '', description: info.description ?? '',
-      taxNumber: info.taxNumber ?? '', commercialRegistration: info.commercialRegistration ?? '',
-      street: info.street ?? '', district: info.district ?? '', buildingNumber: info.buildingNumber ?? '', postalCode: info.postalCode ?? '',
+      salonNameAr: info.salonNameAr ?? info.nameAr ?? '',
+      salonNameEn: info.salonNameEn ?? info.nameEn ?? '',
+      phone: info.phone ?? '',
+      email: info.email ?? '',
+      address: info.address ?? '',
+      city: info.city ?? '',
+      description: info.description ?? '',
     });
   }, [info, reset]);
 
   const mut = useMutation({
     mutationFn: (d: FormData) => api.put('/salon', {
-      nameAr: d.salonNameAr, nameEn: d.salonNameEn || undefined, phone: d.phone, email: d.email || undefined,
-      address: d.address || undefined, city: d.city || undefined, description: d.description || undefined,
-      taxNumber: d.taxNumber || undefined, commercialRegistration: d.commercialRegistration || undefined,
-      street: d.street || undefined, district: d.district || undefined,
-      buildingNumber: d.buildingNumber || undefined, postalCode: d.postalCode || undefined,
+      nameAr: d.salonNameAr,
+      nameEn: d.salonNameEn || undefined,
+      phone: d.phone,
+      email: d.email || undefined,
+      address: d.address || undefined,
+      city: d.city || undefined,
+      description: d.description || undefined,
     }, accessToken!),
     onSuccess: () => { toast.success('✅ تم حفظ البيانات'); qc.invalidateQueries({ queryKey: ['settings', 'salon'] }); },
     onError: () => toast.error('خطأ في الحفظ'),
@@ -133,42 +141,6 @@ export default function SalonSettingsPage() {
               <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">المدينة</label>
               <input {...register('city')} placeholder="الرياض" className={inputClass} />
             </div>
-          </div>
-        </div>
-
-        {/* Section: ZATCA Tax Info */}
-        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-          <div className="px-5 py-3 border-b border-[var(--border)] flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center"><Receipt className="h-3.5 w-3.5 text-violet-600" /></div><span className="text-xs font-bold">البيانات الضريبية (ZATCA)</span>
-          </div>
-          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">الرقم الضريبي (VAT)</label>
-              <input {...register('taxNumber')} dir="ltr" placeholder="300000000000003" className={inputClass} />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">السجل التجاري</label>
-              <input {...register('commercialRegistration')} dir="ltr" placeholder="1010000000" className={inputClass} />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">الشارع</label>
-              <input {...register('street')} placeholder="شارع الملك فهد" className={inputClass} />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">الحي</label>
-              <input {...register('district')} placeholder="حي العليا" className={inputClass} />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">رقم المبنى</label>
-              <input {...register('buildingNumber')} dir="ltr" placeholder="1234" className={inputClass} />
-            </div>
-            <div>
-              <label className="text-[11px] font-bold text-[var(--muted-foreground)] mb-1.5 block">الرمز البريدي</label>
-              <input {...register('postalCode')} dir="ltr" placeholder="12345" className={inputClass} />
-            </div>
-          </div>
-          <div className="px-5 pb-4">
-            <p className="text-[10px] text-[var(--muted-foreground)]">⚠️ هذه البيانات مطلوبة لتفعيل الفوترة الإلكترونية (ZATCA). تأكد من صحتها قبل التسجيل.</p>
           </div>
         </div>
 
