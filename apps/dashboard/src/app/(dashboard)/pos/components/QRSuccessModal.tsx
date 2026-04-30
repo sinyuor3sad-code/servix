@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CheckCircle2, X, Phone, MessageCircle, Mail, Loader2, Check } from 'lucide-react';
+import { CheckCircle2, X, Phone, MessageCircle, Loader2, Check } from 'lucide-react';
 import { dashboardService } from '@/services/dashboard.service';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -34,7 +34,6 @@ export function QRSuccessModal({
 }: QRSuccessModalProps) {
   const { accessToken } = useAuth();
   const [waStat, setWaStat] = useState<SendStatus>('idle');
-  const [mailStat, setMailStat] = useState<SendStatus>('idle');
   const [phone, setPhone] = useState('');
 
   // Pre-fill phone from client data when modal opens
@@ -46,23 +45,20 @@ export function QRSuccessModal({
 
   if (!isOpen) return null;
 
-  const handleSend = async (channel: 'whatsapp' | 'email') => {
-    if (!invoiceId || !accessToken) return;
-    if (channel === 'whatsapp' && !phone.trim()) return;
-    const setter = channel === 'whatsapp' ? setWaStat : setMailStat;
-    setter('sending');
+  const handleSendWhatsApp = async () => {
+    if (!invoiceId || !accessToken || !phone.trim()) return;
+    setWaStat('sending');
     try {
-      await dashboardService.sendInvoice(invoiceId, channel, accessToken);
-      setter('sent');
+      await dashboardService.sendInvoice(invoiceId, 'whatsapp', accessToken);
+      setWaStat('sent');
     } catch {
-      setter('error');
-      setTimeout(() => setter('idle'), 3000);
+      setWaStat('error');
+      setTimeout(() => setWaStat('idle'), 3000);
     }
   };
 
   const handleClose = () => {
     setWaStat('idle');
-    setMailStat('idle');
     setPhone('');
     onClose();
   };
@@ -143,53 +139,28 @@ export function QRSuccessModal({
               )}
             </div>
 
-            {/* ─── Send Buttons ─── */}
+            {/* ─── Send WhatsApp ─── */}
             {invoiceId && (
-              <div className="flex gap-3">
-                {/* WhatsApp Button */}
-                <button
-                  onClick={() => handleSend('whatsapp')}
-                  disabled={waStat === 'sending' || waStat === 'sent' || !isPhoneValid}
-                  className={`${B} flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 ${
-                    waStat === 'sent'
-                      ? 'bg-emerald-500 text-white'
-                      : waStat === 'error'
-                      ? 'bg-red-500/10 text-red-500 border border-red-500/20'
-                      : 'bg-[#25D366]/10 text-[#25D366] border border-[#25D366]/20 hover:bg-[#25D366]/20'
-                  }`}
-                >
-                  {waStat === 'sending' ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : waStat === 'sent' ? (
-                    <Check size={16} />
-                  ) : (
-                    <MessageCircle size={16} />
-                  )}
-                  {waStat === 'sent' ? 'تم ✓' : waStat === 'error' ? 'فشل!' : waStat === 'sending' ? 'جاري...' : 'واتساب'}
-                </button>
-
-                {/* Email Button */}
-                <button
-                  onClick={() => handleSend('email')}
-                  disabled={mailStat === 'sending' || mailStat === 'sent'}
-                  className={`${B} flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 ${
-                    mailStat === 'sent'
-                      ? 'bg-emerald-500 text-white'
-                      : mailStat === 'error'
-                      ? 'bg-red-500/10 text-red-500 border border-red-500/20'
-                      : `${bg(3)} text-[var(--foreground)] border ${brd(4)} hover:${bg(4)}`
-                  }`}
-                >
-                  {mailStat === 'sending' ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : mailStat === 'sent' ? (
-                    <Check size={16} />
-                  ) : (
-                    <Mail size={16} />
-                  )}
-                  {mailStat === 'sent' ? 'تم ✓' : mailStat === 'error' ? 'فشل!' : mailStat === 'sending' ? 'جاري...' : 'إيميل'}
-                </button>
-              </div>
+              <button
+                onClick={handleSendWhatsApp}
+                disabled={waStat === 'sending' || waStat === 'sent' || !isPhoneValid}
+                className={`${B} w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 ${
+                  waStat === 'sent'
+                    ? 'bg-emerald-500 text-white'
+                    : waStat === 'error'
+                    ? 'bg-red-500/10 text-red-500 border border-red-500/20'
+                    : 'bg-[#25D366]/10 text-[#25D366] border border-[#25D366]/20 hover:bg-[#25D366]/20'
+                }`}
+              >
+                {waStat === 'sending' ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : waStat === 'sent' ? (
+                  <Check size={16} />
+                ) : (
+                  <MessageCircle size={16} />
+                )}
+                {waStat === 'sent' ? 'تم الإرسال ✓' : waStat === 'error' ? 'فشل الإرسال!' : waStat === 'sending' ? 'جاري الإرسال...' : 'إرسال الفاتورة واتساب'}
+              </button>
             )}
 
             {/* Close button */}
