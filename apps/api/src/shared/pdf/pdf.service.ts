@@ -1,6 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
+import * as fs from 'fs';
+import * as path from 'path';
+import ArabicReshaper from 'arabic-reshaper';
+import bidiFactory from 'bidi-js';
 import type { TenantPrismaClient } from '../types/tenant-db.type';
 
 /** ZATCA Phase 1 QR: TLV format (seller name, tax number, date, total, VAT) */
@@ -24,8 +28,47 @@ function buildZatcaQrData(
   return Buffer.concat(tlv).toString('base64');
 }
 
+const FONTS_DIR = path.join(__dirname, 'fonts');
+const REGULAR_FONT_PATH = path.join(FONTS_DIR, 'Amiri-Regular.ttf');
+const BOLD_FONT_PATH = path.join(FONTS_DIR, 'Amiri-Bold.ttf');
+
+const bidi = bidiFactory();
+
+// Reshape Arabic letters into their joined visual forms and apply bidi
+// reordering so PDFKit (which only renders LTR glyph runs) shows the text
+// the same way a human reads it. Numbers and Latin keep their natural order
+// inside the RTL paragraph.
+function shapeArabic(text: string): string {
+  if (!text) return '';
+  const reshaped = ArabicReshaper.convertArabic(text);
+  // Run UAX#9 bidi with paragraph base direction = RTL.
+  const embeddingLevels = bidi.getEmbeddingLevels(reshaped, 'rtl');
+  const flipped = bidi.getReorderSegments(reshaped, embeddingLevels);
+  const chars = reshaped.split('');
+  for (const [start, end] of flipped) {
+    const slice = chars.slice(start, end + 1).reverse();
+    chars.splice(start, end - start + 1, ...slice);
+  }
+  return chars.join('');
+}
+
 @Injectable()
 export class PdfService {
+  private readonly logger = new Logger(PdfService.name);
+  private fontsLoaded = false;
+
+  private ensureFonts(): boolean {
+    if (this.fontsLoaded) return true;
+    if (!fs.existsSync(REGULAR_FONT_PATH) || !fs.existsSync(BOLD_FONT_PATH)) {
+      this.logger.warn(
+        `Arabic fonts missing at ${FONTS_DIR}; PDF Arabic text will not render correctly`,
+      );
+      return false;
+    }
+    this.fontsLoaded = true;
+    return true;
+  }
+
   async generateInvoicePdf(
     db: TenantPrismaClient,
     invoiceId: string,
@@ -54,85 +97,121 @@ export class PdfService {
     const salonInfo = await db.salonInfo.findFirst();
     const taxNumber = salonInfo?.taxNumber ?? null;
 
+    const hasFonts = this.ensureFonts();
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
     const chunks: Buffer[] = [];
 
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
 
-    const primaryColor = tenantBranding.primaryColor || '#8B5CF6';
-
-    doc
-      .fontSize(24)
-      .fillColor(primaryColor)
-      .text(tenantBranding.nameAr, { align: 'center' })
-      .moveDown(0.5);
-
-    if (tenantBranding.logoUrl) {
-      doc.fontSize(10).fillColor('#666').text('', { align: 'center' });
+    if (hasFonts) {
+      doc.registerFont('Arabic', REGULAR_FONT_PATH);
+      doc.registerFont('Arabic-Bold', BOLD_FONT_PATH);
+      doc.font('Arabic');
     }
 
-    doc
-      .fontSize(12)
-      .fillColor('#333')
-      .text(`رقم الفاتورة: ${invoice.invoiceNumber}`, { align: 'right' })
-      .text(`التاريخ: ${invoice.createdAt.toLocaleDateString('ar-SA')}`, { align: 'right' })
-      .text(`الوقت: ${invoice.createdAt.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}`, { align: 'right' })
-      .moveDown(1);
+    // Helpers wrapping text drawing with shaping + RTL alignment.
+    const ar = (text: string) => (hasFonts ? shapeArabic(text) : text);
+    const writeRight = (text: string, options?: PDFKit.Mixins.TextOptions) =>
+      doc.text(ar(text), { align: 'right', ...options });
+    const writeCenter = (text: string, options?: PDFKit.Mixins.TextOptions) =>
+      doc.text(ar(text), { align: 'center', ...options });
 
-    doc
-      .fontSize(14)
-      .fillColor('#333')
-      .text('بيانات العميل', { align: 'right' })
-      .fontSize(11)
-      .text(`الاسم: ${invoice.client.fullName}`, { align: 'right' })
-      .text(`الجوال: ${invoice.client.phone}`, { align: 'right' });
+    const primaryColor = tenantBranding.primaryColor || '#8B5CF6';
+
+    // ── Header: salon name ──
+    if (hasFonts) doc.font('Arabic-Bold');
+    doc.fontSize(24).fillColor(primaryColor);
+    writeCenter(tenantBranding.nameAr);
+    doc.moveDown(0.5);
+    if (hasFonts) doc.font('Arabic');
+
+    // ── Meta: invoice number, date, time ──
+    doc.fontSize(12).fillColor('#333');
+    writeRight(`رقم الفاتورة: ${invoice.invoiceNumber}`);
+    writeRight(`التاريخ: ${invoice.createdAt.toLocaleDateString('ar-SA')}`);
+    writeRight(
+      `الوقت: ${invoice.createdAt.toLocaleTimeString('ar-SA', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`,
+    );
+    doc.moveDown(1);
+
+    // ── Client section ──
+    if (hasFonts) doc.font('Arabic-Bold');
+    doc.fontSize(14).fillColor('#333');
+    writeRight('بيانات العميل');
+    if (hasFonts) doc.font('Arabic');
+    doc.fontSize(11);
+    writeRight(`الاسم: ${invoice.client.fullName}`);
+    writeRight(`الجوال: ${invoice.client.phone}`);
     if (invoice.client.email) {
-      doc.text(`البريد: ${invoice.client.email}`, { align: 'right' });
+      writeRight(`البريد: ${invoice.client.email}`);
     }
     doc.moveDown(1);
 
-    doc.fontSize(12).fillColor('#333').text('تفاصيل الخدمات', { align: 'right' }).moveDown(0.5);
+    // ── Items header ──
+    if (hasFonts) doc.font('Arabic-Bold');
+    doc.fontSize(12).fillColor('#333');
+    writeRight('تفاصيل الخدمات');
+    if (hasFonts) doc.font('Arabic');
+    doc.moveDown(0.5);
 
+    // ── Items list ──
     doc.fontSize(10);
     for (const item of invoice.invoiceItems) {
       const serviceName = item.service?.nameAr || item.description;
       const empName = item.employee?.fullName || '';
-      const line = `${serviceName} ${empName ? `- ${empName}` : ''} | ${item.quantity} × ${Number(item.unitPrice).toFixed(2)} = ${Number(item.totalPrice).toFixed(2)} ر.س`;
-      doc.text(line, { align: 'right' });
+      const employeePart = empName ? ` - ${empName}` : '';
+      const line =
+        `${serviceName}${employeePart} | ${item.quantity} × ${Number(
+          item.unitPrice,
+        ).toFixed(2)} = ${Number(item.totalPrice).toFixed(2)} ر.س`;
+      writeRight(line);
     }
     doc.moveDown(1);
 
+    // ── Totals ──
     const subtotal = Number(invoice.subtotal);
     const taxAmount = Number(invoice.taxAmount);
     const discountAmount = Number(invoice.discountAmount);
     const total = Number(invoice.total);
 
-    doc
-      .fontSize(11)
-      .text(`المجموع الفرعي: ${subtotal.toFixed(2)} ر.س`, { align: 'right' });
+    doc.fontSize(11).fillColor('#333');
+    writeRight(`المجموع الفرعي: ${subtotal.toFixed(2)} ر.س`);
     if (discountAmount > 0) {
-      doc.text(`الخصم: ${discountAmount.toFixed(2)} ر.س`, { align: 'right' });
+      writeRight(`الخصم: ${discountAmount.toFixed(2)} ر.س`);
     }
-    doc
-      .text(`ضريبة القيمة المضافة (15%): ${taxAmount.toFixed(2)} ر.س`, { align: 'right' })
-      .fontSize(12)
-      .fillColor(primaryColor)
-      .text(`الإجمالي: ${total.toFixed(2)} ر.س`, { align: 'right' })
-      .moveDown(1);
+    writeRight(`ضريبة القيمة المضافة (15%): ${taxAmount.toFixed(2)} ر.س`);
+    if (hasFonts) doc.font('Arabic-Bold');
+    doc.fontSize(12).fillColor(primaryColor);
+    writeRight(`الإجمالي: ${total.toFixed(2)} ر.س`);
+    if (hasFonts) doc.font('Arabic');
+    doc.moveDown(1);
 
+    // ── Payment ──
     if (invoice.payments.length > 0) {
       doc.fontSize(11).fillColor('#333');
       const paymentMethod = invoice.payments[0].method;
-      const methodAr = paymentMethod === 'cash' ? 'نقدي' : paymentMethod === 'card' ? 'بطاقة' : paymentMethod;
-      doc.text(`طريقة الدفع: ${methodAr}`, { align: 'right' });
-      doc.text(`الحالة: ${invoice.status === 'paid' ? 'مدفوعة' : invoice.status}`, { align: 'right' });
+      const methodAr =
+        paymentMethod === 'cash'
+          ? 'نقدي'
+          : paymentMethod === 'card'
+            ? 'بطاقة'
+            : paymentMethod;
+      writeRight(`طريقة الدفع: ${methodAr}`);
+      writeRight(
+        `الحالة: ${invoice.status === 'paid' ? 'مدفوعة' : invoice.status}`,
+      );
       doc.moveDown(1);
     }
 
     if (taxNumber) {
-      doc.fontSize(9).fillColor('#666').text(`الرقم الضريبي: ${taxNumber}`, { align: 'center' });
+      doc.fontSize(9).fillColor('#666');
+      writeCenter(`الرقم الضريبي: ${taxNumber}`);
     }
 
+    // ── ZATCA QR ──
     const qrData = buildZatcaQrData(
       tenantBranding.nameAr,
       taxNumber || '000000000000000',
@@ -145,14 +224,16 @@ export class PdfService {
       margin: 1,
       width: 80,
     });
-    doc.image(qrDataUrl, doc.page.width / 2 - 40, doc.y, { width: 80, height: 80 });
+    doc.image(qrDataUrl, doc.page.width / 2 - 40, doc.y, {
+      width: 80,
+      height: 80,
+    });
     doc.moveDown(6);
 
-    doc
-      .fontSize(10)
-      .fillColor('#333')
-      .text('شكراً لزيارتكم', { align: 'center' })
-      .moveDown(0.5);
+    // ── Footer ──
+    doc.fontSize(10).fillColor('#333');
+    writeCenter('شكراً لزيارتكم');
+    doc.moveDown(0.5);
 
     doc.end();
 
