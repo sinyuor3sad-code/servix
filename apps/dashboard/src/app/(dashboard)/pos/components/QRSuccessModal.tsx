@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Phone, Loader2, Check, Send, ChevronDown } from 'lucide-react';
+import { X, Phone, Loader2, Check, Send, ChevronDown, User } from 'lucide-react';
 import { dashboardService } from '@/services/dashboard.service';
 import { useAuth } from '@/hooks/useAuth';
 import { B, T, TN, fmt } from '../pos-constants';
@@ -49,6 +49,7 @@ export function QRSuccessModal({
   const [waStat, setWaStat] = useState<SendStatus>('idle');
   const [waError, setWaError] = useState<string | null>(null);
   const [phone, setPhone] = useState('');
+  const [clientName, setClientName] = useState('');
   const [countryIdx, setCountryIdx] = useState(0);
   const [showCodes, setShowCodes] = useState(false);
   const country = GCC_CODES[countryIdx];
@@ -83,6 +84,7 @@ export function QRSuccessModal({
     setWaStat('idle');
     setWaError(null);
     setPhone('');
+    setClientName('');
     setCountryIdx(0);
     setShowCodes(false);
     onClose();
@@ -173,8 +175,28 @@ export function QRSuccessModal({
           {/* ── Divider ── */}
           <div className="mx-6 my-4 h-px" style={{ background: 'rgba(255,255,255,0.05)' }} />
 
-          {/* ── Phone + Send ── */}
+          {/* ── Client Name + Phone + Send ── */}
           <div className="px-6 pb-6 space-y-3">
+            {/* Client name */}
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-white/40">
+                <User size={11} />
+                اسم العميل
+              </label>
+              <input
+                type="text"
+                value={clientName}
+                onChange={(ev) => setClientName(ev.target.value)}
+                placeholder="اسم الزبونة..."
+                dir="rtl"
+                className={`w-full rounded-xl px-4 py-3 text-[14px] font-semibold text-white placeholder:text-white/15 focus:outline-none ${T}`}
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1.5px solid rgba(255,255,255,0.06)',
+                }}
+              />
+            </div>
+
             {/* Phone input */}
             <div className="space-y-1.5">
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-white/40">
