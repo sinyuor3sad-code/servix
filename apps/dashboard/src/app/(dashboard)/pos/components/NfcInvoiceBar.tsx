@@ -89,7 +89,15 @@ export function NfcInvoiceBar({ e, salonSlug }: NfcInvoiceBarProps) {
     try {
       await dashboardService.sendInvoice(id, 'whatsapp', accessToken!);
       toast.success('تم الإرسال عبر واتساب');
-    } catch { toast.error('فشل الإرسال'); }
+    } catch (err) {
+      const e = err as { message?: unknown; details?: unknown };
+      const msg =
+        (typeof e?.message === 'string' && e.message) ||
+        (Array.isArray(e?.details) && e.details.length ? String(e.details[0]) : null) ||
+        'فشل الإرسال';
+      console.error('[NfcInvoiceBar] WA send failed:', err);
+      toast.error(msg);
+    }
   };
 
   const nfcLink = salonSlug

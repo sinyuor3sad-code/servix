@@ -386,8 +386,10 @@ export class WhatsAppEvolutionService implements OnModuleInit {
   }
 
   private normalizePhone(phone: string): string {
-    const digits = phone.replace(/\D/g, '');
-    if (digits.startsWith('966')) return digits;
+    const digits = phone.replace(/\D/g, '').replace(/^00/, '');
+    // Gulf country codes — leave intact if already prefixed
+    const GULF_CODES = ['966', '971', '965', '973', '974', '968'];
+    if (GULF_CODES.some((c) => digits.startsWith(c))) return digits;
     if (digits.startsWith('0')) return '966' + digits.slice(1);
     return '966' + digits;
   }

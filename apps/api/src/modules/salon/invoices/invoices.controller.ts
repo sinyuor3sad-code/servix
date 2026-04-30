@@ -282,6 +282,7 @@ export class InvoicesController {
         logoUrl: tenant.logoUrl,
       },
       req.tenant?.id,
+      dto.to,
     );
     return {
       success: true,

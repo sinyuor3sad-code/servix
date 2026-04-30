@@ -292,8 +292,17 @@ export const dashboardService = {
   posCheckout: (data: PosCheckoutRequest, token: string) =>
     api.post<PosCheckoutResponse>('/pos/checkout', data, token),
 
-  sendInvoice: (invoiceId: string, channel: 'whatsapp' | 'email' | 'sms', token: string) =>
-    api.post(`/invoices/${invoiceId}/send`, { channel }, token),
+  sendInvoice: (
+    invoiceId: string,
+    channel: 'whatsapp' | 'email' | 'sms',
+    token: string,
+    to?: string,
+  ) =>
+    api.post(
+      `/invoices/${invoiceId}/send`,
+      to ? { channel, to } : { channel },
+      token,
+    ),
 
   // ─── Inventory ───
   getProducts: (token: string) =>

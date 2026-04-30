@@ -817,16 +817,30 @@ export class InvoicesService {
     channel: InvoiceSendChannel,
     tenantBranding: { nameAr: string; primaryColor: string; logoUrl: string | null },
     tenantId?: string,
+    overridePhone?: string,
   ): Promise<{ message: string }> {
     const invoice = await db.invoice.findUnique({
       where: { id: invoiceId },
       include: {
         client: { select: { fullName: true, phone: true, email: true } },
+        invoiceItems: {
+          select: {
+            description: true,
+            quantity: true,
+            unitPrice: true,
+            totalPrice: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
     if (!invoice) {
       throw new NotFoundException('الفاتورة غير موجودة');
+    }
+
+    if (!invoice.invoiceItems.length) {
+      throw new BadRequestException('لا يمكن إرسال فاتورة بدون أصناف');
     }
 
     const pdfBuffer = await this.pdfService.generateInvoicePdf(
@@ -836,8 +850,14 @@ export class InvoicesService {
     );
     const filename = `فاتورة-${invoice.invoiceNumber}.pdf`;
 
-    const clientPhone = invoice.client.phone.replace(/\D/g, '');
-    const whatsappPhone = clientPhone.startsWith('966') ? clientPhone : `966${clientPhone.replace(/^0/, '')}`;
+    // ── Resolve target phone: explicit override > client phone ──
+    const rawPhone = (overridePhone ?? invoice.client.phone ?? '').replace(/\D/g, '');
+    if (!rawPhone || rawPhone.length < 8) {
+      throw new BadRequestException(
+        'رقم جوال العميل غير متوفر. أدخل رقماً صحيحاً قبل الإرسال',
+      );
+    }
+    const whatsappPhone = this.normalizeGulfPhone(rawPhone);
 
     switch (channel) {
       case InvoiceSendChannel.whatsapp: {
@@ -865,23 +885,39 @@ export class InvoicesService {
           );
         }
 
-        // Convert PDF buffer → base64 (strip prefix)
+        const caption = this.buildInvoiceWhatsAppCaption(
+          invoice,
+          tenantBranding.nameAr,
+        );
+
+        // Convert PDF buffer → base64 (no data: prefix; Evolution v2 expects raw base64)
         const base64Pdf = pdfBuffer.toString('base64');
 
-        // Send document via Evolution sendMedia
-        await this.evolutionService.sendMedia({
-          instanceName: waInstance.instanceName,
-          instanceToken: waInstance.instanceToken,
-          to: whatsappPhone,
-          message: `فاتورة ${invoice.invoiceNumber} من ${tenantBranding.nameAr}\nالإجمالي: ${Number(invoice.total).toFixed(2)} ر.س`,
-          mediaUrl: base64Pdf,
-          mediaType: 'document',
-          mimetype: 'application/pdf',
-          filename,
-          caption: `فاتورة ${invoice.invoiceNumber} من ${tenantBranding.nameAr}\nالإجمالي: ${Number(invoice.total).toFixed(2)} ر.س`,
-        });
+        try {
+          await this.evolutionService.sendMedia({
+            instanceName: waInstance.instanceName,
+            instanceToken: waInstance.instanceToken,
+            to: whatsappPhone,
+            message: caption,
+            mediaUrl: base64Pdf,
+            mediaType: 'document',
+            mimetype: 'application/pdf',
+            filename,
+            caption,
+          });
+        } catch (err) {
+          const reason = (err as Error)?.message ?? 'unknown';
+          this.logger.error(
+            `Invoice ${invoice.invoiceNumber} WA send failed → ${whatsappPhone} (instance=${waInstance.instanceName}): ${reason}`,
+          );
+          throw new BadRequestException(
+            `تعذّر إرسال الفاتورة عبر واتساب: ${reason}`,
+          );
+        }
 
-        this.logger.log(`Invoice ${invoice.invoiceNumber} sent via Evolution WhatsApp to ${whatsappPhone}`);
+        this.logger.log(
+          `Invoice ${invoice.invoiceNumber} sent via Evolution WhatsApp to ${whatsappPhone} (instance=${waInstance.instanceName})`,
+        );
         return { message: 'تم إرسال الفاتورة عبر واتساب بنجاح' };
       }
       case InvoiceSendChannel.email:
@@ -906,6 +942,62 @@ export class InvoicesService {
       default:
         throw new BadRequestException('قناة إرسال غير صالحة');
     }
+  }
+
+  // ── Gulf country-code-aware phone normalization (E.164 without +). ──
+  // Accepts: bare local digits, leading 0, or already-prefixed international.
+  // Default fallback for plain local numbers is +966 (KSA).
+  private normalizeGulfPhone(rawDigits: string): string {
+    const GULF_CODES = ['966', '971', '965', '973', '974', '968'];
+    const digits = rawDigits.replace(/^00/, '');
+    if (GULF_CODES.some((c) => digits.startsWith(c))) return digits;
+    return `966${digits.replace(/^0/, '')}`;
+  }
+
+  private buildInvoiceWhatsAppCaption(
+    invoice: {
+      invoiceNumber: string;
+      createdAt: Date;
+      subtotal: unknown;
+      discountAmount: unknown;
+      taxAmount: unknown;
+      total: unknown;
+      client: { fullName: string };
+      invoiceItems: { description: string; quantity: number; unitPrice: unknown; totalPrice: unknown }[];
+    },
+    salonName: string,
+  ): string {
+    const fmt = (v: unknown) => Number(v ?? 0).toFixed(2);
+    const dateStr = new Intl.DateTimeFormat('ar-SA', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(invoice.createdAt);
+
+    const lines: string[] = [];
+    lines.push(`*${salonName}*`);
+    lines.push(`فاتورة رقم: ${invoice.invoiceNumber}`);
+    if (invoice.client.fullName) lines.push(`العميل: ${invoice.client.fullName}`);
+    lines.push(`التاريخ: ${dateStr}`);
+    lines.push('');
+    lines.push('*الأصناف:*');
+    for (const it of invoice.invoiceItems) {
+      lines.push(`• ${it.description} × ${it.quantity} = ${fmt(it.totalPrice)} ر.س`);
+    }
+    lines.push('');
+    lines.push(`المجموع الفرعي: ${fmt(invoice.subtotal)} ر.س`);
+    if (Number(invoice.discountAmount ?? 0) > 0) {
+      lines.push(`الخصم: ${fmt(invoice.discountAmount)} ر.س`);
+    }
+    if (Number(invoice.taxAmount ?? 0) > 0) {
+      lines.push(`الضريبة: ${fmt(invoice.taxAmount)} ر.س`);
+    }
+    lines.push(`*الإجمالي: ${fmt(invoice.total)} ر.س*`);
+    lines.push('');
+    lines.push('شكراً لزيارتكم 🌸');
+    return lines.join('\n');
   }
 
   private async generateInvoiceNumber(db: InvoiceNumberClient): Promise<string> {

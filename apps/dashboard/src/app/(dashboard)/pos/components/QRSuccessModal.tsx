@@ -27,6 +27,15 @@ interface QRSuccessModalProps {
 
 type SendStatus = 'idle' | 'sending' | 'sent' | 'error';
 
+function extractApiErrorMessage(err: unknown): string {
+  if (!err) return 'فشل الإرسال';
+  if (typeof err === 'string') return err;
+  const e = err as { message?: unknown; details?: unknown };
+  if (typeof e.message === 'string' && e.message.trim()) return e.message;
+  if (Array.isArray(e.details) && e.details.length) return String(e.details[0]);
+  return 'فشل الإرسال';
+}
+
 export function QRSuccessModal({
   isOpen,
   onClose,
@@ -38,6 +47,7 @@ export function QRSuccessModal({
 }: QRSuccessModalProps) {
   const { accessToken } = useAuth();
   const [waStat, setWaStat] = useState<SendStatus>('idle');
+  const [waError, setWaError] = useState<string | null>(null);
   const [phone, setPhone] = useState('');
   const [countryIdx, setCountryIdx] = useState(0);
   const [showCodes, setShowCodes] = useState(false);
@@ -50,19 +60,28 @@ export function QRSuccessModal({
   if (!isOpen) return null;
 
   const handleSendWhatsApp = async () => {
-    if (!invoiceId || !accessToken || !phone.trim()) return;
+    if (!invoiceId || !accessToken) return;
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length !== country.len) return;
+    // E.164 without + (Evolution API format): "<countryCode><digits>"
+    const e164 = `${country.code.replace('+', '')}${digits}`;
     setWaStat('sending');
+    setWaError(null);
     try {
-      await dashboardService.sendInvoice(invoiceId, 'whatsapp', accessToken);
+      await dashboardService.sendInvoice(invoiceId, 'whatsapp', accessToken, e164);
       setWaStat('sent');
-    } catch {
+    } catch (err) {
+      const msg = extractApiErrorMessage(err);
+      console.error('[QRSuccessModal] WA send failed:', err);
+      setWaError(msg);
       setWaStat('error');
-      setTimeout(() => setWaStat('idle'), 3000);
+      setTimeout(() => { setWaStat('idle'); setWaError(null); }, 5000);
     }
   };
 
   const handleClose = () => {
     setWaStat('idle');
+    setWaError(null);
     setPhone('');
     setCountryIdx(0);
     setShowCodes(false);
@@ -261,6 +280,11 @@ export function QRSuccessModal({
                   ? 'جاري الإرسال...'
                   : 'إرسال الفاتورة عبر واتساب'}
               </button>
+            )}
+            {waStat === 'error' && waError && (
+              <p className="text-[10px] text-red-400/90 text-center leading-relaxed px-1">
+                {waError}
+              </p>
             )}
 
             {/* Close / New */}
