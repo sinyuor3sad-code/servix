@@ -19,8 +19,7 @@ import {
   accentBg, accentColor, accentMix, primaryBg,
   fmt, PAY,
 } from '../pos-constants';
-import { ClientSection } from './ClientSection';
-import { EmployeePicker } from './EmployeePicker';
+import { EmployeePopover } from './EmployeePopover';
 import { CategoryBar } from './CategoryBar';
 import { ServiceGrid } from './ServiceGrid';
 import { PanelModals } from './PanelModals';
@@ -70,8 +69,6 @@ export function TouchPOS({ e }: { e: E }) {
 
         {/* CART SIDEBAR (tablet) */}
         <aside className={`hidden w-[420px] shrink-0 flex-col border-s ${brd(4)} md:flex ${G1}`}>
-          <ClientSection e={e} lg />
-          <EmployeePicker e={e} lg />
           <div className="flex-1 overflow-y-auto p-4 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2"><ShoppingCart size={14} style={accentColor} /><span className="text-[13px] font-bold text-[var(--foreground)]">السلة</span>{e.cartCount > 0 && <span className="flex h-6 min-w-6 items-center justify-center rounded-lg px-1.5 text-[11px] font-black text-black" style={{ ...TN, ...accentBg }}>{e.cartCount}</span>}</div>
@@ -316,6 +313,15 @@ export function TouchPOS({ e }: { e: E }) {
         invoiceId={e.lastInvoiceId}
         clientPhone={e.client?.phone}
       />
+      {/* Employee selection popover */}
+      {e.pendingService && (
+        <EmployeePopover
+          service={e.pendingService}
+          employees={e.emps}
+          onSelect={(emp) => e.confirmAdd(e.pendingService!, emp)}
+          onCancel={() => e.setPendingService(null)}
+        />
+      )}
     </div>
   );
 }

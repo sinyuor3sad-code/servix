@@ -568,15 +568,28 @@ export function usePOSEngine() {
 
   const favSvcs = useMemo(() => allSvcs.filter(s => favIds.includes(s.id)), [allSvcs, favIds]);
 
+  /* ── Pending service (for employee popover) ── */
+  const [pendingService, setPendingService] = useState<Service | null>(null);
+
   /* ── Cart ops ── */
-  const addToCart = useCallback((svc: Service) => {
+  const confirmAdd = useCallback((svc: Service, emp: Employee | null) => {
     setCart(prev => {
-      const ex = prev.find(i => i.service.id === svc.id && i.employeeId === (defEmployee?.id ?? null) && !i.bundleId);
+      const ex = prev.find(i => i.service.id === svc.id && i.employeeId === (emp?.id ?? null) && !i.bundleId);
       if (ex) return prev.map(i => i.id === ex.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { id: uid(), service: svc, quantity: 1, employeeId: defEmployee?.id ?? null, employeeName: defEmployee?.fullName ?? 'غير محدد', discount: 0, discountType: 'fixed' as const, note: '' }];
+      return [...prev, { id: uid(), service: svc, quantity: 1, employeeId: emp?.id ?? null, employeeName: emp?.fullName ?? 'غير محدد', discount: 0, discountType: 'fixed' as const, note: '' }];
     });
+    setPendingService(null);
     playBeep();
-  }, [defEmployee]);
+  }, []);
+
+  const addToCart = useCallback((svc: Service) => {
+    // If only 1 employee, auto-assign; if 0, add without employee
+    if (emps.length <= 1) {
+      confirmAdd(svc, emps[0] ?? null);
+    } else {
+      setPendingService(svc);
+    }
+  }, [emps, confirmAdd]);
 
   const addBundle = useCallback((bundle: ServiceBundle) => {
     const bid = uid();
@@ -1174,7 +1187,8 @@ export function usePOSEngine() {
     itemTotals, subtotal, cartCount, gDiscVal, afterDisc, tax, tip, total,
     comms, totalComm, splitTotal, splitRem, splitOverpay, canPay, selectedPayMethod, setSelectedPayMethod,
     lastPaidMethod,
-    addToCart, updateQty, removeItem, clearAll, addBundle, toggleFav, loadAppointment,
+    addToCart, confirmAdd, pendingService, setPendingService,
+    updateQty, removeItem, clearAll, addBundle, toggleFav, loadAppointment,
     setItemEmp, setItemDisc, setItemNote,
     holdBill, recallBill, payMut, pay, paySplit, refMut,
     selfOrderId, setSelfOrderId,

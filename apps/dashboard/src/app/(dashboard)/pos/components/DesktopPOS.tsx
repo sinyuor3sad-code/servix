@@ -22,7 +22,7 @@ import {
   accentBg, accentColor, accentMix, primaryBg,
   fmt, PAY,
 } from '../pos-constants';
-import { EmployeePicker } from './EmployeePicker';
+import { EmployeePopover } from './EmployeePopover';
 import { CategoryBar } from './CategoryBar';
 import { ServiceGrid } from './ServiceGrid';
 import { AppointmentGrid } from './AppointmentGrid';
@@ -94,21 +94,9 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
       {/* NFC Invoice Bar */}
       <NfcInvoiceBar e={e} salonSlug={currentTenant?.slug} />
 
-      {/* 3-COLUMN BODY */}
+      {/* 2-COLUMN BODY */}
       <div className="flex flex-1 min-h-0">
-        {/* COL 1: EMPLOYEES + COMMISSIONS */}
-        <aside className={`hidden w-[270px] shrink-0 flex-col ${brd(4)} border-e lg:flex ${G1}`}>
-          <EmployeePicker e={e} />
-          {e.comms.length > 0 && (
-            <div className={`shrink-0 ${brd(4)} border-b p-3 space-y-1.5`}>
-              <div className="flex items-center justify-between"><div className="flex items-center gap-1.5"><CircleDollarSign size={10} className="text-emerald-400" /><span className="text-[10px] font-bold text-[var(--foreground)]">العمولات</span></div><span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-bold text-emerald-400" style={TN}>{fmt(e.totalComm)}</span></div>
-              {e.comms.map((c, i) => (<div key={i} className={`flex justify-between rounded-lg ${bg(2)} px-2 py-1`}><span className="text-[9px] text-[var(--muted-foreground)]">{c.name} <span className="opacity-40">({c.type === 'percentage' ? `${c.rate}%` : `${c.rate}ر.س`})</span></span><span className="text-[9px] font-bold text-emerald-400" style={TN}>{fmt(c.amount)}</span></div>))}
-            </div>
-          )}
-          <div className="flex-1" />
-        </aside>
-
-        {/* COL 2: SERVICES */}
+        {/* COL 1: SERVICES (wider now) */}
         <main className="flex flex-1 flex-col min-w-0">
           <OrderInput e={e} />
           <div className="shrink-0 p-3 pb-1.5">
@@ -124,7 +112,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
           </div>
         </main>
 
-        {/* COL 3: CART */}
+        {/* COL 2: CART */}
         <aside className={`hidden w-[340px] shrink-0 flex-col ${brd(4)} border-s lg:flex ${G1}`}>
           <div className={`flex shrink-0 items-center justify-between px-3.5 py-2.5 ${brd(4)} border-b`}>
             <div className="flex items-center gap-2"><ShoppingCart size={12} style={accentColor} /><span className="text-[11px] font-bold text-[var(--foreground)]">السلة</span>{e.cartCount > 0 && <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-md px-1 text-[8px] font-black text-black" style={{ ...TN, ...accentBg }}>{e.cartCount}</span>}</div>
@@ -257,6 +245,15 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
         invoiceId={e.lastInvoiceId}
         clientPhone={e.client?.phone}
       />
+      {/* Employee selection popover */}
+      {e.pendingService && (
+        <EmployeePopover
+          service={e.pendingService}
+          employees={e.emps}
+          onSelect={(emp) => e.confirmAdd(e.pendingService!, emp)}
+          onCancel={() => e.setPendingService(null)}
+        />
+      )}
     </div>
   );
 }
