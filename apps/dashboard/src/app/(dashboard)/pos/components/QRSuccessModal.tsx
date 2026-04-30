@@ -85,7 +85,7 @@ export function QRSuccessModal({
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div
           data-testid="pos-success-modal"
-          className="pointer-events-auto w-full max-w-[360px] overflow-hidden rounded-[20px] shadow-[0_25px_60px_rgba(0,0,0,0.5)]"
+          className="pointer-events-auto w-full max-w-[360px] rounded-[20px] shadow-[0_25px_60px_rgba(0,0,0,0.5)]"
           onClick={(e) => e.stopPropagation()}
           style={{
             background: 'linear-gradient(170deg, #1a1a2e 0%, #16162a 50%, #0f0f1e 100%)',
