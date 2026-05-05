@@ -148,7 +148,9 @@ describe('PosCheckoutService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     auditService = { log: jest.fn().mockResolvedValue({}) };
-    service = new PosCheckoutService(auditService as any);
+    const platformDb = { tenantUser: { findFirst: jest.fn().mockResolvedValue(null) } };
+    const managerOverride = { verify: jest.fn(), requestApproval: jest.fn() };
+    service = new PosCheckoutService(platformDb as any, managerOverride as any, auditService as any);
   });
 
   it('returns the stored response for duplicate same idempotencyKey and same body', async () => {

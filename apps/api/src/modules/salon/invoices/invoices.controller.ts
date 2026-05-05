@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -29,6 +30,7 @@ import { ApplyCouponDto } from './dto/apply-coupon.dto';
 import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { SendInvoiceDto } from './dto/send-invoice.dto';
 import { RefundInvoiceDto } from './dto/refund-invoice.dto';
+import { UpdateInvoiceClientNameDto } from './dto/update-client-name.dto';
 import { TenantGuard } from '../../../shared/guards';
 import { AuthenticatedRequest } from '../../../shared/types';
 
@@ -323,6 +325,25 @@ export class InvoicesController {
       success: true,
       data,
       message: 'تم تعطيل الرابط بنجاح',
+    };
+  }
+
+  @Patch(':id/client-name')
+  @ApiOperation({ summary: 'تحديث اسم العميل', description: 'تحديث اسم عميل walk-in/مجهول مرتبط بفاتورة كاشير' })
+  @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
+  @ApiResponse({ status: 200, description: 'تم تحديث الاسم بنجاح' })
+  @ApiResponse({ status: 400, description: 'لا يمكن تعديل عميل مسجّل' })
+  @ApiResponse({ status: 404, description: 'الفاتورة غير موجودة' })
+  async updateClientName(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateInvoiceClientNameDto,
+  ): Promise<Record<string, unknown>> {
+    const data = await this.invoicesService.updateClientName(req.tenantDb!, id, dto.fullName, req.user.sub);
+    return {
+      success: true,
+      data,
+      message: 'تم تحديث الاسم بنجاح',
     };
   }
 

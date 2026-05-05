@@ -9,7 +9,6 @@ export interface CartItem {
   discount: number;
   discountType: 'fixed' | 'percentage';
   note: string;
-  bundleId?: string;
 }
 
 export interface SplitEntry { method: string; amount: number }
@@ -22,20 +21,11 @@ export interface HeldBill {
   walkIn: { name: string; phone: string } | null;
   globalDiscount: string;
   globalDiscountType: 'fixed' | 'percentage';
-  tip: string;
   time: string;
   total: number;
 }
 
-export interface ServiceBundle {
-  id: string;
-  nameAr: string;
-  services: { serviceId: string; employeeId?: string }[];
-  price: number;
-  savings: number;
-}
-
-export type PanelId = null | 'split' | 'hold-list' | 'refund' | 'receipt' | 'bundles' | 'attendance' | 'expense' | 'close-shift' | 'shift-report' | 'pin-override' | 'notifications';
+export type PanelId = null | 'split' | 'hold-list' | 'refund' | 'receipt' | 'attendance' | 'expense' | 'close-shift' | 'shift-report' | 'pin-override' | 'notifications';
 
 export interface AttRec {
   id: string | null;

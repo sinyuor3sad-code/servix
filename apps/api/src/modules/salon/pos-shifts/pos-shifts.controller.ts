@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Param,
   Req,
@@ -18,8 +19,10 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { PosShiftsService } from './pos-shifts.service';
+import { HeldBillsService } from './held-bills.service';
 import { OpenShiftDto } from './dto/open-shift.dto';
 import { CloseShiftDto } from './dto/close-shift.dto';
+import { CreateHeldBillDto } from './dto/create-held-bill.dto';
 import { TenantGuard } from '../../../shared/guards';
 import { AuthenticatedRequest } from '../../../shared/types';
 
@@ -28,7 +31,43 @@ import { AuthenticatedRequest } from '../../../shared/types';
 @UseGuards(TenantGuard)
 @Controller({ path: 'pos-shifts', version: '1' })
 export class PosShiftsController {
-  constructor(private readonly posShiftsService: PosShiftsService) {}
+  constructor(
+    private readonly posShiftsService: PosShiftsService,
+    private readonly heldBillsService: HeldBillsService,
+  ) {}
+
+  // ─── Held bills (must come before :id route) ───
+
+  @Get('held-bills')
+  @ApiOperation({ summary: 'الفواتير المعلّقة للوردية الحالية' })
+  @ApiResponse({ status: 200, description: 'قائمة الفواتير المعلّقة' })
+  async listHeldBills(@Req() req: AuthenticatedRequest) {
+    return this.heldBillsService.list(req.tenantDb!);
+  }
+
+  @Post('held-bills')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'تعليق فاتورة' })
+  @ApiResponse({ status: 201, description: 'تم تعليق الفاتورة' })
+  @ApiResponse({ status: 400, description: 'وردية مغلقة أو سلة فارغة' })
+  async createHeldBill(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateHeldBillDto,
+  ) {
+    return this.heldBillsService.create(req.tenantDb!, dto, req.user.sub);
+  }
+
+  @Delete('held-bills/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'حذف فاتورة معلّقة' })
+  @ApiResponse({ status: 204, description: 'تم الحذف' })
+  @ApiResponse({ status: 404, description: 'الفاتورة المعلّقة غير موجودة' })
+  async deleteHeldBill(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.heldBillsService.remove(req.tenantDb!, id);
+  }
 
   @Get('current')
   @ApiOperation({ summary: 'جلب الوردية المفتوحة الحالية' })

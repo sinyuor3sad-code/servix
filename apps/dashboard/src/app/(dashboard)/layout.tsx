@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import { settingsService } from '@/services/settings.service';
 
 /** Routes the cashier role is allowed to access */
-const CASHIER_ALLOWED = ['/pos', '/pos/quick'];
+const CASHIER_ALLOWED = ['/pos'];
 
 export default function DashboardLayout({
   children,
@@ -68,7 +68,7 @@ export default function DashboardLayout({
     }
   }, [mounted, skipAuth, isLoading, settingsLoading, isAuthenticated, isOnboardingPage, onboardingCompleted, router, accessToken, settings]);
 
-  // RBAC: Cashier can ONLY access /pos and /pos/quick
+  // RBAC: Cashier can ONLY access /pos
   useEffect(() => {
     if (!mounted) return;
     if (skipAuth || isLoading || !isAuthenticated || !userRole) return;

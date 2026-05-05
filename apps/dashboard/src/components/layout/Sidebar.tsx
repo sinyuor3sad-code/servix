@@ -20,7 +20,6 @@ import {
   ChevronRight,
   X,
   ClipboardCheck,
-  TabletSmartphone,
   Package,
   Clock,
   Receipt,
@@ -63,7 +62,6 @@ const navItems: NavItem[] = [
   { label: 'الفواتير', href: '/invoices', icon: FileText, roles: ['owner', 'manager', 'cashier'] },
   // ── POS & Settings ──
   { label: 'الكاشير', href: '/pos', icon: CreditCard, roles: 'all' },
-  { label: 'كاشير سريع', href: '/pos/quick', icon: TabletSmartphone, roles: 'all' },
   { label: 'الإعدادات', href: '/settings', icon: Settings, roles: ['owner', 'manager'] },
   { label: 'واتساب', href: '/settings/whatsapp', icon: MessageCircle, roles: ['owner', 'manager'] },
   // ── Coming Soon ──

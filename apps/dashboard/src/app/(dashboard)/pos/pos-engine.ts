@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect, useDeferredValue, useRef } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -14,10 +14,8 @@ import { api } from '@/lib/api';
 import type { Service, Client, Employee, PaginatedResponse, ServiceCategory } from '@/types';
 import type { CartItem, SplitEntry, HeldBill, PanelId, PosShiftData } from './pos-types';
 import {
-  uid, now, isDev, fmt, DEFAULT_FAVS,
-  M_CATS, M_SVCS, M_EMP, M_CLI, M_BUNDLES,
+  uid, now, fmt, DEFAULT_FAVS,
 } from './pos-constants';
-import type { ServiceBundle } from './pos-types';
 import { playBeep, playSuccess, playError } from './pos-sounds';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -136,6 +134,7 @@ type POSCheckoutPayloadInput = {
   };
   payments: PosCheckoutRequest['payments'];
   notes?: string;
+  managerApprovalToken?: string;
 };
 
 type CheckoutAttemptRef = {
@@ -283,6 +282,7 @@ export function buildPOSCheckoutPayload(input: POSCheckoutPayloadInput): PosChec
     ...(input.loyaltyRedemption ? { loyaltyRedemption: input.loyaltyRedemption } : {}),
     payments: input.payments,
     ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
+    ...(input.managerApprovalToken ? { managerApprovalToken: input.managerApprovalToken } : {}),
   };
 }
 
@@ -412,27 +412,22 @@ export function usePOSEngine() {
   const [svcSearch, setSvcSearch] = useState('');
   const [cliSearch, setCliSearch] = useState('');
   const [client, setClient] = useState<Client | null>(null);
-  const [defEmployee, setDefEmployee] = useState<Employee | null>(null);
   const [globalDisc, setGlobalDisc] = useState('');
   const [globalDiscType, setGlobalDiscType] = useState<'fixed' | 'percentage'>('fixed');
-  const [tipInput, setTipInput] = useState('');
   const [custNote, setCustNote] = useState('');
   const [walkName, setWalkName] = useState('');
   const [walkPhone, setWalkPhone] = useState('');
   const [walkInMode, setWalkInMode] = useState(false);
-  const [sendWA, setSendWA] = useState(true);
-  const [sendMail, setSendMail] = useState(false);
   const [selfOrderId, setSelfOrderId] = useState<string | null>(null);
   const [panel, setPanel] = useState<PanelId>(null);
-  const [held, setHeld] = useState<HeldBill[]>([]);
   const [splits, setSplits] = useState<SplitEntry[]>([]);
   const [refId, setRefId] = useState('');
   const [refReason, setRefReason] = useState('');
   const [online, setOnline] = useState(true);
   const [favIds, setFavIds] = useState<string[]>(() => lsGet<string[]>('pos_favs', DEFAULT_FAVS));
   const [showFavs, setShowFavs] = useState(false);
-  const [showBundles, setShowBundles] = useState(false);
   const [showAppointments, setShowAppointments] = useState(false);
+  const queryClient = useQueryClient();
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
   const [lastPaidMethod, setLastPaidMethod] = useState<string>('cash');
   const [receiptLogo, setReceiptLogo] = useState(true);
@@ -454,6 +449,7 @@ export function usePOSEngine() {
   const [cashReceived, setCashReceived] = useState('');
   const [discountReason, setDiscountReason] = useState('');
   const [pinOverrideApproved, setPinOverrideApproved] = useState(false);
+  const [managerApproval, setManagerApproval] = useState<{ token: string; approverName: string; expiresAt: string } | null>(null);
   const [loyaltyPoints, setLoyaltyPoints] = useState<number | null>(null);
   const [todaySales, setTodaySales] = useState(0);
   const [todayInvoices, setTodayInvoices] = useState(0);
@@ -486,7 +482,7 @@ export function usePOSEngine() {
 
   /* ── Loyalty: fetch points when client changes ── */
   useEffect(() => {
-    if (!client || !accessToken || isDev(accessToken) || client.fullName === 'زائر') { setLoyaltyPoints(null); return; }
+    if (!client || !accessToken || client.fullName === 'زائر') { setLoyaltyPoints(null); return; }
     api.get(`/loyalty/clients/${client.id}`, accessToken)
       .then((res: unknown) => {
         const r = res as Record<string, unknown>;
@@ -499,24 +495,22 @@ export function usePOSEngine() {
   /* ── Queries ── */
   const { data: cats } = useQuery<ServiceCategory[]>({
     queryKey: ['pos-cats'],
-    queryFn: () => isDev(accessToken) ? Promise.resolve(M_CATS) : dashboardService.getCategories(accessToken!),
+    queryFn: () => dashboardService.getCategories(accessToken!),
+    enabled: !!accessToken,
   });
   const { data: svcsData } = useQuery({
     queryKey: ['pos-svcs'],
-    queryFn: () => isDev(accessToken)
-      ? Promise.resolve({ items: M_SVCS, total: M_SVCS.length, page: 1, limit: 100, totalPages: 1 } as PaginatedResponse<Service>)
-      : dashboardService.getServices({ limit: 100 }, accessToken!),
+    queryFn: () => dashboardService.getServices({ limit: 100 }, accessToken!),
+    enabled: !!accessToken,
   });
   const { data: empData } = useQuery({
     queryKey: ['pos-emp'],
-    queryFn: () => isDev(accessToken)
-      ? Promise.resolve({ items: M_EMP, total: M_EMP.length, page: 1, limit: 50, totalPages: 1 } as PaginatedResponse<Employee>)
-      : dashboardService.getEmployees({ limit: 50 }, accessToken!),
+    queryFn: () => dashboardService.getEmployees({ limit: 50 }, accessToken!),
+    enabled: !!accessToken,
   });
   const { data: currentShift } = useQuery<PosShiftData | null>({
     queryKey: ['pos-shift-current'],
     queryFn: async () => {
-      if (isDev(accessToken)) return { id: 'dev-shift', status: 'open' } as PosShiftData;
       try {
         return await api.get<PosShiftData>('/pos-shifts/current', accessToken!);
       } catch {
@@ -532,30 +526,38 @@ export function usePOSEngine() {
   const { data: salonInfo } = useQuery({
     queryKey: ['pos-salon-info'],
     queryFn: () => api.get('/salon', accessToken!),
-    enabled: !!accessToken && !isDev(accessToken),
+    enabled: !!accessToken,
   });
 
   const taxRate = useMemo(() => {
-    if (isDev(accessToken)) return 0.15;
     const si = salonInfo as Record<string, unknown> | undefined;
     const d = si?.data as Record<string, unknown> | undefined;
     const pct = d?.taxPercentage ?? si?.taxPercentage;
     return pct ? Number(pct) / 100 : 0.15;
-  }, [salonInfo, accessToken]);
+  }, [salonInfo]);
 
-  const mockCli = useMemo(() => {
-    if (!isDev(accessToken) || cliSearch.length < 2) return [];
-    const q = cliSearch.toLowerCase();
-    return M_CLI.filter(c => c.fullName.includes(q) || c.phone.includes(q));
-  }, [cliSearch, accessToken]);
+  /* ── Receipt settings (server-backed; sync into local state on load) ── */
+  const { data: salonSettings } = useQuery({
+    queryKey: ['pos-salon-settings'],
+    queryFn: () => api.get<Record<string, string>>('/settings', accessToken!),
+    enabled: !!accessToken,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (!salonSettings) return;
+    if (salonSettings.pos_receipt_show_logo !== undefined) setReceiptLogo(salonSettings.pos_receipt_show_logo === 'true');
+    if (salonSettings.pos_receipt_message !== undefined) setReceiptMsg(salonSettings.pos_receipt_message);
+    if (salonSettings.pos_receipt_phone !== undefined) setReceiptPhone(salonSettings.pos_receipt_phone);
+  }, [salonSettings]);
 
   const { data: cliApi } = useQuery({
     queryKey: ['pos-cli', cliSearch],
     queryFn: () => dashboardService.getClients({ search: cliSearch, limit: 5 }, accessToken!),
-    enabled: !isDev(accessToken) && !!accessToken && cliSearch.length >= 2 && !walkInMode,
+    enabled: !!accessToken && cliSearch.length >= 2 && !walkInMode,
   });
 
-  const cliResults = isDev(accessToken) ? mockCli : (cliApi?.items ?? []);
+  const cliResults = cliApi?.items ?? [];
   const allSvcs = useMemo(() => svcsData?.items ?? [], [svcsData]);
   const emps = useMemo(() => empData?.items ?? [], [empData]);
 
@@ -574,7 +576,7 @@ export function usePOSEngine() {
   /* ── Cart ops ── */
   const confirmAdd = useCallback((svc: Service, emp: Employee | null) => {
     setCart(prev => {
-      const ex = prev.find(i => i.service.id === svc.id && i.employeeId === (emp?.id ?? null) && !i.bundleId);
+      const ex = prev.find(i => i.service.id === svc.id && i.employeeId === (emp?.id ?? null));
       if (ex) return prev.map(i => i.id === ex.id ? { ...i, quantity: i.quantity + 1 } : i);
       return [...prev, { id: uid(), service: svc, quantity: 1, employeeId: emp?.id ?? null, employeeName: emp?.fullName ?? 'غير محدد', discount: 0, discountType: 'fixed' as const, note: '' }];
     });
@@ -591,19 +593,6 @@ export function usePOSEngine() {
     }
   }, [emps, confirmAdd]);
 
-  const addBundle = useCallback((bundle: ServiceBundle) => {
-    const bid = uid();
-    const items: CartItem[] = bundle.services.map(bs => {
-      const svc = allSvcs.find(s => s.id === bs.serviceId);
-      if (!svc) return null;
-      const emp = bs.employeeId ? emps.find(e => e.id === bs.employeeId) : defEmployee;
-      return { id: uid(), service: svc, quantity: 1, employeeId: emp?.id ?? null, employeeName: emp?.fullName ?? 'غير محدد', discount: 0, discountType: 'fixed' as const, note: '', bundleId: bid };
-    }).filter(Boolean) as CartItem[];
-    setCart(prev => [...prev, ...items]);
-    toast.success(`تمت إضافة ${bundle.nameAr}`);
-    setPanel(null);
-  }, [allSvcs, emps, defEmployee]);
-
   const updateQty = useCallback((id: string, d: number) => {
     setCart(p => p.map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + d) } : i).filter(i => i.quantity > 0));
   }, []);
@@ -615,7 +604,7 @@ export function usePOSEngine() {
 
   const clearAll = useCallback(() => {
     setCart([]); setClient(null); setWalkName(''); setWalkPhone('');
-    setWalkInMode(false); setGlobalDisc(''); setTipInput(''); setCustNote('');
+    setWalkInMode(false); setGlobalDisc(''); setCustNote('');
     setSelfOrderId(null); setPublicToken(null); setShowQRModal(false);
     setSelectedPayMethod('cash'); setCashReceived('');
     setCouponCode(''); setCouponDiscount(0); setCouponApplied(false); setCouponMsg('');
@@ -642,7 +631,6 @@ export function usePOSEngine() {
   const afterDisc = Math.max(0, subtotal - gDiscVal);
   const afterCoupon = Math.max(0, afterDisc - couponDiscount);
   const tax = afterCoupon * taxRate;
-  const tip = 0;
   const total = afterCoupon + tax;
 
   /* ── Redeem loyalty (simple: all points → 1 SAR per 10 pts) ── */
@@ -670,15 +658,25 @@ export function usePOSEngine() {
     return 10;
   }, [isOwner, userRole]);
 
-  // Check if current discount exceeds the role limit
+  // Check if current discount exceeds the role limit. Manager-approved
+  // overrides clear this flag so the cashier can complete the sale.
   const discountExceedsLimit = useMemo(() => {
+    if (managerApproval) return false;
     const v = parseFloat(globalDisc);
     if (isNaN(v) || v <= 0) return false;
     if (globalDiscType === 'percentage') return v > maxDiscountPercent;
-    // For fixed: calculate what percentage it represents
     if (subtotal <= 0) return false;
     return (v / subtotal) * 100 > maxDiscountPercent;
-  }, [globalDisc, globalDiscType, maxDiscountPercent, subtotal]);
+  }, [globalDisc, globalDiscType, maxDiscountPercent, subtotal, managerApproval]);
+
+  // Auto-expire manager approval after its TTL or when a cart change pushes
+  // the discount above the approved percent (server-side tolerance is 0.5%).
+  useEffect(() => {
+    if (!managerApproval) return;
+    if (Date.now() > new Date(managerApproval.expiresAt).getTime()) {
+      setManagerApproval(null);
+    }
+  }, [cart, globalDisc, globalDiscType, managerApproval]);
 
   // Discount needs reason to proceed
   const discountNeedsReason = useMemo(() => {
@@ -693,7 +691,7 @@ export function usePOSEngine() {
     for (const as of appt.appointmentServices) {
       const svc = allSvcs.find(s => s.id === as.serviceId);
       if (!svc) { toast.error(`خدمة محذوفة — تم تجاهلها`); continue; }
-      const emp = as.employeeId ? emps.find(e => e.id === as.employeeId) : (as.employee ? emps.find(e => e.id === as.employee!.id) : defEmployee);
+      const emp = as.employeeId ? emps.find(e => e.id === as.employeeId) : (as.employee ? emps.find(e => e.id === as.employee!.id) : (emps[0] ?? null));
       setCart(prev => [...prev, {
         id: uid(),
         service: svc,
@@ -709,7 +707,7 @@ export function usePOSEngine() {
     setAppointmentId(appt.id);
     setShowAppointments(false);
     toast.success(`تم تحميل موعد ${appt.client?.fullName ?? 'عميلة'} — ${loaded} خدمات`);
-  }, [clearAll, allSvcs, emps, defEmployee]);
+  }, [clearAll, allSvcs, emps]);
 
   const couponScopeKey = useMemo(() => JSON.stringify({
     clientId: client?.id ?? null,
@@ -727,7 +725,6 @@ export function usePOSEngine() {
   /* ── Coupon validation ── */
   const couponMut = useMutation({
     mutationFn: async ({ code, scopeKey }: CouponValidationRequest): Promise<CouponValidationResponse> => {
-      if (isDev(accessToken)) return { valid: true, discountAmount: 10, message: 'كوبون تجريبي', scopeKey };
       const result = await api.post<{ valid: boolean; discountAmount: number; message: string }>('/coupons/validate', { code: code.toUpperCase(), orderAmount: afterDisc }, accessToken!);
       return { ...result, scopeKey };
     },
@@ -798,22 +795,145 @@ export function usePOSEngine() {
 
   const totalComm = useMemo(() => comms.reduce((s, c) => s + c.amount, 0), [comms]);
 
-  /* ── Hold / Recall ── */
+  /* ── Hold / Recall (server-backed) ── */
+  type HeldBillRow = {
+    id: string;
+    label: string;
+    cart: Array<{
+      id: string;
+      serviceId: string;
+      serviceName: string;
+      quantity: number;
+      unitPrice: number;
+      employeeId?: string | null;
+      employeeName?: string;
+      discount?: number;
+      discountType?: 'fixed' | 'percentage';
+      note?: string;
+    }>;
+    clientId: string | null;
+    walkInName: string | null;
+    walkInPhone: string | null;
+    globalDiscount: string;
+    globalDiscountType: 'fixed' | 'percentage';
+    total: number;
+    createdAt: string;
+    client?: { id: string; fullName: string; phone: string } | null;
+  };
+
+  const heldEnabled = !!accessToken && currentShift?.status === 'open';
+
+  const { data: heldData } = useQuery<HeldBillRow[]>({
+    queryKey: ['pos-held-bills'],
+    queryFn: () => api.get<HeldBillRow[]>('/pos-shifts/held-bills', accessToken!),
+    enabled: heldEnabled,
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
+  });
+
+  const held = useMemo<HeldBill[]>(() => {
+    const rows = heldData ?? [];
+    return rows.map((row) => {
+      const cart: CartItem[] = row.cart
+        .map((entry) => {
+          const svc = allSvcs.find((s) => s.id === entry.serviceId)
+            ?? ({
+              id: entry.serviceId,
+              nameAr: entry.serviceName,
+              nameEn: '',
+              price: entry.unitPrice,
+              duration: 0,
+              isActive: true,
+              categoryId: '',
+              sortOrder: 0,
+            } as unknown as Service);
+          return {
+            id: entry.id,
+            service: svc,
+            quantity: entry.quantity,
+            employeeId: entry.employeeId ?? null,
+            employeeName: entry.employeeName ?? 'غير محدد',
+            discount: entry.discount ?? 0,
+            discountType: entry.discountType ?? 'fixed',
+            note: entry.note ?? '',
+          };
+        });
+      return {
+        id: row.id,
+        label: row.label,
+        cart,
+        client: row.client ? ({ id: row.client.id, fullName: row.client.fullName, phone: row.client.phone } as Client) : null,
+        walkIn: row.walkInName ? { name: row.walkInName, phone: row.walkInPhone ?? '' } : null,
+        globalDiscount: row.globalDiscount,
+        globalDiscountType: row.globalDiscountType,
+        time: new Date(row.createdAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }),
+        total: row.total,
+      };
+    });
+  }, [heldData, allSvcs]);
+
+  const holdMut = useMutation({
+    mutationFn: () => {
+      const shiftId = currentShift?.id;
+      if (!shiftId) throw new Error('Open POS shift is required');
+      const payload = {
+        shiftId,
+        terminalId,
+        label: (client?.fullName ?? walkName) || `فاتورة ${now()}`,
+        cart: cart.map((item) => ({
+          id: item.id,
+          serviceId: item.service.id,
+          serviceName: item.service.nameAr,
+          quantity: item.quantity,
+          unitPrice: Number(item.service.price),
+          employeeId: item.employeeId ?? undefined,
+          employeeName: item.employeeName,
+          discount: item.discount,
+          discountType: item.discountType,
+          note: item.note,
+        })),
+        clientId: client?.id,
+        walkInName: walkInMode ? walkName : undefined,
+        walkInPhone: walkInMode ? walkPhone : undefined,
+        globalDiscount: globalDisc,
+        globalDiscountType: globalDiscType,
+        total,
+      };
+      return api.post('/pos-shifts/held-bills', payload, accessToken!);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pos-held-bills'] });
+      clearAll();
+      toast.success('تم تعليق الفاتورة');
+    },
+    onError: (err: Error) => toast.error(err.message || 'فشل تعليق الفاتورة'),
+  });
+
+  const deleteHeldMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/pos-shifts/held-bills/${id}`, accessToken!),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pos-held-bills'] }),
+    onError: (err: Error) => toast.error(err.message || 'فشل حذف الفاتورة'),
+  });
+
   const holdBill = useCallback(() => {
     if (!cart.length) { toast.error('السلة فارغة'); return; }
-    setHeld(p => [...p, { id: uid(), label: (client?.fullName ?? walkName) || `فاتورة ${now()}`, cart: [...cart], client, walkIn: walkInMode ? { name: walkName, phone: walkPhone } : null, globalDiscount: globalDisc, globalDiscountType: globalDiscType, tip: tipInput, time: now(), total }]);
-    clearAll(); toast.success('تم تعليق الفاتورة');
-  }, [cart, client, walkName, walkPhone, walkInMode, globalDisc, globalDiscType, tipInput, total, clearAll]);
+    holdMut.mutate();
+  }, [cart.length, holdMut]);
+
+  const deleteHeldBill = useCallback((id: string) => {
+    deleteHeldMut.mutate(id);
+  }, [deleteHeldMut]);
 
   const recallBill = useCallback((id: string) => {
-    const b = held.find(h => h.id === id); if (!b) return;
+    const b = held.find((h) => h.id === id); if (!b) return;
     if (cart.length) holdBill();
     setCart(b.cart); setClient(b.client);
     if (b.walkIn) { setWalkInMode(true); setWalkName(b.walkIn.name); setWalkPhone(b.walkIn.phone); }
-    setGlobalDisc(b.globalDiscount); setGlobalDiscType(b.globalDiscountType); setTipInput(b.tip);
-    setHeld(p => p.filter(x => x.id !== id)); setPanel(null);
+    setGlobalDisc(b.globalDiscount); setGlobalDiscType(b.globalDiscountType);
+    deleteHeldMut.mutate(id);
+    setPanel(null);
     toast.success('تم استدعاء الفاتورة');
-  }, [held, cart, holdBill]);
+  }, [held, cart, holdBill, deleteHeldMut]);
 
   /* ── Split ── */
   const splitTotal = useMemo(() => splits.reduce((s, e) => s + (e.amount || 0), 0), [splits]);
@@ -991,6 +1111,7 @@ export function usePOSEngine() {
         loyaltyRedemption,
         payments,
         notes: custNote,
+        managerApprovalToken: managerApproval?.token,
       });
       const fingerprint = checkoutFingerprint(basePayload);
       if (!checkoutAttemptRef.current || checkoutAttemptRef.current.fingerprint !== fingerprint) {
@@ -1016,53 +1137,6 @@ export function usePOSEngine() {
         ...checkoutRequestMetaRef.current,
         status: 'started',
       }));
-
-      if (isDev(accessToken)) {
-        await new Promise(r => setTimeout(r, 500));
-        const receiptSnapshot: PosReceiptSnapshot = {
-          invoiceId: 'INV-' + Date.now(),
-          invoiceNumber: 'DEV',
-          publicToken: 'dev-token',
-          issuedAt: new Date().toISOString(),
-          terminalId,
-          shiftId,
-          client: { fullName: client?.fullName ?? (walkInMode ? walkName : undefined) },
-          items: cart.map((item) => {
-            const info = itemTotals.find((entry) => entry.id === item.id);
-            return {
-              serviceId: item.service.id,
-              description: item.service.nameAr,
-              employeeId: item.employeeId ?? fallbackEmpId,
-              employeeName: item.employeeName,
-              quantity: item.quantity,
-              total: info?.net ?? item.service.price * item.quantity,
-            };
-          }),
-          discounts: [
-            ...(gDiscVal > 0 ? [{ kind: 'manual', amount: gDiscVal }] : []),
-            ...(couponDiscount > 0 ? [{ kind: 'coupon', amount: couponDiscount }] : []),
-          ],
-          subtotal,
-          discountTotal: gDiscVal + couponDiscount,
-          taxRatePercent: taxRate * 100,
-          taxAmount: tax,
-          total,
-          payments,
-        };
-        return {
-          checkoutId: payload.idempotencyKey,
-          idempotencyKey: payload.idempotencyKey,
-          invoice: {
-            id: receiptSnapshot.invoiceId!,
-            invoiceNumber: 'DEV',
-            status: 'paid',
-            total,
-            publicToken: receiptSnapshot.publicToken,
-          },
-          receiptSnapshot,
-          nextActions: { canSendInvoice: true, canSubmitZatca: true },
-        };
-      }
 
       return dashboardService.posCheckout(payload, accessToken!);
     },
@@ -1101,9 +1175,9 @@ export function usePOSEngine() {
       checkoutAttemptRef.current = null;
       checkoutRequestMetaRef.current = null;
       setCart([]); setClient(null); setWalkName(''); setWalkPhone('');
-      setWalkInMode(false); setGlobalDisc(''); setTipInput(''); setCustNote('');
+      setWalkInMode(false); setGlobalDisc(''); setCustNote('');
       setSelfOrderId(null); setPanel(null); setAppointmentId(null);
-      setLoyaltyPoints(null);
+      setLoyaltyPoints(null); setManagerApproval(null);
     },
     onError: (err: Error) => {
       const diagnosticMeta = checkoutRequestMetaRef.current;
@@ -1157,38 +1231,39 @@ export function usePOSEngine() {
   }
 
   const refMut = useMutation({
-    mutationFn: async () => { if (isDev(accessToken)) { await new Promise(r => setTimeout(r, 400)); return; } await api.post(`/invoices/${refId}/refund`, { reason: refReason }, accessToken!); },
+    mutationFn: async () => { await api.post(`/invoices/${refId}/refund`, { reason: refReason }, accessToken!); },
     onSuccess: () => { playBeep(); toast.success('تم الإرجاع'); setRefId(''); setRefReason(''); setPanel(null); },
     onError: () => { playError(); toast.error('فشل الإرجاع'); },
   });
 
   return {
-    cart, selCat, svcSearch, cliSearch, client, defEmployee,
-    globalDisc, globalDiscType, tipInput, custNote,
-    walkName, walkPhone, walkInMode, sendWA, sendMail,
+    cart, selCat, svcSearch, cliSearch, client,
+    globalDisc, globalDiscType, custNote,
+    walkName, walkPhone, walkInMode,
     panel, held, splits, refId, refReason,
-    online, favIds, showFavs, showBundles, showAppointments, appointmentId,
+    online, favIds, showFavs, showAppointments, appointmentId,
     receiptLogo, receiptMsg, receiptPhone,
     couponCode, couponDiscount, couponApplied, couponMsg,
     cashReceived, setCashReceived, changeAmount,
     discountReason, setDiscountReason, pinOverrideApproved, setPinOverrideApproved,
+    managerApproval, setManagerApproval,
     maxDiscountPercent, discountExceedsLimit, discountNeedsReason, canPayWithDiscount,
     canSubmitPayment, selectedPaymentGuard, cashPaymentGuard, splitPaymentGuard, splitPaymentReady, cashPaymentReady,
     loyaltyPoints, redeemLoyalty, taxRate,
     todaySales, todayInvoices, terminalId,
-    setCart, setSelCat, setSvcSearch, setCliSearch, setClient, setDefEmployee,
-    setGlobalDisc, setGlobalDiscType, setTipInput, setCustNote,
-    setWalkName, setWalkPhone, setWalkInMode, setSendWA, setSendMail,
-    setPanel, setHeld, setSplits, setRefId, setRefReason,
-    setFavIds, setShowFavs, setShowBundles, setShowAppointments,
+    setCart, setSelCat, setSvcSearch, setCliSearch, setClient,
+    setGlobalDisc, setGlobalDiscType, setCustNote,
+    setWalkName, setWalkPhone, setWalkInMode,
+    setPanel, setSplits, setRefId, setRefReason, deleteHeldBill,
+    setFavIds, setShowFavs, setShowAppointments,
     setReceiptLogo, setReceiptMsg, setReceiptPhone,
     setCouponCode, applyCoupon, removeCoupon, couponMut,
     cats, allSvcs, emps, cliResults, filtered, favSvcs,
-    itemTotals, subtotal, cartCount, gDiscVal, afterDisc, tax, tip, total,
+    itemTotals, subtotal, cartCount, gDiscVal, afterDisc, tax, total,
     comms, totalComm, splitTotal, splitRem, splitOverpay, canPay, selectedPayMethod, setSelectedPayMethod,
     lastPaidMethod,
     addToCart, confirmAdd, pendingService, setPendingService,
-    updateQty, removeItem, clearAll, addBundle, toggleFav, loadAppointment,
+    updateQty, removeItem, clearAll, toggleFav, loadAppointment,
     setItemEmp, setItemDisc, setItemNote,
     holdBill, recallBill, payMut, pay, paySplit, refMut,
     selfOrderId, setSelfOrderId,

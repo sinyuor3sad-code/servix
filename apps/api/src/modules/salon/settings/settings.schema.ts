@@ -111,6 +111,11 @@ const SETTINGS_VALIDATORS: Record<string, z.ZodType<string>> = {
   'salon.nameAr': z.string().min(2, 'اسم الصالون يجب أن يكون حرفين على الأقل').max(100, 'اسم الصالون طويل جداً'),
   'salon.nameEn': z.string().max(100, 'اسم الصالون طويل جداً'),
 
+  // POS — Receipt
+  pos_receipt_show_logo: booleanSchema,
+  pos_receipt_message: z.string().max(200, 'رسالة الإيصال طويلة جداً'),
+  pos_receipt_phone: z.string().max(30, 'رقم الإيصال طويل جداً'),
+
   // Days off (JSON array of 0-6)
   daysOff: z.string().refine(
     (v) => {

@@ -57,13 +57,16 @@ export class PosShiftsService {
     db: TenantPrismaClient,
     dto: CloseShiftDto,
     userId: string,
+    options: { auto?: boolean; shiftId?: string } = {},
   ): Promise<Record<string, unknown>> {
-    const shift = await db.posShift.findFirst({
-      where: { status: 'open' },
-      orderBy: { openedAt: 'desc' },
-    });
+    const shift = options.shiftId
+      ? await db.posShift.findUnique({ where: { id: options.shiftId } })
+      : await db.posShift.findFirst({
+          where: { status: 'open' },
+          orderBy: { openedAt: 'desc' },
+        });
 
-    if (!shift) {
+    if (!shift || shift.status !== 'open') {
       throw new NotFoundException('لا توجد وردية مفتوحة');
     }
 
@@ -134,14 +137,18 @@ export class PosShiftsService {
     // ── Calculate expected cash ──
     const openingBalance = Number(shift.openingBalance);
     const expectedCash = openingBalance + totalCash - totalCashRefunds - totalExpenses;
-    const cashDifference = dto.closingBalance - expectedCash;
+    // Auto-close mode: no manual cash count was performed, so neutralize the
+    // difference by treating closingBalance as expectedCash. This keeps the
+    // shift closed cleanly without a phantom cash discrepancy.
+    const effectiveClosingBalance = options.auto ? expectedCash : dto.closingBalance;
+    const cashDifference = effectiveClosingBalance - expectedCash;
 
     // ── Update the shift ──
     const updated = await db.posShift.update({
       where: { id: shift.id },
       data: {
         closedBy: userId,
-        closingBalance: dto.closingBalance,
+        closingBalance: effectiveClosingBalance,
         expectedCash,
         cashDifference,
         totalSales,

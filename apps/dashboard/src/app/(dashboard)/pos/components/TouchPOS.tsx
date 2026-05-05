@@ -7,7 +7,7 @@ import {
   ShoppingCart, Receipt, Banknote,
   Printer,
   X, User, Phone, Users, UserPlus,
-  Pause, Play, RotateCcw, Split, Percent, Heart, Package, Ticket,
+  Pause, Play, RotateCcw, Split, Percent, Heart, Ticket,
   CircleDollarSign, Wifi, WifiOff,
   Check, ArrowLeft, ClipboardCheck,
 } from 'lucide-react';
@@ -81,7 +81,7 @@ export function TouchPOS({ e }: { e: E }) {
               return (
                 <div key={item.id} className={`flex items-center gap-3 rounded-2xl border ${brd(4)} ${bg(2)} p-3.5 ${T}`}>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-bold text-[var(--foreground)]">{item.service.nameAr}{item.bundleId && <Package size={10} className="inline ms-1 text-[var(--muted-foreground)]" />}</p>
+                    <p className="truncate text-[13px] font-bold text-[var(--foreground)]">{item.service.nameAr}</p>
                     <div className="flex items-center gap-2 text-[10px] text-[var(--muted-foreground)]" style={{ opacity: 0.6 }}><span><Users size={9} className="inline" /> {item.employeeName}</span><span style={TN}>{fmt(info?.net ?? 0)}</span></div>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -312,6 +312,7 @@ export function TouchPOS({ e }: { e: E }) {
         tenantSlug={currentTenant?.slug || ''}
         invoiceId={e.lastInvoiceId}
         clientPhone={e.client?.phone}
+        initialClientName={e.lastPaidSnapshot?.clientName ?? e.client?.fullName ?? null}
       />
       {/* Employee selection popover */}
       {e.pendingService && (

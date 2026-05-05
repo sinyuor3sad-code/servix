@@ -1,24 +1,13 @@
 'use client';
 
 import {
-  Search, Clock, Star, StarOff, Package,
+  Search, Clock, Star, StarOff,
 } from 'lucide-react';
 import type { E } from '../pos-engine';
-import { B, BS, brd, bg, TN, accentBg, accentColor, primaryBg, fmt, M_BUNDLES } from '../pos-constants';
+import { BS, brd, bg, TN, accentColor, primaryBg, fmt } from '../pos-constants';
 
 export function ServiceGrid({ e, lg }: { e: E; lg?: boolean }) {
-  const list = e.showBundles ? [] : e.showFavs ? e.favSvcs : e.filtered;
-  if (e.showBundles) return (
-    <div className={`grid gap-2 ${lg ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' : 'grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'}`}>
-      {M_BUNDLES.map(b => (
-        <button key={b.id} onClick={() => e.addBundle(b)} className={`${B} group flex flex-col items-start gap-1.5 rounded-2xl ${brd(4)} border ${bg(2)} p-4 text-start hover:${bg(4)}`}>
-          <div className="flex items-center gap-1.5"><Package size={12} style={accentColor} /><span className="text-[12px] font-bold text-[var(--foreground)]">{b.nameAr}</span></div>
-          <div className="flex items-center gap-2"><span className="text-[14px] font-black" style={{ ...TN, ...accentColor }}>{fmt(b.price)}</span><span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-bold text-emerald-400">وفّر {fmt(b.savings)}</span></div>
-          <p className="text-[8px] text-[var(--muted-foreground)]">{b.services.map(bs => e.allSvcs.find(s => s.id === bs.serviceId)?.nameAr).filter(Boolean).join(' + ')}</p>
-        </button>
-      ))}
-    </div>
-  );
+  const list = e.showFavs ? e.favSvcs : e.filtered;
   if (!list.length) return <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--muted-foreground)]" style={{ opacity: 0.2 }}><Search size={32} strokeWidth={1} /><p className="text-[11px]">{e.showFavs ? 'لا توجد خدمات مفضلة' : 'لا توجد خدمات'}</p></div>;
   return (
     <div className={`grid ${lg ? 'grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' : 'grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'}`}>

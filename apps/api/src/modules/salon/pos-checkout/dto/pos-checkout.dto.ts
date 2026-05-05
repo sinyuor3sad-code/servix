@@ -217,4 +217,12 @@ export class PosCheckoutDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @ApiPropertyOptional({
+    description: 'Manager-issued JWT authorising a discount above the cashier role limit',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  managerApprovalToken?: string;
 }

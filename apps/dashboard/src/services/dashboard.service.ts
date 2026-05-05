@@ -106,6 +106,7 @@ export interface PosCheckoutRequest {
     reference?: string;
   }>;
   notes?: string;
+  managerApprovalToken?: string;
 }
 
 export interface PosReceiptSnapshot {
@@ -292,6 +293,19 @@ export const dashboardService = {
   posCheckout: (data: PosCheckoutRequest, token: string) =>
     api.post<PosCheckoutResponse>('/pos/checkout', data, token),
 
+  requestManagerOverride: (
+    payload: { password: string; discountPercent: number; reason: string },
+    token: string,
+  ) => api.post<{
+    success: boolean;
+    data: {
+      token: string;
+      expiresAt: string;
+      approvedBy: { id: string; fullName: string };
+    };
+    message?: string;
+  }>('/pos/manager-override', payload, token),
+
   sendInvoice: (
     invoiceId: string,
     channel: 'whatsapp' | 'email' | 'sms',
@@ -301,6 +315,13 @@ export const dashboardService = {
     api.post(
       `/invoices/${invoiceId}/send`,
       to ? { channel, to } : { channel },
+      token,
+    ),
+
+  updateInvoiceClientName: (invoiceId: string, fullName: string, token: string) =>
+    api.patch<{ success: boolean; data: { id: string; fullName: string } }>(
+      `/invoices/${invoiceId}/client-name`,
+      { fullName },
       token,
     ),
 

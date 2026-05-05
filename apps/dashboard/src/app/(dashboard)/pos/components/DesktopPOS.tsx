@@ -8,7 +8,7 @@ import {
   Printer,
   X, Users, ChevronDown, ChevronUp,
   Pause, Play, RotateCcw, Split, Percent, Heart,
-  CircleDollarSign, Wifi, WifiOff, Package,
+  CircleDollarSign, Wifi, WifiOff,
   Check, ArrowLeft, ClipboardCheck, Ticket, Banknote,
   Lock, FileText, AlertTriangle,
 } from 'lucide-react';
@@ -32,6 +32,7 @@ import { QRSuccessModal } from './QRSuccessModal';
 import { ShiftReport } from './ShiftReport';
 import { ReceiptPrint } from './ReceiptPrint';
 import { NfcInvoiceBar } from './NfcInvoiceBar';
+import { ClientSection } from './ClientSection';
 import { usePosSocket } from '../usePosSocket';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -114,6 +115,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
 
         {/* COL 2: CART */}
         <aside className={`hidden w-[340px] shrink-0 flex-col ${brd(4)} border-s lg:flex ${G1}`}>
+          <ClientSection e={e} />
           <div className={`flex shrink-0 items-center justify-between px-3.5 py-2.5 ${brd(4)} border-b`}>
             <div className="flex items-center gap-2"><ShoppingCart size={12} style={accentColor} /><span className="text-[11px] font-bold text-[var(--foreground)]">السلة</span>{e.cartCount > 0 && <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-md px-1 text-[8px] font-black text-black" style={{ ...TN, ...accentBg }}>{e.cartCount}</span>}</div>
             {e.cart.length > 0 && <button onClick={e.clearAll} className={`${BS} rounded-md px-2 py-0.5 text-[8px] font-semibold text-red-400 hover:bg-red-500/10`}>مسح</button>}
@@ -130,7 +132,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
                     <div className="flex items-center gap-1 p-2">
                       <button onClick={() => setExpanded(isExp ? null : item.id)} className={`${BS} flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:${bg(4)} hover:text-[var(--foreground)]`} style={{ opacity: 0.3 }}>{isExp ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</button>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[10px] font-semibold text-[var(--foreground)]">{item.service.nameAr}{item.bundleId && <Package size={7} className="inline ms-1 text-[var(--muted-foreground)]" />}</p>
+                        <p className="truncate text-[10px] font-semibold text-[var(--foreground)]">{item.service.nameAr}</p>
                         <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]" style={{ opacity: 0.6 }}><Users size={7} /> {item.employeeName}{item.discount > 0 && <span className="text-emerald-400">-{item.discountType === 'percentage' ? `${item.discount}%` : fmt(item.discount)}</span>}</div>
                       </div>
                       <div className="flex items-center gap-0.5">
@@ -173,6 +175,14 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
                   <AlertTriangle size={12} className="shrink-0 text-amber-400" />
                   <span className="flex-1 text-[9px] text-amber-300">الخصم يتجاوز الحد المسموح ({e.maxDiscountPercent}%)</span>
                   <button onClick={() => e.setPanel('pin-override')} className={`${BS} rounded-lg px-2.5 py-1 text-[8px] font-bold text-black`} style={accentBg}>اعتماد مدير</button>
+                </div>
+              )}
+              {/* Manager approval badge — shown after override is granted */}
+              {e.managerApproval && (
+                <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2">
+                  <Check size={12} className="shrink-0 text-emerald-400" />
+                  <span className="flex-1 text-[9px] text-emerald-300">معتمَد من {e.managerApproval.approverName.split(' ')[0]}</span>
+                  <button onClick={() => e.setManagerApproval(null)} className={`${BS} rounded-lg px-2 py-1 text-[8px] text-emerald-300 hover:bg-emerald-500/15`}>إلغاء</button>
                 </div>
               )}
               {/* Coupon */}
@@ -244,6 +254,7 @@ export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
         tenantSlug={currentTenant?.slug || ''}
         invoiceId={e.lastInvoiceId}
         clientPhone={e.client?.phone}
+        initialClientName={e.lastPaidSnapshot?.clientName ?? e.client?.fullName ?? null}
       />
       {/* Employee selection popover */}
       {e.pendingService && (

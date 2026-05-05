@@ -495,6 +495,7 @@ model Client {
   dna                 ClientDna?
   commitments         Commitment[]
   debts               ClientDebt[]
+  heldBills           PosHeldBill[]
 
   @@index([phone])
   @@index([fullName])
@@ -1251,6 +1252,7 @@ model PosShift {
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
   invoices         Invoice[]
+  heldBills        PosHeldBill[]
 
   @@index([status])
   @@index([openedAt])
@@ -1273,6 +1275,33 @@ model PosCheckoutAttempt {
   @@index([status])
   @@index([invoiceId])
   @@map("pos_checkout_attempts")
+}
+
+// Server-backed held bills so a cashier can park a sale on one terminal and
+// recall it from another. Cascades with the parent shift — closing the shift
+// drops any unrecalled bills.
+model PosHeldBill {
+  id                 String   @id @default(uuid()) @db.Uuid
+  shiftId            String   @map("shift_id") @db.Uuid
+  terminalId         String?  @map("terminal_id") @db.VarChar(50)
+  label              String   @db.VarChar(120)
+  cart               Json     @db.JsonB
+  clientId           String?  @map("client_id") @db.Uuid
+  walkInName         String?  @map("walk_in_name") @db.VarChar(100)
+  walkInPhone        String?  @map("walk_in_phone") @db.VarChar(15)
+  globalDiscount     String   @default("") @map("global_discount") @db.VarChar(20)
+  globalDiscountType String   @default("fixed") @map("global_discount_type") @db.VarChar(15)
+  total              Decimal  @default(0) @db.Decimal(10, 2)
+  createdBy          String   @map("created_by") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  shift  PosShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  client Client?  @relation(fields: [clientId], references: [id])
+
+  @@index([shiftId])
+  @@index([createdAt])
+  @@map("pos_held_bills")
 }
 
 // ─────────────────── Self Orders (Smart Menu) ───────────────────

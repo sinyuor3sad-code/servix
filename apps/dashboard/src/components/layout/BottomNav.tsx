@@ -19,7 +19,6 @@ import {
   Wallet,
   Ticket,
   Heart,
-  TabletSmartphone,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -45,7 +44,6 @@ const moreItems: BottomNavItem[] = [
   { label: 'الموظفات', href: '/employees', icon: UserCog, roles: ['owner', 'manager'] },
   { label: 'الحضور', href: '/attendance', icon: ClipboardCheck, roles: ['owner', 'manager'] },
   { label: 'الخدمات', href: '/services', icon: Scissors, roles: ['owner', 'manager'] },
-  { label: 'كاشير سريع', href: '/pos/quick', icon: TabletSmartphone, roles: 'all' },
   { label: 'الفواتير', href: '/invoices', icon: FileText, roles: ['owner', 'manager', 'cashier'] },
   { label: 'التقارير', href: '/reports', icon: BarChart3, roles: ['owner', 'manager'] },
   { label: 'الكوبونات', href: '/coupons', icon: Ticket, roles: ['owner', 'manager'] },

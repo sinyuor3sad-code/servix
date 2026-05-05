@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { Prisma } from '../../../../generated/tenant';
 import { AuditService } from '../../../core/audit/audit.service';
+import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { TenantPrismaClient } from '../../../shared/types';
 import {
   PosCheckoutDiscountType,
@@ -17,6 +19,17 @@ import {
   PosCheckoutPaymentMethod,
   PosCheckoutSourceType,
 } from './dto/pos-checkout.dto';
+import { ManagerOverrideService, VerifiedOverride } from './manager-override.service';
+
+/** Discount limits by role name (% of pre-discount subtotal). */
+const ROLE_DISCOUNT_LIMITS: Record<string, number> = {
+  owner: 100,
+  manager: 50,
+  receptionist: 10,
+  cashier: 10,
+  staff: 10,
+};
+const DEFAULT_ROLE_LIMIT = 10;
 
 type CheckoutTx = Prisma.TransactionClient;
 type JsonRecord = Record<string, unknown>;
@@ -66,7 +79,11 @@ const ANONYMOUS_CLIENT = {
 
 @Injectable()
 export class PosCheckoutService {
-  constructor(private readonly auditService?: AuditService) {}
+  constructor(
+    private readonly platformDb: PlatformPrismaClient,
+    private readonly managerOverrideService: ManagerOverrideService,
+    private readonly auditService?: AuditService,
+  ) {}
 
   async checkout(
     db: TenantPrismaClient,
@@ -79,7 +96,7 @@ export class PosCheckoutService {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const result = await db.$transaction(
-          async (tx) => this.checkoutInTransaction(tx, dto, createdBy, requestHash),
+          async (tx) => this.checkoutInTransaction(tx, dto, createdBy, requestHash, tenantId),
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         );
         if (!result.replayed) {
@@ -105,6 +122,7 @@ export class PosCheckoutService {
     dto: PosCheckoutDto,
     createdBy: string,
     requestHash: string,
+    tenantId?: string,
   ): Promise<CheckoutTransactionResult> {
     this.validateRequiredContext(dto);
 
@@ -142,7 +160,17 @@ export class PosCheckoutService {
 
     const discounts: ResolvedDiscount[] = [];
     const manualDiscount = this.resolveManualDiscount(dto, subtotalCents);
-    if (manualDiscount) discounts.push(manualDiscount);
+    let approvedOverride: VerifiedOverride | null = null;
+    if (manualDiscount) {
+      approvedOverride = await this.enforceDiscountRoleLimit(
+        manualDiscount,
+        subtotalCents,
+        createdBy,
+        tenantId,
+        dto.managerApprovalToken,
+      );
+      discounts.push(manualDiscount);
+    }
 
     const afterManualDiscountCents = subtotalCents - (manualDiscount?.amountCents ?? 0);
     const couponDiscount = await this.resolveAndReserveCoupon(tx, dto.couponCode, afterManualDiscountCents);
@@ -313,6 +341,25 @@ export class PosCheckoutService {
         responseJson: response as Prisma.InputJsonValue,
       },
     });
+
+    if (approvedOverride && this.auditService) {
+      this.auditService
+        .log({
+          tenantId,
+          userId: createdBy,
+          action: 'pos.checkout.manager_override.applied',
+          entityType: 'Invoice',
+          entityId: invoice.id,
+          newValues: {
+            invoiceId: invoice.id,
+            approverUserId: approvedOverride.approverUserId,
+            approverName: approvedOverride.approverName,
+            discountPercent: approvedOverride.discountPercent,
+            reason: approvedOverride.reason,
+          },
+        })
+        .catch(() => {});
+    }
 
     return { response, replayed: false };
   }
@@ -968,6 +1015,41 @@ export class PosCheckoutService {
     }
 
     return `INV-${nextNumber.toString().padStart(4, '0')}`;
+  }
+
+  /**
+   * Block manual discounts above the cashier's role limit unless an unexpired
+   * manager-approval token covers the requested percent.
+   */
+  private async enforceDiscountRoleLimit(
+    discount: ResolvedDiscount,
+    subtotalCents: number,
+    cashierUserId: string,
+    tenantId: string | undefined,
+    overrideToken: string | undefined,
+  ): Promise<VerifiedOverride | null> {
+    if (subtotalCents <= 0) return null;
+    const discountPercent = (discount.amountCents / subtotalCents) * 100;
+    const role = await this.lookupRoleName(cashierUserId, tenantId);
+    const limit = ROLE_DISCOUNT_LIMITS[role] ?? DEFAULT_ROLE_LIMIT;
+    if (discountPercent <= limit) return null;
+
+    if (!tenantId) {
+      throw new ForbiddenException('Tenant context is required to authorise this discount');
+    }
+    if (!overrideToken) {
+      throw new ForbiddenException('هذا الخصم يحتاج اعتماد المديرة');
+    }
+    return this.managerOverrideService.verify(overrideToken, tenantId, discountPercent);
+  }
+
+  private async lookupRoleName(userId: string, tenantId?: string): Promise<string> {
+    if (!tenantId) return 'cashier';
+    const tenantUser = await this.platformDb.tenantUser.findFirst({
+      where: { tenantId, userId, status: 'active' },
+      include: { role: { select: { name: true } } },
+    });
+    return tenantUser?.role?.name ?? 'cashier';
   }
 
   private async logCheckoutCompleted(

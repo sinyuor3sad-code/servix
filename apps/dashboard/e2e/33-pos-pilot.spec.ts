@@ -372,13 +372,6 @@ function expectNoRuntimeErrors(state: PilotApiState) {
   expect(state.consoleErrors).toEqual([]);
 }
 
-async function expectQuickServiceReady(page: Page, apiState: PilotApiState) {
-  const serviceButton = page.getByTestId('quick-pos-service-s1');
-  if (!await waitForVisible(serviceButton, 7_500)) {
-    throw new Error(`Quick POS service fixture did not render. API paths: ${apiState.paths.join(', ')}`);
-  }
-}
-
 async function waitForVisible(locator: Locator, timeout: number) {
   return locator.waitFor({ state: 'visible', timeout }).then(() => true).catch(() => false);
 }
@@ -506,46 +499,4 @@ test.describe('POS atomic checkout pilot', () => {
     expectNoRuntimeErrors(apiState);
   });
 
-  test('quick POS card checkout uses atomic checkout and keeps the server receipt snapshot', async ({ page }) => {
-    await installPilotAuth(page);
-    const apiState = await installPilotApi(page);
-
-    await gotoWithPilotAuth(page, '/pos/quick', apiState);
-    await expectQuickServiceReady(page, apiState);
-    await page.getByTestId('quick-pos-service-s1').click();
-    await page.getByTestId('quick-pos-payment-card').click();
-
-    await expect(page.locator('[data-last-receipt-source="server"]').first()).toBeVisible();
-    expect(apiState.checkoutBodies).toHaveLength(1);
-    expect(apiState.legacyCheckoutWrites).toEqual([]);
-    assertNoClientFinancialTruth(apiState.checkoutBodies[0]);
-    expect(apiState.checkoutBodies[0].payments).toEqual([
-      expect.objectContaining({ method: 'card', amount: 92 }),
-    ]);
-    expectNoRuntimeErrors(apiState);
-  });
-
-  test('quick POS split cash/card checkout is submitted as one atomic payments array', async ({ page }) => {
-    await installPilotAuth(page);
-    const apiState = await installPilotApi(page);
-
-    await gotoWithPilotAuth(page, '/pos/quick', apiState);
-    await expectQuickServiceReady(page, apiState);
-    await page.getByTestId('quick-pos-service-s1').click();
-    await page.getByTestId('quick-pos-split-open').click();
-    await page.getByTestId('quick-pos-split-amount-0').fill('40');
-    await page.getByTestId('quick-pos-split-amount-1').fill('52');
-    await page.getByTestId('quick-pos-split-cash-received').fill('40');
-    await page.getByTestId('quick-pos-split-confirm').click();
-
-    await expect(page.locator('[data-last-receipt-source="server"]').first()).toBeVisible();
-    expect(apiState.checkoutBodies).toHaveLength(1);
-    expect(apiState.legacyCheckoutWrites).toEqual([]);
-    assertNoClientFinancialTruth(apiState.checkoutBodies[0]);
-    expect(apiState.checkoutBodies[0].payments).toEqual([
-      expect.objectContaining({ method: 'cash', amount: 40, cashReceived: 40 }),
-      expect.objectContaining({ method: 'card', amount: 52 }),
-    ]);
-    expectNoRuntimeErrors(apiState);
-  });
 });

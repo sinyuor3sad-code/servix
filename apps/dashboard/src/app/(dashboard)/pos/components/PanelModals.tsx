@@ -3,13 +3,14 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
   Plus, Trash2, X, Pause, RotateCcw, AlertTriangle,
-  Hash, Check, Split, Package,
+  Hash, Check, Split,
   ClipboardCheck, LogIn, LogOut, Coffee, Clock, Users,
   CircleDollarSign, Lock, ShieldAlert, Loader2,
   ShoppingCart, Calendar, Bell, AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
+import { dashboardService } from '@/services/dashboard.service';
 import { toast } from 'sonner';
 import type { E } from '../pos-engine';
 import type { AttRec, PosShiftData } from '../pos-types';
@@ -17,7 +18,7 @@ import { Modal } from './Modal';
 import {
   B, BS, T, TF, TN, G3, INP,
   brd, bg, accentBg, accentColor, accentMix,
-  fmt, PAY, M_BUNDLES, ROLE_ICO, ROLE_LBL, fmtT,
+  fmt, PAY, ROLE_ICO, ROLE_LBL, fmtT,
 } from '../pos-constants';
 
 /* ════════════════════════════════════════════════════════════════
@@ -59,7 +60,7 @@ function HoldPanel({ e }: { e: E }) {
     <div className="space-y-2">{e.held.map(b => (
       <div key={b.id} className={`flex items-center justify-between rounded-xl ${G3} p-3`}>
         <div><p className="text-[11px] font-bold text-[var(--foreground)]">{b.label}</p><p className="text-[8px] text-[var(--muted-foreground)]">{b.cart.length} خدمة &middot; {b.time} &middot; <span style={accentColor}>{fmt(b.total)}</span></p></div>
-        <div className="flex gap-1"><button onClick={() => e.recallBill(b.id)} className={`${BS} rounded-lg px-3 py-1.5 text-[9px] font-bold text-black`} style={accentBg}>استدعاء</button><button onClick={() => e.setHeld(p => p.filter(x => x.id !== b.id))} className={`${BS} rounded-lg ${brd(5)} border px-2 py-1.5 text-red-400 hover:bg-red-500/10`}><Trash2 size={10} /></button></div>
+        <div className="flex gap-1"><button onClick={() => e.recallBill(b.id)} className={`${BS} rounded-lg px-3 py-1.5 text-[9px] font-bold text-black`} style={accentBg}>استدعاء</button><button onClick={() => e.deleteHeldBill(b.id)} className={`${BS} rounded-lg ${brd(5)} border px-2 py-1.5 text-red-400 hover:bg-red-500/10`}><Trash2 size={10} /></button></div>
       </div>
     ))}</div>
   );
@@ -295,50 +296,28 @@ function RefundPanel({ e }: { e: E }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   Bundles Panel
-   ════════════════════════════════════════════════════════════════ */
-
-function BundlesPanel({ e }: { e: E }) {
-  return (
-    <div className="space-y-3">{M_BUNDLES.map(b => (
-      <button key={b.id} onClick={() => e.addBundle(b)} className={`${B} group flex w-full flex-col items-start gap-1.5 rounded-xl ${brd(4)} border ${bg(2)} p-4 text-start hover:${bg(4)}`}>
-        <div className="flex items-center gap-1.5"><Package size={12} style={accentColor} /><span className="text-[12px] font-bold text-[var(--foreground)]">{b.nameAr}</span></div>
-        <div className="flex items-center gap-2"><span className="text-[14px] font-black" style={{ ...TN, ...accentColor }}>{fmt(b.price)}</span><span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-bold text-emerald-400">وفّر {fmt(b.savings)}</span></div>
-        <p className="text-[8px] text-[var(--muted-foreground)]">{b.services.map(bs => e.allSvcs.find(s => s.id === bs.serviceId)?.nameAr).filter(Boolean).join(' + ')}</p>
-      </button>
-    ))}</div>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════════
    Receipt Panel
    ════════════════════════════════════════════════════════════════ */
 
 function ReceiptPanel({ e }: { e: E }) {
-  // Load receipt settings from localStorage on mount
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('pos_receipt_settings');
-      if (raw) {
-        const s = JSON.parse(raw) as { logo?: boolean; message?: string; phone?: string };
-        if (typeof s.logo === 'boolean') e.setReceiptLogo(s.logo);
-        if (s.message) e.setReceiptMsg(s.message);
-        if (s.phone) e.setReceiptPhone(s.phone);
-      }
-    } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { accessToken } = useAuth();
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    setSaving(true);
     try {
-      localStorage.setItem('pos_receipt_settings', JSON.stringify({
-        logo: e.receiptLogo,
-        message: e.receiptMsg,
-        phone: e.receiptPhone,
-      }));
-    } catch { /* quota */ }
-    toast.success('تم حفظ الإعدادات');
-    e.setPanel(null);
+      await Promise.all([
+        api.put('/settings/pos_receipt_show_logo', { value: e.receiptLogo ? 'true' : 'false' }, accessToken!),
+        api.put('/settings/pos_receipt_message', { value: e.receiptMsg }, accessToken!),
+        api.put('/settings/pos_receipt_phone', { value: e.receiptPhone }, accessToken!),
+      ]);
+      toast.success('تم حفظ الإعدادات');
+      e.setPanel(null);
+    } catch (err) {
+      toast.error((err as Error)?.message || 'فشل حفظ الإعدادات');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -349,7 +328,9 @@ function ReceiptPanel({ e }: { e: E }) {
       </label>
       <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">رسالة الشكر</label><input value={e.receiptMsg} onChange={ev => e.setReceiptMsg(ev.target.value)} className={`${INP} py-2.5 px-3 text-[11px]`} /></div>
       <div><label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">رقم الهاتف في الإيصال</label><input value={e.receiptPhone} onChange={ev => e.setReceiptPhone(ev.target.value)} dir="ltr" className={`${INP} py-2.5 px-3 text-[11px]`} /></div>
-      <button onClick={handleSave} className={`${B} flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl text-[10px] font-bold text-black`} style={accentBg}><Check size={12} /> حفظ</button>
+      <button onClick={handleSave} disabled={saving} className={`${B} flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl text-[10px] font-bold text-black disabled:opacity-30`} style={accentBg}>
+        {saving ? <Loader2 size={12} className="animate-spin" /> : <><Check size={12} /> حفظ</>}
+      </button>
     </div>
   );
 }
@@ -651,24 +632,88 @@ function CloseShiftPanel({ e, onShiftClosed }: { e: E; onShiftClosed: (data: Pos
    ════════════════════════════════════════════════════════════════ */
 
 function PinOverridePanel({ e }: { e: E }) {
-  const closePanel = () => {
-    e.setPinOverrideApproved(false);
-    e.setPanel(null);
+  const { accessToken } = useAuth();
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Compute the discount % the cashier wants to apply, so the server binds the
+  // approval token to that exact value.
+  const discountPercent = (() => {
+    const v = parseFloat(e.globalDisc);
+    if (isNaN(v) || v <= 0) return 0;
+    if (e.globalDiscType === 'percentage') return v;
+    if (e.subtotal <= 0) return 0;
+    return (v / e.subtotal) * 100;
+  })();
+
+  const handleSubmit = async () => {
+    if (!password.trim()) { setError('كلمة المرور مطلوبة'); return; }
+    if (discountPercent <= 0) { setError('أدخل قيمة الخصم أولاً'); return; }
+    if (!e.discountReason.trim()) { setError('سبب الخصم مطلوب'); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await dashboardService.requestManagerOverride(
+        { password, discountPercent, reason: e.discountReason.trim() },
+        accessToken!,
+      );
+      e.setManagerApproval({
+        token: res.data.token,
+        approverName: res.data.approvedBy.fullName,
+        expiresAt: res.data.expiresAt,
+      });
+      toast.success(`تم اعتماد ${res.data.approvedBy.fullName.split(' ')[0]}`);
+      setPassword('');
+      e.setPanel(null);
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string; statusCode?: number };
+      setError(apiErr.message || 'فشل التحقق من كلمة المرور');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="space-y-4">
       <div className={`rounded-xl ${bg(3)} p-4 text-center`}>
         <ShieldAlert size={28} className="mx-auto mb-2 text-amber-400" style={{ opacity: 0.7 }} />
-        <p className="text-[12px] font-bold text-[var(--foreground)]">اعتماد المدير غير مفعل</p>
+        <p className="text-[12px] font-bold text-[var(--foreground)]">اعتماد المديرة مطلوب</p>
         <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">
-          الخصم المالي لا يمكن تجاوزه من هذا الجهاز.
+          خصم {discountPercent.toFixed(1)}% يتجاوز حد الكاشيرة ({e.maxDiscountPercent}%)
         </p>
       </div>
-      {/* TODO/RISK Phase 2: replace this disabled local approval path with server-side manager approval + audit log. */}
-      <button onClick={closePanel} className={`${B} flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl text-[10px] font-bold text-black`} style={accentBg}>
-        <AlertTriangle size={12} /> إغلاق
+      <div>
+        <label className="mb-1 block text-[9px] font-bold text-[var(--muted-foreground)]">كلمة مرور المديرة/المالكة</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(ev) => { setPassword(ev.target.value); setError(null); }}
+          onKeyDown={(ev) => { if (ev.key === 'Enter') handleSubmit(); }}
+          placeholder="••••••••"
+          dir="ltr"
+          autoFocus
+          disabled={submitting}
+          className={`${INP} py-3 px-3 text-[13px] text-center disabled:opacity-50`}
+        />
+      </div>
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2">
+          <AlertTriangle size={11} className="shrink-0 text-red-400" />
+          <span className="text-[10px] text-red-400">{error}</span>
+        </div>
+      )}
+      <button
+        onClick={handleSubmit}
+        disabled={submitting || !password.trim()}
+        className={`${B} flex h-11 w-full items-center justify-center gap-1.5 rounded-2xl text-[11px] font-bold text-black disabled:opacity-30`}
+        style={accentBg}
+      >
+        {submitting ? <Loader2 size={14} className="animate-spin" /> : <><ShieldAlert size={13} /> اعتماد</>}
       </button>
+      <p className="text-[8px] text-[var(--muted-foreground)] text-center" style={{ opacity: 0.5 }}>
+        الاعتماد صالح لـ 5 دقائق ويُسجَّل في سجل التدقيق
+      </p>
     </div>
   );
 }
@@ -748,7 +793,6 @@ export function PanelModals({ e, onShiftClosed, notifications, onDismissNotif, o
       <Modal open={e.panel === 'split'} onClose={() => e.setPanel(null)} title="دفع مقسّم" wide><SplitPanel e={e} /></Modal>
       <Modal open={e.panel === 'hold-list'} onClose={() => e.setPanel(null)} title="الفواتير المعلقة"><HoldPanel e={e} /></Modal>
       <Modal open={e.panel === 'refund'} onClose={() => e.setPanel(null)} title="إرجاع / إلغاء"><RefundPanel e={e} /></Modal>
-      <Modal open={e.panel === 'bundles'} onClose={() => e.setPanel(null)} title="الباقات"><BundlesPanel e={e} /></Modal>
       <Modal open={e.panel === 'receipt'} onClose={() => e.setPanel(null)} title="إعدادات الإيصال"><ReceiptPanel e={e} /></Modal>
       <Modal open={e.panel === 'attendance'} onClose={() => e.setPanel(null)} title="تحضير الموظفات" wide><AttendancePanel e={e} /></Modal>
       <Modal open={e.panel === 'expense'} onClose={() => e.setPanel(null)} title="تسجيل مصروف سريع"><ExpensePanel e={e} /></Modal>

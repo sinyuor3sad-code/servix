@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Phone, Loader2, Check, Send, ChevronDown, User } from 'lucide-react';
+import { X, Phone, Loader2, Check, Send, ChevronDown, User, Save } from 'lucide-react';
 import { dashboardService } from '@/services/dashboard.service';
 import { useAuth } from '@/hooks/useAuth';
 import { B, T, TN, fmt } from '../pos-constants';
@@ -23,9 +23,11 @@ interface QRSuccessModalProps {
   tenantSlug: string;
   invoiceId: string | null;
   clientPhone?: string | null;
+  initialClientName?: string | null;
 }
 
 type SendStatus = 'idle' | 'sending' | 'sent' | 'error';
+type NameSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 function extractApiErrorMessage(err: unknown): string {
   if (!err) return 'فشل الإرسال';
@@ -44,12 +46,16 @@ export function QRSuccessModal({
   tenantSlug,
   invoiceId,
   clientPhone,
+  initialClientName,
 }: QRSuccessModalProps) {
   const { accessToken } = useAuth();
   const [waStat, setWaStat] = useState<SendStatus>('idle');
   const [waError, setWaError] = useState<string | null>(null);
   const [phone, setPhone] = useState('');
   const [clientName, setClientName] = useState('');
+  const [savedName, setSavedName] = useState('');
+  const [nameStat, setNameStat] = useState<NameSaveStatus>('idle');
+  const [nameError, setNameError] = useState<string | null>(null);
   const [countryIdx, setCountryIdx] = useState(0);
   const [showCodes, setShowCodes] = useState(false);
   const country = GCC_CODES[countryIdx];
@@ -57,6 +63,16 @@ export function QRSuccessModal({
   useEffect(() => {
     if (isOpen && clientPhone) setPhone(clientPhone);
   }, [isOpen, clientPhone]);
+
+  useEffect(() => {
+    if (isOpen) {
+      const init = (initialClientName ?? '').trim();
+      setClientName(init);
+      setSavedName(init);
+      setNameStat('idle');
+      setNameError(null);
+    }
+  }, [isOpen, initialClientName]);
 
   if (!isOpen) return null;
 
@@ -80,11 +96,38 @@ export function QRSuccessModal({
     }
   };
 
+  const handleSaveName = async () => {
+    if (!invoiceId || !accessToken) return;
+    const trimmed = clientName.trim();
+    if (trimmed.length < 2) {
+      setNameError('الاسم يجب ألا يقل عن حرفين');
+      setNameStat('error');
+      return;
+    }
+    if (trimmed === savedName) return;
+    setNameStat('saving');
+    setNameError(null);
+    try {
+      await dashboardService.updateInvoiceClientName(invoiceId, trimmed, accessToken);
+      setSavedName(trimmed);
+      setNameStat('saved');
+      setTimeout(() => setNameStat('idle'), 2000);
+    } catch (err) {
+      const msg = extractApiErrorMessage(err);
+      setNameError(msg);
+      setNameStat('error');
+      setTimeout(() => { setNameStat('idle'); setNameError(null); }, 5000);
+    }
+  };
+
   const handleClose = () => {
     setWaStat('idle');
     setWaError(null);
     setPhone('');
     setClientName('');
+    setSavedName('');
+    setNameStat('idle');
+    setNameError(null);
     setCountryIdx(0);
     setShowCodes(false);
     onClose();
@@ -182,19 +225,36 @@ export function QRSuccessModal({
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-white/40">
                 <User size={11} />
                 اسم العميل
+                {nameStat === 'saved' && <span className="text-emerald-400">— محفوظ ✓</span>}
               </label>
-              <input
-                type="text"
-                value={clientName}
-                onChange={(ev) => setClientName(ev.target.value)}
-                placeholder="اسم الزبونة..."
-                dir="rtl"
-                className={`w-full rounded-xl px-4 py-3 text-[14px] font-semibold text-white placeholder:text-white/15 focus:outline-none ${T}`}
-                style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1.5px solid rgba(255,255,255,0.06)',
-                }}
-              />
+              <div className="flex items-stretch gap-2">
+                <input
+                  type="text"
+                  value={clientName}
+                  onChange={(ev) => { setClientName(ev.target.value); if (nameStat === 'error') { setNameStat('idle'); setNameError(null); } }}
+                  onKeyDown={(ev) => { if (ev.key === 'Enter') handleSaveName(); }}
+                  placeholder="اسم الزبونة..."
+                  dir="rtl"
+                  disabled={nameStat === 'saving'}
+                  className={`flex-1 min-w-0 rounded-xl px-4 py-3 text-[14px] font-semibold text-white placeholder:text-white/15 focus:outline-none disabled:opacity-50 ${T}`}
+                  style={{
+                    background: 'rgba(255,255,255,0.04)',
+                    border: `1.5px solid ${nameStat === 'error' ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.06)'}`,
+                  }}
+                />
+                <button
+                  onClick={handleSaveName}
+                  disabled={nameStat === 'saving' || clientName.trim() === savedName || clientName.trim().length < 2 || !invoiceId}
+                  className={`${B} flex shrink-0 items-center justify-center gap-1 rounded-xl px-3 text-[12px] font-bold disabled:cursor-not-allowed disabled:opacity-30`}
+                  style={{ background: 'rgba(16,185,129,0.15)', color: 'rgb(110,231,183)', border: '1.5px solid rgba(16,185,129,0.25)' }}
+                  title="حفظ الاسم"
+                >
+                  {nameStat === 'saving' ? <Loader2 size={14} className="animate-spin" /> : nameStat === 'saved' ? <Check size={14} /> : <Save size={14} />}
+                </button>
+              </div>
+              {nameError && (
+                <p className="text-[10px] text-red-400/80">{nameError}</p>
+              )}
             </div>
 
             {/* Phone input */}

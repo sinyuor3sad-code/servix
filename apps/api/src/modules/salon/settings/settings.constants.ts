@@ -81,6 +81,11 @@ export const SETTINGS_KEYS = {
   dashboard_theme: 'dashboard_theme',
   dashboard_mode: 'dashboard_mode',
   seasonal_themes_enabled: 'seasonal_themes_enabled',
+
+  // ═══════ POS — Receipt ═══════
+  pos_receipt_show_logo: 'pos_receipt_show_logo',
+  pos_receipt_message: 'pos_receipt_message',
+  pos_receipt_phone: 'pos_receipt_phone',
 } as const;
 
 export const SETTINGS_DEFAULTS: Record<string, string> = {
@@ -154,4 +159,7 @@ export const SETTINGS_DEFAULTS: Record<string, string> = {
   [SETTINGS_KEYS.dashboard_theme]: 'velvet',
   [SETTINGS_KEYS.dashboard_mode]: 'light',
   [SETTINGS_KEYS.seasonal_themes_enabled]: 'true',
+  [SETTINGS_KEYS.pos_receipt_show_logo]: 'true',
+  [SETTINGS_KEYS.pos_receipt_message]: 'شكراً لزيارتكم',
+  [SETTINGS_KEYS.pos_receipt_phone]: '',
 };

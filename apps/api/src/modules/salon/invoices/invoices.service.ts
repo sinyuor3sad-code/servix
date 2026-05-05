@@ -1110,4 +1110,63 @@ export class InvoicesService {
     this.logger.log(`Public token regenerated for invoice ${invoiceId}`);
     return { publicToken: token };
   }
+
+  /**
+   * Update the client name on a POS invoice's client record.
+   * Allowed only when the linked client is anonymous or walk-in
+   * (registered clients are managed via the clients module).
+   * Also patches receipt_snapshot.client.fullName for consistency.
+   */
+  async updateClientName(
+    db: TenantPrismaClient,
+    invoiceId: string,
+    fullName: string,
+    userId: string,
+  ): Promise<Record<string, unknown>> {
+    const trimmed = fullName.trim();
+    if (!trimmed) throw new BadRequestException('الاسم مطلوب');
+
+    const invoice = await db.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { client: { select: { id: true, fullName: true, phone: true, source: true } } },
+    });
+    if (!invoice) throw new NotFoundException('الفاتورة غير موجودة');
+    if (!invoice.client) throw new BadRequestException('لا يوجد عميل مرتبط بالفاتورة');
+
+    const isAnonymous =
+      invoice.client.fullName === 'Anonymous Customer' && invoice.client.phone === '0000000000';
+    const isWalkIn = invoice.client.source === 'walk_in';
+
+    if (!isAnonymous && !isWalkIn) {
+      throw new BadRequestException('لا يمكن تعديل اسم عميل مسجّل من شاشة الكاشير');
+    }
+
+    await db.client.update({
+      where: { id: invoice.client.id },
+      data: { fullName: trimmed, ...(isAnonymous ? { source: 'walk_in' as const } : {}) },
+    });
+
+    const snapshot = invoice.receiptSnapshot as Record<string, unknown> | null;
+    if (snapshot && typeof snapshot === 'object') {
+      const snapshotClient = (snapshot.client as Record<string, unknown> | undefined) ?? {};
+      const updatedSnapshot = {
+        ...snapshot,
+        client: { ...snapshotClient, fullName: trimmed },
+      };
+      await db.invoice.update({
+        where: { id: invoiceId },
+        data: { receiptSnapshot: updatedSnapshot as unknown as object },
+      });
+    }
+
+    this.auditService.log({
+      userId,
+      action: 'invoice.client_name.updated',
+      entityType: 'Invoice',
+      entityId: invoiceId,
+      newValues: { clientId: invoice.client.id, fullName: trimmed },
+    }).catch(() => {});
+
+    return { id: invoice.client.id, fullName: trimmed };
+  }
 }
