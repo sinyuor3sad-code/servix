@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install k6
         run: |
           sudo gpg -k
@@ -33,7 +33,7 @@ jobs:
           BASE_URL: ${{ secrets.STAGING_URL || 'http://localhost:4000' }}
           TEST_EMAIL: ${{ secrets.LOAD_TEST_EMAIL }}
           TEST_PASSWORD: ${{ secrets.LOAD_TEST_PASSWORD }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: k6-weekly-${{ github.run_number }}
@@ -80,9 +80,9 @@ jobs:
       TEST_EMAIL: servix@dev.local
       TEST_PASSWORD: adsf1324
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -124,7 +124,7 @@ jobs:
         if: failure()
         run: tail -300 /tmp/api.log || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: k6-pr-smoke-${{ github.run_number }}
