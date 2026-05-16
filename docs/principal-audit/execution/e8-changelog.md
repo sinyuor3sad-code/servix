@@ -904,3 +904,21 @@ node -e 'console.log(new Date().toString())'
 
 **Rollback:** restore the `default` line if a CI run breaks (would indicate the secret was never wired up — investigate before reverting).
 
+
+### A8-IV-025 — pgbouncer auth delegation for NOSUPERUSER app role (P0, blocking V-30)
+
+**Discovered during V-30 smoke testing.** Found that `/auth/login` triggered `prisma:error: FATAL: SASL authentication failed` even though `servix_app` could authenticate directly against postgres. Root cause: A8-003 (session 1) made `servix_app` NOSUPERUSER but did not add a corresponding `auth_user = <superuser>` line to `pgbouncer.ini`. Pgbouncer's `auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=$1` requires SUPERUSER to read `pg_shadow`. Without `auth_user` set, pgbouncer used the client's own creds (servix_app, NOSUPERUSER) for the lookup → SASL fail → entire prod DB path broken since 2026-05-15. Undetected because prod was idle and the `/health/live` probe doesn't touch the DB.
+
+**Fix:** added `auth_user = servix` directly under `auth_query` in `tooling/docker/pgbouncer/pgbouncer.ini`. Pgbouncer now uses the superuser's creds (already in `userlist.txt` via the entrypoint) to run the auth_query and returns the SCRAM hash for the requested user.
+
+**Verification after pgbouncer + api-1 + api-2 force-recreate:**
+
+| Probe | Result |
+|---|---|
+| `psql -h pgbouncer -U servix_app` | `current_user=servix_app, is_superuser=off` ✓ |
+| `/api/v1/health` | `status=healthy, database=ok, responseTime=9ms` ✓ |
+| `/api/v1/auth/login` (bad creds) | `HTTP 400 VALIDATION_ERROR` (not 500) ✓ |
+| api-1 / api-2 logs | clean — no prisma error after recreate ✓ |
+
+**Rollback:** revert `tooling/docker/pgbouncer/pgbouncer.ini` and recreate `pgbouncer`. DB will go back to broken state.
+
