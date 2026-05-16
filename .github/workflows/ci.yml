@@ -47,24 +47,25 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      - name: npm audit (critical only)
-        # Fail on critical vulnerabilities only. High-severity findings in
-        # transitive dev deps (handlebars, picomatch, lodash) are tracked
-        # but don't block CI — they're not in production bundles.
-        run: pnpm audit --audit-level=critical
-        continue-on-error: true
+      - name: npm audit (critical, prod deps only)
+        # V-31: hard fail on critical CVEs in production dependencies.
+        # --prod scopes the check so dev-only transitive findings (handlebars,
+        # picomatch, lodash inside test/build tooling) don't gate releases.
+        run: pnpm audit --prod --audit-level=critical
 
       - name: Semgrep SAST scan
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >-
-            p/javascript
-            p/typescript
-            p/nodejs
-            p/owasp-top-ten
-        env:
-          SEMGREP_FAIL_OPEN: 'false'
-        continue-on-error: true
+        # V-31: --severity=ERROR + --error → exit non-zero on any ERROR-level finding.
+        # Running via the published image keeps the contract explicit (no action
+        # surface area in between) and matches the CLI flags listed in the audit.
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src returntocorp/semgrep:latest \
+            semgrep scan \
+              --config=p/javascript \
+              --config=p/typescript \
+              --config=p/nodejs \
+              --config=p/owasp-top-ten \
+              --severity=ERROR \
+              --error
 
   test:
     name: Unit Tests

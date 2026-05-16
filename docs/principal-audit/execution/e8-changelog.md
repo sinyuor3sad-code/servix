@@ -988,3 +988,21 @@ Recreated `api-1` + `api-2` (force-recreate, no-deps). Both healthy in ≤16s. A
 
 - **`A8-IV-027`** (LOW): prod `/root/servix/tooling/docker/.env` carries 6 orphan N8N entries (3 unique keys duplicated on lines 73-75 *and* 83-85). No container consumes them now. Owner: remove via `sudo sed -i '/^N8N_/d' /root/servix/tooling/docker/.env` after capturing the values to Bitwarden in case n8n is ever re-introduced. The duplicate lines are themselves suspicious — likely fallout from two separate copy-paste sessions during initial setup; worth investigating other duplicated entries.
 
+
+### V-31 — re-enable security gates in CI (`pnpm audit` + Semgrep)
+
+**Why:** `.github/workflows/ci.yml` had `continue-on-error: true` on both the `pnpm audit` and Semgrep steps — i.e., neither step could fail the build. The CICD doc claimed they were blocking gates; they were not.
+
+**Changes (`ci.yml § security` job):**
+
+| Step | Before | After |
+|---|---|---|
+| `pnpm audit` | `pnpm audit --audit-level=critical` + `continue-on-error: true` | `pnpm audit --prod --audit-level=critical` (no continue-on-error). `--prod` scopes to runtime deps — high-severity findings in dev-only transitive packages (handlebars/picomatch/lodash) no longer gate releases |
+| Semgrep | `semgrep/semgrep-action@v1` + `continue-on-error: true` | Direct CLI via `returntocorp/semgrep:latest` image with `--severity=ERROR --error` flags. Makes the contract explicit (no action wrapping to read flags from) |
+
+**Sanity:**
+- `pnpm audit --prod --audit-level=critical` locally: `0 critical` (48 vulns: 4 low / 26 moderate / 18 high — all low/moderate/high pass the `--audit-level=critical` gate). Exit 0.
+- ci.yml otherwise unchanged; the `Coverage Report` step at line 96 keeps its `continue-on-error: true` because it's informational logging, not a gate.
+
+**Rollback:** restore `continue-on-error: true` on the two steps. The audit/Semgrep findings will continue to run and report, just without blocking merge.
+
