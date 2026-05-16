@@ -278,6 +278,100 @@ usepam                      yes
 
 - `A8-IV-009`: rotate any other secrets the engineer may have echoed during this session (audit of all tool outputs needed). Initial review found only this one instance.
 
+### A8-003: Postgres superuser separation (servix → servix_app for runtime)
+
+**Goal:** Stop using `servix` superuser for runtime application connections. Create non-superuser `servix_app` role for `api-1`/`api-2` Prisma queries, restricting blast radius of any future SQL injection to DML on existing tables (no `DROP DATABASE`, no `COPY FROM PROGRAM` RCE, no role/db creation).
+
+**Pre-flight findings (from diagnostic batch):**
+- `servix` role: SUPERUSER + CREATEDB + CREATEROLE — owns all 5 databases
+- 4 production databases: `servix_platform` (23 tables), `evolution_db` (37), `servix_tenant_d0f48d47` (51), `servix_tenant_test_ai_reception` (50)
+- pgbouncer: `scram-sha-256` + `auth_query` mode, userlist had only `servix`
+- api connections: 27 total, 1 active (safe for rolling restart, no peak time)
+- pool_mode `transaction`, default_pool_size 50, max_client_conn 300
+
+**Actions:**
+
+1. **Created `servix_app` role** with `NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT` via idempotent `DO` block (handles both create-if-missing and update-password cases).
+
+2. **Granted privileges per database** (4 transactions, all succeeded):
+   - `GRANT CONNECT ON DATABASE`
+   - `GRANT USAGE ON SCHEMA public`
+   - `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public`
+   - `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public`
+   - `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public`
+   - `ALTER DEFAULT PRIVILEGES FOR ROLE servix IN SCHEMA public GRANT ... TO servix_app` (covers future tables created by `prisma migrate`)
+   - Grant counts: 92 tables in `servix_platform`, 204 in `servix_tenant_d0f48d47`, 200 in `servix_tenant_test_ai_reception`, 148 in `evolution_db` (counts > raw table count because of default + per-table grants).
+
+3. **Updated pgbouncer userlist.txt** to add `servix_app` SCRAM hash alongside existing `servix` (kept for backup container + admin tasks). Used `docker cp` + `--user 0` for ownership fix. Sent SIGHUP for in-memory reload.
+
+4. **Added `SERVIX_APP_PASSWORD` to `.env`** on both `/root/servix/tooling/docker/.env` and `/root/servix/.env`. Did NOT modify `POSTGRES_PASSWORD` (still servix superuser, used by backup + evolution + future migration jobs).
+
+5. **First recreate attempt revealed root cause of "appears to work but uses servix"**: the compose file hardcoded `PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/...` — the `.env`'s `PLATFORM_DATABASE_URL` variable was being **ignored** because compose's `environment:` block takes precedence. Needed to edit the compose itself.
+
+6. **Modified `tooling/docker/docker-compose.prod.yml`** (both `api-1` + `api-2` service blocks) to use `${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}` for `PLATFORM_DATABASE_URL` and `DATABASE_READ_URL`. The `:-` default means if `.env` doesn't define `SERVIX_APP_USER`, it falls back to `servix_app` literal. Change applied via surgical `sed -i` on prod (not full file replace — see drift note below) AND committed to git for repo parity.
+
+7. **Rolling recreate** of `api-1` then `api-2` (`docker compose up -d --force-recreate --no-deps`). Each took ~15s. Both came up healthy on first try.
+
+**Verification (clean-room from one-off `postgres:17-alpine` containers):**
+
+| # | Test | Expected | Actual |
+|---|---|---|---|
+| 1 | `servix_app` SELECT via pgbouncer | success | ✅ `servix_app: 4 tenants` |
+| 2 | `servix_app` DROP TABLE | reject | ✅ `ERROR: must be owner of table tenants` |
+| 3 | `servix_app` CREATE DATABASE | reject | ✅ `ERROR: permission denied to create database` |
+| 4 | `servix_app` CREATE ROLE | reject | ✅ `ERROR: permission denied to create role` |
+| 5 | `servix_app` INSERT | success | ✅ BEGIN+INSERT pass auth; constraint violation expected (proves DML works at SQL layer) |
+| 6 | `servix_app` COPY FROM PROGRAM | reject | ✅ `ERROR: permission denied to COPY to or from an external program` |
+| 7 | `servix` superuser still functional | accept | ✅ `is_superuser=on` |
+| 8 | backup pg_isready→postgres | success | ✅ `accepting connections` |
+| 9 | `servix_app` SELECT on tenant DB | success | ✅ `servix_app\|51` tables visible |
+
+**Runtime state post-deploy:**
+- `pg_stat_activity` shows `servix_app: 5 connections`, `servix: 26 connections` (latter = backup + evolution + pgbouncer auth_user + monitoring)
+- api-1: healthy, db responseTime 58ms ✓
+- api-2: healthy, db responseTime 7ms ✓
+- No permission errors in api logs over 90s observation window
+- Evolution API + backup containers untouched (continue using servix as designed)
+
+**Security improvement:** Any future SQL injection in api endpoints can now do (at worst) DML on existing tables. Cannot:
+- DROP DATABASE / DROP TABLE (not owner)
+- CREATE DATABASE / CREATE ROLE (no attributes)
+- COPY FROM PROGRAM (RCE blocked — only `pg_execute_server_program` role members can)
+- Cross to other databases (CONNECT grants are explicit per-DB)
+
+**Production-vs-git drift flagged (`A8-IV-010` follow-up):**
+
+While preparing to deploy A8-003, the surgical compose diff revealed that production's `/root/servix/tooling/docker/docker-compose.prod.yml` still contains the `n8n` service block + likely other content removed from main branch (commits `632babf chore(infra): remove unused n8n + gemini-proxy services` and `668ae0d chore(infra): remove n8n.servi-x.com from nginx routes`). Production has NOT been redeployed since those commits. Engineer aborted the original "full file replace via scp" approach to avoid silently removing n8n service entry; used surgical `sed -i` instead to apply only the 4 URL lines. A reconciliation pass between prod state and main is needed (`A8-IV-010` candidate). Until then, applying A8-003 in git via this PR keeps the change in source-of-truth; next deploy from main will re-apply it. Production already has the change applied directly.
+
+**Tier rule additions:**
+
+18. **Compose `environment:` block takes precedence over `.env` interpolation.** Setting `PLATFORM_DATABASE_URL` in `.env` does nothing if compose hardcodes the value (even with interpolation). Always check `docker exec <container> env | grep VAR` to confirm what the container actually sees, not what `.env` says.
+19. **Use `sudo bash -e` not `sudo bash -se` with `set -eo pipefail`** when piping inside commands you don't want to abort the script — `pipefail` makes `cmd | head -N` exit 1 if `cmd` exits with anything but 0, even when the piped output is what you want.
+20. **Compare prod state to git before any "replace whole file" operation.** If prod has drift (n8n still present, etc.), `scp` of git file will silently revert other state. Use surgical `sed -i` for targeted changes; reserve full-file replaces for known-clean targets.
+21. **Production-vs-git drift detection should be a standing check** at the start of any compose-modifying card. `git diff $(scp prod:/path/file -) /local/path/file` or equivalent.
+
+**Backup files (rollback path):**
+
+- `/root/servix/tooling/docker/.env.bak-A8-003-20260516_080745`
+- `/root/servix/.env.bak-A8-003-20260516_080745`
+- `/root/servix/tooling/docker/docker-compose.prod.yml.bak-A8-003-20260516_081506` (from aborted full-replace attempt; can keep as evidence)
+- `/root/servix/tooling/docker/docker-compose.prod.yml.bak-A8-003-surgical-20260516_081852` (from successful surgical sed)
+
+**Action required from owner:**
+
+- Capture `SERVIX_APP_PASSWORD` into Bitwarden:
+  ```bash
+  ssh servix-admin@194.163.158.70 "sudo grep '^SERVIX_APP_PASSWORD=' /root/servix/tooling/docker/.env"
+  ```
+- Suggested entry: `Servix Prod — servix_app non-superuser DB role (created 2026-05-16 08:07 CEST)`
+- Schedule reconciliation pass between prod state and main branch (`A8-IV-010`)
+
+**Follow-up flagged:**
+
+- `A8-IV-010`: prod-vs-git compose drift (n8n + others). Needs full audit + reconciliation plan.
+- `A8-IV-011`: extend A8-003 pattern to Evolution API (currently still uses `servix` superuser for `evolution_db`). Lower priority — Evolution data has less sensitivity than salon platform data, but defense-in-depth.
+- `A8-IV-012`: investigate whether `n8n_db` exists in postgres (compose has n8n service, but A8-IV-001 survey showed only 4 databases — possibly orphan).
+
 ### A8-IV-002 (followup): platform-admin tenant diagnostic results
 
 - Tenant row: `cde3a2d9-...`, slug `platform-admin`, `database_name=platform_admin_db`, `status=active`, created 2026-04-09 11:11 UTC, no `pending_deletion_at`

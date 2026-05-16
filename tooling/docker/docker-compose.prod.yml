@@ -154,8 +154,9 @@ services:
       NODE_ENV: production
       PORT: 4000
       INSTANCE_ID: api-1
-      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}
-      DATABASE_READ_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
+      # A8-003: runtime DB connections use non-superuser servix_app role
+      PLATFORM_DATABASE_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}
+      DATABASE_READ_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -202,8 +203,9 @@ services:
       NODE_ENV: production
       PORT: 4000
       INSTANCE_ID: api-2
-      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}
-      DATABASE_READ_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
+      # A8-003: runtime DB connections use non-superuser servix_app role
+      PLATFORM_DATABASE_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}
+      DATABASE_READ_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
