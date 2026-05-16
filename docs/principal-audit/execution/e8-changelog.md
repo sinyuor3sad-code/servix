@@ -742,6 +742,88 @@ Sample pgbouncer log lines:
 - `A8-IV-020`: docker `json-file` driver has no log rotation. With log_connections=on, postgres stderr volume increases. Prod `/var/lib/docker/containers/.../*-json.log` for postgres = 91MB now. Add `/etc/docker/daemon.json` with `max-size:100m max-file:5` during A8-009 maintenance window (requires `systemctl restart docker` = downtime).
 - `A8-IV-021`: pgbouncer entrypoint regenerates userlist.txt to single-user state on every container start. Wipes `servix_app` (and any future runtime-added user). Patch entrypoint or remove userlist regeneration in favor of `auth_query`-only.
 
+### A8-IV-019: PITR / WAL archive — emergency disk-pressure mitigation
+
+- **Date:** 2026-05-16 (CEST)
+- **Severity:** HIGH (disk-fill prevention) + tracking for full repair
+
+### Discovery (during A8-011)
+
+Postgres log showed repeated:
+```
+sh: /scripts/archive-wal.sh: Permission denied
+archive command failed with exit code 126
+```
+
+Diagnostic revealed PITR pipeline was broken at **multiple layers**, not just one missing exec bit:
+
+| Layer | State |
+|---|---|
+| `tooling/postgres/archive-wal.sh` mode | `100644` in git, `644 root:root` on host — **not executable** |
+| `mc` binary in postgres container | **not installed** (postgres:17-alpine doesn't include it) |
+| `gpg` binary in postgres container | **not installed** |
+| `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` env in postgres container | **not set** |
+| `BACKUP_ENCRYPTION_PASSPHRASE` env in postgres container | **not set** |
+| MinIO bucket `servix-wal` | **does not exist** (only `servix-backups/` was created) |
+| `archive_command` | `/scripts/archive-wal.sh "%p" "%f"` (calls script directly, requires exec bit) |
+
+The script and `archive_command` were designed for a runtime environment that postgres:17-alpine does not provide. PITR has been broken since **2026-05-01 00:24 UTC** (≈16 days) — same date as the broader infra epoch (postgres + backup container creation).
+
+### Critical operational pressure (this is what forced mitigation now)
+
+`pg_wal/` had **3625 stuck `.ready` segments** = **56.7 GB**. At ~3.5 GB/day write rate (pre-launch traffic level), disk would fill in ~30 days. Owner decision: defer architectural fix (A8-IV-019b) but apply **immediate disk-pressure mitigation**.
+
+### Quick mitigate (5-10 min, no postgres restart, reversible)
+
+```sql
+ALTER SYSTEM SET archive_command = '/bin/true';
+SELECT pg_reload_conf();
+CHECKPOINT;  -- triggers immediate archive_status sweep
+```
+
+Then second `CHECKPOINT` to recycle segments now marked `.done`.
+
+### Results
+
+| Metric | Before | After (60s) | Δ |
+|---|---|---|---|
+| `.ready` files | 3625 | 0 | -3625 |
+| `.done` files | 0 | swept | (recycled by 2nd checkpoint) |
+| pg_wal segments | 3626 | 89 | -3537 |
+| pg_wal size | 56.7 GB | 1.4 GB | **-55.3 GB** |
+| `/dev/sda1` used | 84 GB (44%) | 29 GB (15%) | **-55 GB** |
+| postgres state | running|healthy | running|healthy | unchanged |
+| restarts | 0 | 0 | unchanged |
+
+### Trade-off
+
+- **PITR is now formally disabled** (`archive_command=/bin/true` is a no-op that always returns success). However, PITR was already non-functional for 16 days due to the broken script. The change formalizes the broken state and frees disk.
+- **Logical backups still work** (A8-001 servix-backup container ships full pg_dump per database every 6h to MinIO `servix-backups/` bucket). Recovery point = at most 6 hours of data loss vs the design intent of ~60s WAL-archive RPO.
+
+### NOT persisted to repo `postgresql.conf`
+
+`archive_command = '/bin/true'` is a **prod-only temporary measure** living in `postgresql.auto.conf` on prod. The repo `tooling/postgres/postgresql.conf` retains the original (correct) `archive_command = '/scripts/archive-wal.sh "%p" "%f"'` because:
+
+1. The repo represents the design intent (PITR enabled with WAL shipping).
+2. Persisting the `/bin/true` workaround in git would normalize the broken state and risk future rebuilds adopting it permanently.
+3. A8-IV-019b will fix the actual problem; when fixed, prod's `postgresql.auto.conf` will be reset (or this line removed) to fall back to the repo value.
+
+### Rollback (when A8-IV-019b ships)
+
+```sql
+ALTER SYSTEM RESET archive_command;  -- falls back to postgresql.conf value
+SELECT pg_reload_conf();
+```
+
+### Followup tickets
+
+- **`A8-IV-019b`** (architectural, HIGH priority — schedule before launch):
+  PITR pipeline redesign. Choose one of:
+  - **Option B**: install `mc` + `gpg` in postgres container (via custom Dockerfile or initContainer-style script), add MinIO/passphrase env vars to postgres service in compose, chmod 755 the script, recreate postgres (~15-30s downtime).
+  - **Option C**: sidecar pattern — postgres writes WAL to a shared volume, `wal-shipper` sidecar container (with mc+gpg pre-installed) watches the volume and uploads to MinIO. Cleaner separation of concerns. Requires compose redesign + new service definition.
+
+  Pre-condition for any option: create MinIO bucket `servix-wal` first.
+
 ### A8-IV-002 (followup): platform-admin tenant diagnostic results
 
 - Tenant row: `cde3a2d9-...`, slug `platform-admin`, `database_name=platform_admin_db`, `status=active`, created 2026-04-09 11:11 UTC, no `pending_deletion_at`
