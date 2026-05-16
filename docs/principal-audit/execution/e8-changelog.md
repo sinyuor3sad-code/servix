@@ -656,6 +656,92 @@ VM had **0 bytes of swap** configured. Under memory pressure (postgres + 8 conta
 
 Rollback: `swapoff /swapfile && rm /swapfile && cp <bak> /etc/fstab && cp <bak> /etc/sysctl.conf && sysctl -p`.
 
+### A8-011: log_connections + log_disconnections + audit-grade log_line_prefix
+
+- **Date:** 2026-05-16 (CEST)
+- **Severity:** P1 (audit / PDPL forensic capability)
+
+### Context
+
+Pre-fix all three logging settings were minimal:
+- `log_connections = off` → no record of WHO connected, WHEN, from WHERE
+- `log_disconnections = off` → no session duration / cleanup tracking
+- `log_line_prefix = '%m [%p] %u@%d '` → missing line counter, client IP, application name
+- pgbouncer `log_connections = 0`, `log_disconnections = 0` → same gaps at the proxy layer
+
+For PDPL incident response (who accessed tenant data when), these settings are required.
+
+### Actions
+
+1. **Postgres ALTER SYSTEM × 3:**
+   ```sql
+   ALTER SYSTEM SET log_connections = on;
+   ALTER SYSTEM SET log_disconnections = on;
+   ALTER SYSTEM SET log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h ';
+   SELECT pg_reload_conf();
+   ```
+2. **PgBouncer pgbouncer.ini** (`sed -i` on host path `/root/servix/tooling/docker/pgbouncer/pgbouncer.ini`):
+   ```
+   log_connections = 0  →  1
+   log_disconnections = 0  →  1
+   ```
+3. **Persisted in `tooling/postgres/postgresql.conf`** (this commit) — replaces the placeholder `off` lines from A8-002 commit.
+
+### Bind-mount inode bug (Tier rule 26 reapplied)
+
+Edit-in-place `sed -i` on the host pgbouncer.ini broke the bind-mount inode (same pattern as A8-008 nginx). The container saw the OLD pgbouncer.ini (still `= 0`) even after SIGHUP. **Fix:** `docker compose up -d --force-recreate --no-deps pgbouncer` to re-attach the mount.
+
+### Regression discovered during recreate: pgbouncer userlist regenerated to single-user state
+
+The pgbouncer entrypoint (`/entrypoint.sh` in container) runs on every start:
+```sh
+echo "\"${PGBOUNCER_USER}\" \"${PGBOUNCER_PASSWORD}\"" > /etc/pgbouncer/userlist.txt
+```
+
+This **wipes** any users added at runtime (e.g., `servix_app` from A8-003) on every recreate. After A8-011's pgbouncer recreate, `servix_app` connections via pgbouncer returned `SASL authentication failed`. Restored by re-`docker cp`-ing a userlist.txt containing both `servix` and `servix_app` entries.
+
+**Flag as `A8-IV-021`:** pgbouncer entrypoint must be patched to either (a) loop over `PGBOUNCER_USER*` env vars to support multiple users, or (b) rely on `auth_query` (already configured) for runtime user resolution — meaning the entrypoint should only set the bootstrap auth_user and let auth_query handle the rest. Until fixed, **every pgbouncer recreate breaks the app temporarily** until userlist is manually restored.
+
+### Verification
+
+Sample postgres log lines post-deploy (new format active):
+```
+2026-05-16 20:10:00 UTC [372195]: [1-1] user=[unknown],db=[unknown],app=[unknown],client=172.18.0.4 LOG:  connection received: host=172.18.0.4 port=60456
+2026-05-16 20:10:00 UTC [372195]: [2-1] user=servix_app,db=servix_platform,app=[unknown],client=172.18.0.4 LOG:  connection authenticated: identity="servix_app" method=scram-sha-256
+2026-05-16 20:10:00 UTC [372195]: [3-1] user=servix_app,db=servix_platform,app=[unknown],client=172.18.0.4 LOG:  connection authorized: user=servix_app database=servix_platform
+```
+
+Sample pgbouncer log lines:
+```
+2026-05-16 20:07:01.260 UTC [1] LOG C-0x... (nodb)/servix_app@172.18.0.6:37430 login attempt: db=servix_platform user=servix_app tls=no replication=no
+```
+
+| Test | Expected | Actual |
+|---|---|---|
+| `SHOW log_connections` | `on` | ✅ `on` (source: configuration file) |
+| `SHOW log_disconnections` | `on` | ✅ `on` |
+| `SHOW log_line_prefix` | new format | ✅ matches `'%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '` |
+| pgbouncer.ini `log_connections` | `1` | ✅ (after recreate) |
+| Fresh connection logs in postgres | yes | ✅ 3-line sequence per connection |
+| pgbouncer login attempts logged | yes | ✅ |
+| api-1/api-2 health post-pgbouncer-recreate | `db_status=ok` | ✅ |
+| All containers | healthy | ✅ |
+
+### Side observation (logged for owner)
+
+`user=servix password authentication failed for user "servix"` from `172.18.0.9` appeared in postgres logs. Likely a container (evolution? backup? scheduled job?) that wasn't recreated after A8-IV-008 servix password rotation. Will reach steady state once that container restarts (or owner can force-recreate it).
+
+### Backup files (rollback path)
+
+- `/root/servix/tooling/docker/pgbouncer/pgbouncer.ini.bak-A8-011-20260516_220515`
+- Postgres rollback: `ALTER SYSTEM RESET log_connections; ALTER SYSTEM RESET log_disconnections; ALTER SYSTEM RESET log_line_prefix; SELECT pg_reload_conf();`
+
+### Followup tickets
+
+- `A8-IV-019`: WAL archive script `/scripts/archive-wal.sh` is non-executable on prod → PITR broken. Discovered during A8-011 diagnostic. **NEXT card after A8-011 push.**
+- `A8-IV-020`: docker `json-file` driver has no log rotation. With log_connections=on, postgres stderr volume increases. Prod `/var/lib/docker/containers/.../*-json.log` for postgres = 91MB now. Add `/etc/docker/daemon.json` with `max-size:100m max-file:5` during A8-009 maintenance window (requires `systemctl restart docker` = downtime).
+- `A8-IV-021`: pgbouncer entrypoint regenerates userlist.txt to single-user state on every container start. Wipes `servix_app` (and any future runtime-added user). Patch entrypoint or remove userlist regeneration in favor of `auth_query`-only.
+
 ### A8-IV-002 (followup): platform-admin tenant diagnostic results
 
 - Tenant row: `cde3a2d9-...`, slug `platform-admin`, `database_name=platform_admin_db`, `status=active`, created 2026-04-09 11:11 UTC, no `pending_deletion_at`
