@@ -962,3 +962,29 @@ Recreated `api-1` + `api-2` (force-recreate, no-deps). Both healthy in ≤16s. A
 
 **Rollback:** revert the 5 files. Prod `.env` retains the rotated 80-char secrets even if code reverted (old shorter values are not restored automatically — that's intentional, the rotation is a one-way upgrade).
 
+
+### A8-IV-024 — n8n stack cleanup (compose + .env.example)
+
+**Why:** n8n was removed from prod during A8-008 (session 1) but the repo still had the full `n8n:`, `gemini-proxy:` (n8n relay), `n8n_data:` named volume, and three `N8N_*` env entries — repo↔prod drift filed earlier as IV-024. Apps don't reference n8n anywhere: `grep -rIn 'n8n\|N8N' apps/api/src` → 0 matches, so no application-code coupling.
+
+**Changes:**
+
+| File | Change |
+|---|---|
+| `tooling/docker/docker-compose.prod.yml` | Removed `n8n:` service block (38 lines), `gemini-proxy:` service block (10 lines — sole purpose was relaying for n8n), `n8n_data:` named volume entry. Reworded `evolution-api` section header from "WhatsApp gateway for n8n workflows" → "WhatsApp gateway for SERVIX API" (Evolution is used directly by the API via CircuitBreakerService) |
+| `.env.example` (root) | Removed n8n section (header + 3 vars: `N8N_BASIC_AUTH_USER`, `N8N_BASIC_AUTH_PASSWORD`, `N8N_ENCRYPTION_KEY`). Reworded Evolution section header to drop n8n reference |
+
+**Out of scope (owner-confirmed):**
+- `tooling/n8n/workflows/*.json` — n8n workflow definitions; preserved as reference / future-import
+- `apps/api/scratch/n8n-local.yml` — dev scratch file, not deployed
+- Cloudflare DNS `n8n.servi-x.com` — owner handling from CF panel
+
+**Verification:**
+- `docker compose -f tooling/docker/docker-compose.prod.yml config` parses without n8n/gemini-proxy entries (env var warnings only — no structural errors)
+- `grep -inE 'n8n|N8N_' tooling/docker/docker-compose.prod.yml .env.example tooling/docker/.env.example apps/api/.env.example` → 0 matches
+- Prod state already matches: `docker volume ls` shows no n8n volume, `pg_database` shows no `n8n_db` (presumably dropped in A8-008)
+
+**Followup tickets:**
+
+- **`A8-IV-027`** (LOW): prod `/root/servix/tooling/docker/.env` carries 6 orphan N8N entries (3 unique keys duplicated on lines 73-75 *and* 83-85). No container consumes them now. Owner: remove via `sudo sed -i '/^N8N_/d' /root/servix/tooling/docker/.env` after capturing the values to Bitwarden in case n8n is ever re-introduced. The duplicate lines are themselves suspicious — likely fallout from two separate copy-paste sessions during initial setup; worth investigating other duplicated entries.
+
