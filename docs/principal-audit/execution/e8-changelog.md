@@ -603,6 +603,59 @@ Production nginx active config (`docker exec servix-nginx nginx -T`) contained 8
 
 - `/root/servix/tooling/docker/nginx/nginx.conf.bak-A8-008-20260516_215325` (last-known-good prod version, May 13 mtime)
 
+### A8-017: 4GB swap + vm.swappiness=10
+
+- **Date:** 2026-05-16 (CEST)
+- **Severity:** P2 (catastrophe-prevention)
+
+### Context
+
+VM had **0 bytes of swap** configured. Under memory pressure (postgres + 8 containers on 11GB RAM), kernel OOM killer would terminate processes instead of paging. Pure host state change — no compose/repo files affected.
+
+### Diagnostic (pre-flight)
+
+- mem: 11Gi total, 3Gi used, 8.7Gi available (healthy)
+- swap: 0
+- disk free `/`: 114GB (room for 4GB swapfile)
+- `vm.swappiness`: 60 (kernel default; too aggressive for SSD)
+- no existing `/swapfile`
+- fstab: 3 standard entries (root, /boot, /boot/efi)
+
+### Actions (host-only)
+
+1. `fallocate -l 4G /swapfile && chmod 600`
+2. `mkswap /swapfile` → UUID assigned
+3. `swapon /swapfile` → 4G priority -2
+4. Appended to `/etc/fstab`:
+   ```
+   # A8-017 — added 20260516_215843
+   /swapfile none swap sw 0 0
+   ```
+5. `sysctl -w vm.swappiness=10` (runtime)
+6. Appended to `/etc/sysctl.conf`:
+   ```
+   # A8-017 — added 20260516_215843
+   vm.swappiness = 10
+   ```
+
+### Verification
+
+| Test | Expected | Actual |
+|---|---|---|
+| `swapon --show` | `/swapfile 4G` | ✅ `/swapfile file 4G 0B -2` |
+| `free -h` swap line | `4.0Gi` | ✅ `4.0Gi 0B 4.0Gi` |
+| `sysctl vm.swappiness` | `10` | ✅ `10` |
+| `findmnt --fstab /swapfile` | entry present | ✅ `none /swapfile swap sw` |
+| `mount -fa` (dry-run) | no errors | ✅ (no output) |
+| All 8 containers | unchanged healthy | ✅ |
+
+### Backup files (rollback path)
+
+- `/etc/fstab.bak-A8-017-20260516_215843`
+- `/etc/sysctl.conf.bak-A8-017-20260516_215843`
+
+Rollback: `swapoff /swapfile && rm /swapfile && cp <bak> /etc/fstab && cp <bak> /etc/sysctl.conf && sysctl -p`.
+
 ### A8-IV-002 (followup): platform-admin tenant diagnostic results
 
 - Tenant row: `cde3a2d9-...`, slug `platform-admin`, `database_name=platform_admin_db`, `status=active`, created 2026-04-09 11:11 UTC, no `pending_deletion_at`
