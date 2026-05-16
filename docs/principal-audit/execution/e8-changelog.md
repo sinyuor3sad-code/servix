@@ -1006,3 +1006,26 @@ Recreated `api-1` + `api-2` (force-recreate, no-deps). Both healthy in ≤16s. A
 
 **Rollback:** restore `continue-on-error: true` on the two steps. The audit/Semgrep findings will continue to run and report, just without blocking merge.
 
+
+### A8-IV-029 / A8-IV-030 / A8-IV-031 — clear V-31 CI gate
+
+V-31 re-enabled `pnpm audit` + Semgrep as blocking gates. The first PR run surfaced 2 Semgrep ERROR-level findings and 1 ESLint error — all genuine, none suppression-worthy:
+
+| Ticket | File | Fix |
+|---|---|---|
+| **A8-IV-029** | `apps/api/src/shared/encryption/encryption.service.ts:93` | `createDecipheriv(algorithm, key, iv)` → `createDecipheriv(algorithm, key, iv, { authTagLength: 16 })`. GCM forgery hardening — `encrypt()` emits 16-byte tags via Node default `getAuthTag()`, so the decrypt side must enforce the same length. Encryption test suite still 11/11 green (round-trip / unicode / tamper). Semgrep rule `javascript.node-crypto.security.gcm-no-tag-length` |
+| **A8-IV-030** | `.github/workflows/release.yml:32` | Moved `${{ github.event.inputs.tag \|\| github.ref_name }}` out of `run:` body into an `env:` block (`INPUT_TAG`, `REF_NAME`), then `TAG="${INPUT_TAG:-$REF_NAME}"` inside the script. `workflow_dispatch` inputs are attacker-controlled; the `${{ … }}` inline-template would let a crafted tag break out of the shell. Semgrep rule `yaml.github-actions.security.run-shell-injection` |
+| **A8-IV-031** | `apps/api/src/modules/zatca/zatca-crypto.service.spec.ts:189` | `const { createHash } = require('crypto')` → top-level `import { createHash } from 'crypto'`. `@typescript-eslint/no-require-imports` blocker. zatca-crypto test suite still 13/13 green |
+
+**Pre-existing CI debt filed separately:**
+
+- **`A8-IV-028`**:
+  - GitHub `Dependency review` check fails with "Dependency graph is not supported on this repository" — owner enables in Settings → Code security & analysis → Dependency graph (single click).
+  - `Terraform Plan` check fails because `secrets.CLOUDFLARE_API_TOKEN` is empty in PR context (empty string fails the Cloudflare provider's regex). The V-27 validation correctly fires on the same run because `secrets.DEPLOY_IP` is also empty — both upstream of V-31. Owner action: wire secrets into PR jobs (or scope the Terraform job to push events only).
+
+**Pre-push verification:**
+- `pnpm --filter @servix/api exec jest src/shared/encryption/encryption.service.spec.ts` — 11/11 pass
+- `pnpm --filter @servix/api exec jest src/modules/zatca/zatca-crypto.service.spec.ts` — 13/13 pass
+- `pnpm --filter @servix/api lint` — 0 errors (5 unused-var warnings remain, pre-existing, do not block)
+- `pnpm --filter @servix/api exec tsc --noEmit` — clean
+
