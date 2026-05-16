@@ -891,3 +891,16 @@ node -e 'console.log(new Date().toString())'
 
 - **`A8-IV-024`** (MEDIUM): repo `tooling/docker/docker-compose.prod.yml` is drifted from prod `/root/servix/tooling/docker/docker-compose.prod.yml`. Prod has removed `n8n` + `gemini-proxy` + `evolution-api` service blocks (A8-008 cleanup) and lost inline A8-003/A8-004 comments. Either backfill prod from repo (re-add the comments and decide on n8n) or strip the removed blocks from the repo. Filed as drift in case session 1's cherry-pick missed a propagation step.
 
+
+### V-27 — Terraform `deploy_ip` insecure default
+
+**Why:** `tooling/terraform/variables.tf` declared `default = "0.0.0.0/0"` for `deploy_ip`. Any `terraform apply` run without `TF_VAR_deploy_ip` (or a tfvars override) would silently open SSH/Grafana/Jaeger to the entire internet. CI passes `secrets.DEPLOY_IP` via `TF_VAR_deploy_ip` already, so the default was masked in normal use — but an ad-hoc local apply would not be.
+
+**Change:**
+- Removed `default = "0.0.0.0/0"` from `variable "deploy_ip"` (now required).
+- Added `validation { condition = can(cidrhost(var.deploy_ip, 0)) && var.deploy_ip != "0.0.0.0/0" && var.deploy_ip != "::/0" }` to reject open-world ranges at plan time with a clear error message.
+
+`firewall.tf` uses `var.deploy_ip` in 3 SSH/Grafana/Jaeger ingress rules — none of which should ever accept `0.0.0.0/0`. CI workflow already supplies `secrets.DEPLOY_IP`, so the next `terraform plan` should succeed unchanged.
+
+**Rollback:** restore the `default` line if a CI run breaks (would indicate the secret was never wired up — investigate before reverting).
+
