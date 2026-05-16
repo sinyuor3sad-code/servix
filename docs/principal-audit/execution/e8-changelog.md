@@ -551,6 +551,58 @@ sudo shred -u \
   ```
   Expected: both fail with `Permission denied`.
 
+### A8-008: n8n nginx drift cleanup
+
+- **Date:** 2026-05-16 (CEST)
+- **Severity:** HIGH
+
+### Context
+
+Production nginx active config (`docker exec servix-nginx nginx -T`) contained 8 references to `n8n.servi-x.com` even though:
+- No `n8n` container running (`docker ps -a --filter name=n8n` empty)
+- No `n8n_db` in postgres (only 4 DBs: `servix_platform`, `evolution_db`, 2 tenant DBs)
+- Result: any request to `https://n8n.servi-x.com/` returned `HTTP 502 Bad Gateway` (nginx tried to proxy to non-existent `http://n8n:5678` upstream)
+
+### Drift archaeology
+
+- Commit `668ae0d chore(infra): remove n8n.servi-x.com from nginx routes` (Wed May 13) cleanly removed the n8n server block from `tooling/docker/nginx/nginx.conf` in git.
+- But that commit only lived on branch `fix/dashboard-sw-cache-leak` (owner WIP, never merged to `main`). Origin/main `b5452d2` does NOT include it.
+- On prod host, the on-disk `nginx.conf` somehow already had 0 n8n refs (modified May 13 07:04 CEST — same day as the commit). Likely the owner SCP'd the file manually but never reloaded nginx.
+- **Active nginx process still held the OLD config in memory** — 8 n8n refs visible via `nginx -T`, returning 502s for n8n.servi-x.com.
+
+### Actions
+
+1. **Cherry-picked `668ae0d`** into `chore/e8-prod-hardening` (`git cherry-pick --no-commit`) → local `nginx.conf` now matches the cleaned version. Conflict-free apply.
+2. **SCP'd cleaned config to prod** at `/tmp/nginx.conf.A8-008.new`, then `mv` to `/root/servix/tooling/docker/nginx/nginx.conf` with backup at `.bak-A8-008-20260516_215325`.
+3. **First reload attempt failed.** `nginx -t` passed and `nginx -s reload` succeeded, but `nginx -T` still showed 8 n8n refs. Diagnosed: `mv` changed the host file inode; the running container's bind-mount tracked the OLD inode (now orphaned). Container saw 13631-byte stale file (inode 4537947); host had 11808-byte clean file (inode 4456722).
+4. **Recreate nginx container** via `docker compose up -d --force-recreate --no-deps nginx` to re-attach bind-mount to current inode. Inodes match post-recreate (`host=4456722 container=4456722`). 0 n8n refs in running config.
+
+### Verification
+
+| Test | Expected | Actual |
+|---|---|---|
+| `nginx -T \| grep -c n8n` (active) | 0 | ✅ 0 |
+| `grep "server_name.*n8n"` (any server_name has it) | none | ✅ none |
+| `curl https://api.servi-x.com/api/v1/health` | 200 | ✅ 200 |
+| `curl http://n8n.servi-x.com/` | 301 (default redirect, not 502) | ✅ 301 |
+| `curl https://n8n.servi-x.com/` | 301 / default | ✅ 301 |
+| `nginx` container | running | ✅ |
+| `api-1`/`api-2`/all others | unchanged healthy | ✅ |
+| nginx error log post-reload | clean | ✅ |
+
+### Tier rule added
+
+26. **Bind-mounted single files: `mv` breaks the mount.** Docker tracks the inode at mount time; `mv` (which is `rename(2)`) creates a new inode. The container continues serving the orphaned old inode. To update bind-mounted files: either edit in place with `cat > file` / `truncate + write` (preserves inode), OR recreate the container after the `mv`. Bind-mounted **directories** are safer because they re-resolve on each access, but single-file mounts are inode-pinned.
+
+### Followup tickets
+
+- `A8-IV-010` (still open): prod `docker-compose.prod.yml` still defines the orphan `n8n` service block (no container, but the YAML references it). Same for `gemini-proxy` per commit `632babf`. Owner to reconcile prod compose with main when ready (broader scope than A8-008).
+- `A8-IV-018`: Cloudflare DNS record for `n8n.servi-x.com` still exists. Per `668ae0d` commit body: "Cloudflare DNS record for n8n.servi-x.com still needs manual removal." Owner action required (out of engineer SSH scope).
+
+### Backup files (rollback path)
+
+- `/root/servix/tooling/docker/nginx/nginx.conf.bak-A8-008-20260516_215325` (last-known-good prod version, May 13 mtime)
+
 ### A8-IV-002 (followup): platform-admin tenant diagnostic results
 
 - Tenant row: `cde3a2d9-...`, slug `platform-admin`, `database_name=platform_admin_db`, `status=active`, created 2026-04-09 11:11 UTC, no `pending_deletion_at`
