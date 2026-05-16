@@ -833,3 +833,61 @@ SELECT pg_reload_conf();
 - **Database `platform_admin_db` does not exist** in `pg_database` (verified via `SELECT datname FROM pg_database`)
 - **Conclusion:** Reserved super-admin slug pattern. `admin@servi-x.com` logged in successfully on 2026-05-13, suggesting the super-admin code path bypasses `TenantMiddleware`'s per-tenant DB resolution. Safe to leave the row alone.
 - **Decision:** No action this session. Tracked as `A8-IV-007` for proper investigation (does the super-admin login path actually skip per-tenant DB? Should `database_name` be `NULL` instead of a phantom DB name? What happens if a non-super-admin user is accidentally linked to `platform-admin` tenant?).
+
+---
+
+## 2026-05-17 — Session 2 begins
+
+### A8-009 — timezone change Europe/Berlin → Asia/Riyadh
+
+**Why:** SERVIX is a Saudi-market SaaS; all audit/booking timestamps should display KSA wall-clock to operators. Host was on `Europe/Berlin` and Postgres on `UTC` — both wrong for the business.
+
+**Phase A — host + Postgres (tier 🔴, single owner pause):**
+
+```
+sudo timedatectl set-timezone Asia/Riyadh                      # host → +03
+docker exec servix-postgres psql -U servix -d postgres -c
+  "ALTER SYSTEM SET timezone TO 'Asia/Riyadh';"
+docker exec servix-postgres psql -U servix -d postgres -c
+  "ALTER SYSTEM SET log_timezone TO 'Asia/Riyadh';"
+docker exec servix-postgres psql -U servix -d postgres -tAc
+  "SELECT pg_reload_conf();"
+```
+
+Verified: `SHOW timezone` = Asia/Riyadh, `SHOW log_timezone` = Asia/Riyadh, `SELECT now()` = `2026-05-16 23:51:11.384954+03`. No replication lag (no replica running).
+
+**Phase B — compose TZ env on 10 production-path services (tier 🟡 reversible):**
+
+Added `TZ: Asia/Riyadh` to `environment:` blocks for: `postgres`, `pgbouncer`, `vault`, `api-1`, `api-2`, `dashboard`, `booking`, `admin`, `landing`, `nginx`. Skipped:
+- `backup` — owner direction (cron schedule would shift 2h)
+- `postgres-replica` — not running
+- monitoring stack (prometheus/grafana/alertmanager/exporters) — UTC is standard for metrics correlation
+- `evolution-api` — Brazil locale (its existing `TZ=America/Sao_Paulo` is intentional)
+- `n8n` — already had `GENERIC_TIMEZONE=Asia/Riyadh`, plus not currently running on prod (per A8-008 cleanup)
+
+Rolling `up -d --force-recreate --no-deps <svc>` per service. All 10 containers recreated cleanly; api-1 healthy in 10s, api-2 in 15s.
+
+**Verification:**
+
+| Container | `date` cmd | `TZ` env | Notes |
+|---|---|---|---|
+| postgres | +03 ✓ | set ✓ | tzdata installed on alpine |
+| vault, nginx | +03 ✓ | set ✓ | tzdata installed |
+| pgbouncer | UTC | set ✓ | libc tzdata missing → IV-022 |
+| api-1, api-2 | UTC | set ✓ | Node ICU shows +03 — verified via `new Date()` |
+| dashboard/booking/admin/landing | UTC | set ✓ | same as api — Node ICU works |
+
+Node verification:
+```
+node -e 'console.log(new Date().toString())'
+→ "Sat May 16 2026 23:59:54 GMT+0300 (Arabian Standard Time)"
+```
+
+**@Cron decorator audit:** No `@Cron` decorators in `apps/api/src/**`. Only one `@Interval(120_000)` in `order-expiry.service.ts:20`; intervals are relative and TZ-agnostic. **A8-IV-022 (cron TZ assumption) closed — not applicable.**
+
+### Followup tickets
+
+- **`A8-IV-023`** (LOW): `pgbouncer`, `api-*`, `dashboard`, `booking`, `admin`, `landing` containers lack `tzdata` package — `date` command falls back to UTC despite `TZ=Asia/Riyadh` env. Node.js apps unaffected (V8 ICU embedded). PgBouncer log timestamps will show UTC. Fix: add `apk add --no-cache tzdata` to relevant Dockerfiles. Not blocking launch — JSON loggers use `Date.toISOString()` (always UTC by spec, correct for log aggregation).
+
+- **`A8-IV-024`** (MEDIUM): repo `tooling/docker/docker-compose.prod.yml` is drifted from prod `/root/servix/tooling/docker/docker-compose.prod.yml`. Prod has removed `n8n` + `gemini-proxy` + `evolution-api` service blocks (A8-008 cleanup) and lost inline A8-003/A8-004 comments. Either backfill prod from repo (re-add the comments and decide on n8n) or strip the removed blocks from the repo. Filed as drift in case session 1's cherry-pick missed a propagation step.
+

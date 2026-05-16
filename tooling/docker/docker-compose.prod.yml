@@ -5,6 +5,7 @@ services:
     container_name: servix-postgres
     restart: always
     environment:
+      TZ: Asia/Riyadh
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-servix_platform}
@@ -74,6 +75,7 @@ services:
     container_name: servix-pgbouncer
     restart: always
     environment:
+      TZ: Asia/Riyadh
       PGBOUNCER_USER: ${POSTGRES_USER}
       PGBOUNCER_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
@@ -95,6 +97,7 @@ services:
     cap_add:
       - IPC_LOCK
     environment:
+      TZ: Asia/Riyadh
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN}
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
     ports:
@@ -156,6 +159,7 @@ services:
     restart: always
     stop_grace_period: 35s
     environment:
+      TZ: Asia/Riyadh
       NODE_ENV: production
       PORT: 4000
       INSTANCE_ID: api-1
@@ -205,6 +209,7 @@ services:
     restart: always
     stop_grace_period: 35s
     environment:
+      TZ: Asia/Riyadh
       NODE_ENV: production
       PORT: 4000
       INSTANCE_ID: api-2
@@ -253,6 +258,7 @@ services:
     container_name: servix-dashboard
     restart: always
     environment:
+      TZ: Asia/Riyadh
       NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
       NEXT_PUBLIC_WS_URL: ${WS_URL:-https://api.servi-x.com}
       NEXT_PUBLIC_DASHBOARD_URL: https://app.servi-x.com
@@ -278,6 +284,7 @@ services:
     container_name: servix-booking
     restart: always
     environment:
+      TZ: Asia/Riyadh
       NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
     expose:
       - "3001"
@@ -300,6 +307,7 @@ services:
     container_name: servix-admin
     restart: always
     environment:
+      TZ: Asia/Riyadh
       NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
     expose:
       - "3002"
@@ -321,6 +329,7 @@ services:
     container_name: servix-landing
     restart: always
     environment:
+      TZ: Asia/Riyadh
       NEXT_PUBLIC_DASHBOARD_URL: https://app.servi-x.com
     expose:
       - "3003"
@@ -338,6 +347,8 @@ services:
     image: nginx:alpine
     container_name: servix-nginx
     restart: always
+    environment:
+      TZ: Asia/Riyadh
     ports:
       - "80:80"
       - "443:443"
