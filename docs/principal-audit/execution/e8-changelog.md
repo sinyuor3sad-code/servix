@@ -209,3 +209,81 @@ usepam                      yes
 11. **Before archiving any config file, read its content** — don't trust filename/timestamp. The "prior failed attempt" assumption cost us a regression we caught via `sshd -T` preview before reload.
 12. **`passwd -S` accepts only one user per call** on Ubuntu 24.04 (jammy `passwd 1:4.13+dfsg1`). Don't batch.
 13. **Effective config preview via `sshd -T`** before any reload — catches regressions even when `sshd -t` passes (the latter validates syntax, not semantic outcome).
+
+### A8-IV-008: Emergency rotation — servix DB superuser password (self-inflicted P0)
+
+**Root cause:** While running A8-003 pre-flight diagnostics, the engineer used a flawed bash redaction pattern (`echo PLATFORM=\${PLATFORM_DATABASE_URL%%@*}@***`). The `%%@*` parameter expansion strips everything **after** the first `@`, but the password sits **before** the `@`. The resulting output exposed `servix:<19-char-plaintext-password>@***` to the chat transcript, leaking the production PostgreSQL superuser password.
+
+**Detection:** Engineer self-detected during output review (length=19 matched the visible `Sv1x_Pr0d_2026!xKq9` string).
+
+**Severity:** P0 — Postgres superuser credential compromise. All 4 production databases (`servix_platform`, `evolution_db`, `servix_tenant_d0f48d47`, `servix_tenant_test_ai_reception`) at risk for unauthorized SQL access, `DROP DATABASE`, `COPY FROM PROGRAM` RCE.
+
+**Recovery:** Atomic rotation in single SSH heredoc, password generated **server-side only** (never traversed chat or shell args on host):
+
+1. `openssl rand -base64 48 | tr -d "/+=" | head -c 32` (32 alphanumeric chars; the `-base64 24` variant was too short after `tr -d`).
+2. Backed up `/root/servix/tooling/docker/.env` + `/root/servix/.env` as `.bak-A8-IV-008-<TS>`.
+3. `ALTER ROLE servix WITH PASSWORD '...'` via temp SQL file (immediately shredded).
+4. Read new SCRAM-SHA-256 hash from `pg_shadow`.
+5. Updated `servix-pgbouncer:/etc/pgbouncer/userlist.txt` with new hash via `docker cp` + `chown postgres:postgres` (used `--user 0` for ownership fix; first attempt failed because `wc -c` from default container user couldn't read root-written file).
+6. `sed -i` on both `.env` files to replace `POSTGRES_PASSWORD` + the password portion of `PLATFORM_DATABASE_URL`.
+7. `docker compose up -d --force-recreate --no-deps pgbouncer api-1 api-2 backup evolution-api`.
+
+**First attempt aborted** at step 5 due to `wc -c` permission error inside pgbouncer container (set -euo pipefail bailed). State at abort: PG had new password #1, pgbouncer userlist had hash of #1, but `.env` files still had OLD password and containers not yet recreated. **Half-rotated state** — recovery: generate password #2 and complete the cycle (password #1 was discarded; never recoverable from the failed run).
+
+**Second attempt succeeded** with fixes:
+- Verify userlist size on host (before `docker cp`) instead of inside container after.
+- Use `docker exec --user 0` for chown/chmod inside pgbouncer container.
+- All 5 containers recreated cleanly, all healthy within 18 seconds.
+
+**Verification (clean-room from one-off `postgres:17-alpine` container on `docker_servix-network`):**
+
+| Test | Expected | Result |
+|---|---|---|
+| OLD pw → postgres direct | reject | ✅ `FATAL: password authentication failed for user "servix"` |
+| OLD pw → pgbouncer | reject | ✅ `FATAL: SASL authentication failed` |
+| NEW pw → postgres direct | accept | ✅ `servix\|PostgreSQL 17.9...` |
+| NEW pw → pgbouncer | accept | ✅ `servix` |
+| WRONG pw → postgres | reject | ✅ `FATAL: password authentication failed` (sanity) |
+
+**False-positive learning:** Initial verification from inside `servix-backup` container (with `-e PGPASSWORD=$OLD_PASS` flag) appeared to show old password being accepted. Re-test from clean one-off container proved auth was enforced correctly. The artifact is likely a libpq env-var interplay specific to backup container's pre-set `POSTGRES_PASSWORD` env (which is NEW post-rotation). Always verify auth changes from a freshly-spawned container with explicit env, not from a running container that has its own env.
+
+**Smoke tests post-rotation:**
+- `api-1`/`api-2` internal `/api/v1/health`: `db_status=ok, responseTime=5ms` ✅
+- `backup` container `pg_isready -h postgres -U servix`: accepting ✅
+- `backup` container `pg_isready -h pgbouncer -U servix`: accepting ✅
+- 24 active connections post-rotation (was 23 before), all from newly-recreated containers (verified via `backend_start` in `pg_stat_activity`) ✅
+- Backup at `20260516_040553` written successfully (entrypoint backup after pgbouncer recreate) — 5 files in MinIO ✅
+
+**Tier rule additions:**
+
+14. **NEVER use `${VAR%%@*}` for password redaction in URLs.** Use length-aware extraction: `sed -E 's|://[^:]+:([^@]+)@.*|\1|' | sha256sum` (hashes are safe; structural patterns are not). Or simply omit the URL from any output.
+15. **Verify auth changes from a fresh container** (`docker run --rm --network <net> image psql ...`) not from running containers with pre-set env vars that interfere with `-e` overrides.
+16. **`openssl rand -base64 N | tr -d "/+=" | head -c K`** — pick N such that `N*4/3 - 3` ≥ K. For K=32, use N≥48 (not N=24).
+17. **`docker cp` then `--user 0 chown`** to set ownership inside containers that run as non-root.
+
+**Action required from owner:**
+
+- Capture new password into Bitwarden via:
+  ```bash
+  ssh servix-admin@194.163.158.70 "sudo grep '^POSTGRES_PASSWORD=' /root/servix/tooling/docker/.env"
+  ```
+- Suggested entry name: `Servix Prod — postgres servix role (rotated 2026-05-16 06:04 CEST)`
+- After confirming, delete leaked-password backups:
+  ```bash
+  sudo shred -u /root/servix/tooling/docker/.env.bak-A8-IV-008-20260516_053750 /root/servix/.env.bak-A8-IV-008-20260516_053750
+  ```
+- Notify Anthropic support that a session transcript briefly contained a compromised production secret (for PDPL audit trail; secret no longer valid).
+
+**Follow-up flagged:**
+
+- `A8-IV-009`: rotate any other secrets the engineer may have echoed during this session (audit of all tool outputs needed). Initial review found only this one instance.
+
+### A8-IV-002 (followup): platform-admin tenant diagnostic results
+
+- Tenant row: `cde3a2d9-...`, slug `platform-admin`, `database_name=platform_admin_db`, `status=active`, created 2026-04-09 11:11 UTC, no `pending_deletion_at`
+- 1 user linked (presumably `admin@servi-x.com`, last login 2026-05-13 01:43 UTC — successful)
+- 0 subscriptions, 0 invoices
+- 1 audit log entry total: `trigger_backup` action on 2026-04-16 by user `f49e98ae-...`
+- **Database `platform_admin_db` does not exist** in `pg_database` (verified via `SELECT datname FROM pg_database`)
+- **Conclusion:** Reserved super-admin slug pattern. `admin@servi-x.com` logged in successfully on 2026-05-13, suggesting the super-admin code path bypasses `TenantMiddleware`'s per-tenant DB resolution. Safe to leave the row alone.
+- **Decision:** No action this session. Tracked as `A8-IV-007` for proper investigation (does the super-admin login path actually skip per-tenant DB? Should `database_name` be `NULL` instead of a phantom DB name? What happens if a non-super-admin user is accidentally linked to `platform-admin` tenant?).
