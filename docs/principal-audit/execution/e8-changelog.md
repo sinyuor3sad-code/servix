@@ -116,3 +116,96 @@ A separate host crontab line `0 3 * * * /root/servix/scripts/backup.sh ...` refe
 ### Next task
 
 `A8-003` — Postgres superuser separation (replace `servix` superuser with `servix_app` non-superuser for application connections). Requires runbook update to use `up -d --force-recreate` post-`.env` change.
+
+---
+
+## A8-001 Amendment — Post-deployment investigations (2026-05-16)
+
+### A8-IV-001: Tenant divergence investigation
+
+- **Result:** Misinterpretation, not data loss. Production has had **4 tenants since inception**, not 17.
+- Current tenants (from `tenants` table):
+  - `platform-admin` → `platform_admin_db` (active, 2026-04-09) — **DB missing from pg_database**
+  - `dantila-d0f48d47` → `servix_tenant_d0f48d47` (active, 2026-04-10) — DB present
+  - `hthr-36e0b612` → `servix_tenant_36e0b612` (pending, 2026-04-16) — **DB missing** (pending status may be expected)
+  - `test-ai-reception` → `servix_tenant_test_ai_reception` (trial, 2026-04-25) — DB present
+- Apr 10 DR baseline naming (`servix_tenant_2fd4b25a`, `_43f7926a`, etc.) does NOT match current tenants — baseline is from a different instance (likely test/staging rebuilt between Apr 10 and Apr 25).
+- **DR baseline NOT recoverable for current prod.** Flag for K3 DR project — baseline value is forensic/historical only.
+- **Severity downgrade:** "35-day data loss for 17 tenants" → "35-day data loss for 2 active tenant DBs + platform" + 2 missing DBs need follow-up.
+- **Production activity has collapsed since 2026-05-01.** Audit log shows ~150 events Apr 09–Apr 30, then only 5 events May 01–13, zero May 14+. Likely test environment or pre-launch lull.
+
+### A8-IV-002: platform_admin_db missing investigation
+
+- **Finding:** `platform-admin` tenant row has `status=active` and `database_name=platform_admin_db`, but no DB by that name exists in postgres. `hthr-36e0b612` (status=pending) also has missing DB — likely expected for `pending` status.
+- **Decision deferred** — investigation only run as part of A8-IV-001 batch. Determining whether to mark orphan/repair/restore requires owner judgment + a separate ticket (`A8-IV-007` candidate).
+- **Risk:** if anyone attempts to login as a platform-admin tenant user, `TenantMiddleware` will fail with "database does not exist" error.
+- **Follow-up:** raise `A8-IV-007` to investigate whether `platform-admin` is a misconfigured seed row, a partial migration, or legitimate-but-DB-creation-race.
+
+### A8-IV-003: Reboot 2026-05-13 root cause
+
+- **Finding:** 4 reboots within 24 minutes (02:18 → 02:43 CEST). Boot sequence consistent with **Contabo hypervisor live-migration** pattern, not a crash or kernel update.
+- Kernel package (`linux-image-6.8.0-111-generic`) was installed 2026-05-06 — 7 days before reboot, so unattended-upgrades is not the cause (would have required reboot earlier or set `/var/run/reboot-required` flag, which is currently absent).
+- No kernel panic in journal before crash; pre-reboot logs show normal sshd brute force noise and UFW blocks.
+- **Action:** owner to notify Contabo support to confirm scheduled migration window.
+- **No further engineering action needed.**
+
+### A8-IV-004: fail2ban verification
+
+- **Status:** active + enabled (fail2ban 1.0.2-3ubuntu0.1).
+- **Jails:** `sshd` (only).
+- **Effectiveness:** 1,752 IPs banned cumulatively, 13,477 failed attempts total, 102 attempts in last 30 min, 2 currently banned, 18 currently failing.
+- **nftables integration:** `f2b-table` exists with `addr-set-sshd` populated. ban action = `reject with icmp port-unreachable` on tcp/22.
+- **sshd brute force pressure:** 138 failed attempts/hour, 2,432 in last 24h. Top attacker: `186.96.145.241` (226 attempts/24h).
+- **Conclusion:** fail2ban is functioning correctly. Brute force pressure exists but is bounded by maxauthtries=3 + fail2ban bans + (after IV-005) PasswordAuthentication=no.
+
+### A8-IV-005: SSH PasswordAuthentication hot-fix + root password lock
+
+**Root cause:** 3 conflicting sshd_config.d files. sshd uses first-match-wins; `50-cloud-init.conf` (`PasswordAuthentication yes`) was overriding `99-servix-hardening.conf` (`PasswordAuthentication no`). Effective config exposed servix-admin to ~2,400 brute force attempts/day.
+
+**Archaeological discovery:** `99-servix-hardening.conf` timestamp 2026-04-23 matches unrecorded `.env.bak.20260423_1256` mutation. Same likely actor/date. Content was correct (`PermitRootLogin no`, `PasswordAuthentication no`, `MaxAuthTries 3`, `LoginGraceTime 30`, `AllowUsers servix-admin`) but never effective due to file order. No git/Slack/Linear record of this 2026-04-23 hardening attempt.
+
+**Actions:**
+
+1. Fixed `PasswordAuthentication=no` in `/etc/ssh/sshd_config.d/50-cloud-init.conf` (the actual conflict source).
+2. Initially archived `99-servix-hardening.conf` — then **RESTORED** after realizing content was correct (defense-in-depth value). Lesson: read config content before archiving, don't trust filename/timestamp.
+3. Commented redundant `PermitRootLogin yes` in main `/etc/ssh/sshd_config` (was already overridden by sshd_config.d).
+4. Locked root password via `sudo passwd -l root` — sudo via servix-admin's NOPASSWD ALL remains operational.
+5. `servix-admin` password left as-is (P status) — kept as Contabo web console emergency fallback. SSH password vector closed regardless via `PasswordAuthentication=no`.
+
+**Effective config post-fix (verified via `sshd -T`):**
+
+```
+passwordauthentication      no
+permitrootlogin             no
+pubkeyauthentication        yes
+maxauthtries                3
+logingracetime              30
+allowusers                  servix-admin
+kbdinteractiveauthentication no
+usepam                      yes
+```
+
+**Verification:**
+
+- 3 SSH sessions live during cutover (engineer + owner session 2 + owner session 3).
+- Owner explicitly tested password auth from third session: `Permission denied (publickey).` ✓
+- `sudo -n true` confirms NOPASSWD still operational ✓
+- `/etc/shadow` root entry: `LOCKED` (starts with `!`); servix-admin: `NOT_LOCKED` ✓
+- No SSH disruption during reload — same MainPID 4228, `Server listening on 0.0.0.0:22 + ::22`.
+
+**Backup files (rollback path):**
+
+- `/etc/ssh/sshd_config.bak-A8-IV-005-20260516_020720`
+- `/etc/ssh/sshd_config.d/50-cloud-init.conf.bak-A8-IV-005-20260516_020720`
+- `/etc/ssh/sshd_config.d/99-servix-hardening.conf.bak-A8-IV-005-20260516_020720`
+
+**Follow-up flagged:**
+
+- `A8-IV-006` (optional, not P0): rotate servix-admin password to random 32-byte base64, store in Bitwarden. Reason: existing password age/strength unknown, used only as Contabo console fallback so impact is contained, but rotation reduces residual exposure to zero. **Requires owner-side execution** (passphrase transport via chat is breach of Tier 🛑 rule).
+- `A8-IV-007` (P1): investigate `platform-admin` tenant + missing `platform_admin_db` (orphan vs. partial migration vs. race condition).
+
+### Tier rule additions learned during amendment
+
+11. **Before archiving any config file, read its content** — don't trust filename/timestamp. The "prior failed attempt" assumption cost us a regression we caught via `sshd -T` preview before reload.
+12. **`passwd -S` accepts only one user per call** on Ubuntu 24.04 (jammy `passwd 1:4.13+dfsg1`). Don't batch.
+13. **Effective config preview via `sshd -T`** before any reload — catches regressions even when `sshd -t` passes (the latter validates syntax, not semantic outcome).
