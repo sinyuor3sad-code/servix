@@ -372,6 +372,92 @@ While preparing to deploy A8-003, the surgical compose diff revealed that produc
 - `A8-IV-011`: extend A8-003 pattern to Evolution API (currently still uses `servix` superuser for `evolution_db`). Lower priority — Evolution data has less sensitivity than salon platform data, but defense-in-depth.
 - `A8-IV-012`: investigate whether `n8n_db` exists in postgres (compose has n8n service, but A8-IV-001 survey showed only 4 databases — possibly orphan).
 
+### A8-002: Postgres statement_timeout + idle_in_transaction + lock_timeout
+
+- **Date:** 2026-05-16 (CEST)
+- **Severity:** CRITICAL (P0)
+- **Branch:** `chore/e8-prod-hardening`
+
+### Context
+
+Pre-fix all three timeouts were `0` (unlimited):
+- `statement_timeout` = 0 → any query can run forever
+- `idle_in_transaction_session_timeout` = 0 → idle txns hold locks/snapshots forever
+- `lock_timeout` = 0 → blocked txns wait forever for a lock
+
+Runaway query on one tenant DB starves the shared PgBouncer pool (`max_db_connections=150`, `default_pool_size=50`, `pool_mode=transaction`) → cascade failure across all tenants.
+
+### Pre-flight diagnostic findings
+
+- Current values: all three at `0`
+- Currently-running queries > 25s: **none** (only the diagnostic query itself, 0s)
+- Idle-in-transaction sessions > 60s: **none** (clean — no transaction leaks)
+- `pg_stat_statements` extension: **not installed** on prod (logged as `A8-IV-013` followup — needs postgres restart, not just reload)
+- `postgresql.conf` overrides for these settings: **none** (defaults)
+- `postgresql.auto.conf`: empty (no prior ALTER SYSTEM)
+- Connections: 34 idle + 1 active + 5 internal (low activity, safe for change)
+- **PgBouncer `query_timeout = 30`** — already enforcing a 30s ceiling client-side. Setting PG `statement_timeout=30s` aligns server-side with existing proxy behavior (no behavioral change, just stricter cleanup).
+
+### Actions
+
+1. Applied via ALTER SYSTEM on prod:
+   ```sql
+   ALTER SYSTEM SET statement_timeout = '30s';
+   ALTER SYSTEM SET idle_in_transaction_session_timeout = '60s';
+   ALTER SYSTEM SET lock_timeout = '5s';
+   SELECT pg_reload_conf();
+   ```
+2. Verified persistence in `/var/lib/postgresql/data/postgresql.auto.conf` (3 new lines).
+3. Persisted same values in `tooling/postgres/postgresql.conf` (this commit) so future rebuilds from the config file keep the policy.
+
+### Verification
+
+**Functional tests** (immediate, after reload):
+
+| Test | Expected | Actual |
+|---|---|---|
+| `SHOW statement_timeout` | `30s` | ✅ `30000 ms` (source: configuration file) |
+| `SHOW idle_in_transaction_session_timeout` | `60s` | ✅ `60000 ms` |
+| `SHOW lock_timeout` | `5s` | ✅ `5000 ms` |
+| `pg_sleep(35)` | cancel @30s | ✅ `30s elapsed, "canceling statement due to statement timeout"` |
+| `pg_sleep(5)` | succeed | ✅ `short query OK` |
+| lock_timeout race (LOCK TABLE held by session 1, session 2 attempts) | cancel @5s | ✅ `5s elapsed, "canceling statement due to lock timeout"` |
+
+**Smoke tests** (immediate):
+
+- `api-1` `/api/v1/health`: `db_status=ok responseTime=10ms` ✓
+- `api-2` `/api/v1/health`: `db_status=ok responseTime=15ms` ✓
+- `evolution-api` HTTP root: `{"status":200,"message":"Welcome to the Evolution API"}` ✓
+- `backup` container `pg_dump --schema-only`: 1539 lines of SQL ✓
+
+**20-minute observation window** (started immediately post-ALTER; aborted at 20min when ≥ 15min sample provided sufficient signal):
+
+- `api-1` timeout/cancel events (excluding test queries): **0**
+- `api-2` timeout/cancel events: **0**
+- `api-1` 5xx responses: **0**
+- `api-2` 5xx responses: **0**
+- Postgres real cancellations (excluding our `pg_sleep` and `LOCK TABLE` tests): **0**
+- `evolution-api` errors: clean
+- Settings drift check: **none** (still 30000/60000/5000 ms from configuration file)
+- All 6 containers: `running|healthy` (no restarts)
+
+### Coordination
+
+- Engineer 2 will reconcile these 3 lines into `postgresql.conf` alongside their schema-level config work (was V-16 in their queue). The change is now in `chore/e8-prod-hardening`; do not merge to `main` until E2 reviews to avoid double-touch.
+- Engineer 3 (rate-limit / websockets) unaffected.
+- Engineer 4 (money/perf) — long-running ZATCA reports may need `SET LOCAL statement_timeout = 0` inside their batch session; flag for their notice but no immediate action.
+
+### Followup tickets
+
+- `A8-IV-013`: install `pg_stat_statements` extension. Currently `shared_preload_libraries` in repo's `postgresql.conf` already lists it, but prod is NOT using that file. Requires postgres **restart** (not reload) — needs maintenance window. Bundle with A8-IV-014 + A8-011.
+- `A8-IV-014`: prod-vs-git drift on `postgresql.conf`. Repo has rich config (PITR archive_command, slow query log, pg_stat_statements, autovacuum tuning) but prod runs from postgres image defaults. Same pattern as A8-IV-010 (compose drift) and A8-008 (nginx drift) → meta-finding: production deployment never picks up infra config changes from git. Owner to scope as K3 sub-project.
+- `A8-IV-015` (meta): drift detection systemic gap. 3 known drift surfaces (compose, postgresql.conf, nginx). Need standing audit check at start of each card. If 5+ instances found, escalate to K3 sub-project.
+
+### Tier rules added during execution
+
+22. **PgBouncer `query_timeout` doesn't replace PG `statement_timeout`.** PgBouncer cancels the connection at 30s but PG continues holding resources (lock, snapshot, undo) until it notices the disconnect. Server-side `statement_timeout` is what actually kills the work. Check both layers when reasoning about query budgets.
+23. **`shared_preload_libraries` changes require postgres RESTART, not reload.** Adding `pg_stat_statements` via ALTER SYSTEM + reload does NOT load the library. Plan such changes for maintenance windows.
+
 ### A8-IV-002 (followup): platform-admin tenant diagnostic results
 
 - Tenant row: `cde3a2d9-...`, slug `platform-admin`, `database_name=platform_admin_db`, `status=active`, created 2026-04-09 11:11 UTC, no `pending_deletion_at`
