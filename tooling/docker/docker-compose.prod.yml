@@ -37,11 +37,16 @@ services:
     image: redis:8-alpine
     container_name: servix-redis
     restart: always
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    # A8-004: password moved from --requirepass CLI arg (exposed via docker inspect)
+    # to /etc/servix/redis.conf bind-mount (chmod 644, dir 700 root:root).
+    # Healthcheck reads password from the same conf file at runtime, so no
+    # literal password appears in Config.Healthcheck.Test either.
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     volumes:
+      - /etc/servix/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$(awk '/^requirepass/{print $$2}' /usr/local/etc/redis/redis.conf)\" ping"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -458,6 +458,99 @@ Runaway query on one tenant DB starves the shared PgBouncer pool (`max_db_connec
 22. **PgBouncer `query_timeout` doesn't replace PG `statement_timeout`.** PgBouncer cancels the connection at 30s but PG continues holding resources (lock, snapshot, undo) until it notices the disconnect. Server-side `statement_timeout` is what actually kills the work. Check both layers when reasoning about query budgets.
 23. **`shared_preload_libraries` changes require postgres RESTART, not reload.** Adding `pg_stat_statements` via ALTER SYSTEM + reload does NOT load the library. Plan such changes for maintenance windows.
 
+### A8-004: Redis password CLI exposure fix (+ A8-005 partial: secrets sprawl baseline) + 2 self-inflicted leaks
+
+- **Date:** 2026-05-16 (CEST)
+- **Severity:** CRITICAL (P0)
+
+### Context
+
+Pre-fix: `command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}` rendered the password literally into `docker inspect servix-redis --format '{{json .Config.Cmd}}'`, visible to anyone with `docker` group access on host. The compose healthcheck `test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]` produced the same exposure in `Config.Healthcheck.Test`.
+
+### Solution
+
+1. **`/etc/servix/redis.conf`** on prod host — `requirepass`, `appendonly`, `appendfsync` directives. File `chmod 644 root:root` (file readable by container redis user via bind-mount); parent directory `/etc/servix/` `chmod 700 root:root` (host shell traversal blocked for non-root).
+2. **Compose `redis.command`** changed to `["redis-server", "/usr/local/etc/redis/redis.conf"]`. No password in CLI.
+3. **Compose `redis.volumes`** adds `- /etc/servix/redis.conf:/usr/local/etc/redis/redis.conf:ro` bind-mount.
+4. **Compose `redis.healthcheck.test`** changed to `["CMD-SHELL", "redis-cli -a \"$(awk '/^requirepass/{print $2}' /usr/local/etc/redis/redis.conf)\" ping"]`. Healthcheck reads password from file at each invocation; no literal in compose render.
+5. **Password rotated** server-side via `openssl rand -base64 32` (44-char value, written directly into redis.conf + `.env`, never echoed to chat at generation time).
+
+### Two self-inflicted P0 leaks during this work
+
+**Leak #1 (pre-fix diagnostic exposed the OLD password):**
+
+During A8-004 pre-flight (`docker inspect servix-redis --format '{{json .Config.Cmd}}'`), the diagnostic command returned the full `--requirepass <PASSWORD>` array element — the very vulnerability A8-004 was meant to fix. This is exactly the residual-risk pattern the audit anticipated; it exposed the OLD password in the chat transcript. Rotation triggered as part of A8-004 main path (single atomic operation: fix CLI exposure + rotate compromised value).
+
+**Leak #2 (post-rotation verification test was malformed):**
+
+After rotation, attempted to demonstrate that the new `/etc/servix/redis.conf` (chmod 644) was protected by parent directory `chmod 700` by running `cat /etc/servix/redis.conf` "as non-root". The test was inside a `sudo bash -e` wrapper, so the `cat` actually ran as root and echoed the NEW password to chat. Required a SECOND rotation cycle (P3 password) to invalidate.
+
+**Tier rules added:**
+
+- **24. Pattern detection, not value retrieval, for secret-in-config diagnostics.** Use `grep -q requirepass && echo CONFIRMED` not `docker inspect ... --format '{{json .Config.Cmd}}'`. The former proves the vulnerability exists; the latter exposes the value.
+- **25. Privilege-escalated wrappers invalidate "non-root" tests.** Any test running inside `sudo bash -e` is root, even if the inner command isn't prefixed with sudo. To verify host shell access blocked, the test must be invoked in a separate, non-privileged shell (e.g., `runuser -u <user> -- cat ...`, or via SSH from owner's machine with a non-root account, or out-of-band).
+
+### Actions (in execution order)
+
+1. Backup `.env` + `docker-compose.prod.yml` on prod.
+2. Created `/etc/servix/` (`chmod 700 root:root`).
+3. Generated password #1 + wrote `/etc/servix/redis.conf` + updated `.env REDIS_PASSWORD`.
+4. Surgical sed on prod compose: `command:` line replaced, `volumes:` bind added.
+5. Healthcheck rewrite via Python (sed produced invalid YAML due to nested quotes — Tier rule 19/20 pattern).
+6. Recreated `redis` container. **First attempt failed** — file perms `600 root:root` blocked container redis user (UID 999) from reading. Tried `chown root:999` (mapping to host's `systemd-journal` group, GID 999 in container = `redis` group GID 1000) — also failed.
+7. Final fix: `chmod 644 root:root` on `redis.conf`. Defense-in-depth = parent dir `chmod 700` blocking host shell access. Redis container started clean (`Ready to accept connections tcp`).
+8. Recreated `api-1` + `api-2` to load new `REDIS_PASSWORD` env.
+9. Flawed verification test (Leak #2) → P3 rotation triggered.
+10. P3 rotation: re-wrote `redis.conf` + `.env` with fresh `openssl rand -base64 32` value, recreated redis + api-1 + api-2.
+
+### Verification (post-P3, clean-room from one-off `redis:8-alpine` on `docker_servix-network`)
+
+| Test | Expected | Result |
+|---|---|---|
+| `docker inspect Config.Cmd` contains `requirepass` | 0 occurrences | ✅ `["redis-server","/usr/local/etc/redis/redis.conf"]` |
+| `docker inspect Config.Healthcheck.Test` contains literal password | none | ✅ contains `awk` reading from file |
+| OLD password #2 → `redis-cli ping` | reject | ✅ `WRONGPASS invalid username-password pair` |
+| NEW password #3 → `redis-cli ping` | accept | ✅ `PONG` |
+| NO password → `redis-cli ping` | reject | ✅ `NOAUTH Authentication required` |
+| `api-1` `/health` `db_status` | `ok` | ✅ |
+| `api-2` `/health` `db_status` | `ok` | ✅ |
+| All 7 containers state | running/healthy | ✅ (redis: running\|healthy, others unchanged) |
+
+### A8-005 partial (secrets sprawl baseline — full work is V-10 Vault territory)
+
+Audited current `docker inspect` env exposure for downstream rotation planning. The following secrets are currently env-baked (visible to `docker group` members via `docker inspect <container>`):
+
+- `api-1`/`api-2`: `JWT_ACCESS_SECRET` (37), `JWT_REFRESH_SECRET` (38), `ENCRYPTION_KEY` (64), `META_APP_SECRET` (32), `EVOLUTION_API_KEY` (64), `GEMINI_API_KEY` (39), `CLOUDFLARE_AI_TOKEN` (53), `WHATSAPP_WEBHOOK_VERIFY_TOKEN` (26), `REDIS_PASSWORD` (44), `PLATFORM_DATABASE_URL` (URL with `servix_app` password)
+- `evolution`: `AUTHENTICATION_API_KEY` (64), `DATABASE_CONNECTION_URI` (URL with `servix` superuser password)
+- `minio`: `MINIO_ROOT_PASSWORD` (20)
+- `grafana`: `GF_SECURITY_ADMIN_PASSWORD` (10)
+
+`.env` perms = `600 root:root` (verified, in good state since A8-001 epoch).
+
+Full migration to Docker Secrets / Vault deferred to **V-10** (E7 P0). This card only confirmed baseline + fixed the worst offender (Redis CLI exposure).
+
+### Backup files (rollback path)
+
+- `/root/servix/tooling/docker/.env.bak-A8-004-20260516_175209` (pre-rotation)
+- `/root/servix/tooling/docker/.env.bak-A8-004-P3-20260516_180821` (post-leak-2, contains leaked P2 value)
+- `/root/servix/tooling/docker/docker-compose.prod.yml.bak-A8-004-20260516_175209` (pre-compose-edit)
+
+**Owner action required (after Bitwarden P3 capture):**
+```bash
+sudo shred -u \
+  /root/servix/tooling/docker/.env.bak-A8-004-20260516_175209 \
+  /root/servix/tooling/docker/.env.bak-A8-004-P3-20260516_180821
+```
+
+### Followup tickets
+
+- `A8-IV-016`: `RedisIoAdapter` socket.io scaling adapter logs `"Failed to connect Redis IO adapter, falling back to in-memory: Invalid URL"`. Pre-existing (visible before A8-004). Likely cause: base64 password chars (`/+=`) not URL-encoded when api code constructs `redis://default:<pass>@host:port`. The cache/queue connections (BullMQ via ioredis with separate `host`/`port`/`password` fields) work fine — `db_status=ok`. Investigation needed: which code path builds the socket.io adapter URL, and is URL-encoding missing?
+- `A8-IV-017`: Owner must run blocked-access test out-of-band from a non-root SSH session to confirm `/etc/servix/redis.conf` is unreachable to non-root host users:
+  ```bash
+  ssh servix-admin@194.163.158.70 'cat /etc/servix/redis.conf 2>&1; ls /etc/servix/ 2>&1'
+  ```
+  Expected: both fail with `Permission denied`.
+
 ### A8-IV-002 (followup): platform-admin tenant diagnostic results
 
 - Tenant row: `cde3a2d9-...`, slug `platform-admin`, `database_name=platform_admin_db`, `status=active`, created 2026-04-09 11:11 UTC, no `pending_deletion_at`
