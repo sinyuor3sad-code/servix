@@ -922,3 +922,43 @@ node -e 'console.log(new Date().toString())'
 
 **Rollback:** revert `tooling/docker/pgbouncer/pgbouncer.ini` and recreate `pgbouncer`. DB will go back to broken state.
 
+
+### V-29 + V-30 — `.env.example` sanitization + JWT/ENCRYPTION_KEY Joi hardening + prod secret rotation
+
+**Why:** `.env.example` files held predictable placeholders (`servix_secret`, `change-me-in-production-*`, `CHANGE_ME_*`) — a copy-paste deploy could ship with them intact. Joi only checked `JWT_*_SECRET` for non-empty existence — no length, no placeholder rejection. ENCRYPTION_KEY required `min(32)` in production despite using AES-256 (need 32 *bytes* = 64 hex chars).
+
+**Code changes:**
+
+| File | Change |
+|---|---|
+| `apps/api/src/shared/config/env.validation.ts` | `JWT_ACCESS_SECRET` + `JWT_REFRESH_SECRET`: `min(64)` + pattern reject `<REQUIRED` / `change-me`. `ENCRYPTION_KEY` (production): bumped `min(32)` → `min(64)` + same pattern reject |
+| `apps/api/src/shared/config/jwt.config.ts` | Fallback `'24h'` → `'15m'` (was the only `24h` reference; everywhere else already used `15m`) |
+| `.env.example` (root) | Replaced 10 predictable secret values with `<REQUIRED_NO_DEFAULT>` |
+| `apps/api/.env.example` | Same treatment — 5 placeholders |
+| `tooling/docker/.env.example` | Same treatment — 9 `CHANGE_ME_*` → `<REQUIRED_NO_DEFAULT>` with helpful `openssl rand ...` comments |
+
+**Prod secret rotation (sub-task, owner-approved during scope-discovery):**
+
+Discovered prod `.env` had:
+- `JWT_ACCESS_SECRET` = 37 chars (would fail new `min(64)`)
+- `JWT_REFRESH_SECRET` = 38 chars (would fail)
+- `ENCRYPTION_KEY` = 64 chars (already passes)
+
+Rotated `JWT_ACCESS_SECRET` + `JWT_REFRESH_SECRET` server-side via `openssl rand -base64 64 | tr -d "\n=" | head -c 80` → both now 80 chars, base64-alphabet, no placeholder patterns. Backup `.env.bak-V-30-20260517_001520` preserved (owner: capture both to Bitwarden via `sudo grep -E '^JWT_(ACCESS|REFRESH)_SECRET=' /root/servix/tooling/docker/.env`, then `shred -u` the backup).
+
+Recreated `api-1` + `api-2` (force-recreate, no-deps). Both healthy in ≤16s. After A8-IV-025 pgbouncer fix (same session), `/api/v1/health` returned `status=healthy, database=ok, 9ms`; `/api/v1/auth/login` returned `HTTP 400 VALIDATION_ERROR` (not 500) — JWT module loaded, DB queried, auth flow intact.
+
+**Verification of Joi changes (in-isolation regex check):**
+
+| Input | Pattern match | Expected |
+|---|---|---|
+| `<REQUIRED_NO_DEFAULT>` | yes | reject ✓ |
+| `change-me-prod` | yes | reject ✓ |
+| `CHANGE_ME_strong_pw` | yes | reject ✓ |
+| `Change-Me` / `change me now` / `changeme` | yes | reject ✓ |
+| random 80-char base64 | no | accept ✓ |
+
+`pnpm tsc --noEmit` clean on apps/api.
+
+**Rollback:** revert the 5 files. Prod `.env` retains the rotated 80-char secrets even if code reverted (old shorter values are not restored automatically — that's intentional, the rotation is a one-way upgrade).
+
