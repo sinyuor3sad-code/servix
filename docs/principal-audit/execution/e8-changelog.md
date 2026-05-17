@@ -1222,3 +1222,45 @@ So A8-015 satisfies the audit's "enable SSL internally + tighten pg_hba" but **d
 
 - **`A8-IV-038`** (P3): `servix-alertmanager` has never successfully started on prod. The pinned-digest recreate surfaced the underlying error: `mkdirat /var/lib/docker/.../etc/alertmanager/templates: read-only file system`. The `prom/alertmanager` image doesn't contain an `/etc/alertmanager/templates` directory, and Docker fails to create it when bind-mounting `../alertmanager/templates:/etc/alertmanager/templates:ro`. Likely fix: change the mount target to a path that exists in the image (e.g., `/etc/alertmanager/template/`, singular — verify against the image's actual layout) or drop the templates mount entirely if the default works. Pre-existing — alertmanager has been silently inactive; any alert routes defined depend on this getting fixed.
 
+
+## 2026-05-17 — Session 3 begins
+
+### V-11 + A8-IV-039 — remove `/var/run/docker.sock` from backup, route via socket-proxy
+
+**Why:** the `backup` container had `/var/run/docker.sock:/var/run/docker.sock` (rw) so `verify-backup.sh` could spawn an ephemeral postgres weekly. That mount is root-equivalent on the host — any code execution inside the backup container could create a privileged container, mount `/`, and own the box. Audit P0 (V-11 / A7-CRIT-02).
+
+**Change:**
+
+1. **New service `socket-proxy`** in `tooling/docker/docker-compose.prod.yml` using `tecnativa/docker-socket-proxy:0.2` (pinned by digest, A8-018 discipline). Mounts `/var/run/docker.sock:/var/run/docker.sock:ro` — the proxy itself enforces a tight allow-list:
+
+   ```
+   CONTAINERS=1   # ephemeral-DB lifecycle: list/inspect/create/start/stop/remove
+   POST=1         # all POST endpoints (run/create/exec gating)
+   EXEC=1         # `docker exec` for pg_isready + psql
+   IMAGES=1       # image lookup (postgres:17-alpine already cached)
+   NETWORKS=1     # `--network <name>` resolution
+   ```
+
+   Everything else stays default-deny: `BUILD`, `VOLUMES`, `SERVICES`, `SECRETS`, `AUTH`, `INFO`, `NODES`, `SWARM`, `SYSTEM`, `TASKS`. Verified: `wget http://socket-proxy:2375/volumes` returns `HTTP/1.0 403 Forbidden` from inside the backup container.
+
+2. **`backup` service** — removed the `/var/run/docker.sock` mount, added `DOCKER_HOST=tcp://socket-proxy:2375` and `depends_on: socket-proxy`. `docker inspect servix-backup` no longer contains a docker.sock mount.
+
+3. **A8-IV-039 (folded in)** — `verify-backup.sh` hard-coded `--network servix-network`, but the actual compose-managed network is `<project>_servix-network` (project = `docker` because compose runs from `tooling/docker/`). The script has been silently failing at the network step since 2026-04-21. Now reads `DOCKER_NETWORK` from env (default `docker_servix-network`), passed via the backup service env block.
+
+**Verification (live, against prod):**
+
+| Check | Result |
+|---|---|
+| `docker.sock` mount on `servix-backup` | absent ✓ |
+| Backup → proxy `docker version --format '{{.Server.Version}}'` | `29.4.0` ✓ |
+| Proxy ACL deny: GET `/volumes` | `HTTP/1.0 403 Forbidden` ✓ |
+| Proxy ACL allow: `docker ps` count | 22 containers ✓ |
+| Env vars on backup | `DOCKER_HOST=tcp://socket-proxy:2375`, `DOCKER_NETWORK=docker_servix-network` ✓ |
+| Functional smoke: trigger `verify-backup.sh` | MinIO download ✓ / ephemeral postgres spawned on correct network ✓ / `docker exec pg_isready` ✓ / trap-cleanup `docker rm -f` ✓ |
+
+Backups (rollback path): `docker-compose.prod.yml.bak-V-11-20260517_194108`, `verify-backup.sh.bak-V-11-20260517_194108`.
+
+### Followup
+
+- **`A8-IV-040`** (P2): `verify-backup.sh` end-to-end restore is broken at the app layer. All 4 dumps in the most recent backup set returned `gpg: error writing to '-': Broken pipe` followed by `restore failed`. The docker API plumbing now works (V-11 verified), but the gpg-decrypt | psql pipeline fails. Likely causes: `psql` exits before gpg finishes streaming (e.g., trying to restore into a database that doesn't exist yet, or pg_dump's plain-text format hits an error on first object). Need to inspect a single dump end-to-end: `gpg --batch --passphrase-file ... -d <dump> | head -100` to see if decrypt itself works, then run psql separately. Backup verification has been silently failing for weeks regardless of V-11 — this needs urgent owner attention to the restore script. Pre-existing.
+

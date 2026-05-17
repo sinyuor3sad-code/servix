@@ -393,6 +393,12 @@ services:
       OFFSITE_S3_ACCESS_KEY: ${OFFSITE_S3_ACCESS_KEY:-}
       OFFSITE_S3_SECRET_KEY: ${OFFSITE_S3_SECRET_KEY:-}
       OFFSITE_S3_REGION: ${OFFSITE_S3_REGION:-us-east-1}
+      # V-11: verify-backup.sh uses the docker-socket-proxy instead of /var/run/docker.sock.
+      DOCKER_HOST: tcp://socket-proxy:2375
+      # A8-IV-039: actual compose network is `<project>_servix-network` (project = "docker"
+      # because compose runs from tooling/docker/). Pre-V-11 the script hard-coded
+      # `servix-network` and silently failed for ~weeks.
+      DOCKER_NETWORK: ${DOCKER_NETWORK:-docker_servix-network}
     volumes:
       - ./scripts/backup.sh:/scripts/backup.sh:ro
       - ./scripts/restore.sh:/scripts/restore.sh:ro
@@ -401,8 +407,9 @@ services:
       - ../scripts/base-backup.sh:/scripts/base-backup.sh:ro
       - backup_data:/backups
       - node_exporter_textfile:/var/lib/node_exporter/textfile_collector
-      # verify-backup.sh needs to launch a sibling postgres container
-      - /var/run/docker.sock:/var/run/docker.sock
+      # V-11: docker.sock removed from this container. verify-backup.sh now
+      # speaks to the tecnativa/docker-socket-proxy service via DOCKER_HOST
+      # below, so the backup container can't write to the host daemon directly.
     entrypoint: /bin/sh
     command: >
       -c "apk add --no-cache curl gnupg docker-cli >/dev/null 2>&1 &&
@@ -423,6 +430,33 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+      socket-proxy:
+        condition: service_started
+    networks:
+      - servix-network
+
+  # ═══════ Docker socket proxy (V-11) ═══════
+  # backup uses verify-backup.sh which needs to spawn an ephemeral postgres
+  # container weekly. Instead of mounting /var/run/docker.sock into backup
+  # (full root-equivalent on the host), the proxy exposes a TCP socket with a
+  # tight ACL — only the endpoints verify-backup.sh actually calls.
+  socket-proxy:
+    # A8-018 + V-11: pinned 2026-05-17.
+    image: tecnativa/docker-socket-proxy:0.2@sha256:083bd0ed8783e366d745f332f0e4489816dd35d984bef8f16e6d89484a22c082
+    container_name: servix-socket-proxy
+    restart: always
+    environment:
+      TZ: Asia/Riyadh
+      # Allow-list:
+      CONTAINERS: 1   # list/inspect/create/start/stop/remove for the ephemeral verify-DB
+      POST: 1         # all POST endpoints (run/create/exec gating)
+      EXEC: 1         # `docker exec` for pg_isready + psql
+      IMAGES: 1       # read-only image lookup (postgres:17-alpine already cached)
+      NETWORKS: 1     # `--network <name>` resolution
+      # Everything else stays default-deny (BUILD, VOLUMES, SERVICES, SECRETS, AUTH, …).
+    volumes:
+      # The socket itself is read-only mounted; ACL is enforced inside the proxy.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - servix-network
 

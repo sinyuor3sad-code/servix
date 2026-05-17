@@ -88,8 +88,13 @@ DUMP_COUNT=$(ls -1 "$WORK_DIR"/*.sql.gz.gpg 2>/dev/null | wc -l)
 log "Found $DUMP_COUNT dump(s) to verify"
 
 # Spin up an ephemeral postgres on the same compose network.
+# A8-IV-039: pre-fix this hard-coded `servix-network`, but the actual compose
+# network is `<project>_servix-network` (project is "docker" because compose
+# runs from tooling/docker/). DOCKER_NETWORK is set by the backup service env.
+# V-11: docker calls below go through the docker-socket-proxy via DOCKER_HOST.
+DOCKER_NETWORK="${DOCKER_NETWORK:-docker_servix-network}"
 docker run -d --name "$CONTAINER" \
-  --network servix-network \
+  --network "$DOCKER_NETWORK" \
   -e POSTGRES_PASSWORD=verify_pw \
   -e POSTGRES_USER=verify_user \
   -e POSTGRES_DB=postgres \
