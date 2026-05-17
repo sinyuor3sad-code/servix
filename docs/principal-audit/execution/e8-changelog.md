@@ -1330,3 +1330,61 @@ Backups (rollback path):
 - `pgbouncer.ini.bak-V-28-20260517_195956`
 - `entrypoint.sh.bak-V-28-20260517_195956`
 
+
+### A8-IV-040 — backup verification fixed (first successful restore in project history)
+
+**Why:** the previous turn's V-11 commit added a tecnativa/docker-socket-proxy and (correctly) routed the backup container's docker calls through it. The same commit's V-11 smoke verified that container lifecycle calls (`docker run`, `docker rm`, `docker ps`, `docker exec` of a `version` command) all worked through the proxy — and concluded V-11 was safe. The smoke missed that **the only place verify-backup.sh actually uses docker for real work — `docker exec -i <verify> psql` to stream the dump — relies on the docker daemon's HTTP Upgrade handshake that the proxy doesn't implement.**
+
+**Pre-existence verification (owner-requested before fix):**
+
+- `verify.log` had only 2 entries total, both from 2026-05-17 — no earlier runs ever produced log lines.
+- `servix_backup_verify_last_pass_timestamp` metric = **0** since the metric was created.
+- The original script hard-coded `--network servix-network` (A8-IV-039) — every weekly cron would have failed at the network step before reaching the docker-exec hijack.
+
+**Verdict:** A8-IV-040 is **fully pre-existing** since the backup container was deployed (commit `b5908f2`, "production infrastructure"). V-11 did not cause it — V-11's A8-IV-039 fold-in fix peeled off the outer-layer failure and exposed the inner-layer one. **Backup verification has been silently broken since first day of production.**
+
+**Fix (Option A — TCP psql, per owner's refinement):**
+
+The original implementation piped `gpg | gunzip | docker exec -i <verify> psql`. Even without the proxy, `docker exec -i` is an awkward way to talk to a database container — you're hijacking a TCP-streaming protocol over the Docker API for what amounts to network-DB traffic. Refactor speaks to verify postgres over its native protocol (SCRAM/TCP) instead:
+
+1. **Stage dumps to disk first:** `gpg --decrypt | gunzip > /backups/verify-staging/<TS>/<db>.sql` inside the backup container. The bind-mounted `docker_backup_data` volume makes those files readable by the verify container.
+
+2. **Spawn verify container with symmetric mount:** `docker run -d -v docker_backup_data:/backups:ro` — same path in both containers means the script doesn't have to translate between two views of the same data.
+
+3. **Random ephemeral super-password:** `VERIFY_PW=$(openssl rand -base64 24)` per run, set via `-e POSTGRES_PASSWORD`, never written to disk, never logged. Dies with the container.
+
+4. **TCP ready-check with 60s ceiling:** `PGPASSWORD=$VERIFY_PW psql -h <container-name> -U verify_user -c '\q'` in a loop. Hard timeout prevents a stuck container from locking the weekly cron.
+
+5. **Restore via `psql -f`, all calls over TCP:** `PGPASSWORD=$VERIFY_PW psql -h <container> -U verify_user -d <db> -f /backups/verify-staging/<TS>/<db>.sql`. No `docker exec` anywhere in the hot path. No stdin pipe. No hijack negotiation. Works with any docker proxy (or none).
+
+6. **PII-safe cleanup:** `trap` on `EXIT INT TERM` removes the verify container, the staging dir (which holds plaintext tenant data — PDPL-relevant), and any leftover `/tmp/verify-$$` workspace. Pre-run also rms any leftover `/backups/verify-staging/*` from crashed prior runs.
+
+7. **Per-DB error capture (don't abort whole run):** each `psql -f` writes stderr to a per-DB `mktemp` and the first 200 chars are logged on failure. One bad dump can't kill the rest of the verification.
+
+**Verification (live, against latest prod backup set `20260517_164129`):**
+
+```
+[…] Weekly backup verification starting (staging=/backups/verify-staging/…, network=docker_servix-network)
+[…] Verifying backup set: 20260517_164129
+[…] Found 4 dump(s) to verify
+[…] Staged 4 dump(s) for restore
+[…] Verify postgres ready
+[…]   → restoring evolution_db
+[…]   ✓ evolution_db — 37 table(s)
+[…]   → restoring servix_platform
+[…]   ✓ servix_platform — 23 table(s)
+[…]   → restoring servix_tenant_d0f48d47
+[…]   ✓ servix_tenant_d0f48d47 — 51 table(s)
+[…]   → restoring servix_tenant_test_ai_reception
+[…]   ✓ servix_tenant_test_ai_reception — 50 table(s)
+[…] ✓ VERIFICATION PASSED — 4 dump(s), 161 table(s)
+```
+
+Prometheus metric flipped from `servix_backup_verify_status 0` (since forever) to `servix_backup_verify_status 1` with `servix_backup_verify_last_pass_timestamp 1779038890` — the first successful timestamp in this project's history. PII cleanup confirmed (`find /backups/verify-staging -type f` returns empty post-run).
+
+**Backups (rollback):** `verify-backup.sh.bak-IV-040-20260517_202106`.
+
+### Followup ticket
+
+- **`A8-IV-041`** (P3): the Prometheus alert for `servix_backup_verify_status == 0` either was never wired up or has been firing into a silent void. Pre-this-fix, that gauge has been stuck at 0 forever and nobody got paged. Owner should confirm an alertmanager route exists for it and that someone actually receives the page. Bonus: also alert on `time() - servix_backup_verify_last_pass_timestamp > 14*86400` so a script that *runs* but always returns 0 still fires after 2 weeks.
+
