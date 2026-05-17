@@ -21,6 +21,12 @@ RUN pnpm --filter @servix/api deploy /app/deployed --prod --legacy
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# A8-IV-023: tzdata so libc's localtime() honors TZ env (A8-009 set
+# TZ=Asia/Riyadh on the compose service). Without this package the `date`
+# command and any non-Node tool inside the container report UTC. Node's
+# V8 ICU already resolves the TZ correctly, but logs and CLI tooling
+# would surface UTC otherwise.
+RUN apk add --no-cache tzdata
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
 RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
 COPY --from=builder /app/deployed/node_modules ./node_modules

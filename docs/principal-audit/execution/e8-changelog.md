@@ -1488,3 +1488,43 @@ Verified live: Prometheus `/api/v1/alerts` returns 6 evaluating alerts (`Offsite
 
 Backups: `prometheus.yml.bak-batch2-20260518_022831`, `docker-compose.prod.yml.bak-batch2-20260518_022831`.
 
+
+### Batch 3 — infra polish (A8-IV-023 + A8-IV-027 + A8-IV-028)
+
+Final cleanup batch for session 3. Two file changes, one server-side delete, three documentation entries.
+
+**A8-IV-023 — add `tzdata` to all 5 Node runner images**
+
+A8-009 set `TZ=Asia/Riyadh` on every relevant compose service env block, but the running containers showed mixed results: containers built from alpine images with `tzdata` (postgres, vault, nginx) reported `+03` from `date`; containers built without `tzdata` (api, dashboard, booking, admin, landing — all `node:22-alpine` runner) reported UTC despite the env var. Node ICU in those apps already resolved `Asia/Riyadh` correctly (verified A8-009), so JS-emitted logs and timestamps were fine, but any shell tool or non-Node tooling inside the container surfaced UTC.
+
+Added `RUN apk add --no-cache tzdata` to the runner stage of each Dockerfile:
+- `apps/api/Dockerfile`
+- `apps/dashboard/Dockerfile`
+- `apps/booking/Dockerfile`
+- `apps/admin/Dockerfile`
+- `apps/landing/Dockerfile`
+
+**Important:** these changes take effect on **next image rebuild**. Currently running containers were built before this commit and still lack `tzdata`. Next deploy from this branch will pick them up.
+
+**A8-IV-027 — remove orphan `N8N_*` keys from prod `.env`**
+
+A8-IV-024 removed the `n8n` service from compose and all `N8N_*` lines from `.env.example`. Prod `.env` still carried 6 N8N_ entries (3 unique keys — `N8N_ENCRYPTION_KEY`, `N8N_BASIC_AUTH_USER`, `N8N_BASIC_AUTH_PASSWORD` — each appearing twice from a long-ago copy-paste duplication, owner-flagged in IV-027). No container reads any of them anymore.
+
+Cleaned with `sed -i '/^N8N_/d' /root/servix/tooling/docker/.env` after a fresh backup (`.env.bak-IV-027-20260518_025309`) so the owner can capture the values to Bitwarden if a future n8n re-introduction is ever considered. `.env` shrank 3546 → 3296 bytes; `grep -c '^N8N_'` returns 0.
+
+**A8-IV-028 — pre-existing CI debt (owner-action items, documented only)**
+
+This card was filed during V-31 (CI gate re-enable) to track three pre-existing CI failures that surfaced when continue-on-error was removed. None are V-31 regressions; all need owner action or cross-engineer coordination.
+
+| Sub-item | Path forward |
+|---|---|
+| `Dependency review` check fails ("Dependency graph is not supported on this repository") | **Owner enables in GitHub Settings → Code security & analysis → Dependency graph.** Single click, no code. |
+| `Terraform Plan` check fails because `secrets.CLOUDFLARE_API_TOKEN` and `secrets.DEPLOY_IP` are empty in PR context | **Owner adds these to GitHub Actions secrets** (PR-job scope) once a Cloudflare API token is available. Alternative: scope the `terraform.yml` job to push events only (won't run on PRs). |
+| `E2E Tests` Playwright check fails on `prisma/seed-e2e.ts:328` referencing column `invoices.refunded_at` which doesn't exist in the current migration | **Engineer 2 schema work** — column needs a Prisma migration. Defer to E2's invoice-flow work or cherry-pick the migration once E2 lands it. |
+
+None of these block branch shipping — they're all CI noise on PR runs against `main`. They will resurface when the branch is merged; addressing them is a coordination task, not a code task.
+
+### Followup tickets
+
+- **`A8-IV-043`** (P3, owner-action): set at least one real `ALERT_*` receiver in prod `.env` so the now-functional alertmanager (Batch 2) actually pages humans. Pre-Batch-2 the receivers had no consumer; post-Batch-2 they have fallback `.invalid` URLs that swallow all alerts. Recommended minimum: `ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` pointing at a `#servix-alerts` channel.
+

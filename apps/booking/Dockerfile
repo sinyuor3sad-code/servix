@@ -28,6 +28,8 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# A8-IV-023: tzdata so the container's libc honors TZ env (A8-009).
+RUN apk add --no-cache tzdata
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /app/apps/booking/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/booking/.next/standalone ./
