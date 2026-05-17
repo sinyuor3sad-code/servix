@@ -1388,3 +1388,64 @@ Prometheus metric flipped from `servix_backup_verify_status 0` (since forever) t
 
 - **`A8-IV-041`** (P3): the Prometheus alert for `servix_backup_verify_status == 0` either was never wired up or has been firing into a silent void. Pre-this-fix, that gauge has been stuck at 0 forever and nobody got paged. Owner should confirm an alertmanager route exists for it and that someone actually receives the page. Bonus: also alert on `time() - servix_backup_verify_last_pass_timestamp > 14*86400` so a script that *runs* but always returns 0 still fires after 2 weeks.
 
+
+### Batch 1 — DB cleanup (A8-IV-007 + A8-IV-035 + A8-IV-036 + A8-IV-037)
+
+Four operational gaps that surfaced across A8-009, A8-IV-008, A8-015 and prior cards. Bundled into one commit because all four touch the same compose blocks (postgres / postgres-exporter / pgbouncer).
+
+**A8-IV-007 — platform-admin tenant flipped to `cancelled`**
+
+Pre-fix: tenant row `cde3a2d9-...` (slug `platform-admin`, db_name `platform_admin_db`) had `status=active` even though no database by that name had ever existed. Owner had originally specified the target value as `deleted_orphaned`, but the `TenantStatus` Prisma enum only carries `active / suspended / trial / cancelled / pending_deletion / pending`. **Used `cancelled` instead** — semantically correct (the tenant was never operational) and avoids a cross-scope Engineer-2 schema migration to add a new enum value. If a dedicated `deleted_orphaned` value is desired later, E2 can add it via a Prisma migration and a one-line UPDATE flips this row.
+
+```sql
+UPDATE tenants SET status='cancelled' WHERE slug='platform-admin' AND status='active'; -- UPDATE 1
+```
+
+**A8-IV-035 — postgres-exporter dedicated read-only role**
+
+Pre-fix: `servix-postgres-exporter` ran with the superuser `servix` creds in `DATA_SOURCE_NAME`, *and* those creds were stale post-A8-IV-008 rotation — the exporter had been spamming `FATAL: password authentication failed for user "servix"` (~once per scrape).
+
+Created a dedicated role with the PG built-in `pg_monitor` predefined role, which grants `pg_read_all_settings + pg_read_all_stats + pg_stat_scan_tables` — exactly what postgres-exporter needs and nothing more:
+
+```sql
+CREATE ROLE postgres_exporter LOGIN INHERIT IN ROLE pg_monitor;
+ALTER ROLE postgres_exporter PASSWORD '<server-generated 40-char>';
+```
+
+`POSTGRES_EXPORTER_PASSWORD` appended to prod `.env` (40 chars, `openssl rand -base64 32 | tr -d '\n=/+' | head -c 40`). Compose `DATA_SOURCE_NAME` switched from `${POSTGRES_USER}:${POSTGRES_PASSWORD}` to `postgres_exporter:${POSTGRES_EXPORTER_PASSWORD}`. Negative smoke confirmed: `CREATE TABLE iv035_test (id int)` → permission denied.
+
+**A8-IV-036 — postgres healthcheck stops logging FATAL every 10s**
+
+Pre-fix: the compose `postgres` healthcheck ran `pg_isready -U ${POSTGRES_USER}` with no `-d`, and pg_isready defaults `-d` to the user name when omitted. So every 10-second probe tried to connect to a database literally called `servix` — which doesn't exist (the platform DB is `servix_platform`). The probe still returned `0` ("server is accepting connections"), but each invocation wrote a `FATAL: database "servix" does not exist` line to the postgres log. **7,364 such entries in the log before this fix.**
+
+Fixed by passing `-d ${POSTGRES_DB:-servix_platform}` to the healthcheck. Verified: 0 such FATAL lines in the 30 seconds after postgres recreate.
+
+**A8-IV-037 (partial) — encrypt the pgbouncer→postgres hop + force TLS on exporter**
+
+A8-015 enabled `ssl=on` on postgres, but `pg_stat_ssl` showed 0 SSL / 22 plain connections — every client was still using plain TCP. Two layers of TLS need separate fixes:
+
+1. **pgbouncer → postgres (server side)** — *this card*: added `server_tls_sslmode = require` to `pgbouncer.ini`. Verified live: `SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()` returns `t` for a `servix_app` connection routed through pgbouncer.
+2. **api → pgbouncer (client side)** — **deferred to A8-IV-042**: requires giving pgbouncer its own listener cert + setting `client_tls_sslmode=require` + `client_tls_cert_file/key_file`. Not a one-line change; out of scope for this batch.
+
+Postgres-exporter connects directly (not via pgbouncer), so its `?sslmode=disable` flipped straight to `?sslmode=require` in the same commit. Verified: `pg_up=1` in Prometheus after recreate, exporter `/metrics` returns 200.
+
+**Verification (live, after recreating postgres + postgres-exporter + pgbouncer):**
+
+| Probe | Result |
+|---|---|
+| tenant status | `platform-admin \| cancelled` ✓ |
+| postgres log FATAL count (30s window) | 0 ✓ |
+| postgres_exporter negative test (`CREATE TABLE`) | permission denied ✓ |
+| Prometheus `pg_up` | `1` ✓ |
+| servix_app via pgbouncer → `pg_stat_ssl.ssl` | `t` ✓ |
+| `pg_stat_ssl` aggregate | 12 SSL / 1 plain (was 0/22) ✓ |
+| `/api/v1/health` | HTTP 200, database=ok, 7ms ✓ |
+
+Backups: `.env.bak-batch1-20260517_203718`, `docker-compose.prod.yml.bak-batch1-20260517_204225`, `pgbouncer.ini.bak-batch1-20260517_204225`.
+
+**Owner Bitwarden capture:** `ssh servix-admin@... "sudo grep '^POSTGRES_EXPORTER_PASSWORD=' /root/servix/tooling/docker/.env"`.
+
+### Followup tickets
+
+- **`A8-IV-042`** (P3, deferred): force TLS on **api → pgbouncer** connection (client-side). Requires generating a TLS cert for pgbouncer's own listener, configuring `client_tls_sslmode=require` + `client_tls_cert_file/key_file/ca_file` in `pgbouncer.ini`, and adding `?sslmode=require` to `PLATFORM_DATABASE_URL` / `DATABASE_READ_URL`. ~3h work, clean follow-up to A8-015 + this card.
+

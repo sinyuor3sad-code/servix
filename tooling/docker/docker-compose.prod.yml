@@ -27,7 +27,12 @@ services:
         (command -v mc >/dev/null 2>&1 || (curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && chmod +x /usr/local/bin/mc /scripts/archive-wal.sh)) &&
         exec docker-entrypoint.sh postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      # A8-IV-036: pass -d $POSTGRES_DB so pg_isready doesn't default to
+      # connecting to a database named after the user (no `servix` db exists;
+      # the platform DB is `servix_platform`). The probe still returns 0 for
+      # "server accepting connections", but without -d every 10s healthcheck
+      # wrote a FATAL `database "servix" does not exist` line to the log.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-servix_platform}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -603,7 +608,11 @@ services:
     container_name: servix-postgres-exporter
     restart: always
     environment:
-      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-servix_platform}?sslmode=disable
+      TZ: Asia/Riyadh
+      # A8-IV-035: dedicated postgres_exporter role (member of pg_monitor) —
+      # no SUPERUSER, no DDL, just read-only stats. A8-IV-037: sslmode=require
+      # so the connection actually uses the SSL listener enabled by A8-015.
+      DATA_SOURCE_NAME: postgresql://postgres_exporter:${POSTGRES_EXPORTER_PASSWORD}@postgres:5432/${POSTGRES_DB:-servix_platform}?sslmode=require
     expose:
       - "9187"
     depends_on:
