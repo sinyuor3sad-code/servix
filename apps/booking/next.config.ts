@@ -3,7 +3,9 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   output: 'standalone',
   reactStrictMode: true,
-  
+  // A8-014: stop emitting `X-Powered-By: Next.js`.
+  poweredByHeader: false,
+
   // Compression for smaller bundle
   compress: true,
   
@@ -45,16 +47,7 @@ const nextConfig: NextConfig = {
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
       },
-      {
-        // Security + performance headers for all pages
-        source: '/:path*',
-        headers: [
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-XSS-Protection', value: '1; mode=block' },
-          { key: 'Referrer-Policy', value: 'origin-when-cross-origin' },
-        ],
-      },
+      // A8-014: security headers moved to nginx global (was duplicating + conflicting).
     ];
   },
 };

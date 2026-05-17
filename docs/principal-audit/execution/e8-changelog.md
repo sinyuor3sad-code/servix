@@ -1075,3 +1075,66 @@ V-31 re-enabled `pnpm audit` + Semgrep as blocking gates. The first PR run surfa
   - **CLAUDE.md correction needed:** "deploys always come from main HEAD" is currently false — prod images were `docker compose build`'d directly from `/root/servix` while checked out on the feature branch.
   - Target resolution: within 1 week; not blocking session 2 wrap-up.
 
+
+### A8-013 + A8-006 + A8-014 — nginx allowlists + Next.js header hygiene (batched)
+
+Three audit findings in the same `nginx.conf` + `next.config.ts` domain, bundled into one commit per session-2 batching rule.
+
+**A8-006 — Prometheus `/metrics` was exposed to the internet:**
+
+Pre-fix `nginx.conf` had `location /metrics { ... }` which was **dead code** — the API serves metrics on `/api/v1/metrics` (global prefix `api` + URI versioning `v1` + `@Controller('metrics')`), not on `/metrics`. The dead block matched nothing. The actual `/api/v1/metrics` requests fell through to `location /` (general API) and returned 200 with full Prometheus output to anyone on the internet.
+
+Replaced with:
+```nginx
+location = /api/v1/metrics {
+  allow 172.18.0.0/16;
+  deny all;
+  proxy_pass http://api_servers;
+  proxy_set_header Host $host;
+}
+```
+
+**A8-013 — `/api/v1/health/detailed` exposed CPU/mem/disk/uptime:**
+
+Added a matching exact-match block immediately after the metrics block:
+```nginx
+location = /api/v1/health/detailed {
+  allow 172.18.0.0/16;
+  deny all;
+  proxy_pass http://api_servers;
+  proxy_set_header Host $host;
+}
+```
+
+Basic `/api/v1/health` (returns `status=healthy`, `database=ok`, response time only — no resource numbers) stays public via the general `location /`.
+
+**A8-014 — Next.js `poweredByHeader` + duplicate security headers:**
+
+| App | Change |
+|---|---|
+| `apps/dashboard/next.config.ts` | `poweredByHeader: false` + removed `X-Content-Type-Options`/`X-Frame-Options`/`X-XSS-Protection`/`Referrer-Policy` from `headers()` (already set globally by nginx) |
+| `apps/admin/next.config.ts` | same |
+| `apps/booking/next.config.ts` | same |
+| `apps/landing/next.config.ts` | `poweredByHeader: false` (no duplicate headers to clean) |
+
+The duplicate caused browsers on `app.servi-x.com` to see **two** `X-Frame-Options` headers: `DENY` from Next.js and `SAMEORIGIN` from nginx — undefined-per-spec behavior, easy for an attacker to fingerprint.
+
+**Verification (post-nginx-reload on prod):**
+
+| Probe | Result |
+|---|---|
+| `curl https://api.servi-x.com/api/v1/metrics` (external) | **HTTP 403** ✓ |
+| `curl https://api.servi-x.com/api/v1/health/detailed` (external) | **HTTP 403** ✓ |
+| `curl https://api.servi-x.com/api/v1/health` (external) | HTTP 200 ✓ |
+| `docker exec servix-postgres curl http://api-1:4000/api/v1/metrics` (internal direct) | HTTP 200 ✓ (Prometheus path unaffected) |
+| `docker exec servix-nginx nginx -t` + `nginx -s reload` | clean ✓ |
+| `pnpm tsc --noEmit` across all 4 Next apps | clean ✓ |
+
+Backup: `/root/servix/tooling/docker/nginx/nginx.conf.bak-A8-013-014-20260517_190211`.
+
+**Important caveat:** Next.js `poweredByHeader: false` and the duplicate-header removal only take effect on **next image rebuild**. The currently running dashboard/admin/booking/landing containers were built before this commit and continue to emit the old headers. Next deploy from this branch (or whenever Engineer-1's branch merges) will pick them up.
+
+### Followup ticket
+
+- **`A8-IV-034`** (P3): `tooling/prometheus/prometheus.yml` has `metrics_path: '/metrics'` but the API endpoint is `/api/v1/metrics`. Prometheus has been scraping a 404; the `servix-api` job has been silently dead. Fix: update to `metrics_path: '/api/v1/metrics'`, then verify Prometheus targets page shows the job as UP and metrics ingestion resumes. Likely the cause of any "no API metrics in Grafana" surprises.
+

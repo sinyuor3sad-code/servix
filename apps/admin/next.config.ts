@@ -3,8 +3,10 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   output: 'standalone',
   reactStrictMode: true,
+  // A8-014: stop emitting `X-Powered-By: Next.js`.
+  poweredByHeader: false,
 
-  // Performance + security headers
+  // Performance headers (security headers are set globally at nginx — A8-014).
   async headers() {
     return [
       {
@@ -23,10 +25,6 @@ const nextConfig: NextConfig = {
         source: '/:path*',
         headers: [
           { key: 'Cache-Control', value: 'no-store, must-revalidate' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-XSS-Protection', value: '1; mode=block' },
-          { key: 'Referrer-Policy', value: 'origin-when-cross-origin' },
         ],
       },
     ];
