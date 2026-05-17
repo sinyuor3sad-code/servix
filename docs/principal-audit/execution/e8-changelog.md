@@ -1138,3 +1138,59 @@ Backup: `/root/servix/tooling/docker/nginx/nginx.conf.bak-A8-013-014-20260517_19
 
 - **`A8-IV-034`** (P3): `tooling/prometheus/prometheus.yml` has `metrics_path: '/metrics'` but the API endpoint is `/api/v1/metrics`. Prometheus has been scraping a 404; the `servix-api` job has been silently dead. Fix: update to `metrics_path: '/api/v1/metrics'`, then verify Prometheus targets page shows the job as UP and metrics ingestion resumes. Likely the cause of any "no API metrics in Grafana" surprises.
 
+
+### A8-015 — Postgres TLS enabled + pg_hba tightened to docker bridge
+
+**Pre-fix state:**
+- `ssl = off` (no transport encryption between any DB client and postgres).
+- `pg_hba.conf` ended with `host all all all scram-sha-256` — any IP could attempt scram auth.
+
+**Change:**
+
+1. **Self-signed cert** (RSA-4096, 10y validity, `CN=servix-postgres`, SAN `DNS:postgres,DNS:servix-postgres,DNS:localhost,IP:127.0.0.1`) generated on the prod host with `openssl req`. Copied into the postgres container's data dir as `server.crt` / `server.key` (mode 600, owner `postgres:postgres`). Host backup at `/etc/servix/postgres/` (root:root, key mode 600).
+
+2. **`tooling/postgres/postgresql.conf`** — added 4 lines under `# ── Connection / auth ──`:
+   ```
+   ssl = on
+   ssl_cert_file = 'server.crt'
+   ssl_key_file = 'server.key'
+   ssl_min_protocol_version = 'TLSv1.2'
+   ```
+   Backup: `.bak-A8-015-<ts>`. Host bind-mount means the container sees the change on next reload.
+
+3. **`/var/lib/postgresql/data/pg_hba.conf`** (container) — last rule narrowed:
+   - **Before:** `host all all all scram-sha-256`
+   - **After:** `host all all 172.18.0.0/16 scram-sha-256`
+   Backup `.bak-A8-015-<ts>` (also in-container). Local-socket + 127.0.0.1 + replication rules unchanged.
+
+4. **Reload via `pg_reload_conf()`** — all 4 SSL params + pg_hba are `sighup` context, so no restart was required. Log confirmed `received SIGHUP, parameter "ssl" changed to "on"`.
+
+**Verification:**
+
+| Probe | Result |
+|---|---|
+| `SHOW ssl` | `on` |
+| `SHOW ssl_min_protocol_version` | `TLSv1.2` |
+| `pgbouncer → postgres` as `servix_app` (SCRAM) | works ✓ |
+| `/api/v1/health` | `status=healthy, database=ok, 10ms` |
+| postgres log | clean `SIGHUP` + ssl-changed-to-on lines |
+
+**Important note on current SSL utilization:**
+
+`pg_stat_ssl` shows **0 SSL / 22 plain** connections. The SSL listener is active but no clients negotiate SSL today:
+- Existing connections were established before the reload — they don't auto-upgrade.
+- pgbouncer (1.x) doesn't bridge client→server TLS by default; `server_tls_sslmode` would need to be set in `pgbouncer.ini`.
+- `PLATFORM_DATABASE_URL` / `DATABASE_READ_URL` env vars don't set `sslmode=require`.
+
+So A8-015 satisfies the audit's "enable SSL internally + tighten pg_hba" but **doesn't yet force clients to use TLS**. That's A8-IV-037 below.
+
+**Followup tickets (all pre-existing, discovered during reload verify):**
+
+- **`A8-IV-035`** (P2): `servix-postgres-exporter` (container 172.18.0.9) has stale `servix` superuser credentials in `DATA_SOURCE_NAME` — has been spamming `FATAL: password authentication failed for user "servix"` since the A8-IV-008 rotation. Switch to `servix_app` with a fresh password and append `sslmode=require` to the URI.
+
+- **`A8-IV-036`** (P3): repeating `FATAL: database "servix" does not exist` from `client=[local]`. Some internal probe (likely a healthcheck or backup helper) connects to a database literally called `servix` instead of `servix_platform`. Identify and correct.
+
+- **`A8-IV-037`** (P3): force TLS on all DB clients now that the listener is active. Two changes:
+  1. Append `?sslmode=require` to `PLATFORM_DATABASE_URL` + `DATABASE_READ_URL` in `tooling/docker/docker-compose.prod.yml` (and update `.env.example` accordingly).
+  2. Set `server_tls_sslmode = verify-ca` (or at least `require`) + `server_tls_ca_file` in `pgbouncer.ini` so pgbouncer→postgres also uses TLS.
+
