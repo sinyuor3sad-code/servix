@@ -1029,3 +1029,49 @@ V-31 re-enabled `pnpm audit` + Semgrep as blocking gates. The first PR run surfa
 - `pnpm --filter @servix/api lint` — 0 errors (5 unused-var warnings remain, pre-existing, do not block)
 - `pnpm --filter @servix/api exec tsc --noEmit` — clean
 
+
+### A8-010 — secrets cleanup + servix-old archive destruction
+
+**Pivot from rotation to deletion** (owner call): the AI Reception strategy is moving off LLMs entirely (Library + Tone + WhatsApp Flows path, no Gemini/Cloudflare AI/OpenAI). Rotating credentials that are scheduled for deletion in 9-10 weeks via Engineer 4b's CARD-AI-001..005 is wasted effort. Delete dead keys from `.env` + shred the at-rest plaintext copies in archives.
+
+**Actions:**
+
+1. **Prod `/root/servix/tooling/docker/.env` keys deleted:**
+   - `GEMINI_API_KEY` (39 chars, dead per AI strategy)
+   - `GEMINI_BASE_URL` (58 chars, orphan — not in compose env list, code uses default)
+   - `CLOUDFLARE_AI_TOKEN` (53 chars, dead)
+   - `OPENAI_API_KEY` (164 chars, GPT-mini migration deferred)
+   Backup: `.env.bak-A8-010-20260517_010705`. `.env` shrank 3729 → 3378 bytes.
+
+2. **WHATSAPP_REGISTRATION_PIN generated** server-side (6-digit, was missing) — Phase 1 owner contribution.
+
+3. **api-1 + api-2 recreated** (`force-recreate --no-deps`). Both healthy in 15s. Boot logs show expected `⚠️ No AI provider configured` warns from `GeminiService` and `AIProviderService` — these are the active fallback paths and will be removed by Engineer 4b. `/health = status=healthy, database=ok, 60ms`; `/auth/login = HTTP 400 VALIDATION_ERROR`.
+
+4. **Retained secrets** (still active): `EVOLUTION_API_KEY`, `META_APP_SECRET`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_REGISTRATION_PIN`, `MINIO_ROOT_USER`/`PASSWORD` (= `S3_ACCESS_KEY`/`SECRET_KEY`; verified SAME via equality check), `JWT_*_SECRET`, `ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`. None rotated this card.
+
+5. **Phase 3 destruction (`shred -u -z -n 3` + `rm -rf`):**
+
+   | File class | Count |
+   |---|---|
+   | `.env` / `.env.example` plaintext | 8 |
+   | RSA private key (`origin.key` — Cloudflare Origin TLS, same as prod live cert; rotation deferred to A8-IV-032) | 1 |
+   | PII DB dumps (platform 80 KB + tenant 158 KB + Evolution WhatsApp DB) | 3 |
+   | Tarballs containing nested `.env`/`origin.key` | 1 |
+
+   Then `rm -rf /root/servix-old /root/servix-pre-deploy-backup`. Verified zero remnants via `find /root -maxdepth 3 -type f \( -name '*.dump' -o -name 'origin.key' \)` (excluding active `/root/servix/`). Disk freed ~8 GB.
+
+**Note for owner — Bitwarden hygiene:** Run `ssh servix-admin@... "sudo grep '^WHATSAPP_REGISTRATION_PIN=' /root/servix/tooling/docker/.env"` once to capture the new PIN to Bitwarden, then clear the local clipboard/terminal.
+
+### Followup tickets
+
+- **`A8-IV-032`** (P2, deferred): Cloudflare Origin TLS cert rotation. Current `origin.key` lives only in `/root/servix/tooling/docker/nginx/ssl/origin.key` after this card's shred — Cloudflare panel must issue a fresh origin cert next time risk budget allows.
+
+- **`A8-IV-033`** (**HIGH** — owner-action, blocks any future merge to main):
+  Repo↔prod **3-way fork** discovered during A8-010 cleanup.
+  - `origin/main` @ `b5452d2` — stale, 27 commits behind prod's running code.
+  - `feature/ai-reception-phases-1-8` @ `5c4f44c` — **running on prod** (uncommitted: my session-2 in-place edits to `docker-compose.prod.yml` + `pgbouncer.ini`). Diff vs `origin/main`: **214 files / +28,214 / −4,313**. Includes the AI Reception module, POS hardening (manager override + held bills), Compliance module, new `ai-provider.service.ts`, WhatsApp Evolution rewrite, and the n8n+gemini-proxy removal that I duplicated in `A8-IV-024`.
+  - `chore/e8-prod-hardening` — Engineer 1 work, off old `main`, unaware of the feature branch.
+  - **Owner-recommended path:** cherry-pick `chore/e8-prod-hardening` commits onto `feature/ai-reception-phases-1-8`, then PR that branch (now containing both bodies of work) to `main`.
+  - **CLAUDE.md correction needed:** "deploys always come from main HEAD" is currently false — prod images were `docker compose build`'d directly from `/root/servix` while checked out on the feature branch.
+  - Target resolution: within 1 week; not blocking session 2 wrap-up.
+
