@@ -1194,3 +1194,31 @@ So A8-015 satisfies the audit's "enable SSL internally + tighten pg_hba" but **d
   1. Append `?sslmode=require` to `PLATFORM_DATABASE_URL` + `DATABASE_READ_URL` in `tooling/docker/docker-compose.prod.yml` (and update `.env.example` accordingly).
   2. Set `server_tls_sslmode = verify-ca` (or at least `require`) + `server_tls_ca_file` in `pgbouncer.ini` so pgbouncer→postgres also uses TLS.
 
+
+### A8-018 — pin all `:latest` infra images by SHA digest
+
+**Pre-fix:** 10 third-party images in `tooling/docker/docker-compose.prod.yml` used the `:latest` tag, meaning every `docker compose pull` could silently roll the image forward with no audit trail. Audit specifically called out `minio/minio:latest` (8 months stale) and `louislam/uptime-kuma:latest` (6 months stale).
+
+**Change:** all 10 images now use the `image:tag@sha256:<digest>` form — the digest is authoritative (cryptographically verifiable), the tag remains as documentation. Digests captured from the **currently-running prod image** (via `docker inspect --format '{{index .RepoDigests 0}}'`) so this commit pins to the bits already in production, not whatever happens to be `:latest` at the next pull.
+
+| Image | Digest prefix |
+|---|---|
+| `minio/minio` | `sha256:14cea493...` |
+| `edoburu/pgbouncer` | `sha256:85d1e385...` |
+| `prom/prometheus` | `sha256:5550dc63...` |
+| `prom/alertmanager` | `sha256:51a825c2...` (fresh pull — wasn't cached locally) |
+| `grafana/grafana` | `sha256:0f86bada...` |
+| `louislam/uptime-kuma` | `sha256:3d632903...` |
+| `prom/node-exporter` | `sha256:e9cff4fc...` |
+| `prometheuscommunity/postgres-exporter` | `sha256:e96064f8...` |
+| `oliver006/redis_exporter` | `sha256:6a97d4dd...` |
+| `nginx/nginx-prometheus-exporter` | `sha256:bf76e58d...` |
+
+**Recreate verification:** 9 actively-running services recreated sequentially (`docker compose up -d --force-recreate --no-deps <svc>`). All came up cleanly (digest already cached → near-instant). `/api/v1/health` stayed at 200 throughout pgbouncer recreate. Prod compose updated via in-place `sed` so the existing repo↔prod comment drift (filed under A8-IV-024) wasn't disturbed. Backup `docker-compose.prod.yml.bak-A8-018-20260517_192313`.
+
+**Refresh discipline:** quarterly. Per pinned image: `docker pull <image>:latest`, then `docker inspect --format '{{index .RepoDigests 0}}' <image>:latest`, then swap the digest in compose, recreate, verify. Note added to the `minio/minio` and `uptime-kuma` lines as reminders.
+
+### Followup tickets
+
+- **`A8-IV-038`** (P3): `servix-alertmanager` has never successfully started on prod. The pinned-digest recreate surfaced the underlying error: `mkdirat /var/lib/docker/.../etc/alertmanager/templates: read-only file system`. The `prom/alertmanager` image doesn't contain an `/etc/alertmanager/templates` directory, and Docker fails to create it when bind-mounting `../alertmanager/templates:/etc/alertmanager/templates:ro`. Likely fix: change the mount target to a path that exists in the image (e.g., `/etc/alertmanager/template/`, singular — verify against the image's actual layout) or drop the templates mount entirely if the default works. Pre-existing — alertmanager has been silently inactive; any alert routes defined depend on this getting fixed.
+

@@ -55,7 +55,8 @@ services:
       - servix-network
 
   minio:
-    image: minio/minio:latest
+    # A8-018: pinned 2026-05-17. Refresh quarterly via `docker pull minio/minio:latest && docker inspect --format '{{index .RepoDigests 0}}' minio/minio:latest`.
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: servix-minio
     restart: always
     command: server /data --console-address ":9001"
@@ -71,7 +72,8 @@ services:
   # Uses custom config with wildcard (*) database support
   # so dynamic tenant databases (servix_tenant_xxx) are routed correctly.
   pgbouncer:
-    image: edoburu/pgbouncer:latest
+    # A8-018: pinned 2026-05-17.
+    image: edoburu/pgbouncer:latest@sha256:85d1e38593617af1b5f7f285e97d407e56c29939683cc7cfe4c8f6dc19f1268b
     container_name: servix-pgbouncer
     restart: always
     environment:
@@ -426,7 +428,8 @@ services:
 
   # ═══════ Monitoring Stack ═══════
   prometheus:
-    image: prom/prometheus:latest
+    # A8-018: pinned 2026-05-17.
+    image: prom/prometheus:latest@sha256:5550dc63da361dc30f6fe02ac0e4dfc736ededfef3c8d12a634db04a67824d78
     container_name: servix-prometheus
     restart: always
     volumes:
@@ -476,7 +479,8 @@ services:
       - servix-network
 
   alertmanager:
-    image: prom/alertmanager:latest
+    # A8-018: pinned 2026-05-17.
+    image: prom/alertmanager:latest@sha256:51a825c2a40acc3e338fdd00d622e01ec090f72be2b3ea46be0839cd47a4d286
     container_name: servix-alertmanager
     restart: always
     volumes:
@@ -498,7 +502,8 @@ services:
       - servix-network
 
   grafana:
-    image: grafana/grafana:latest
+    # A8-018: pinned 2026-05-17.
+    image: grafana/grafana:latest@sha256:0f86bada30d65ef9d0183b90c1e2682ac92d53d95da8bed322b984ea78a4a73a
     container_name: servix-grafana
     restart: always
     environment:
@@ -518,7 +523,8 @@ services:
       - servix-network
 
   uptime-kuma:
-    image: louislam/uptime-kuma:latest
+    # A8-018: pinned 2026-05-17. Audit flagged this at 6-month staleness; refresh quarterly.
+    image: louislam/uptime-kuma:latest@sha256:3d632903e6af34139a37f18055c4f1bfd9b7205ae1138f1e5e8940ddc1d176f9
     container_name: servix-uptime-kuma
     restart: always
     volumes:
@@ -529,7 +535,8 @@ services:
       - servix-network
 
   node-exporter:
-    image: prom/node-exporter:latest
+    # A8-018: pinned 2026-05-17.
+    image: prom/node-exporter:latest@sha256:e9cff4fc67b1818f8c97adb115b9f12c9a54b533de86765d4a0effc01b357205
     container_name: servix-node-exporter
     restart: always
     pid: host
@@ -551,7 +558,8 @@ services:
       - servix-network
 
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
+    # A8-018: pinned 2026-05-17.
+    image: prometheuscommunity/postgres-exporter:latest@sha256:e96064f876226d94bb6ce48a4c4b3dd76edba91168ec1ab024e5c4b959310b0f
     container_name: servix-postgres-exporter
     restart: always
     environment:
@@ -566,7 +574,8 @@ services:
 
   # ═══════ Redis Exporter ═══════
   redis-exporter:
-    image: oliver006/redis_exporter:latest
+    # A8-018: pinned 2026-05-17.
+    image: oliver006/redis_exporter:latest@sha256:6a97d4dd743b533e1f950c677b87d880e44df363c61af3f406fc9e53ed65ee03
     container_name: servix-redis-exporter
     restart: always
     environment:
@@ -582,7 +591,8 @@ services:
 
   # ═══════ Nginx Exporter ═══════
   nginx-exporter:
-    image: nginx/nginx-prometheus-exporter:latest
+    # A8-018: pinned 2026-05-17.
+    image: nginx/nginx-prometheus-exporter:latest@sha256:bf76e58df548a13e52bd543ac70f6d3d667e14884e8b51c149bd81994ca75ccd
     container_name: servix-nginx-exporter
     restart: always
     command: ["-nginx.scrape-uri=http://nginx:8080/stub_status"]
