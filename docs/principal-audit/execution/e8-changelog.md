@@ -1264,3 +1264,69 @@ Backups (rollback path): `docker-compose.prod.yml.bak-V-11-20260517_194108`, `ve
 
 - **`A8-IV-040`** (P2): `verify-backup.sh` end-to-end restore is broken at the app layer. All 4 dumps in the most recent backup set returned `gpg: error writing to '-': Broken pipe` followed by `restore failed`. The docker API plumbing now works (V-11 verified), but the gpg-decrypt | psql pipeline fails. Likely causes: `psql` exits before gpg finishes streaming (e.g., trying to restore into a database that doesn't exist yet, or pg_dump's plain-text format hits an error on first object). Need to inspect a single dump end-to-end: `gpg --batch --passphrase-file ... -d <dump> | head -100` to see if decrypt itself works, then run psql separately. Backup verification has been silently failing for weeks regardless of V-11 — this needs urgent owner attention to the restore script. Pre-existing.
 
+
+### V-28 — PgBouncer `userlist.txt` no longer carries the postgres superuser
+
+**Why:** the entrypoint script wrote `"<POSTGRES_USER>" "<POSTGRES_PASSWORD>"` into `/etc/pgbouncer/userlist.txt` — i.e. the **postgres superuser plaintext**. Until A8-IV-008 rotated the password, that file had been mode 644 and contained the literal superuser credential. A8-IV-025 made it worse-in-blast-radius by setting `auth_user = servix` so pgbouncer would always use that entry to log in upstream as superuser. A leaked userlist.txt = full DB takeover.
+
+**Change (Option 2 from the audit spec — "auth_query بـ read-only role"):**
+
+1. **New SQL bootstrap on the postgres DB:**
+   ```sql
+   CREATE SCHEMA pgbouncer;
+   CREATE OR REPLACE FUNCTION pgbouncer.user_lookup(uname text)
+   RETURNS TABLE(usename text, passwd text)
+   LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS $$
+     SELECT usename::text, passwd::text FROM pg_shadow WHERE usename = uname;
+   $$;
+   REVOKE ALL ON FUNCTION pgbouncer.user_lookup(text) FROM PUBLIC;
+   CREATE ROLE pgbouncer_auth LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                              NOINHERIT NOREPLICATION;
+   ALTER ROLE pgbouncer_auth PASSWORD '<server-generated 40-char>';
+   GRANT USAGE   ON SCHEMA pgbouncer                       TO pgbouncer_auth;
+   GRANT EXECUTE ON FUNCTION pgbouncer.user_lookup(text)   TO pgbouncer_auth;
+   ```
+
+   `SECURITY DEFINER` lets the function run with the schema-owner's (servix) privileges so it can read `pg_shadow`, while the caller (`pgbouncer_auth`) only needs `EXECUTE` on this one function. `SET search_path = pg_catalog` blocks schema-injection. Verified that `pgbouncer_auth` **cannot** select `pg_shadow` directly (`ERROR: permission denied for view pg_shadow`).
+
+2. **Prod `.env`** — added `PGBOUNCER_AUTH_USER=pgbouncer_auth` and a fresh `PGBOUNCER_AUTH_PASSWORD` (40 chars, `openssl rand -base64 32 | tr -d '\n=/+' | head -c 40`) generated server-side. Backup `.env.bak-V-28-20260517_195607`.
+
+3. **`tooling/docker/docker-compose.prod.yml` — `pgbouncer` service env block:**
+   ```
+   PGBOUNCER_USER:     ${PGBOUNCER_AUTH_USER:-pgbouncer_auth}
+   PGBOUNCER_PASSWORD: ${PGBOUNCER_AUTH_PASSWORD}
+   ```
+   (was `${POSTGRES_USER}` / `${POSTGRES_PASSWORD}`.)
+
+4. **`tooling/docker/pgbouncer/pgbouncer.ini`:**
+   ```
+   auth_query  = SELECT * FROM pgbouncer.user_lookup($1)
+   auth_user   = pgbouncer_auth
+   auth_dbname = postgres
+   ```
+   `auth_dbname` forces every auth_query call to run against the `postgres` database (where the function lives) regardless of which DB the client asked for — without this, multi-tenant clients hit `schema "pgbouncer" does not exist` on tenant DBs. Discovered the hard way on first recreate; folded the fix into the same staging.
+
+5. **`tooling/docker/pgbouncer/entrypoint.sh`:** added `set -eu`, hard-fail when env is missing, and explicit `chmod 600` on `userlist.txt` after write (`umask 077` in a subshell didn't survive the file redirect on Alpine).
+
+**Verification (live, post-recreate):**
+
+| Probe | Result |
+|---|---|
+| `userlist.txt` mode | `600` (was 644) ✓ |
+| pgbouncer log post-start | clean — no auth errors after 2nd recreate |
+| `servix_app` via pgbouncer → `SELECT current_user, current_setting('is_superuser')` | `servix_app \| off` ✓ |
+| `/api/v1/health` | HTTP 200, `database=ok, responseTime=18ms` ✓ |
+| 30s log watch (pgbouncer / api-1 / api-2) | zero errors ✓ |
+| `pg_shadow` direct read as `pgbouncer_auth` | `permission denied for view pg_shadow` ✓ |
+| Function call `pgbouncer.user_lookup('servix_app')` as `pgbouncer_auth` | returns SCRAM-SHA-256 hash (len 133) ✓ |
+
+**Caveat on plaintext at rest:** `userlist.txt` is still plaintext (pgbouncer 1.x needs plaintext to perform upstream SCRAM SASL for auth_query — SCRAM-verifier-only is incompatible with the auth_user delegation pattern). The substantive win is **blast-radius reduction**: a leaked `userlist.txt` now exposes a role that can `EXECUTE pgbouncer.user_lookup()` and nothing else. The same data was already exposed by auth_query's original behavior.
+
+**Replaces** A8-IV-025's `auth_user = servix` (superuser) delegation. Pgbouncer no longer holds any superuser credential.
+
+Backups (rollback path):
+- `.env.bak-V-28-20260517_195607`
+- `docker-compose.prod.yml.bak-V-28-20260517_195956`
+- `pgbouncer.ini.bak-V-28-20260517_195956`
+- `entrypoint.sh.bak-V-28-20260517_195956`
+

@@ -78,8 +78,14 @@ services:
     restart: always
     environment:
       TZ: Asia/Riyadh
-      PGBOUNCER_USER: ${POSTGRES_USER}
-      PGBOUNCER_PASSWORD: ${POSTGRES_PASSWORD}
+      # V-28: userlist.txt now holds the low-privilege `pgbouncer_auth` role,
+      # not the postgres superuser. pgbouncer.ini auth_user matches this.
+      # The role can only call pgbouncer.user_lookup() (SECURITY DEFINER) — so
+      # a leaked userlist.txt grants no DDL, no SELECT on tenant data, no
+      # connect to any non-pgbouncer schema; just the same pg_shadow exposure
+      # that auth_query has by design.
+      PGBOUNCER_USER: ${PGBOUNCER_AUTH_USER:-pgbouncer_auth}
+      PGBOUNCER_PASSWORD: ${PGBOUNCER_AUTH_PASSWORD}
     volumes:
       - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
       - ./pgbouncer/entrypoint.sh:/entrypoint.sh:ro
