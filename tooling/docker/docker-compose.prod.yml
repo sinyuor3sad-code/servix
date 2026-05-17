@@ -511,14 +511,30 @@ services:
       ALERT_SMTP_PASS: ${ALERT_SMTP_PASS:-}
     volumes:
       - ../alertmanager/alertmanager.yml:/in/alertmanager.yml:ro
+      # A8-IV-038: copy *.tmpl files into the rendered config volume too —
+      # alertmanager mounts /etc/alertmanager read-only from this volume, so
+      # the templates need to live inside the volume; trying to add a second
+      # bind-mount on top of the RO mount fails with "read-only file system".
+      - ../alertmanager/templates:/in/templates:ro
       - alertmanager_config:/out
     command:
       - sh
       - -c
       - >
         apk add --no-cache gettext > /dev/null &&
+        : $${ALERT_SLACK_WEBHOOK_URL:=http://disabled-receiver.invalid/slack} &&
+        : $${ALERT_PAGERDUTY_ROUTING_KEY:=disabled-pagerduty-key-placeholder} &&
+        : $${ALERT_EMAIL_TO:=disabled@example.invalid} &&
+        : $${ALERT_EMAIL_FROM:=disabled@example.invalid} &&
+        : $${ALERT_SMTP_HOST:=disabled-smtp.invalid:587} &&
+        : $${ALERT_SMTP_USER:=disabled} &&
+        : $${ALERT_SMTP_PASS:=disabled} &&
+        export ALERT_SLACK_WEBHOOK_URL ALERT_PAGERDUTY_ROUTING_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM ALERT_SMTP_HOST ALERT_SMTP_USER ALERT_SMTP_PASS &&
         envsubst < /in/alertmanager.yml > /out/alertmanager.yml &&
-        echo "Rendered alertmanager.yml" && cat /out/alertmanager.yml | head -5
+        mkdir -p /out/templates &&
+        cp /in/templates/*.tmpl /out/templates/ &&
+        echo "Rendered alertmanager.yml + $$(ls /out/templates | wc -l) template(s)" &&
+        head -5 /out/alertmanager.yml
     restart: "no"
     networks:
       - servix-network
@@ -529,8 +545,10 @@ services:
     container_name: servix-alertmanager
     restart: always
     volumes:
+      # A8-IV-038: templates are now baked into alertmanager_config by the
+      # init container, so we no longer attempt a second bind-mount of the
+      # host's templates dir on top of the read-only volume.
       - alertmanager_config:/etc/alertmanager:ro
-      - ../alertmanager/templates:/etc/alertmanager/templates:ro
       - alertmanager_data:/alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'

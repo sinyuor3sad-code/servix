@@ -1449,3 +1449,42 @@ Backups: `.env.bak-batch1-20260517_203718`, `docker-compose.prod.yml.bak-batch1-
 
 - **`A8-IV-042`** (P3, deferred): force TLS on **api → pgbouncer** connection (client-side). Requires generating a TLS cert for pgbouncer's own listener, configuring `client_tls_sslmode=require` + `client_tls_cert_file/key_file/ca_file` in `pgbouncer.ini`, and adding `?sslmode=require` to `PLATFORM_DATABASE_URL` / `DATABASE_READ_URL`. ~3h work, clean follow-up to A8-015 + this card.
 
+
+### Batch 2 — monitoring (A8-IV-034 + A8-IV-038 + A8-IV-041)
+
+Three monitoring-stack gaps that left Prometheus scraping a 404, alertmanager crash-looping since first deploy, and alerts firing into the void with nowhere to land.
+
+**A8-IV-034 — Prometheus scraping a 404 for `servix-api` since day one**
+
+`tooling/prometheus/prometheus.yml:20` had `metrics_path: '/metrics'` for the `servix-api` scrape job. But the NestJS API has `app.setGlobalPrefix('api')` + `app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' })`, so the `@Controller('metrics')` actually serves on `/api/v1/metrics`. Prom had been scraping `http://api-1:4000/metrics` and `http://api-2:4000/metrics` (both 404) for the entire lifetime of the deployment.
+
+Fixed by setting `metrics_path: '/api/v1/metrics'` and `wget -qO- http://localhost:9090/-/reload` on the running prometheus. Verified live: both targets now `health=up`, and queries against `servix_payment_success_rate` (an API-emitted gauge) return real time-series data.
+
+**A8-IV-038 — alertmanager in `Created` state since first deploy**
+
+Two layered blockers, fixed together:
+
+1. **Bind-mount conflict.** Compose mounted `alertmanager_config:/etc/alertmanager:ro` (rendered config volume), then *additionally* tried `../alertmanager/templates:/etc/alertmanager/templates:ro` on top of it. Docker can't create the mount point `/etc/alertmanager/templates` inside an already-mounted read-only overlay → `mkdirat … read-only file system`. Resolved by baking the templates into the rendered config volume from the `alertmanager-config` init container, then deleting the conflicting second mount.
+
+2. **Empty `ALERT_*` env vars produced invalid `api_url: ''` after `envsubst`.** All `ALERT_SLACK_WEBHOOK_URL` / `ALERT_PAGERDUTY_ROUTING_KEY` / `ALERT_EMAIL_*` / `ALERT_SMTP_*` vars are unset in prod `.env`, so the rendered alertmanager.yml had empty quoted URLs and alertmanager rejected the config with `unsupported scheme "" for URL`. Added `: ${VAR:=fallback}` defaults in the init shell ahead of `envsubst`, escaped as `$${...}` so compose doesn't try to interpolate them at parse time. Fallbacks use `*.invalid` TLDs and placeholder strings — syntactically valid, semantically a black hole (DNS will fail). Alertmanager now starts; receivers don't actually deliver until owner provides real URLs.
+
+3. **Template parse error.** Once AM loaded the config it choked on `{{ .Labels.service | default "n/a" }}` in `servix.tmpl:13` — Go template's `default` function isn't registered in alertmanager's restricted template engine. Replaced with `{{ if .Labels.service }}{{ .Labels.service }}{{ else }}n/a{{ end }}`.
+
+Post-fix: `servix-alertmanager` `Up`, `Loading configuration file → Completed`, `Listening on [::]:9093`, accepts alerts from Prometheus.
+
+**A8-IV-041 — alert rules existed all along; nothing was running them**
+
+The audit ticket framed this as "alert on `servix_backup_verify_status == 0` + 14-day staleness needs to be added". Pre-flight grep showed both rules already exist in `tooling/prometheus/alerts/backup-alerts.yml` (`BackupVerifyFailed` line 75, `BackupVerifyStale` line 89). The missing piece was the rest of the stack:
+
+- alertmanager wasn't running → fixed by A8-IV-038
+- receivers reference empty env vars → owner-action followup
+
+Verified live: Prometheus `/api/v1/alerts` returns 6 evaluating alerts (`OffsiteMirrorNotConfigured P2 firing`, `RedisHighMemory P2 firing`, `HighCPU P2 firing`, `PaymentSuccessRateLow P1 pending`, …). `BackupVerifyFailed` is *not* in the list because A8-IV-040 made backup verification actually succeed and the gauge flipped to 1. Alertmanager logs show it receiving these alerts and trying to dispatch them; delivery fails on `.invalid` DNS (as designed) until owner sets real ALERT_* values.
+
+**Owner action remaining (out of this commit):** populate at least one real ALERT_* receiver in prod `.env`:
+- `ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` (cheapest path to "P1 reaches a human"), or
+- `ALERT_PAGERDUTY_ROUTING_KEY=<events-api-v2-routing-key>`, or
+- `ALERT_EMAIL_TO=oncall@servi-x.com` + `ALERT_SMTP_*` block.
+
+Backups: `prometheus.yml.bak-batch2-20260518_022831`, `docker-compose.prod.yml.bak-batch2-20260518_022831`.
+

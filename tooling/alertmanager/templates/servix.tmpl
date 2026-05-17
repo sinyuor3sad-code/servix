@@ -10,7 +10,7 @@
 {{ define "servix.text" }}
 {{ range .Alerts -}}
 *Severity:* {{ .Labels.severity }}
-*Service:* {{ .Labels.service | default "n/a" }}
+*Service:* {{ if .Labels.service }}{{ .Labels.service }}{{ else }}n/a{{ end }}
 *Summary:* {{ .Annotations.summary }}
 {{- if .Annotations.description }}
 *Description:* {{ .Annotations.description }}
