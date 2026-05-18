@@ -1639,3 +1639,61 @@ Recovery: backed the rolled-back file to `.bak-A8-IV-033-overwrite-20260518_0536
 | All 20 prod containers `Up` | ✓ |
 | `git status` — only staged changes from the merge, no working-tree noise | ✓ |
 
+
+### A8-IV-043 — Telegram alertmanager receiver wired up (primary on-call channel)
+
+Closes the receiver-not-set follow-up from Batch 2 (A8-IV-038/041). Telegram is now the **primary** on-call channel; Slack/PagerDuty/Email blocks remain in config so they can be enabled later by just setting their env vars.
+
+**Owner-side prerequisites (already done before this card):**
+
+- Telegram bot created via @BotFather
+- Bot added to the target chat; `ALERT_TELEGRAM_BOT_TOKEN` + `ALERT_TELEGRAM_CHAT_ID` (numeric) appended to prod `/root/servix/tooling/docker/.env`
+- Manual `curl` to Telegram Bot API from prod confirmed delivery
+
+**Engineer-side wire-up:**
+
+1. **`tooling/alertmanager/alertmanager.yml`** — rewrote receivers:
+   - Default route now goes to `telegram-default` (was `slack-default`).
+   - P1 fan-out (`critical-multi`) now hits **Telegram + Slack + PagerDuty + Email** in parallel.
+   - P3/info digest goes to `telegram-digest`.
+   - `global.telegram_api_url: 'https://api.telegram.org'`.
+   - Templates use HTML formatting (`parse_mode: 'HTML'`).
+
+2. **`tooling/docker/docker-compose.prod.yml`** — `alertmanager-config` init container:
+   - Added `ALERT_TELEGRAM_BOT_TOKEN` and `ALERT_TELEGRAM_CHAT_ID` to env passthrough.
+   - Added matching `: ${VAR:=fallback}` defaults (placeholder bot token `000000000:disabled-…`, chat_id `0`) escaped as `$${VAR:=…}` for compose. Keeps AM healthy if the vars are ever unset.
+
+3. **`tooling/alertmanager/templates/servix.tmpl`** — re-applied the A8-IV-038 `{{ if .Labels.service }}…{{ else }}n/a{{ end }}` fix that had been lost during the A8-IV-033 merge (prod's template dir wasn't touched by my sed/scp workflow, so the merge brought back the broken `{{ … | default "n/a" }}` form from feature). Without this fix AM crash-loops on template-parse error.
+
+**Verification (live, end-to-end):**
+
+Synthetic P2 alert posted to `/api/v2/alerts` from inside the prod host. AM debug-level logs captured:
+
+```
+level=DEBUG source=telegram.go:124 msg="Telegram message successfully published"
+  integration=telegram message_id=19 chat_id=<redacted>
+level=DEBUG source=notify.go:975 msg="Notify success"
+  receiver=telegram-default integration=telegram[0] attempts=1 duration=124ms
+```
+
+Useful operational note discovered during debug: **alertmanager only logs notify *failures* at info level**; successes require `--log.level=debug`. The earlier confusion ("no telegram attempts logged") was the success path running silently. Default info level kept after verification (debug is too noisy at steady state).
+
+Pre-existing alerts that have been firing into the void since deploy now route correctly: `OffsiteMirrorNotConfigured`, `RedisHighMemory`, `TrafficAnomaly`, `HighCPU` (P2 → telegram-default), `PaymentSuccessRateLow` (P1 → critical-multi fan-out). Owner should expect Telegram traffic on these — they are real state observations, separate cards.
+
+Backups: `alertmanager.yml.bak-IV-043-20260518_173122`, `docker-compose.prod.yml.bak-IV-043-20260518_173122`, `servix.tmpl.bak-IV-043-…`.
+
+### A8-IV-045 — secret-exposure incident (self-detected, resolved)
+
+During Telegram delivery debugging, I ran `sudo grep -nE "telegram_configs|bot_token|chat_id|telegram_api_url" /var/lib/docker/volumes/docker_alertmanager_config/_data/alertmanager.yml` against the **rendered** alertmanager.yml — a file that contains the post-`envsubst` substituted bot token value, not the `${ALERT_TELEGRAM_BOT_TOKEN}` placeholder. The full bot token printed into the conversation transcript.
+
+**Incident response (within minutes of detection):**
+
+1. Self-flagged immediately and paused. Owner notified via the same turn.
+2. Owner rotated the token via @BotFather and updated prod `.env`. Confirmed via fresh manual curl to Bot API.
+3. I re-rendered the alertmanager config and re-recreated AM using only length-check diagnostics (`awk -F= '{print length($2)}'`) — never grepped a rendered file again.
+4. End-to-end Telegram delivery test passed against the rotated token.
+
+**Process correction filed alongside [[A8-IV-044]] (no-git-on-prod): rendered configs are equivalent to leaked secrets in transit.** Diagnostic scripts must apply the same length-check / pattern-detect discipline to *rendered files in named volumes* as they do to `.env` files. New rule for tier-🛑 outputs added to my mental model: any file the init container produces from `envsubst` carries the same expanded-value risk as the running container's env vars.
+
+The original bot token has been invalidated; the conversation transcript still contains the dead value but it cannot be used. No code references the dead token anywhere in the repo or prod state.
+

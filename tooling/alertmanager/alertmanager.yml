@@ -2,17 +2,25 @@
 # SERVIX Alertmanager configuration
 #
 # Receivers are driven by env vars so we can rotate webhooks without
-# rebuilding the image. Set these in tooling/docker/.env.prod:
+# rebuilding the image. Set these in tooling/docker/.env (rendered by
+# the `alertmanager-config` init container via envsubst):
 #
-#   ALERT_SLACK_WEBHOOK_URL       # Slack incoming webhook (P1 + P2)
-#   ALERT_PAGERDUTY_ROUTING_KEY   # PagerDuty Events API v2 routing key (P1)
-#   ALERT_EMAIL_TO                # On-call email (optional)
+#   # Primary on-call channel (A8-IV-043, 2026-05-18):
+#   ALERT_TELEGRAM_BOT_TOKEN      # bot token from @BotFather
+#   ALERT_TELEGRAM_CHAT_ID        # numeric chat ID (positive=user, negative=group)
+#
+#   # Optional — only used if set; otherwise the alertmanager-config init
+#   # container substitutes .invalid placeholders so AM still starts:
+#   ALERT_SLACK_WEBHOOK_URL       # Slack incoming webhook
+#   ALERT_PAGERDUTY_ROUTING_KEY   # PagerDuty Events API v2 routing key
+#   ALERT_EMAIL_TO                # On-call email
 #   ALERT_EMAIL_FROM              # SMTP FROM address
 #   ALERT_SMTP_HOST, _USER, _PASS # SMTP credentials
 # ═════════════════════════════════════════════════════════════════
 
 global:
   resolve_timeout: 5m
+  telegram_api_url: 'https://api.telegram.org'
   smtp_from: '${ALERT_EMAIL_FROM}'
   smtp_smarthost: '${ALERT_SMTP_HOST}'
   smtp_auth_username: '${ALERT_SMTP_USER}'
@@ -22,17 +30,20 @@ global:
 templates:
   - '/etc/alertmanager/templates/*.tmpl'
 
-# Routing tree: everything goes to slack, P1 also pages + emails,
-# P3/low severity gets batched into a quiet channel.
+# A8-IV-043: routing tree now centred on Telegram (the actual on-call
+# channel for this deployment). Slack/PagerDuty/email blocks remain so
+# they can be enabled later by just setting their env vars; until then
+# the init container fills them with .invalid placeholders that DNS-fail
+# silently — alertmanager itself stays healthy.
 route:
-  receiver: 'slack-default'
+  receiver: 'telegram-default'
   group_by: ['alertname', 'cluster', 'service']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
 
   routes:
-    # Critical — page the on-call engineer.
+    # Critical — fan-out to every configured channel for redundancy.
     - matchers:
         - severity = P1
       receiver: 'critical-multi'
@@ -40,16 +51,16 @@ route:
       repeat_interval: 1h
       continue: false
 
-    # Warnings — Slack only.
+    # Warnings — Telegram only.
     - matchers:
         - severity = P2
-      receiver: 'slack-default'
+      receiver: 'telegram-default'
       repeat_interval: 6h
 
     # Low priority / noise — batched digest.
     - matchers:
         - severity =~ "P3|P4|info"
-      receiver: 'slack-digest'
+      receiver: 'telegram-digest'
       group_interval: 30m
       repeat_interval: 24h
 
@@ -62,28 +73,50 @@ inhibit_rules:
     equal: ['alertname', 'cluster', 'service']
 
 receivers:
-  - name: 'slack-default'
-    slack_configs:
-      - api_url: '${ALERT_SLACK_WEBHOOK_URL}'
-        channel: '#servix-alerts'
+  # ── Telegram (primary, A8-IV-043) ──
+  - name: 'telegram-default'
+    telegram_configs:
+      - bot_token: '${ALERT_TELEGRAM_BOT_TOKEN}'
+        chat_id: ${ALERT_TELEGRAM_CHAT_ID}
+        parse_mode: 'HTML'
         send_resolved: true
-        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
-        text: |
+        message: |
+          <b>[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}</b>
           {{ range .Alerts }}
-          *Severity:* {{ .Labels.severity }}
-          *Summary:* {{ .Annotations.summary }}
-          *Description:* {{ .Annotations.description }}
-          *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
-          {{ end }}
+          <b>Severity:</b> {{ .Labels.severity }}
+          <b>Service:</b> {{ if .Labels.service }}{{ .Labels.service }}{{ else }}n/a{{ end }}
+          <b>Summary:</b> {{ .Annotations.summary }}
+          {{- if .Annotations.description }}
+          <b>Description:</b> {{ .Annotations.description }}
+          {{- end }}
+          <b>Started:</b> {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+          {{- end }}
 
-  - name: 'slack-digest'
-    slack_configs:
-      - api_url: '${ALERT_SLACK_WEBHOOK_URL}'
-        channel: '#servix-alerts-info'
+  - name: 'telegram-digest'
+    telegram_configs:
+      - bot_token: '${ALERT_TELEGRAM_BOT_TOKEN}'
+        chat_id: ${ALERT_TELEGRAM_CHAT_ID}
+        parse_mode: 'HTML'
         send_resolved: false
-        title: '[INFO] {{ .CommonLabels.alertname }}'
+        message: |
+          <i>[DIGEST] {{ .CommonLabels.alertname }}</i> — {{ .Alerts | len }} alert(s)
 
+  # ── Critical fan-out: Telegram + Slack + PagerDuty + Email ──
   - name: 'critical-multi'
+    telegram_configs:
+      - bot_token: '${ALERT_TELEGRAM_BOT_TOKEN}'
+        chat_id: ${ALERT_TELEGRAM_CHAT_ID}
+        parse_mode: 'HTML'
+        send_resolved: true
+        message: |
+          🔴 <b>P1 [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}</b>
+          {{ range .Alerts }}
+          <b>Summary:</b> {{ .Annotations.summary }}
+          {{- if .Annotations.description }}
+          <b>Description:</b> {{ .Annotations.description }}
+          {{- end }}
+          <b>Runbook:</b> https://grafana.servix.io/d/runbooks
+          {{- end }}
     slack_configs:
       - api_url: '${ALERT_SLACK_WEBHOOK_URL}'
         channel: '#servix-incidents'

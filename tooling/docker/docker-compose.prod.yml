@@ -517,6 +517,9 @@ services:
     image: alpine:3.19
     container_name: servix-alertmanager-config
     environment:
+      # A8-IV-043: Telegram is the primary on-call channel.
+      ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN:-}
+      ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID:-}
       ALERT_SLACK_WEBHOOK_URL: ${ALERT_SLACK_WEBHOOK_URL:-}
       ALERT_PAGERDUTY_ROUTING_KEY: ${ALERT_PAGERDUTY_ROUTING_KEY:-}
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
@@ -537,6 +540,8 @@ services:
       - -c
       - >
         apk add --no-cache gettext > /dev/null &&
+        : $${ALERT_TELEGRAM_BOT_TOKEN:=000000000:disabled-telegram-bot-token-placeholder-aaaa} &&
+        : $${ALERT_TELEGRAM_CHAT_ID:=0} &&
         : $${ALERT_SLACK_WEBHOOK_URL:=http://disabled-receiver.invalid/slack} &&
         : $${ALERT_PAGERDUTY_ROUTING_KEY:=disabled-pagerduty-key-placeholder} &&
         : $${ALERT_EMAIL_TO:=disabled@example.invalid} &&
@@ -544,7 +549,7 @@ services:
         : $${ALERT_SMTP_HOST:=disabled-smtp.invalid:587} &&
         : $${ALERT_SMTP_USER:=disabled} &&
         : $${ALERT_SMTP_PASS:=disabled} &&
-        export ALERT_SLACK_WEBHOOK_URL ALERT_PAGERDUTY_ROUTING_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM ALERT_SMTP_HOST ALERT_SMTP_USER ALERT_SMTP_PASS &&
+        export ALERT_TELEGRAM_BOT_TOKEN ALERT_TELEGRAM_CHAT_ID ALERT_SLACK_WEBHOOK_URL ALERT_PAGERDUTY_ROUTING_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM ALERT_SMTP_HOST ALERT_SMTP_USER ALERT_SMTP_PASS &&
         envsubst < /in/alertmanager.yml > /out/alertmanager.yml &&
         mkdir -p /out/templates &&
         cp /in/templates/*.tmpl /out/templates/ &&
