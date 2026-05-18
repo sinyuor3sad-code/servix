@@ -1806,3 +1806,68 @@ Option C from the 2026-05-16 strategic decisions doc — postgres image stays va
 
 A separate doc at `docs/principal-audit/execution/iv-019b-recovery.md` will cover the PITR restore runbook (target a specific timestamp, pull base backup + WAL chain, run postgres in recovery mode). Not in scope for this commit — needed for next session when we exercise the full RTO drill.
 
+
+### A8-IV-049 + A8-IV-019c — base backups fixed + PITR drill passed
+
+Two cards bundled because IV-049 is a hard prereq for IV-019c (without a base backup there is nothing to drill against). Single commit covers the fix, the runbook, and the drill artifact.
+
+#### A8-IV-049 — `base-backup.sh` had never produced output since deploy
+
+Discovered during IV-019c pre-flight: `servix-base-backups` bucket had been empty since 2026-05-17 cron run, where `base.log` showed only `✗ pg_basebackup failed` with no stderr context. Two root causes, fixed together:
+
+1. **No `host replication` rule in `pg_hba.conf` for the `172.18.0.0/16` bridge subnet.** A8-015 narrowed `host all all all` → `host all all 172.18.0.0/16` but left the legacy `host replication all 127.0.0.1/32 trust` lines untouched. `pg_basebackup` from `servix-backup` (`172.18.0.2`) was rejected with `no pg_hba.conf entry for replication connection`.
+
+2. **Pre-existing `.bak*` files in `/var/lib/postgresql/data/`** from earlier A8-015 + IV-049-debug edits (`cp -a` from inside the container left them root-owned mode 600). `pg_basebackup` walks the full data dir and choked: `could not open file "./pg_hba.conf.bak-…": Permission denied`.
+
+Fixed by:
+- Creating a dedicated `servix_basebackup` role: `LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT` — minimum-viable physical-backup credential. New random 40-char password stored in `SERVIX_BASEBACKUP_PASSWORD` env var. Negative smoke verified: `SELECT count(*) FROM tenants` returns `permission denied for table tenants`.
+- Adding `host replication servix_basebackup 172.18.0.0/16 scram-sha-256` to `pg_hba.conf` (single new line; reload via `pg_reload_conf()`, no restart).
+- `tooling/scripts/base-backup.sh` rewritten to use the new role (`SERVIX_BASEBACKUP_USER/PASSWORD` env vars instead of `POSTGRES_USER/PASSWORD`). FATAL message updated to reference the new var name so future failures point at the right secret.
+- Compose `backup` service env block carries the new vars.
+- Stray `.bak*` files moved out of the data dir.
+
+First successful run produced `servix-base-backups/20260518T204136Z/` with:
+- `base.tar.gz.gpg` — 8.0 MiB (encrypted compressed tar of `/var/lib/postgresql/data`)
+- `pg_wal.tar.gz.gpg` — 17 KiB (encrypted compressed tar of `pg_wal/`)
+- `backup_manifest` — 430 KiB (plaintext file-checksum metadata; see A8-IV-050 below)
+
+#### A8-IV-019c — PITR drill executed, runbook published
+
+With a real base in place, ran the recovery drill end-to-end on an isolated container:
+
+**Two-stage isolation:**
+- *Stage 1* (helper container, `--network docker_servix-network`): `mc cp` base + WAL from MinIO, `gpg --decrypt` everything, extract tars, pre-stage all 9 available WAL segments into a recovery-side mount. Postgres needs every segment locally because `restore_command` runs inside the next stage's `--network none` container.
+- *Stage 2* (postgres recovery, `--network none --memory=2g --user 70:70`): runs `postgres -c hba_file=… -c listen_addresses=127.0.0.1 -c ssl=off -c max_connections=200 -c shared_buffers=256MB`. `recovery.signal` + `restore_command='cp /var/lib/postgresql/wal-fetch/%f %p'` + `recovery_target_action=promote`. No `recovery_target_time` because prod is idle and any time-target lies beyond the last WAL record — the drill replays everything available.
+
+**Results:**
+
+| Probe | Value |
+|---|---|
+| Wall-clock RTO end-to-end | **13s** |
+| Recovery-phase only | 3s |
+| Stage 1 fetch+decrypt | ~7s |
+| `pg_is_in_recovery()` post-promote | `f` |
+| `tenant_count` after recovery | **4** (matches prod exactly) |
+| `servix_app` role present | yes |
+| Last LSN replayed | `18/B1000000` |
+| Data dir size after restore | 129 MB |
+
+13s is misleading-low because prod is 80 MB. Linear extrapolation: a 5 GB / 200 WAL-segment prod would still finish in ~5 min — well inside the documented 1 h target.
+
+**Edge cases discovered:**
+- alpine's default `max_connections=100` < prod's 200 → `FATAL: recovery aborted because of insufficient parameter settings`. Fix: pass `-c max_connections=200` to the recovery container.
+- `recovery_target_time` beyond last WAL record → `FATAL: recovery ended before configured recovery target was reached`. Fix on idle prod: drop the target.
+- Warning `cp: can't stat '00000002.history'` is normal (postgres probes for next-timeline history); not an error.
+
+**Artifacts:**
+- `docs/runbooks/pitr-recovery.md` (new, 175 lines) — step-by-step procedure + edge-cases table + cadence.
+- `tooling/scripts/pitr-drill.sh` (new, 188 lines) — reference implementation, intended to be re-run quarterly. Includes `trap EXIT INT TERM` cleanup of helper + recovery containers + tmpdir (PII safety — decrypted data never persists past script exit).
+
+Backups taken during the IV-049 fix: `.env.bak-IV-049-20260518_233542`, `pg_hba.conf.bak-IV-049-20260518_233542`, `base-backup.sh.bak-IV-049-…`, `docker-compose.prod.yml.bak-IV-049-…`. The pg_hba.conf bak files that were causing the original `pg_basebackup` failure are now in `/tmp/` inside the postgres container (out of data dir scope).
+
+#### Followup tickets
+
+- **`A8-IV-050`** (P3 LOW): `backup_manifest` is uploaded plaintext. Manifest leaks table/file structure but no row data. Encrypt alongside `base.tar.gz` next time `base-backup.sh` is touched.
+- **`A8-IV-051`** (P4 TRIVIAL): `base-backup.sh` writes its log to `/backups/base-backup.log` but crontab redirects stdout/stderr to `/backups/base.log`. Unify the path so investigators see the same file.
+- **A8-IV-049 hygiene** (already addressed in this commit): never write `.bak*` files into `/var/lib/postgresql/data/`. Future ops put backups in `/tmp/` or a sibling host directory. Postgres data dir is scanned by `pg_basebackup` and any unreadable file aborts the backup.
+
