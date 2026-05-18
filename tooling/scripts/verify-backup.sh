@@ -4,11 +4,22 @@
 #
 # Picks the most recent backup folder from MinIO, downloads + decrypts
 # every dump, restores into an ephemeral postgres container, runs sanity
-# SQL (table count, row counts on key tables), and emits a Prometheus
-# metric. Cron schedule: Sundays 04:00 UTC.
+# SQL (table count), and emits a Prometheus metric. Cron: Sundays 04:00.
 #
-# This is the only line of defense against silent backup corruption.
-# A backup that can't be restored is not a backup.
+# A8-IV-040 (V2): the original implementation used `docker exec -i <verify>
+# psql` to stream the decompressed dump into the verify DB. That stops
+# working as soon as ANY socket-proxy sits between the calling container
+# and the docker daemon — tecnativa/docker-socket-proxy (V-11) rejects
+# the HTTP Upgrade that every `docker exec` (including non-interactive)
+# requires.
+#
+# V2 sidesteps the issue by talking to the verify postgres OVER THE WIRE.
+# The verify container is on docker_servix-network, so the backup
+# container can reach it by name (e.g. `servix-verify-<ts>:5432`). All
+# DDL/restore traffic is plain TCP/SCRAM psql — no docker exec at all.
+#
+# A8-IV-039: spawn-network read from $DOCKER_NETWORK env, default
+# `docker_servix-network` (was hard-coded wrong-value `servix-network`).
 # ═══════════════════════════════════════════════════════════════
 
 set -eu
@@ -16,8 +27,10 @@ set -eu
 LOG_FILE="/backups/verify.log"
 MINIO_BUCKET="servix-backups"
 MINIO_ALIAS="servix"
+TS_RUN=$(date +%Y%m%d_%H%M%S)
+STAGING="/backups/verify-staging/${TS_RUN}"
 WORK_DIR="/tmp/verify-$$"
-CONTAINER="servix-verify-$$"
+CONTAINER="servix-verify-${TS_RUN}-$$"
 METRICS_DIR="/var/lib/node_exporter/textfile_collector"
 METRICS_FILE="${METRICS_DIR}/servix_backup_verify.prom"
 
@@ -25,13 +38,22 @@ MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://minio:9000}"
 MINIO_ACCESS_KEY="${MINIO_ROOT_USER:-}"
 MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD:-}"
 
+DOCKER_NETWORK="${DOCKER_NETWORK:-docker_servix-network}"
+BACKUP_VOLUME="${BACKUP_VOLUME:-docker_backup_data}"
+
+# Ephemeral postgres super-password — random per run, dies with the
+# container in cleanup. Never written to disk, never logged.
+VERIFY_PW=$(openssl rand -base64 24 2>/dev/null || dd if=/dev/urandom bs=1 count=18 2>/dev/null | base64)
+
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 
+# A8-IV-040: PII-safe cleanup — fires on success, error, signal.
+# The staging dir may hold decrypted tenant data (PDPL-relevant).
 cleanup() {
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-  rm -rf "$WORK_DIR"
+  rm -rf "$WORK_DIR" "$STAGING" 2>/dev/null || true
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 write_metric() {
   # arg1: 1 = pass, 0 = fail
@@ -62,13 +84,15 @@ if [ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]; then
   exit 1
 fi
 
-mkdir -p "$WORK_DIR"
+# A8-IV-040: clean leftover staging dirs from any crashed prior run.
+rm -rf /backups/verify-staging
+mkdir -p "$STAGING" "$WORK_DIR"
+
 log "════════════════════════════════════════"
-log "Weekly backup verification starting"
+log "Weekly backup verification starting (staging=$STAGING, network=$DOCKER_NETWORK)"
 
 mc alias set "$MINIO_ALIAS" "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" --api S3v4 >/dev/null 2>&1
 
-# Pick the most recent backup folder.
 LATEST=$(mc ls "$MINIO_ALIAS/$MINIO_BUCKET/" 2>/dev/null \
   | awk '{print $NF}' | tr -d '/' | sort | tail -1)
 if [ -z "$LATEST" ]; then
@@ -87,45 +111,90 @@ DUMP_COUNT=$(ls -1 "$WORK_DIR"/*.sql.gz.gpg 2>/dev/null | wc -l)
 }
 log "Found $DUMP_COUNT dump(s) to verify"
 
-# Spin up an ephemeral postgres on the same compose network.
+# Decrypt + decompress every dump into the staging dir BEFORE the verify
+# container exists. We still keep the .sql files on disk because the
+# verify container reads them via the bind-mount — but they're rm'd by
+# the trap on script exit.
+for ENC in "$WORK_DIR"/*.sql.gz.gpg; do
+  DB=$(basename "$ENC" .sql.gz.gpg)
+  if ! gpg --batch --quiet --decrypt --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" "$ENC" 2>/dev/null \
+       | gunzip -c > "$STAGING/$DB.sql" 2>/dev/null; then
+    log "  ✗ $DB decrypt/gunzip failed"
+    rm -f "$STAGING/$DB.sql"
+  fi
+done
+
+STAGED=$(ls -1 "$STAGING"/*.sql 2>/dev/null | wc -l)
+if [ "$STAGED" -eq 0 ]; then
+  log "FATAL: no dumps staged successfully"
+  write_metric 0 0 0 0
+  exit 1
+fi
+log "Staged $STAGED dump(s) for restore"
+
+# Spin up an ephemeral postgres. Volume mount lets psql -f read the
+# staged files from inside the container. Random per-run password,
+# dies with the container.
+# Mount the backup volume at the SAME path the calling backup container
+# uses (/backups), so the staging path is identical in both containers
+# and the script doesn't have to translate between them.
 docker run -d --name "$CONTAINER" \
-  --network servix-network \
-  -e POSTGRES_PASSWORD=verify_pw \
+  --network "$DOCKER_NETWORK" \
+  -v "${BACKUP_VOLUME}:/backups:ro" \
+  -e POSTGRES_PASSWORD="$VERIFY_PW" \
   -e POSTGRES_USER=verify_user \
   -e POSTGRES_DB=postgres \
   postgres:17-alpine >/dev/null
 
-# Wait for ready.
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-  if docker exec "$CONTAINER" pg_isready -U verify_user >/dev/null 2>&1; then break; fi
+# Wait for postgres to accept TCP connections — with a hard 60s ceiling
+# so a stuck verify container can't lock the cron.
+READY_TIMEOUT=60
+READY_START=$(date +%s)
+while :; do
+  if PGPASSWORD="$VERIFY_PW" psql -h "$CONTAINER" -p 5432 -U verify_user -d postgres -c '\q' >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$(( $(date +%s) - READY_START ))" -gt "$READY_TIMEOUT" ]; then
+    log "FATAL: verify container failed to become ready in ${READY_TIMEOUT}s"
+    docker logs "$CONTAINER" 2>&1 | tail -10 | sed 's/^/  /'
+    write_metric 0 0 0 0
+    exit 1
+  fi
   sleep 2
 done
+log "Verify postgres ready"
 
 TABLES_TOTAL=0
 BYTES_TOTAL=0
 RESTORED=0
 FAILED=0
 
-for ENC in "$WORK_DIR"/*.sql.gz.gpg; do
-  DB=$(basename "$ENC" .sql.gz.gpg)
+for SQL in "$STAGING"/*.sql; do
+  DB=$(basename "$SQL" .sql)
   log "  → restoring $DB"
-  docker exec "$CONTAINER" psql -U verify_user -d postgres -c \
-    "CREATE DATABASE \"$DB\";" >/dev/null 2>&1 || true
 
-  if gpg --batch --quiet --decrypt --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" "$ENC" \
-       | gunzip -c \
-       | docker exec -i "$CONTAINER" psql -U verify_user -d "$DB" --quiet >/dev/null 2>&1; then
-    t=$(docker exec "$CONTAINER" psql -U verify_user -d "$DB" -t -A -c \
+  # CREATE DATABASE (idempotent — ignore "already exists")
+  PGPASSWORD="$VERIFY_PW" psql -h "$CONTAINER" -U verify_user -d postgres \
+    -c "CREATE DATABASE \"$DB\";" >/dev/null 2>&1 || true
+
+  # Restore via psql -f reading the bind-mounted file. Both backup and
+  # verify containers see the staging dir at the same path (/backups/...).
+  CONTAINER_PATH="${STAGING}/${DB}.sql"
+  PSQL_ERR=$(mktemp)
+  if PGPASSWORD="$VERIFY_PW" psql -h "$CONTAINER" -U verify_user -d "$DB" \
+       --quiet -v ON_ERROR_STOP=0 -f "$CONTAINER_PATH" >/dev/null 2>"$PSQL_ERR"; then
+    t=$(PGPASSWORD="$VERIFY_PW" psql -h "$CONTAINER" -U verify_user -d "$DB" -t -A -c \
       "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null || echo 0)
-    sz=$(stat -c %s "$ENC")
+    sz=$(stat -c %s "$SQL")
     TABLES_TOTAL=$((TABLES_TOTAL + t))
     BYTES_TOTAL=$((BYTES_TOTAL + sz))
     RESTORED=$((RESTORED + 1))
     log "  ✓ $DB — $t table(s)"
   else
     FAILED=$((FAILED + 1))
-    log "  ✗ $DB restore failed"
+    log "  ✗ $DB restore failed: $(head -3 "$PSQL_ERR" | tr '\n' ' ' | head -c 200)"
   fi
+  rm -f "$PSQL_ERR"
 done
 
 if [ "$FAILED" -gt 0 ] || [ "$TABLES_TOTAL" -eq 0 ]; then

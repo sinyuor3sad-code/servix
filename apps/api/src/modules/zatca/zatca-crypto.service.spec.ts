@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { ZatcaCryptoService } from './zatca-crypto.service';
 
 describe('ZatcaCryptoService', () => {
@@ -186,7 +187,6 @@ describe('ZatcaCryptoService', () => {
 
   describe('INITIAL_PREVIOUS_HASH', () => {
     it('should be base64 of binary SHA256("0")', () => {
-      const { createHash } = require('crypto');
       const expected = createHash('sha256').update('0').digest('base64');
       expect(ZatcaCryptoService.INITIAL_PREVIOUS_HASH).toBe(expected);
     });
