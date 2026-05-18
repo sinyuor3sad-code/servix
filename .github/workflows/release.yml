@@ -28,8 +28,14 @@ jobs:
 
       - name: Resolve tag
         id: tag
+        # A8-IV-030: workflow_dispatch inputs are attacker-controlled; route them
+        # through env: so the shell expansion is over a plain variable, not an
+        # inlined `${{ … }}` template that can break out of the run script.
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          TAG="${INPUT_TAG:-$REF_NAME}"
           echo "name=$TAG" >> "$GITHUB_OUTPUT"
           # Strip leading "v" for changelog header.
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"

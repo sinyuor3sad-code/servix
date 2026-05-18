@@ -5,6 +5,7 @@ services:
     container_name: servix-postgres
     restart: always
     environment:
+      TZ: Asia/Riyadh
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-servix_platform}
@@ -26,7 +27,12 @@ services:
         (command -v mc >/dev/null 2>&1 || (curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && chmod +x /usr/local/bin/mc /scripts/archive-wal.sh)) &&
         exec docker-entrypoint.sh postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      # A8-IV-036: pass -d $POSTGRES_DB so pg_isready doesn't default to
+      # connecting to a database named after the user (no `servix` db exists;
+      # the platform DB is `servix_platform`). The probe still returns 0 for
+      # "server accepting connections", but without -d every 10s healthcheck
+      # wrote a FATAL `database "servix" does not exist` line to the log.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-servix_platform}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,11 +43,16 @@ services:
     image: redis:8-alpine
     container_name: servix-redis
     restart: always
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    # A8-004: password moved from --requirepass CLI arg (exposed via docker inspect)
+    # to /etc/servix/redis.conf bind-mount (chmod 644, dir 700 root:root).
+    # Healthcheck reads password from the same conf file at runtime, so no
+    # literal password appears in Config.Healthcheck.Test either.
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     volumes:
+      - /etc/servix/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$(awk '/^requirepass/{print $$2}' /usr/local/etc/redis/redis.conf)\" ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -49,7 +60,8 @@ services:
       - servix-network
 
   minio:
-    image: minio/minio:latest
+    # A8-018: pinned 2026-05-17. Refresh quarterly via `docker pull minio/minio:latest && docker inspect --format '{{index .RepoDigests 0}}' minio/minio:latest`.
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: servix-minio
     restart: always
     command: server /data --console-address ":9001"
@@ -65,15 +77,29 @@ services:
   # Uses custom config with wildcard (*) database support
   # so dynamic tenant databases (servix_tenant_xxx) are routed correctly.
   pgbouncer:
-    image: edoburu/pgbouncer:latest
+    # A8-018: pinned 2026-05-17.
+    image: edoburu/pgbouncer:latest@sha256:85d1e38593617af1b5f7f285e97d407e56c29939683cc7cfe4c8f6dc19f1268b
     container_name: servix-pgbouncer
     restart: always
     environment:
-      PGBOUNCER_USER: ${POSTGRES_USER}
-      PGBOUNCER_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Riyadh
+      # V-28: userlist.txt now holds the low-privilege `pgbouncer_auth` role,
+      # not the postgres superuser. pgbouncer.ini auth_user matches this.
+      # The role can only call pgbouncer.user_lookup() (SECURITY DEFINER) — so
+      # a leaked userlist.txt grants no DDL, no SELECT on tenant data, no
+      # connect to any non-pgbouncer schema; just the same pg_shadow exposure
+      # that auth_query has by design.
+      PGBOUNCER_USER: ${PGBOUNCER_AUTH_USER:-pgbouncer_auth}
+      PGBOUNCER_PASSWORD: ${PGBOUNCER_AUTH_PASSWORD}
     volumes:
       - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
       - ./pgbouncer/entrypoint.sh:/entrypoint.sh:ro
+      # A8-IV-042: leaf cert + key for the client-facing TLS listener.
+      # Single-file bind-mounts keep the CA private key out of the container
+      # entirely. Host dir stays mode 700 root:root; only these two files
+      # cross into the container.
+      - /etc/servix/pgbouncer-ca/pgbouncer.crt:/etc/pgbouncer/tls/pgbouncer.crt:ro
+      - /etc/servix/pgbouncer-ca/pgbouncer.key:/etc/pgbouncer/tls/pgbouncer.key:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     depends_on:
       postgres:
@@ -90,6 +116,7 @@ services:
     cap_add:
       - IPC_LOCK
     environment:
+      TZ: Asia/Riyadh
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN}
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
     ports:
@@ -151,11 +178,17 @@ services:
     restart: always
     stop_grace_period: 35s
     environment:
+      TZ: Asia/Riyadh
       NODE_ENV: production
       PORT: 4000
       INSTANCE_ID: api-1
-      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}
-      DATABASE_READ_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
+      # A8-003: runtime DB connections use non-superuser servix_app role.
+      # A8-IV-042: sslmode=verify-ca forces TLS *and* checks that pgbouncer's
+      # cert is signed by the Servix internal CA mounted at
+      # /etc/servix/ssl/ca.crt. Replay-resistant against any rogue container
+      # on the docker bridge.
+      PLATFORM_DATABASE_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}?sslmode=verify-ca&sslrootcert=/etc/servix/ssl/ca.crt
+      DATABASE_READ_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -182,6 +215,8 @@ services:
       - "4000"
     volumes:
       - uploads_data:/app/uploads
+      # A8-IV-042: CA cert that pg client uses to verify pgbouncer's leaf.
+      - /etc/servix/pgbouncer-ca/ca.crt:/etc/servix/ssl/ca.crt:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health/live"]
       interval: 30s
@@ -199,11 +234,14 @@ services:
     restart: always
     stop_grace_period: 35s
     environment:
+      TZ: Asia/Riyadh
       NODE_ENV: production
       PORT: 4000
       INSTANCE_ID: api-2
-      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}
-      DATABASE_READ_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
+      # A8-003: runtime DB connections use non-superuser servix_app role.
+      # A8-IV-042: verify-ca + sslrootcert — same chain as api-1.
+      PLATFORM_DATABASE_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}?sslmode=verify-ca&sslrootcert=/etc/servix/ssl/ca.crt
+      DATABASE_READ_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -230,6 +268,8 @@ services:
       - "4000"
     volumes:
       - uploads_data:/app/uploads
+      # A8-IV-042: CA cert for verify-ca on the api-2 → pgbouncer hop.
+      - /etc/servix/pgbouncer-ca/ca.crt:/etc/servix/ssl/ca.crt:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health/live"]
       interval: 30s
@@ -246,6 +286,7 @@ services:
     container_name: servix-dashboard
     restart: always
     environment:
+      TZ: Asia/Riyadh
       NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
       NEXT_PUBLIC_WS_URL: ${WS_URL:-https://api.servi-x.com}
       NEXT_PUBLIC_DASHBOARD_URL: https://app.servi-x.com
@@ -271,6 +312,7 @@ services:
     container_name: servix-booking
     restart: always
     environment:
+      TZ: Asia/Riyadh
       NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
     expose:
       - "3001"
@@ -293,6 +335,7 @@ services:
     container_name: servix-admin
     restart: always
     environment:
+      TZ: Asia/Riyadh
       NEXT_PUBLIC_API_URL: ${API_URL:-https://api.servi-x.com/api/v1}
     expose:
       - "3002"
@@ -314,6 +357,7 @@ services:
     container_name: servix-landing
     restart: always
     environment:
+      TZ: Asia/Riyadh
       NEXT_PUBLIC_DASHBOARD_URL: https://app.servi-x.com
     expose:
       - "3003"
@@ -331,6 +375,8 @@ services:
     image: nginx:alpine
     container_name: servix-nginx
     restart: always
+    environment:
+      TZ: Asia/Riyadh
     ports:
       - "80:80"
       - "443:443"
@@ -373,6 +419,12 @@ services:
       OFFSITE_S3_ACCESS_KEY: ${OFFSITE_S3_ACCESS_KEY:-}
       OFFSITE_S3_SECRET_KEY: ${OFFSITE_S3_SECRET_KEY:-}
       OFFSITE_S3_REGION: ${OFFSITE_S3_REGION:-us-east-1}
+      # V-11: verify-backup.sh uses the docker-socket-proxy instead of /var/run/docker.sock.
+      DOCKER_HOST: tcp://socket-proxy:2375
+      # A8-IV-039: actual compose network is `<project>_servix-network` (project = "docker"
+      # because compose runs from tooling/docker/). Pre-V-11 the script hard-coded
+      # `servix-network` and silently failed for ~weeks.
+      DOCKER_NETWORK: ${DOCKER_NETWORK:-docker_servix-network}
     volumes:
       - ./scripts/backup.sh:/scripts/backup.sh:ro
       - ./scripts/restore.sh:/scripts/restore.sh:ro
@@ -381,8 +433,9 @@ services:
       - ../scripts/base-backup.sh:/scripts/base-backup.sh:ro
       - backup_data:/backups
       - node_exporter_textfile:/var/lib/node_exporter/textfile_collector
-      # verify-backup.sh needs to launch a sibling postgres container
-      - /var/run/docker.sock:/var/run/docker.sock
+      # V-11: docker.sock removed from this container. verify-backup.sh now
+      # speaks to the tecnativa/docker-socket-proxy service via DOCKER_HOST
+      # below, so the backup container can't write to the host daemon directly.
     entrypoint: /bin/sh
     command: >
       -c "apk add --no-cache curl gnupg docker-cli >/dev/null 2>&1 &&
@@ -403,12 +456,40 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+      socket-proxy:
+        condition: service_started
+    networks:
+      - servix-network
+
+  # ═══════ Docker socket proxy (V-11) ═══════
+  # backup uses verify-backup.sh which needs to spawn an ephemeral postgres
+  # container weekly. Instead of mounting /var/run/docker.sock into backup
+  # (full root-equivalent on the host), the proxy exposes a TCP socket with a
+  # tight ACL — only the endpoints verify-backup.sh actually calls.
+  socket-proxy:
+    # A8-018 + V-11: pinned 2026-05-17.
+    image: tecnativa/docker-socket-proxy:0.2@sha256:083bd0ed8783e366d745f332f0e4489816dd35d984bef8f16e6d89484a22c082
+    container_name: servix-socket-proxy
+    restart: always
+    environment:
+      TZ: Asia/Riyadh
+      # Allow-list:
+      CONTAINERS: 1   # list/inspect/create/start/stop/remove for the ephemeral verify-DB
+      POST: 1         # all POST endpoints (run/create/exec gating)
+      EXEC: 1         # `docker exec` for pg_isready + psql
+      IMAGES: 1       # read-only image lookup (postgres:17-alpine already cached)
+      NETWORKS: 1     # `--network <name>` resolution
+      # Everything else stays default-deny (BUILD, VOLUMES, SERVICES, SECRETS, AUTH, …).
+    volumes:
+      # The socket itself is read-only mounted; ACL is enforced inside the proxy.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - servix-network
 
   # ═══════ Monitoring Stack ═══════
   prometheus:
-    image: prom/prometheus:latest
+    # A8-018: pinned 2026-05-17.
+    image: prom/prometheus:latest@sha256:5550dc63da361dc30f6fe02ac0e4dfc736ededfef3c8d12a634db04a67824d78
     container_name: servix-prometheus
     restart: always
     volumes:
@@ -445,25 +526,44 @@ services:
       ALERT_SMTP_PASS: ${ALERT_SMTP_PASS:-}
     volumes:
       - ../alertmanager/alertmanager.yml:/in/alertmanager.yml:ro
+      # A8-IV-038: copy *.tmpl files into the rendered config volume too —
+      # alertmanager mounts /etc/alertmanager read-only from this volume, so
+      # the templates need to live inside the volume; trying to add a second
+      # bind-mount on top of the RO mount fails with "read-only file system".
+      - ../alertmanager/templates:/in/templates:ro
       - alertmanager_config:/out
     command:
       - sh
       - -c
       - >
         apk add --no-cache gettext > /dev/null &&
+        : $${ALERT_SLACK_WEBHOOK_URL:=http://disabled-receiver.invalid/slack} &&
+        : $${ALERT_PAGERDUTY_ROUTING_KEY:=disabled-pagerduty-key-placeholder} &&
+        : $${ALERT_EMAIL_TO:=disabled@example.invalid} &&
+        : $${ALERT_EMAIL_FROM:=disabled@example.invalid} &&
+        : $${ALERT_SMTP_HOST:=disabled-smtp.invalid:587} &&
+        : $${ALERT_SMTP_USER:=disabled} &&
+        : $${ALERT_SMTP_PASS:=disabled} &&
+        export ALERT_SLACK_WEBHOOK_URL ALERT_PAGERDUTY_ROUTING_KEY ALERT_EMAIL_TO ALERT_EMAIL_FROM ALERT_SMTP_HOST ALERT_SMTP_USER ALERT_SMTP_PASS &&
         envsubst < /in/alertmanager.yml > /out/alertmanager.yml &&
-        echo "Rendered alertmanager.yml" && cat /out/alertmanager.yml | head -5
+        mkdir -p /out/templates &&
+        cp /in/templates/*.tmpl /out/templates/ &&
+        echo "Rendered alertmanager.yml + $$(ls /out/templates | wc -l) template(s)" &&
+        head -5 /out/alertmanager.yml
     restart: "no"
     networks:
       - servix-network
 
   alertmanager:
-    image: prom/alertmanager:latest
+    # A8-018: pinned 2026-05-17.
+    image: prom/alertmanager:latest@sha256:51a825c2a40acc3e338fdd00d622e01ec090f72be2b3ea46be0839cd47a4d286
     container_name: servix-alertmanager
     restart: always
     volumes:
+      # A8-IV-038: templates are now baked into alertmanager_config by the
+      # init container, so we no longer attempt a second bind-mount of the
+      # host's templates dir on top of the read-only volume.
       - alertmanager_config:/etc/alertmanager:ro
-      - ../alertmanager/templates:/etc/alertmanager/templates:ro
       - alertmanager_data:/alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
@@ -480,7 +580,8 @@ services:
       - servix-network
 
   grafana:
-    image: grafana/grafana:latest
+    # A8-018: pinned 2026-05-17.
+    image: grafana/grafana:latest@sha256:0f86bada30d65ef9d0183b90c1e2682ac92d53d95da8bed322b984ea78a4a73a
     container_name: servix-grafana
     restart: always
     environment:
@@ -500,7 +601,8 @@ services:
       - servix-network
 
   uptime-kuma:
-    image: louislam/uptime-kuma:latest
+    # A8-018: pinned 2026-05-17. Audit flagged this at 6-month staleness; refresh quarterly.
+    image: louislam/uptime-kuma:latest@sha256:3d632903e6af34139a37f18055c4f1bfd9b7205ae1138f1e5e8940ddc1d176f9
     container_name: servix-uptime-kuma
     restart: always
     volumes:
@@ -511,7 +613,8 @@ services:
       - servix-network
 
   node-exporter:
-    image: prom/node-exporter:latest
+    # A8-018: pinned 2026-05-17.
+    image: prom/node-exporter:latest@sha256:e9cff4fc67b1818f8c97adb115b9f12c9a54b533de86765d4a0effc01b357205
     container_name: servix-node-exporter
     restart: always
     pid: host
@@ -533,11 +636,16 @@ services:
       - servix-network
 
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
+    # A8-018: pinned 2026-05-17.
+    image: prometheuscommunity/postgres-exporter:latest@sha256:e96064f876226d94bb6ce48a4c4b3dd76edba91168ec1ab024e5c4b959310b0f
     container_name: servix-postgres-exporter
     restart: always
     environment:
-      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-servix_platform}?sslmode=disable
+      TZ: Asia/Riyadh
+      # A8-IV-035: dedicated postgres_exporter role (member of pg_monitor) —
+      # no SUPERUSER, no DDL, just read-only stats. A8-IV-037: sslmode=require
+      # so the connection actually uses the SSL listener enabled by A8-015.
+      DATA_SOURCE_NAME: postgresql://postgres_exporter:${POSTGRES_EXPORTER_PASSWORD}@postgres:5432/${POSTGRES_DB:-servix_platform}?sslmode=require
     expose:
       - "9187"
     depends_on:
@@ -548,7 +656,8 @@ services:
 
   # ═══════ Redis Exporter ═══════
   redis-exporter:
-    image: oliver006/redis_exporter:latest
+    # A8-018: pinned 2026-05-17.
+    image: oliver006/redis_exporter:latest@sha256:6a97d4dd743b533e1f950c677b87d880e44df363c61af3f406fc9e53ed65ee03
     container_name: servix-redis-exporter
     restart: always
     environment:
@@ -564,7 +673,8 @@ services:
 
   # ═══════ Nginx Exporter ═══════
   nginx-exporter:
-    image: nginx/nginx-prometheus-exporter:latest
+    # A8-018: pinned 2026-05-17.
+    image: nginx/nginx-prometheus-exporter:latest@sha256:bf76e58df548a13e52bd543ac70f6d3d667e14884e8b51c149bd81994ca75ccd
     container_name: servix-nginx-exporter
     restart: always
     command: ["-nginx.scrape-uri=http://nginx:8080/stub_status"]
@@ -575,7 +685,7 @@ services:
     networks:
       - servix-network
 
-  # ═══════ Evolution API (WhatsApp gateway) ═══════
+  # ═══════ Evolution API (WhatsApp gateway for SERVIX API) ═══════
   evolution-api:
     image: atendai/evolution-api:v2.2.3
     container_name: servix-evolution

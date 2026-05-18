@@ -29,6 +29,9 @@ ENV NODE_ENV=production
 
 # Chromium for Puppeteer (HTML→PDF rendering with Arabic support).
 # `font-noto-arabic` ships proper Naskh glyphs so RTL invoices render natively.
+# A8-IV-023: `tzdata` so libc's localtime() honors TZ=Asia/Riyadh (set on the
+# compose service by A8-009). Without it `date`/CLI tooling reports UTC even
+# though Node's V8 ICU resolves the TZ correctly.
 RUN apk add --no-cache \
       chromium \
       nss \
@@ -37,7 +40,8 @@ RUN apk add --no-cache \
       ca-certificates \
       ttf-freefont \
       font-noto \
-      font-noto-arabic
+      font-noto-arabic \
+      tzdata
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser

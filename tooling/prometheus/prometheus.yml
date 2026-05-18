@@ -17,7 +17,11 @@ alerting:
 
 scrape_configs:
   - job_name: 'servix-api'
-    metrics_path: '/metrics'
+    # A8-IV-034: API has setGlobalPrefix('api') + URI versioning v1, so the
+    # MetricsController('metrics') actually serves on /api/v1/metrics — not
+    # /metrics. The job had been scraping a 404 since first deploy; metrics
+    # ingestion only started after this correction.
+    metrics_path: '/api/v1/metrics'
     static_configs:
       - targets: ['api-1:4000', 'api-2:4000']
         labels:
