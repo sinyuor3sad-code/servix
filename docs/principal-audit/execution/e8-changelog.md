@@ -1528,3 +1528,57 @@ None of these block branch shipping — they're all CI noise on PR runs against 
 
 - **`A8-IV-043`** (P3, owner-action): set at least one real `ALERT_*` receiver in prod `.env` so the now-functional alertmanager (Batch 2) actually pages humans. Pre-Batch-2 the receivers had no consumer; post-Batch-2 they have fallback `.invalid` URLs that swallow all alerts. Recommended minimum: `ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` pointing at a `#servix-alerts` channel.
 
+
+## 2026-05-18 — Session 4 begins
+
+### A8-IV-042 — api → pgbouncer TLS with cert-chain verification (verify-ca)
+
+Closes the last unencrypted DB hop in the cluster. After this card every `servix_app` connection negotiates TLSv1.3 end-to-end.
+
+**Cert architecture:**
+
+- **Self-signed CA root** at `/etc/servix/pgbouncer-ca/ca.{crt,key}` on the prod host (RSA-4096, 10y, `CN=Servix Internal pgbouncer CA`). Key is mode 600 root:root; only ever read by the host's `openssl` at cert-issuance time.
+- **pgbouncer leaf cert** signed by the CA — `CN=pgbouncer`, SAN `DNS:pgbouncer, DNS:servix-pgbouncer, DNS:localhost, IP:127.0.0.1`. 10y validity. Verified chain (`openssl verify -CAfile ca.crt pgbouncer.crt` → OK).
+
+**Mount strategy (single-file bind-mounts):**
+
+Initially mounted `/etc/servix/pgbouncer-ca:/etc/pgbouncer/tls:ro` (the whole directory). Failed twice:
+
+1. `failed to load private key file ... (null)` — the edoburu/pgbouncer image runs pgbouncer as uid 70 (postgres) inside the container; the leaf key was mode 600 root:root, unreadable by the container process.
+2. After loosening key mode to 644, pgbouncer then failed on the *cert* with the same error — because the *directory* was mode 700 root:root, non-root processes couldn't traverse into it to reach any file.
+
+Resolved by switching to two **single-file bind-mounts** that bypass the dir-traversal requirement:
+```yaml
+- /etc/servix/pgbouncer-ca/pgbouncer.crt:/etc/pgbouncer/tls/pgbouncer.crt:ro
+- /etc/servix/pgbouncer-ca/pgbouncer.key:/etc/pgbouncer/tls/pgbouncer.key:ro
+```
+The CA private key never crosses into the container (was a needless exposure under the dir-mount approach). Host dir stays mode 700 root:root.
+
+**`pgbouncer.ini` additions** (under the existing A8-IV-037 `server_tls_sslmode = require` line):
+```
+client_tls_sslmode    = require
+client_tls_cert_file  = /etc/pgbouncer/tls/pgbouncer.crt
+client_tls_key_file   = /etc/pgbouncer/tls/pgbouncer.key
+client_tls_protocols  = secure
+```
+
+**API side (compose, api-1 + api-2):**
+- `+ /etc/servix/pgbouncer-ca/ca.crt:/etc/servix/ssl/ca.crt:ro` mount
+- `PLATFORM_DATABASE_URL` gained `?sslmode=verify-ca&sslrootcert=/etc/servix/ssl/ca.crt`
+
+`DATABASE_READ_URL` (postgres-replica) intentionally left plain in this card — the replica isn't currently running and putting TLS on a non-running endpoint adds churn. If/when the replica is brought back, mirror the verify-ca treatment there.
+
+**Verification (live, after recreate sequence):**
+
+| Probe | Result |
+|---|---|
+| pgbouncer log post-start | clean, listening on 0.0.0.0:5432, OpenSSL 3.5.4 |
+| External `psql sslmode=verify-ca sslrootcert=ca.crt` from postgres container → pgbouncer | `servix_app \| t` |
+| api-1 + api-2 boot | healthy in 18s, zero SSL/TLS/prisma errors in `docker logs --since 30s` |
+| `/api/v1/health` | HTTP 200, `database=ok, 7ms` |
+| `/api/v1/auth/login` | HTTP 400 (validation, not 500) |
+| `pg_stat_ssl` overall | 12 SSL / 1 plain |
+| **`servix_app` SSL state** | **`ssl=t, version=TLSv1.3, count=10`** ✓ |
+
+Backups (rollback): `docker-compose.prod.yml.bak-IV-042-20260518_032713`, `pgbouncer.ini.bak-IV-042-20260518_032713`.
+

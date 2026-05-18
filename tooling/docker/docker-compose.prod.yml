@@ -94,6 +94,12 @@ services:
     volumes:
       - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
       - ./pgbouncer/entrypoint.sh:/entrypoint.sh:ro
+      # A8-IV-042: leaf cert + key for the client-facing TLS listener.
+      # Single-file bind-mounts keep the CA private key out of the container
+      # entirely. Host dir stays mode 700 root:root; only these two files
+      # cross into the container.
+      - /etc/servix/pgbouncer-ca/pgbouncer.crt:/etc/pgbouncer/tls/pgbouncer.crt:ro
+      - /etc/servix/pgbouncer-ca/pgbouncer.key:/etc/pgbouncer/tls/pgbouncer.key:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     depends_on:
       postgres:
@@ -176,8 +182,12 @@ services:
       NODE_ENV: production
       PORT: 4000
       INSTANCE_ID: api-1
-      # A8-003: runtime DB connections use non-superuser servix_app role
-      PLATFORM_DATABASE_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}
+      # A8-003: runtime DB connections use non-superuser servix_app role.
+      # A8-IV-042: sslmode=verify-ca forces TLS *and* checks that pgbouncer's
+      # cert is signed by the Servix internal CA mounted at
+      # /etc/servix/ssl/ca.crt. Replay-resistant against any rogue container
+      # on the docker bridge.
+      PLATFORM_DATABASE_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}?sslmode=verify-ca&sslrootcert=/etc/servix/ssl/ca.crt
       DATABASE_READ_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -205,6 +215,8 @@ services:
       - "4000"
     volumes:
       - uploads_data:/app/uploads
+      # A8-IV-042: CA cert that pg client uses to verify pgbouncer's leaf.
+      - /etc/servix/pgbouncer-ca/ca.crt:/etc/servix/ssl/ca.crt:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health/live"]
       interval: 30s
@@ -226,8 +238,9 @@ services:
       NODE_ENV: production
       PORT: 4000
       INSTANCE_ID: api-2
-      # A8-003: runtime DB connections use non-superuser servix_app role
-      PLATFORM_DATABASE_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}
+      # A8-003: runtime DB connections use non-superuser servix_app role.
+      # A8-IV-042: verify-ca + sslrootcert — same chain as api-1.
+      PLATFORM_DATABASE_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-servix_platform}?sslmode=verify-ca&sslrootcert=/etc/servix/ssl/ca.crt
       DATABASE_READ_URL: postgresql://${SERVIX_APP_USER:-servix_app}:${SERVIX_APP_PASSWORD}@postgres-replica:5432/${POSTGRES_DB:-servix_platform}
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -255,6 +268,8 @@ services:
       - "4000"
     volumes:
       - uploads_data:/app/uploads
+      # A8-IV-042: CA cert for verify-ca on the api-2 → pgbouncer hop.
+      - /etc/servix/pgbouncer-ca/ca.crt:/etc/servix/ssl/ca.crt:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/v1/health/live"]
       interval: 30s
