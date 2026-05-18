@@ -16,16 +16,21 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-      - ../postgres/archive-wal.sh:/scripts/archive-wal.sh:ro
-    # archive_command needs `mc` + `gpg` inside the postgres container.
-    # Install once on container start; subsequent restarts re-install
-    # (alpine images are stateless, so packages live in the image layer).
-    entrypoint: ["/bin/sh", "-c"]
+      # A8-IV-019b: WAL handoff to the sidecar via a shared volume.
+      # archive_command is now a fast local `cp`; the wal-shipper container
+      # encrypts+uploads asynchronously. Postgres image stays vanilla — no
+      # mc/gpg installed inside it (root cause of A8-IV-019).
+      - pg_wal_archive:/var/lib/postgresql/wal-archive
+    # A8-IV-019b: dropped the entrypoint hack that installed mc/gnupg into
+    # the postgres container. Vanilla image now — but we still need the
+    # bind-mounted /etc/postgresql/postgresql.conf (statement_timeout,
+    # ssl=on per A8-015, archive_mode, etc.), so override the command to
+    # point at it. postgresql.auto.conf in /var/lib/postgresql/data still
+    # takes precedence for runtime-tunable settings.
     command:
-      - >
-        apk add --no-cache curl gnupg >/dev/null 2>&1 &&
-        (command -v mc >/dev/null 2>&1 || (curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && chmod +x /usr/local/bin/mc /scripts/archive-wal.sh)) &&
-        exec docker-entrypoint.sh postgres -c config_file=/etc/postgresql/postgresql.conf
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
     healthcheck:
       # A8-IV-036: pass -d $POSTGRES_DB so pg_isready doesn't default to
       # connecting to a database named after the user (no `servix` db exists;
@@ -392,6 +397,47 @@ services:
     networks:
       - servix-network
 
+  # ═══════ WAL Shipper (A8-IV-019b) ═══════
+  # Sidecar that encrypts + ships WAL segments to MinIO, replacing the
+  # A8-IV-019a `archive_command='/bin/true'` mitigation. Runs as uid 70
+  # (postgres) so it can read what postgres' archive_command wrote into
+  # the shared volume.
+  wal-shipper:
+    image: postgres:17-alpine
+    container_name: servix-wal-shipper
+    restart: always
+    # Starts as root so apk/curl can install mc+gpg, then drops to uid 70
+    # (postgres) via su-exec before exec'ing the shipper script — same uid
+    # as the postgres container, so it can read what the archive_command
+    # wrote to the shared volume.
+    environment:
+      TZ: Asia/Riyadh
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE}
+      WAL_RETENTION_DAYS: "14"
+      WAL_POLL_INTERVAL: "15"
+    volumes:
+      - ../scripts/wal-shipper.sh:/scripts/wal-shipper.sh:ro
+      - pg_wal_archive:/var/lib/postgresql/wal-archive
+      - node_exporter_textfile:/var/lib/node_exporter/textfile_collector
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        apk add --no-cache curl gnupg su-exec >/dev/null 2>&1 &&
+        (command -v mc >/dev/null 2>&1 || (curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && chmod +x /usr/local/bin/mc)) &&
+        mkdir -p /var/lib/postgresql/wal-archive /var/lib/node_exporter/textfile_collector /var/log &&
+        chown -R 70:70 /var/lib/postgresql/wal-archive /var/lib/node_exporter/textfile_collector /var/log &&
+        exec su-exec 70:70 /bin/sh /scripts/wal-shipper.sh
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - servix-network
+
   # ═══════ Automated Backup ═══════
   # Cron-driven inside the container:
   #   - every 6h:    logical dump → encrypt → MinIO (servix-backups)
@@ -743,6 +789,9 @@ services:
 
 volumes:
   postgres_data:
+  # A8-IV-019b: WAL staging shared between postgres (write via archive_command)
+  # and the wal-shipper sidecar (read+encrypt+upload+remove).
+  pg_wal_archive:
   redis_data:
   minio_data:
   backup_data:

@@ -1697,3 +1697,112 @@ During Telegram delivery debugging, I ran `sudo grep -nE "telegram_configs|bot_t
 
 The original bot token has been invalidated; the conversation transcript still contains the dead value but it cannot be used. No code references the dead token anywhere in the repo or prod state.
 
+
+### A8-IV-046 — CodeQL findings on PR #29 — defer to Engineer 3 / 4b
+
+PR #29 (`feature/ai-reception-phases-1-8 → main`) has 8 outstanding CodeQL findings. All sit outside Engineer 1's scope and are not fixed in this branch:
+
+| Module | Engineer | Notes |
+|---|---|---|
+| `apps/api/src/modules/salon/ai-reception/**` | Engineer 4b | Will be touched by CARD-AI-001..005 anyway |
+| `apps/api/src/modules/salon/pos-checkout/**` | Engineer 4b | POS hardening was authored by E4b's predecessor work |
+| `apps/api/src/modules/public/public.controller.ts` (open-redirect class) | Engineer 3 | AppSec scope |
+
+**E1 position:** do not attempt fixes from this branch — silent cross-scope edits violate the per-card review model documented in CLAUDE.md and `docs/principal-audit/execution/engineer-N-*.md`. Owner decides merge timing:
+
+- **Option X** — merge PR #29 as-is, accept findings on `main` until E3/E4b address them.
+- **Option Y** — keep PR #29 in draft until E3 + E4b push CodeQL fixes onto the same branch (the PR auto-updates as new commits land).
+
+Session 5 work (A8-IV-019b PITR sidecar) continues directly on `feature/ai-reception-phases-1-8` regardless — PR #29 just expands to include the new commits.
+
+
+## 2026-05-18 — Session 5
+
+### A8-IV-019b — PITR sidecar (wal-shipper) + drift recovery + postgres entrypoint cleanup
+
+Multi-card commit (IV-019b primary; IV-046 / IV-047 / IV-048 ride along because they all surfaced or got materialized during this same recreate sequence). PR #29 already covered the merge story; this commit lands the actual PITR pipeline.
+
+#### A8-IV-019b — what the pipeline looks like
+
+Option C from the 2026-05-16 strategic decisions doc — postgres image stays vanilla, a dedicated sidecar handles encryption + MinIO upload.
+
+```
+┌──────────────┐  archive_command (cp)     ┌──────────────────┐  gpg | mc pipe     ┌────────────────┐
+│  postgres    │ ─────────────────────────►│  pg_wal_archive  │ ──────────────────►│  MinIO         │
+│ (vanilla 17) │    /var/lib/postgresql/   │  (shared volume) │  AES256, asym     │  servix-wal/   │
+│              │      wal-archive/%f       │                  │  passphrase       │  *.gpg         │
+└──────────────┘                           └────────┬─────────┘                    └────────────────┘
+                                                    │
+                                                    │ rm after successful upload
+                                                    │
+                                            ┌───────▼─────────┐
+                                            │ wal-shipper     │
+                                            │ (sidecar, uid 70)│
+                                            │ poll 15s        │
+                                            └──────────────────┘
+```
+
+#### Files changed
+
+- `tooling/scripts/wal-shipper.sh` (new) — POSIX shell, runs as uid 70, polls staging dir every 15s, encrypts via gpg symmetric AES-256, pipes to `mc pipe` (no .gpg file ever lands on disk), `rm` source segment on success, hourly prune of MinIO objects older than `WAL_RETENTION_DAYS` (default 14d). Emits 4 Prometheus textfile metrics: `servix_wal_shipped_total`, `servix_wal_shipper_errors_total`, `servix_wal_shipper_last_success_timestamp`, `servix_wal_shipper_lag_bytes`.
+
+- `tooling/docker/docker-compose.prod.yml` —
+  - New service `wal-shipper` (image `postgres:17-alpine`; starts as root for `apk add curl gnupg su-exec` and the mc install, then `su-exec 70:70` drops privilege before exec'ing the shipper script). Mounts `pg_wal_archive` (RW), node-exporter textfile dir, the shipper script as :ro.
+  - New named volume `pg_wal_archive`.
+  - Postgres service: added the same `pg_wal_archive` mount at `/var/lib/postgresql/wal-archive` and **dropped the entrypoint/command hack** that previously installed `curl gnupg mc` into the running postgres container (A8-IV-047 materialized — the old entrypoint was the root cause of A8-IV-019). Replaced with an explicit `command: [postgres, -c, config_file=/etc/postgresql/postgresql.conf]` so the bind-mounted conf is still loaded.
+
+- `tooling/postgres/postgresql.conf` — `archive_command` rewritten:
+  ```
+  archive_command = 'test ! -f /var/lib/postgresql/wal-archive/%f && cp %p /var/lib/postgresql/wal-archive/%f'
+  ```
+  Fast local cp, idempotent if the segment is already staged. Postgres retries on non-zero (intentional back-pressure — see A8-IV-019 incident).
+
+#### Deployment path (more detours than expected)
+
+1. **Phase 2a** — wal-shipper container brought up against an empty staging volume. First start crashed (exit 99, empty log) because the image runs as uid 70 by default in alpine and `apk add` needs root. Fixed by starting as root and dropping via `su-exec 70:70` post-install. Container then started clean; metrics file appeared with all counters at 0.
+
+2. **First Phase 2b attempt** — flipped `archive_command` via `ALTER SYSTEM`. pg_stat_archiver immediately recorded **failed_count=3 / last_failed_wal=…A6**. Root cause: the running postgres container had no `pg_wal_archive` mount because compose volume additions don't apply to running containers. Rolled back to `/bin/true` (same IV-019a path) within seconds; failed_count stopped climbing.
+
+3. **A8-IV-047 materialized** — postgres container recreated to pick up the volume mount. Healthy in 15s. Both ssl=on and statement_timeout came back **broken** post-recreate.
+
+4. **A8-IV-048 fallout from A8-IV-044 surfaced** — `tooling/postgres/postgresql.conf` on prod was the pre-merge feature-branch state (no ssl block, old archive_command path). Same A8-IV-033 cherry-pick-abort that overwrote `docker-compose.prod.yml` had also reset multiple `tooling/**` files. SHA audit found 4 divergent files on prod:
+   - `tooling/docker/pgbouncer/pgbouncer.ini` (rolled back to pre-V-28: missing auth_user / auth_dbname / client_tls block)
+   - `tooling/docker/pgbouncer/entrypoint.sh` (pre-V-28 mode-644 userlist)
+   - `tooling/prometheus/prometheus.yml` (pre-IV-034 wrong metrics_path)
+   - `tooling/scripts/verify-backup.sh` (pre-IV-040 docker-exec -i version)
+
+   Recovered all four by scp'ing the local merged content to prod with `.bak-IV-048-…` backups, then restarting pgbouncer and reloading prometheus. Net effect: prod state now matches what local merged state has been documenting since the IV-033 merge.
+
+5. **Phase 2b retry** — with all four config files restored AND postgres recreated with the mount, flipped `archive_command` again. Forced `pg_switch_wal()`. Within seconds:
+   - pg_stat_archiver advanced from 3669 → 3670, last_archived_wal = the new segment
+   - shared volume emptied (shipper picked it up)
+   - MinIO `servix-wal/0000000100000018000000A8.gpg` appeared, 16,629 bytes
+   - Shipper metric: `wal_shipped_total=1, errors=0, last_success_ts set`
+
+6. **End-to-end decryption test** — pulled the segment back from MinIO, decrypted with the passphrase, verified: **16,777,216 bytes** (exactly 16 MiB postgres WAL segment), first 32 bytes show PG 17 WAL magic `0xD116` at offset 0 with SystemId in the expected positions.
+
+#### State of related followups after this commit
+
+- **A8-IV-046** — PR #29 CodeQL findings deferred to Engineers 3 / 4b (noted in changelog earlier this session); E1 does not touch ai-reception/, pos-checkout/, or public.controller.ts from this branch.
+- **A8-IV-047** — postgres entrypoint cleanup is now actually materialized on prod (container running vanilla `postgres -c config_file=...`).
+- **A8-IV-048** — four config files restored; the recovery itself is prod-side only (local repo was always correct). The `.bak-IV-048-20260518_184035` files are still on prod for forensics.
+- **A8-IV-019a mitigation** (`archive_command='/bin/true'`) — superseded by this card. The line is still in `postgresql.auto.conf` from the rollback path during the second debug cycle, but the runtime archive_command now points at the shipper-shared volume. The .auto.conf override can be cleared in a follow-up if desired; not blocking.
+
+#### Verification matrix at session 5 close
+
+| Probe | Result |
+|---|---|
+| `/api/v1/health` | HTTP 200, `database=ok, 4ms` |
+| `/api/v1/auth/login` (validation) | HTTP 400 |
+| `servix_app` via pgbouncer | `ssl=t, TLSv1.3` |
+| `pg_stat_ssl` | 7 SSL / 1 plain |
+| `pg_stat_archiver` | `archived_count=3670, failed_count=9 (frozen), last_archived_wal=…A8` |
+| `servix-wal/*.gpg` in MinIO | 1 segment, 16 KiB |
+| Decrypted segment | 16,777,216 bytes, PG 17 WAL magic ✓ |
+| `wal-shipper` container | Up, uid 70, metrics flowing |
+| `wal-shipped_total` metric | 1 (and counting on subsequent segment switches) |
+
+#### Recovery procedure (deferred to A8-IV-019c — separate Phase 4 follow-up)
+
+A separate doc at `docs/principal-audit/execution/iv-019b-recovery.md` will cover the PITR restore runbook (target a specific timestamp, pull base backup + WAL chain, run postgres in recovery mode). Not in scope for this commit — needed for next session when we exercise the full RTO drill.
+
