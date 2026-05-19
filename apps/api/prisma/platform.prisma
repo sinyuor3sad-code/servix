@@ -562,7 +562,13 @@ model PlatformAuditLog {
   userAgent  String?  @map("user_agent") @db.Text
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  // V-78 / A1-008: Restrict (not SetNull) — preserves PDPL m.12 + SOC2
+  // audit trail. tenant_id stays nullable for genuine system-level
+  // events (login attempts, platform admin actions); the FK now refuses
+  // any hard-delete of a tenant that has audit rows. Soft-delete via
+  // tenant.status='cancelled'/'pending_deletion' is the supported path.
+  // See docs/migrations/v78-apply.md and V-78b follow-up note.
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   user   User    @relation(fields: [userId], references: [id])
 
   @@index([tenantId])

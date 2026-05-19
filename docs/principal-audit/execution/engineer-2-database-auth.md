@@ -738,6 +738,24 @@ In `apps/api/.eslintrc.js`.
 
 ---
 
+### V-78b — purge-cron design constraint (Engineer 1 lifecycle scope)
+
+After V-78 lands, `platform_audit_logs.tenant_id_fkey` is `ON DELETE RESTRICT`. Any future "purge after `pendingDeletionAt` grace" cron must NOT call `prisma.tenant.delete()` / `DELETE FROM tenants` — the FK will reject with `ERRCODE 23503`.
+
+**Required purge design:**
+
+| Step | Action | Why |
+|---|---|---|
+| (a) | `DROP DATABASE servix_tenant_<slug>` | free disk + connection slot |
+| (b) | Keep `platform.tenants` row, update `status='cancelled'` + a new `purged_at TIMESTAMPTZ NULL` column | preserves audit FK target |
+| (c) | (Optional) extend `TenantStatus` enum with `purged` to distinguish from user-initiated cancel | clearer ops semantics |
+
+Audit logs keep their valid `tenant_id` reference forever — PDPL article 12 + SOC2 retention satisfied.
+
+**Coordinate before implementing:** Engineer 1 owns lifecycle scripts; Engineer 2 owns any new `purged_at` / enum value migration (would land as a small schema-only follow-up).
+
+---
+
 ### V-77d — tenant registry ↔ DB reconciliation (Engineer 1 scope)
 
 أثناء التحقّق من حالة prod قبل V-18 runbook، اكتُشف drift بين `tenants` table و state الـ DBs على disk:
