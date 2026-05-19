@@ -1054,9 +1054,14 @@ model ClientDna {
 
 model ZatcaCertificate {
   id                 String    @id @default(uuid()) @db.Uuid
-  csrContent         String    @map("csr_content") @db.Text
-  privateKey         String    @map("private_key") @db.Text
-  publicKey          String?   @map("public_key") @db.Text
+  csrContent          String    @map("csr_content") @db.Text
+  privateKey          String    @map("private_key") @db.Text
+  // V-23 phase-1: encrypted variant for the secret material. csr_content and
+  // public_key are ZATCA-public by design (CSR is sent to ZATCA, public_key
+  // is published with every signed invoice) — deliberately not encrypted.
+  // See docs/migrations/v23-encryption-rollout.md.
+  privateKeyEncrypted Bytes?    @map("private_key_encrypted")
+  publicKey           String?   @map("public_key") @db.Text
   certificateContent String?   @map("certificate_content") @db.Text
   csid               String?   @db.VarChar(500)
   csidExpiresAt      DateTime? @map("csid_expires_at") @db.Timestamptz()

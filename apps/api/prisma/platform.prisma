@@ -110,8 +110,10 @@ model WhatsAppInstance {
   id                 String                 @id @default(uuid()) @db.Uuid
   tenantId           String                 @unique @map("tenant_id") @db.Uuid
   instanceName       String                 @unique @map("instance_name") @db.VarChar(100)
-  instanceToken      String                 @map("instance_token") @db.VarChar(255)
-  status             WhatsAppInstanceStatus @default(disconnected)
+  instanceToken          String                 @map("instance_token") @db.VarChar(255)
+  // V-23 phase-1: encrypted variant. See twoFactorSecretEncrypted note above.
+  instanceTokenEncrypted Bytes?                 @map("instance_token_encrypted")
+  status                 WhatsAppInstanceStatus @default(disconnected)
   phoneNumber        String?                @map("phone_number") @db.VarChar(20)
   profileName        String?                @map("profile_name") @db.VarChar(100)
   profilePicUrl      String?                @map("profile_pic_url") @db.VarChar(500)
@@ -139,8 +141,12 @@ model User {
   isEmailVerified  Boolean   @default(false) @map("is_email_verified")
   isPhoneVerified  Boolean   @default(false) @map("is_phone_verified")
   // 2FA
-  twoFactorEnabled Boolean   @default(false) @map("two_factor_enabled")
-  twoFactorSecret  String?   @map("two_factor_secret") @db.VarChar(255)
+  twoFactorEnabled         Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret          String?   @map("two_factor_secret") @db.VarChar(255)
+  // V-23 phase-1: encrypted variant. Phase 2 (Engineer 4) backfills via
+  // dual-read/single-write. Phase 3 drops the plaintext column once
+  // staging is clean for 30 days. See docs/migrations/v23-encryption-rollout.md.
+  twoFactorSecretEncrypted Bytes?    @map("two_factor_secret_encrypted")
   // OAuth
   googleId         String?   @unique @map("google_id") @db.VarChar(255)
   authProvider     String    @default("local") @map("auth_provider") @db.VarChar(20)
