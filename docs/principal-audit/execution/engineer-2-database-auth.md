@@ -738,6 +738,29 @@ In `apps/api/.eslintrc.js`.
 
 ---
 
+### V-01b — multi-tenant JWT pinning (Engineer 3 scope, E5)
+
+V-01 introduced strict WS handshake validation: the server now derives `tenantId` from the verified JWT and rejects any handshake whose `query.tenantId` contradicts it. This surfaced a long-standing nuance in the auth flow that Engineer 3 should address as a separate card.
+
+**Behaviour today (still correct after V-01):**
+
+`auth.service.ts:314-318` (login) and `:353-358` (refresh) sign the JWT with `firstTenantUser.tenantId`. Users with multiple `tenant_users` rows (confirmed on prod: `ptoll2055@gmail.com` is linked to both `d8b44c83` and `50268284`) get a JWT pinned to the *first* tenant. Switching context to the other tenant in the UI does not re-issue the JWT, so:
+
+- HTTP requests carrying that JWT will keep targeting the *first* tenant via `TenantGuard`.
+- After V-01, WS connections will be pinned to the JWT tenant; switching tenants in the UI without a fresh token will fail to connect to the other tenant's rooms.
+
+**This is the intended security posture** — the JWT is the source of truth and the WS guard treats any contradicting query field as a confusion attack. The UX gap is the missing tenant-switch endpoint.
+
+**Required follow-up (Engineer 3, E5 / V-37–V-43 cluster):**
+
+1. New endpoint `POST /auth/switch-tenant` that takes a target `tenantId`, verifies the requesting user has an active `tenant_users` row for it, then issues a fresh JWT pinned to that tenant. Returns `{ accessToken, refreshToken }`.
+2. Dashboard `auth.store` invokes the endpoint on tenant change, then reconnects the WS with the new token.
+3. Optional: include `availableTenants: string[]` claim in the JWT so the WS guard could relax the strict equality check at the same security level — but this leaks more info than necessary. The endpoint-based approach is preferred.
+
+Engineer 2 already owns the JWT signing code, so coordination is light: Engineer 3 calls into `authService.generateTokens()` with a new tenant context. No schema change needed.
+
+---
+
 ### V-78b — purge-cron design constraint (Engineer 1 lifecycle scope)
 
 After V-78 lands, `platform_audit_logs.tenant_id_fkey` is `ON DELETE RESTRICT`. Any future "purge after `pendingDeletionAt` grace" cron must NOT call `prisma.tenant.delete()` / `DELETE FROM tenants` — the FK will reject with `ERRCODE 23503`.

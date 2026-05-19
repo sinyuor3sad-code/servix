@@ -32,6 +32,11 @@ export const AppConfigValidationSchema = Joi.object({
   CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
   APP_URL: Joi.string().uri().default('http://localhost:3000'),
 
+  // V-01: WebSocket handshake enforcement. Secure-by-default. Operators
+  // may set to `false` for a short staged-rollout window to observe
+  // traffic shapes before flipping back to `true`.
+  WS_AUTH_ENFORCE: Joi.boolean().truthy('true').falsy('false').default(true),
+
   // Sentry — optional; error tracking disabled when empty
   SENTRY_DSN: Joi.string().uri().allow('').default(''),
 

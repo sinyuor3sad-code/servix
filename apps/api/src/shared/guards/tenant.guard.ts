@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { PlatformPrismaClient } from '../database/platform.client';
+import { assertActiveTenantUser } from '../auth/tenant-user.helper';
 
 interface JwtPayload {
   sub: string;
@@ -35,20 +36,9 @@ export class TenantGuard implements CanActivate {
       throw new ForbiddenException('حساب الصالون معلّق');
     }
 
-    const tenantUser = await this.platformPrisma.tenantUser.findUnique({
-      where: {
-        tenantId_userId: {
-          tenantId: tenant.id,
-          userId: user.sub,
-        },
-      },
-    });
-
-    if (!tenantUser || tenantUser.status !== 'active') {
-      throw new ForbiddenException(
-        'ليس لديك صلاحية للوصول إلى هذا الحساب',
-      );
-    }
+    // V-01 refactor: extracted shared check so WsAuthGuard and the
+    // HTTP TenantGuard agree on what "active tenant link" means.
+    await assertActiveTenantUser(this.platformPrisma, tenant.id, user.sub);
 
     return true;
   }
