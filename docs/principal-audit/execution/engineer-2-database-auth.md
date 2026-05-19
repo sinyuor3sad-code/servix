@@ -653,6 +653,20 @@ V-17/V-73 added `deleted_at` columns على `invoices` و `payments` + FK RESTRI
 2. أضف Prisma middleware ثاني يضيف `deletedAt: null` filter تلقائياً لكل query على `Invoice`/`Payment` (إلا في admin/audit paths صريحة).
 3. update `invoices.service.ts` + payments إن لزم لمعاملة الـ behaviour الجديد (e.g. error messages للـ pre-existing hard-delete callers).
 4. e2e tests: `prisma.invoice.delete({where:{id}})` → row remains with `deletedAt` set، not removed.
+5. **ERRCODE handling في invoice/payment DELETE paths** — حتى بعد middleware، بعض admin/cleanup paths قد تحاول hard DELETE صراحة (e.g. test fixture teardown). يجب أن تتوقّع كلا الـ Postgres error codes:
+   - **`23001` (`restrict_violation`)** — تأتي من V-73 trigger `no_delete_finalized_zatca_invoices` (ZATCA submission_status في submitted/cleared/reported)
+   - **`23503` (`foreign_key_violation`)** — تأتي من V-17 FK RESTRICT (`payments_invoice_id_fkey`, `discounts_invoice_id_fkey`, إلخ) أو من `zatca_invoices_invoice_id_fkey` لو ZATCA row موجودة بأي state آخر
+
+   Wrapper موحّد (مثال):
+   ```ts
+   try { await prisma.invoice.delete({where:{id}}); }
+   catch (e: any) {
+     if (e.code === 'P2003' /* prisma FK */) throw new ConflictException('Cannot delete: has dependent records');
+     if (e.meta?.code === '23001') throw new ConflictException('Cannot delete: ZATCA retention applies');
+     throw e;
+   }
+   ```
+   ملاحظة: Prisma يلفّ بعض الـ Postgres codes داخل `e.code='P2003'` + `e.meta`. اختبر السلوك الفعلي قبل النشر.
 
 **الملفات Engineer 4:**
 - `apps/api/src/modules/salon/invoices/invoices.service.ts`
