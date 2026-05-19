@@ -71,12 +71,44 @@ ZATCA has not been provisioned for either active tenant yet, and 2FA is not enab
 
 ### Phase 3 — Drop plaintext columns (Engineer 2, +30 days after Phase 2)
 
-After Phase 2 has been running cleanly on staging for 30 days (no fallback hits in logs, no decryption errors, no support tickets):
+After Phase 2 has been running cleanly on staging for 30 days (no fallback hits in logs, no decryption errors, no support tickets).
 
-1. Verify zero rows where `<plaintext> IS NOT NULL AND <encrypted> IS NULL` (every plaintext has an encrypted counterpart).
-2. **NOT NULL columns first need a transition**: `whatsapp_instances.instance_token` and `zatca_certificates.private_key` are currently NOT NULL. Phase 3 migration must (a) make plaintext column nullable, (b) make encrypted column NOT NULL, (c) drop plaintext column. This will be a separate Phase 3 card.
-3. Migration file: `20260YYY_v23_phase3_drop_plaintext` — schema edit removing the plaintext fields, raw SQL `ALTER TABLE … DROP COLUMN …`.
-4. Cleanup encryption.service dual-read fallback at the same time.
+#### Pre-drop checklist (run on every prod DB before the Phase 3 migration)
+
+The plaintext columns `whatsapp_instances.instance_token` and `zatca_certificates.private_key` are currently `NOT NULL`. The encrypted columns are `NULL` (Phase 1). Dropping plaintext without flipping the NOT NULL constraint would leave a row with no live secret material. Run these gates in order:
+
+1. **Completeness gate** — every row that has plaintext also has ciphertext:
+   ```sql
+   SELECT COUNT(*) FROM <table>
+   WHERE <plaintext_col> IS NOT NULL AND <encrypted_col> IS NULL;
+   -- must return 0 on every DB before proceeding
+   ```
+   Per column:
+   - `users(two_factor_secret, two_factor_secret_encrypted)` — platform
+   - `whatsapp_instances(instance_token, instance_token_encrypted)` — platform
+   - `zatca_certificates(private_key, private_key_encrypted)` — every tenant DB
+2. **Fallback-hit gate** — confirm Engineer 4's dual-read fallback (`if (encrypted) decrypt else read plaintext`) has logged zero plaintext fallbacks for the full 30-day soak. If any fallback hit exists, Phase 2 backfill is incomplete; do not proceed.
+3. **NOT NULL transition** — bundle into the Phase 3 migration, ordered carefully:
+   ```sql
+   BEGIN;
+   -- (a) flip NOT NULL: encrypted gains it, plaintext loses it.
+   --     Do this BEFORE the drop so the constraint protects every row at every instant.
+   ALTER TABLE whatsapp_instances ALTER COLUMN instance_token_encrypted SET NOT NULL;
+   ALTER TABLE whatsapp_instances ALTER COLUMN instance_token            DROP NOT NULL;
+   ALTER TABLE zatca_certificates ALTER COLUMN private_key_encrypted     SET NOT NULL;
+   ALTER TABLE zatca_certificates ALTER COLUMN private_key               DROP NOT NULL;
+   -- users.two_factor_secret is already nullable; no flip needed there.
+
+   -- (b) drop plaintext columns
+   ALTER TABLE users              DROP COLUMN two_factor_secret;
+   ALTER TABLE whatsapp_instances DROP COLUMN instance_token;
+   ALTER TABLE zatca_certificates DROP COLUMN private_key;
+   COMMIT;
+   ```
+   The `SET NOT NULL` on the encrypted column will scan the table and abort if the completeness gate was bypassed. This is intentional — it's the last automatic line of defense.
+4. **Application cleanup (same Phase 3 PR)** — Engineer 4 removes the dual-read fallback in `apps/api/src/shared/encryption/encryption.service.ts` so the codebase no longer carries plaintext-handling branches.
+
+Migration file: `20260YYY_v23_phase3_drop_plaintext` — schema edit removing the plaintext fields, raw SQL above. Runbook will mirror the V-23 phase-1 layout.
 
 ## Out of scope (deliberate)
 
