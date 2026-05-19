@@ -85,15 +85,16 @@ EOF
 
 ## Step 2 — Apply tenant migration on every active tenant DB
 
-The list below is the current production set (run `SELECT database_name FROM tenants WHERE status IN ('active','trial');` to refresh). **Skip `platform_admin_db` — it is an orphan registry entry with no actual DB (tracked separately).**
+The list below is the current production set (run `SELECT database_name FROM tenants WHERE status IN ('active','trial');` to refresh). Skip tenants whose DB does not exist on disk — currently `hthr-36e0b612` (`status='pending'`, never provisioned) and `platform-admin` (`status='cancelled'`, DB deleted but registry row remains). Tracked separately as V-77d (registry/DB reconciliation).
 
 ```bash
 ssh servix-admin@194.163.158.70 << 'EOF'
   set -e
 
   # Active tenants as of 2026-05-19. servix_tenant_36e0b612 (slug
-  # hthr-36e0b612) is registered in tenants but the database does not
-  # exist on prod — see V-77+ follow-ups; intentionally excluded.
+  # hthr-36e0b612) is registered with status='pending' but the database
+  # was never provisioned — see V-77d in engineer-2-database-auth.md;
+  # intentionally excluded.
   TENANT_DBS=(
     servix_tenant_d0f48d47
     servix_tenant_test_ai_reception
@@ -130,7 +131,7 @@ For each tenant DB, mark the migration as applied so `prisma migrate deploy` won
 # the row into _prisma_migrations with a correct sha256 — avoiding drift if
 # Prisma ever rewrites the table layout.
 
-for db in servix_tenant_d0f48d47 servix_tenant_36e0b612 servix_tenant_test_ai_reception; do
+for db in servix_tenant_d0f48d47 servix_tenant_test_ai_reception; do
   export TENANT_DATABASE_URL="postgresql://servix:<PASSWORD>@194.163.158.70:5432/$db"
   pnpm --filter @servix/api exec prisma migrate resolve \
     --applied 20260519_v18_fk_indices \
@@ -192,11 +193,11 @@ for db in servix_tenant_d0f48d47 servix_tenant_test_ai_reception; do
 done
 ```
 
-> The tenant list above is the **active** set as of 2026-05-19. `servix_tenant_36e0b612` (slug `hthr-36e0b612`) is an orphan registry row with no backing DB and is intentionally excluded — see V-77+ follow-ups.
+> Excluded tenants as of 2026-05-19: `servix_tenant_36e0b612` (slug `hthr-36e0b612`) — `status='pending'`, never provisioned; `platform_admin_db` (slug `platform-admin`) — `status='cancelled'`, DB deleted but registry row remains. Tracked under V-77d in `engineer-2-database-auth.md`.
 
 Then revert the Prisma migration record:
 ```bash
-for db in servix_tenant_d0f48d47 servix_tenant_36e0b612 servix_tenant_test_ai_reception; do
+for db in servix_tenant_d0f48d47 servix_tenant_test_ai_reception; do
   export TENANT_DATABASE_URL="postgresql://servix:<PASSWORD>@194.163.158.70:5432/$db"
   pnpm --filter @servix/api exec prisma migrate resolve \
     --rolled-back 20260519_v18_fk_indices \
@@ -221,5 +222,5 @@ And revert the schema edits in `platform.prisma` / `tenant.prisma` via `git reve
    - `tooling/scripts/migrate-tenants.ts` is a stub — there is no automation to loop migrations over tenant DBs. → V-77+ (Engineer 1).
    - `deploy.sh:74` runs `prisma migrate deploy --schema=platform.prisma` against a DB that has no `_prisma_migrations` and where tenant migrations would fail anyway. → V-77c (Engineer 1).
    - `create-tenant.ts` uses `prisma db push` instead of `migrate deploy`, so newly created tenants start with an empty `_prisma_migrations` and diverge from existing ones. → V-77+ (Engineer 1).
-   - `platform-admin` tenant has no backing DB — orphan registry row. → Engineer 1 cleanup card.
+   - `hthr-36e0b612` (`status='pending'`) and `platform-admin` (`status='cancelled'`) tenants have no backing DB — registry/DB drift. → V-77d (Engineer 1, lifecycle/scripts).
    - `InvoiceItem.employee_id` and `LoyaltyTransaction.invoice_id` are also un-indexed FKs not listed in V-18. → V-18b (Engineer 2 next).
