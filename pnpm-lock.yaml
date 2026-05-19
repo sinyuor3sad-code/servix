@@ -273,6 +273,9 @@ importers:
       '@pact-foundation/pact':
         specifier: ^13.0.0
         version: 13.2.0
+      '@servix/eslint-plugin-servix':
+        specifier: workspace:*
+        version: link:../../packages/eslint-plugin-servix
       '@types/archiver':
         specifier: ^6.0.0
         version: 6.0.4
@@ -629,6 +632,12 @@ importers:
         version: 5.9.3
 
   packages/eslint-config: {}
+
+  packages/eslint-plugin-servix:
+    dependencies:
+      eslint:
+        specifier: ^8.0.0
+        version: 8.57.1
 
   packages/tsconfig: {}
 

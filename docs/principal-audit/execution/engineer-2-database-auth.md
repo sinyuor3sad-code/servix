@@ -692,6 +692,52 @@ V-17/V-73 added `deleted_at` columns على `invoices` و `payments` + FK RESTRI
 
 ---
 
+### V-44b — flip ESLint `no-decimal-to-number` to `error` (after Engineer 4 cleanup)
+
+V-44 landed the rule at severity `warn` because **21 pre-existing call sites across 9 files** in Engineer 4 territory need refactoring first. The rule is `error`-grade in intent — `warn` is purely a temporary CI-not-blocking accommodation.
+
+**Pre-existing violations (Engineer 4 must refactor to `.toString()` / `.toFixed()` / `Prisma.Decimal` arithmetic):**
+
+| File | Lines | Count |
+|---|---|---|
+| `apps/api/src/modules/public/public.service.ts` | 338, 339, 345, 346 | 4 |
+| `apps/api/src/modules/salon/ai-consultant/ai-consultant.service.ts` | 249 | 1 |
+| `apps/api/src/modules/salon/booking/booking.service.ts` | 356 | 1 |
+| `apps/api/src/modules/salon/client-dna/client-dna.service.ts` | 67, 111 | 2 |
+| `apps/api/src/modules/salon/invoices/invoices.service.ts` | 88, 324, 578 | 3 |
+| `apps/api/src/modules/salon/packages/packages.service.ts` | 19, 20, 49, 50 | 4 |
+| `apps/api/src/modules/salon/pos-shifts/pos-shifts.service.ts` | 138 | 1 |
+| `apps/api/src/modules/salon/reports/reports.service.ts` | 268 | 1 |
+| `apps/api/src/shared/pdf/pdf.service.ts` | 112, 113, 122, 123 | 4 |
+| **Total** | | **21** |
+
+All twenty-one are `Number(decimalField)` on properties whose backing column is `NUMERIC(10, 2)` or wider (Invoice subtotal/taxAmount/discountAmount/total/unitPrice/totalPrice, PosShift.openingBalance, Client.totalSpent, Service/Package prices, Discount values). The conversion loses precision for amounts > ~9 quadrillion halalas — not an immediate risk at current data scale, but a real bug pattern as the platform grows.
+
+**Forward-defense gain:** the rule surfaced 3.5× more technical debt than the original audit ticket scoped (V-44 scoped "Number(decimal) hygiene" loosely; the rule turned it into a precise inventory). Engineer 4 has the full list above for the cleanup PR.
+
+**Replacements:**
+```ts
+// ❌
+const subtotal = Number(invoice.subtotal);
+
+// ✅ for display / external API
+const subtotal = invoice.subtotal.toFixed(2);   // "1234.56"
+const subtotal = invoice.subtotal.toString();   // "1234.56"
+
+// ✅ for arithmetic
+const total = invoice.subtotal.add(invoice.taxAmount);  // Prisma.Decimal
+```
+
+**Engineer 2 follow-up (one-line PR after Engineer 4 cleanup PR merges):**
+```diff
+- '@servix/servix/no-decimal-to-number': 'warn',
++ '@servix/servix/no-decimal-to-number': 'error',
+```
+
+In `apps/api/.eslintrc.js`.
+
+---
+
 ### V-77d — tenant registry ↔ DB reconciliation (Engineer 1 scope)
 
 أثناء التحقّق من حالة prod قبل V-18 runbook، اكتُشف drift بين `tenants` table و state الـ DBs على disk:

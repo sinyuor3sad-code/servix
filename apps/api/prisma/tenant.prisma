@@ -481,7 +481,7 @@ model Client {
   notes       String?      @db.Text
   source      ClientSource @default(walk_in)
   totalVisits Int          @default(0) @map("total_visits")
-  totalSpent  Decimal      @default(0) @map("total_spent") @db.Decimal(10, 2)
+  totalSpent  Decimal      @default(0) @map("total_spent") @db.Decimal(14, 2)
   lastVisitAt DateTime?    @map("last_visit_at") @db.Timestamptz()
   isActive    Boolean      @default(true) @map("is_active")
   deletedAt   DateTime?    @map("deleted_at") @db.Timestamptz()
@@ -1016,7 +1016,7 @@ model ClientDna {
   id                    String           @id @default(uuid()) @db.Uuid
   clientId              String           @unique @map("client_id") @db.Uuid
   // Behavioral metrics (recomputed by background job)
-  predictedClv          Decimal?         @map("predicted_clv") @db.Decimal(10, 2)
+  predictedClv          Decimal?         @map("predicted_clv") @db.Decimal(14, 2)
   churnRisk             ChurnRisk        @default(low) @map("churn_risk")
   churnProbability      Decimal?         @map("churn_probability") @db.Decimal(5, 4)
   priceSensitivity      PriceSensitivity @default(moderate) @map("price_sensitivity")
@@ -1162,7 +1162,7 @@ model Campaign {
   sentCount                Int                 @default(0) @map("sent_count")
   openedCount              Int                 @default(0) @map("opened_count")
   bookedCount              Int                 @default(0) @map("booked_count")
-  revenue                  Decimal             @default(0) @db.Decimal(10, 2)
+  revenue                  Decimal             @default(0) @db.Decimal(14, 2)
   createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt                DateTime            @updatedAt @map("updated_at") @db.Timestamptz()
 

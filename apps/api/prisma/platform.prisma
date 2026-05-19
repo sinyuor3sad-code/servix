@@ -441,7 +441,7 @@ model TenantUsageLog {
   tenantId            String   @map("tenant_id") @db.Uuid
   month               DateTime @db.Date
   appointmentCount    Int      @default(0) @map("appointment_count")
-  totalRevenue        Decimal  @default(0) @map("total_revenue") @db.Decimal(12, 2)
+  totalRevenue        Decimal  @default(0) @map("total_revenue") @db.Decimal(14, 2)
   usageFeeCharged     Decimal  @default(0) @map("usage_fee_charged") @db.Decimal(10, 2)
   revenueShareCharged Decimal  @default(0) @map("revenue_share_charged") @db.Decimal(10, 2)
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
