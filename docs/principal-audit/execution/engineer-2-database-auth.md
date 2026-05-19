@@ -210,22 +210,35 @@ Stack: Prisma 5+ + PostgreSQL 17.9 + multi-DB (platform + DB-per-tenant)
 
 ---
 
-### المهمة 4: statement_timeout في postgresql.conf (V-16)
-- **Finding ID**: V-16 / A1-007 (= A8-002 طبّقه Engineer 1 على prod)
-- **Severity**: HIGH (P1)
-- **الملف**: `tooling/postgres/postgresql.conf`
-- **الوصف**: ضمان أن rebuild من scratch لا يفقد الإعدادات.
-- **التطبيق**:
-  ```
-  statement_timeout = 30s
-  idle_in_transaction_session_timeout = 60s
-  lock_timeout = 5s
-  log_connections = on
-  log_disconnections = on
-  log_min_duration_statement = 500
-  ```
-- **التحقق**: rebuild compose stack محلياً → `SHOW statement_timeout;` → 30s
-- **مدة متوقعة**: 1 ساعة
+### المهمة 4: statement_timeout في postgresql.conf (V-16) — ✅ verified 2026-05-19
+
+- **Finding ID**: V-16 / A1-007 (= A8-002 + A8-011 طبّقها Engineer 1 على prod)
+- **Severity**: HIGH (P1) — **CLOSED بـ verification، لا حاجة لتعديل Engineer 2**
+- **الملف**: `tooling/postgres/postgresql.conf` (نطاق Engineer 1، Engineer 2 يتحقّق فقط)
+
+#### Verification status (2026-05-19)
+
+| Setting | file value | prod live | required | match |
+|---|---|---|---|---|
+| `statement_timeout` | `30s` | `30000 ms` | `30s` | ✅ |
+| `idle_in_transaction_session_timeout` | `60s` | `60000 ms` | `60s` | ✅ |
+| `lock_timeout` | `5s` | `5000 ms` | `5s` | ✅ |
+| `log_connections` | `on` | `on` | `on` | ✅ |
+| `log_disconnections` | `on` | `on` | `on` | ✅ |
+| `log_min_duration_statement` | `500` | `500 ms` | `500` | ✅ |
+
+#### Provenance
+
+- **A8-002 (2026-05-16, Engineer 1):** applied 3 timeouts via `ALTER SYSTEM` + persisted in `tooling/postgres/postgresql.conf`.
+- **A8-011 (Engineer 1):** added the 3 logging settings in the same file, replaces placeholder `off` lines.
+
+#### Resilience note
+
+5 of 6 settings show `source=postgresql.auto.conf` (the file `ALTER SYSTEM` writes). The 6th shows `source=/etc/postgresql/postgresql.conf` (mounted from `tooling/`). Both files carry identical values, so a rebuild that loses `postgresql.auto.conf` still inherits the policy from `postgresql.conf` — exactly the resilience V-16 was scoped to ensure.
+
+#### Out of scope (related but not V-16)
+
+`A8-IV-014` — broader prod-vs-git drift on infra config (compose, postgresql.conf, nginx). Engineer 1 owns, tracked separately.
 
 ---
 
