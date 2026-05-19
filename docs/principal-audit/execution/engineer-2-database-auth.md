@@ -628,6 +628,43 @@ api sh -c "npx prisma migrate deploy --schema=prisma/platform.prisma && npx pris
 
 ---
 
+### V-17b — Prisma middleware: `.delete()` → soft-delete on Invoice/Payment (Engineer 4 scope)
+
+V-17/V-73 added `deleted_at` columns على `invoices` و `payments` + FK RESTRICT يمنع hard DELETE من cascading. لكن application code ما زال يستدعي `prisma.invoice.delete()` / `prisma.payment.delete()` — سيواجه:
+- لو invoice له ZATCA submission `submitted`/`cleared`/`reported` → trigger يرفض (23001)
+- لو invoice له payments/discounts → FK RESTRICT يرفض (23001)
+- لو invoice "نظيف" → DELETE ينجح (hard delete، يخالف نية soft-delete)
+
+**التطبيق (Engineer 4):**
+1. أضف Prisma middleware في `apps/api/src/shared/database/` (أو حيث client يُنشأ) يفحص الـ model:
+   ```ts
+   prisma.$use(async (params, next) => {
+     if (params.action === 'delete' && ['Invoice','Payment'].includes(params.model)) {
+       params.action = 'update';
+       params.args = { where: params.args.where, data: { deletedAt: new Date() } };
+     }
+     if (params.action === 'deleteMany' && ['Invoice','Payment'].includes(params.model)) {
+       params.action = 'updateMany';
+       params.args = { ...params.args, data: { deletedAt: new Date() } };
+     }
+     return next(params);
+   });
+   ```
+2. أضف Prisma middleware ثاني يضيف `deletedAt: null` filter تلقائياً لكل query على `Invoice`/`Payment` (إلا في admin/audit paths صريحة).
+3. update `invoices.service.ts` + payments إن لزم لمعاملة الـ behaviour الجديد (e.g. error messages للـ pre-existing hard-delete callers).
+4. e2e tests: `prisma.invoice.delete({where:{id}})` → row remains with `deletedAt` set، not removed.
+
+**الملفات Engineer 4:**
+- `apps/api/src/modules/salon/invoices/invoices.service.ts`
+- `apps/api/src/modules/salon/invoices/invoices.module.ts` (Prisma client provider)
+- اختبارات الـ e2e/integration المرتبطة
+
+**مدة متوقعة:** 4 ساعات.
+
+**Engineer 2 dependency:** schema + DB triggers جاهزة من V-17/V-73 — Engineer 4 يبني فقط الـ middleware layer. سأنبّه Engineer 4 عبر مدير المشروع.
+
+---
+
 ### V-77d — tenant registry ↔ DB reconciliation (Engineer 1 scope)
 
 أثناء التحقّق من حالة prod قبل V-18 runbook، اكتُشف drift بين `tenants` table و state الـ DBs على disk:

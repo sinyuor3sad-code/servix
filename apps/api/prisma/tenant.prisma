@@ -588,6 +588,7 @@ model Invoice {
   notes          String?       @db.Text
   createdBy      String        @map("created_by") @db.Uuid
   paidAt         DateTime?     @map("paid_at") @db.Timestamptz()
+  deletedAt      DateTime?     @map("deleted_at") @db.Timestamptz()
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -664,10 +665,11 @@ model Payment {
   changeAmount Decimal?      @map("change_amount") @db.Decimal(10, 2)
   reference    String?       @db.VarChar(100)
   status       PaymentStatus @default(completed)
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz()
   createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
 
   @@index([invoiceId])
   @@map("payments")
@@ -685,7 +687,7 @@ model Discount {
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
 
   @@index([invoiceId])
   @@map("discounts")
@@ -754,7 +756,7 @@ model LoyaltyTransaction {
   description String?                @db.VarChar(200)
   createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz()
 
-  client  Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client  Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
   invoice Invoice? @relation(fields: [invoiceId], references: [id])
 
   @@index([clientId])
@@ -1202,7 +1204,7 @@ model EmployeeDebt {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
   @@index([employeeId])
   @@index([isPaid])
@@ -1221,7 +1223,7 @@ model ClientDebt {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
-  client  Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client  Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
   invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   @@index([clientId])
