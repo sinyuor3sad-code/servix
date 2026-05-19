@@ -360,6 +360,7 @@ model Subscription {
 
   @@index([tenantId])
   @@index([status])
+  @@index([planId])
   @@map("subscriptions")
 }
 
@@ -401,6 +402,7 @@ model PlatformInvoice {
 
   @@index([tenantId])
   @@index([status])
+  @@index([subscriptionId])
   @@map("platform_invoices")
 }
 

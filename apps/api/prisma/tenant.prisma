@@ -565,6 +565,8 @@ model AppointmentService {
   employee    Employee    @relation(fields: [employeeId], references: [id])
 
   @@index([appointmentId])
+  @@index([serviceId])
+  @@index([employeeId])
   @@map("appointment_services")
 }
 
@@ -647,6 +649,7 @@ model InvoiceItem {
   employee Employee @relation(fields: [employeeId], references: [id])
 
   @@index([invoiceId])
+  @@index([serviceId])
   @@map("invoice_items")
 }
 
