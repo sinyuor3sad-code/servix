@@ -15,7 +15,7 @@ export interface PosNotification {
 }
 
 export function usePosSocket() {
-  const { accessToken, currentTenant, user } = useAuth();
+  const { accessToken, currentTenant } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   const [notifications, setNotifications] = useState<PosNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -27,11 +27,11 @@ export function usePosSocket() {
     // Strip /api/v1 to get base URL for WebSocket
     const wsUrl = apiUrl.replace(/\/api(\/v\d+)?$/, '');
 
+    // V-01: hand the JWT to the WS handshake. The server pins tenantId
+    // and userId from the verified token — query params are no longer
+    // trusted on the server side.
     const socket = io(`${wsUrl}/ws`, {
-      query: {
-        tenantId: currentTenant.id,
-        userId: user?.id,
-      },
+      auth: { token: accessToken },
       transports: ['websocket', 'polling'],
       withCredentials: true,
     });
@@ -122,7 +122,10 @@ export function usePosSocket() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [accessToken, currentTenant?.id, user?.id]);
+    // V-01: dropping user?.id — tenantId+userId now come from the JWT
+    // on the server side, so changes to the user object alone don't
+    // need to reconnect the socket.
+  }, [accessToken, currentTenant?.id]);
 
   const clearNotifications = useCallback(() => {
     setUnreadCount(0);
