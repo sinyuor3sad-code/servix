@@ -774,6 +774,39 @@ V-14a fixes admin-initiated and reset-flow session invalidation. The self-initia
 
 ---
 
+### V-14a-perf-counter — accurate `affectedUserCount` under partial Redis failure
+
+`admin.service.forceLogoutTenant` writes `affectedUserCount: members.length` to the audit row regardless of how many `setPasswordChangedAt` calls actually succeeded. `setPasswordChangedAt` swallows Redis errors internally, so a partial Redis outage produces an audit row that overstates how many sessions were invalidated.
+
+**Behaviour today (acceptable):** the audit log records "we attempted to log out N users", not "we logged out exactly N users". No security implication — the failure mode is reporting drift under outage, not a privilege escalation.
+
+**Fix (when convenient):** switch the `Promise.all` to `Promise.allSettled`, count the fulfilled entries, and write that count instead. ~5 lines. Bundle with V-14a-perf (batch write) if both land together — same call site.
+
+```ts
+// sketch
+const results = await Promise.allSettled(
+  members.map((m) => this.cacheService.setPasswordChangedAt(m.userId)),
+);
+const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+// audit row gets { affectedUserCount: succeeded, attemptedCount: members.length }
+```
+
+Engineer 2 owns.
+
+---
+
+### V-14e — test-infra: supertest namespace-import TS issue (pre-existing)
+
+`apps/api/test/auth.e2e-spec.ts:7` and `apps/api/test/admin.e2e-spec.ts:7` both use `import * as request from 'supertest';` which TypeScript flags as not-callable under the current `@types/supertest` typing (`TS2349: This expression is not callable.`). The pattern was added in commit `3538b5a` (Initial project commit, 2026-03-19) and no later commit touched it.
+
+The result: `pnpm test:e2e -- auth.e2e-spec` and `pnpm test:e2e -- admin.e2e-spec` fail on compile, not on assertion logic. Every Engineer 2 PR since V-01 has flagged this as a pre-existing regression in its checklist; closing it once will save the discipline cost on every future PR.
+
+**Fix (one line per file):** change to `import request from 'supertest';` or `import * as request from 'supertest';` paired with `request.default(app.getHttpServer())` — depending on which @types/supertest version is pinned. ~10 min, behaviour-identical.
+
+**Engineer 2 owns** (test infrastructure under Engineer 2 scope). Schedule any time; not security-blocking.
+
+---
+
 ### V-14a-perf — pwChangedAt batch write for large tenants
 
 `admin.service.forceLogoutTenant` now writes pwChangedAt for every TenantUser via `Promise.all`. Each call is one Redis `SETEX` round-trip. On prod today the largest tenant has < 10 users so total latency is single-digit ms; this comfortably stays under the audit's "<1s p99" requirement.
