@@ -563,6 +563,13 @@ export class AuthService {
       }),
     ]);
 
+    // V-14a: invalidate any access/refresh token issued before this
+    // reset. Without this, a leaked-then-reset password keeps the
+    // attacker's session alive until the access token's natural
+    // expiry (up to 15 min) — the entire reason the user is doing
+    // a forgot-password flow in the first place.
+    await this.cacheService.setPasswordChangedAt(reset.userId);
+
     return { message: 'تم إعادة تعيين كلمة المرور بنجاح' };
   }
 

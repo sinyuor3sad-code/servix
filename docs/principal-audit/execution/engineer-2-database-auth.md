@@ -761,6 +761,29 @@ Engineer 2 already owns the JWT signing code, so coordination is light: Engineer
 
 ---
 
+### V-14d — self "logout everywhere" (deferred)
+
+V-14a fixes admin-initiated and reset-flow session invalidation. The self-initiated equivalent — a user clicking "log out of all devices" without changing their password (e.g. "I saw a strange login email, kick everything") — is intentionally out of scope.
+
+**Why deferred:**
+- Not in the V-14 threat model. The audit calls out three triggers: password change, admin force-logout, role/suspend change. All three are covered by V-14a + V-14b + V-14c.
+- Existing `POST /auth/logout` (Public) blacklists the refresh token only. That is the right behaviour for "I'm done on this device". Expanding it into "kill every session" mixes two UX concepts.
+- The actual primitive (`setPasswordChangedAt(req.user.sub)`) is already wired and trivially callable from a future endpoint.
+
+**If/when implemented:** a new authenticated endpoint `POST /auth/logout/everywhere` that calls `cacheService.setPasswordChangedAt(req.user.sub)` + writes an audit row. Estimated 1h. Open the card only if support tickets surface the use case.
+
+---
+
+### V-14a-perf — pwChangedAt batch write for large tenants
+
+`admin.service.forceLogoutTenant` now writes pwChangedAt for every TenantUser via `Promise.all`. Each call is one Redis `SETEX` round-trip. On prod today the largest tenant has < 10 users so total latency is single-digit ms; this comfortably stays under the audit's "<1s p99" requirement.
+
+If a tenant ever crosses ~100 users, the per-row round-trip stacks up. The lossless upgrade is `cacheService.setPasswordChangedAtBatch(userIds[])` using `ioredis.pipeline()` + SETEX per key — one round-trip total regardless of count. Trivial 10-line method.
+
+Open this card only if a real "force logout 500-user tenant" use case surfaces, or proactively if Engineer 3 hits the same shape elsewhere.
+
+---
+
 ### V-78b — purge-cron design constraint (Engineer 1 lifecycle scope)
 
 After V-78 lands, `platform_audit_logs.tenant_id_fkey` is `ON DELETE RESTRICT`. Any future "purge after `pendingDeletionAt` grace" cron must NOT call `prisma.tenant.delete()` / `DELETE FROM tenants` — the FK will reject with `ERRCODE 23503`.

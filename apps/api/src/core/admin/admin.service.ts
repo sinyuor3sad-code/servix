@@ -10,6 +10,7 @@ import { compare, hash } from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
+import { CacheService } from '../../shared/cache/cache.service';
 import type {
   Tenant,
   Subscription,
@@ -108,6 +109,7 @@ export class AdminService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly cacheService: CacheService,
   ) {}
 
   async login(email: string, password: string): Promise<AdminLoginResult> {
@@ -460,6 +462,11 @@ export class AdminService {
       }),
     ]);
 
+    // V-14a: admin reset must also invalidate active sessions.
+    // Otherwise an attacker who already stole an access token keeps
+    // using it for up to 15 min after support resets the password.
+    await this.cacheService.setPasswordChangedAt(id);
+
     return { message: 'تم تعيين كلمة مرور جديدة بنجاح' };
   }
 
@@ -753,23 +760,22 @@ export class AdminService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('المستخدم غير موجود');
 
-    // Force-change the password hash timestamp so all existing tokens become invalid
-    // This works because JWT tokens are verified against the latest password hash change
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { updatedAt: new Date() },
-      }),
-      this.prisma.platformAuditLog.create({
-        data: {
-          userId: adminId,
-          action: 'admin_force_logout',
-          entityType: 'user',
-          entityId: userId,
-          newValues: { loggedOutAt: new Date().toISOString() },
-        },
-      }),
-    ]);
+    // V-14a: writes pwChangedAt for this user into Redis. Both the
+    // HTTP JwtStrategy (validate) and the WS guard read it and reject
+    // any token whose iat < pwChangedAt. Pre-V-14a this endpoint only
+    // touched user.updatedAt — which nothing checks — so it was a
+    // no-op despite the audit log. Now it really kills active sessions.
+    await this.cacheService.setPasswordChangedAt(userId);
+
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId: adminId,
+        action: 'admin_force_logout',
+        entityType: 'user',
+        entityId: userId,
+        newValues: { loggedOutAt: new Date().toISOString() },
+      },
+    });
 
     return { message: 'تم تسجيل خروج المستخدم من جميع الأجهزة' };
   }
@@ -1964,7 +1970,6 @@ export class AdminService {
   // ═══════════════════ Force Actions ═══════════════════
 
   async forceLogoutTenant(tenantId: string, adminId: string) {
-    // Verify tenant exists
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
     });
@@ -1972,7 +1977,22 @@ export class AdminService {
       throw new NotFoundException('المنشأة غير موجودة');
     }
 
-    // Log to audit
+    // V-14a: actually invalidate every tenant member's session.
+    // Pre-V-14a this method only wrote an audit row — no token was
+    // ever invalidated. Now we enumerate every TenantUser row for
+    // this tenant and write pwChangedAt for each. Promise.all keeps
+    // the cache writes pipelined; with O(<10) users per tenant on
+    // prod today the latency is dominated by the round trip, not
+    // the number of writes. Tracked as V-14a-perf for >100-user
+    // tenants (use Redis MSET / pipeline) — see engineer-2-* doc.
+    const members = await this.prisma.tenantUser.findMany({
+      where: { tenantId },
+      select: { userId: true },
+    });
+    await Promise.all(
+      members.map((m) => this.cacheService.setPasswordChangedAt(m.userId)),
+    );
+
     await this.prisma.platformAuditLog.create({
       data: {
         userId: adminId,
@@ -1980,13 +2000,17 @@ export class AdminService {
         action: 'force_logout',
         entityType: 'tenant',
         entityId: tenantId,
-        newValues: { action: 'force_logout_all_users' },
+        newValues: {
+          action: 'force_logout_all_users',
+          affectedUserCount: members.length,
+        },
       },
     });
 
     return {
       success: true,
       tenantId,
+      affectedUserCount: members.length,
       message: 'تم تسجيل خروج جميع مستخدمي المنشأة',
     };
   }
