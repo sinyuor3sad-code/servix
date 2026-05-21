@@ -774,13 +774,23 @@ V-14a fixes admin-initiated and reset-flow session invalidation. The self-initia
 
 ---
 
-### V-14b-login — auth.service.login should skip suspended tenants (Engineer 2 / Engineer 3 UX)
+### V-14b-login — auth.service.login should skip suspended tenants (Engineer 2 next slot, post-V-14c)
 
 V-14b makes a suspended tenant fail at HTTP guard + WS handshake + immediate WS disconnect. But `auth.service.login()` still includes suspended tenants in the `tenantUsers` array because it filters on `tenant_user.status='active'`, not on `tenant.status`. A multi-tenant user (we have one on prod: `ptoll2055@gmail.com` linked to 2 tenants) whose `firstTenantUser` points to a suspended tenant gets a JWT pinned to it on login and is immediately blocked on every tenant-scoped request.
 
-**Fix (~5 lines):** add `tenant: { status: 'active' }` to the `tenantUsers.findMany` where clause in `auth.service.login` (and the parallel path in `getMe`). Multi-tenant users land in their next-best active tenant automatically.
+**Direction (decided 2026-05-21 after V-14b ship):** filter login server-side. Skip suspended tenants from the `findMany` so multi-tenant users fall through to their next-best active tenant automatically, and single-tenant users see a clean "no active tenant" error at login instead of a successful login that 403s on every subsequent request.
 
-**Why deferred:** changes the login response shape (`tenants[]` will silently shrink when one is suspended). The frontend may rely on seeing every link to render a "switch tenant" UI; trimming server-side without a UX call is a small but real product decision. Open the card when Engineer 3 picks up the tenant-switch endpoint (V-01b).
+**Rationale:**
+- UX: avoids 403 fatigue on every tenant-scoped path post-login.
+- Consistency: matches the audit's mental model that suspend = no entry point.
+- Security-neutral: HTTP middleware + TenantGuard + WS guard already block suspended-tenant requests; this is cosmetic, not a new control.
+- Multi-tenant users gain a working fallback for free.
+
+**Fix (~5 lines):** add `tenant: { status: 'active' }` to the `tenantUsers.findMany` where clause in `auth.service.login` and the parallel path in `auth.service.getMe`. Handle the `tenantUsers.length === 0` branch with a localized error message ("لا يوجد حساب فعّال").
+
+**Frontend coordination:** the dashboard's "switch tenant" UI today renders every link from the login response. After this filter, suspended tenants stop appearing in the picker — that's the desired UX. Confirm with the owner before merging.
+
+**Owner / Scope:** Engineer 2, P2, ~1h. Opens immediately after V-14c (close out the V-14 series before touching the login flow).
 
 ---
 
@@ -812,6 +822,20 @@ const succeeded = results.filter((r) => r.status === 'fulfilled').length;
 ```
 
 Engineer 2 owns.
+
+---
+
+### V-14e-dry — bundled cleanup (one small PR, post-V-14c)
+
+After V-14b shipped, three independent loose ends accumulated. They're each tiny, and the discipline cost of running them as separate PRs exceeds the work. Bundle into one cleanup PR:
+
+1. **`shared/guards/tenant.guard.ts:34`** — inline `if (tenant.status === 'suspended') throw …` check is now redundant with `assertActiveTenantUser` which performs the same check (plus the broader "any non-active state" rejection). Keep the helper, drop the inline guard. Behaviour change: suspended-tenant requests now produce the helper's localized message (`'حساب الصالون غير مفعّل'`) instead of TenantGuard's slightly different message (`'حساب الصالون معلّق'`). Worth flagging in the commit body for ops; not a functional regression.
+
+2. **`apps/api/test/{auth,admin,tenant-isolation}.e2e-spec.ts:7`** — `import * as request from 'supertest';` fails compile (TS2349, V-14e original entry). Switch to `import request from 'supertest';` (default import) consistent with the typing shipped by `@types/supertest`. Three identical one-line fixes.
+
+3. **`admin.service.forceLogoutTenant` / `updateTenantStatus`** — V-14a-perf-counter. Replace `Promise.all` with `Promise.allSettled` and write `affectedUserCount` from the fulfilled count, not `members.length`. ~5 lines per call site.
+
+Estimated total: ~15 min, scoped as a single chore PR. Engineer 2 owns. Opens right after V-14c lands.
 
 ---
 
