@@ -44,6 +44,9 @@ const activeTenantUser = {
   roleId: 'role-owner',
   isOwner: true,
   status: 'active',
+  // V-14b: helper now joins tenant.status. Tests must mirror the
+  // shape the helper consumes.
+  tenant: { status: 'active' },
 };
 
 const mockPrisma = {

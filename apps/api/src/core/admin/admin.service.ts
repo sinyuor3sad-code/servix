@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
 import { CacheService } from '../../shared/cache/cache.service';
+import { EventsGateway } from '../../shared/events/events.gateway';
 import type {
   Tenant,
   Subscription,
@@ -110,6 +111,7 @@ export class AdminService {
     private readonly configService: ConfigService,
     private readonly platformSettings: PlatformSettingsService,
     private readonly cacheService: CacheService,
+    private readonly eventsGateway: EventsGateway,
   ) {}
 
   async login(email: string, password: string): Promise<AdminLoginResult> {
@@ -916,6 +918,36 @@ export class AdminService {
 
     const oldStatus = tenant.status;
 
+    // V-14b: when suspending, fan out the side effects after the
+    // status flip is committed so a tx failure cannot leave us in a
+    // half-revoked state. Order:
+    //   1. DB tx — status + audit row
+    //   2. setPasswordChangedAt per member  (invalidates HTTP+WS tokens)
+    //   3. disconnect active WS clients     (close existing sessions)
+    //   4. invalidateTenant cache           (force other api instances
+    //                                        to re-fetch the new status)
+    // setPasswordChangedAt swallows Redis errors internally so the
+    // Promise.all never rejects; partial Redis failure means some
+    // tokens stay alive but the HTTP middleware/guard chain still
+    // blocks them via tenant.status, so the worst case is a stale
+    // WS that gets rejected on its next handshake attempt.
+    //
+    // Unsuspend (status='active') intentionally does NOT clear
+    // pwChangedAt: once a session was revoked, the user re-logs in
+    // and gets a fresh JWT with iat > pwChangedAt that the gate
+    // passes through. Standard secure-default.
+
+    let affectedUserCount = 0;
+    let members: Array<{ userId: string }> = [];
+
+    if (status === 'suspended') {
+      members = await this.prisma.tenantUser.findMany({
+        where: { tenantId },
+        select: { userId: true },
+      });
+      affectedUserCount = members.length;
+    }
+
     const [updatedTenant] = await this.prisma.$transaction([
       this.prisma.tenant.update({
         where: { id: tenantId },
@@ -929,10 +961,25 @@ export class AdminService {
           entityType: 'tenant',
           entityId: tenantId,
           oldValues: { status: oldStatus },
-          newValues: { status },
+          newValues:
+            status === 'suspended'
+              ? { status, affectedUserCount }
+              : { status },
         },
       }),
     ]);
+
+    if (status === 'suspended') {
+      await Promise.all(
+        members.map((m) => this.cacheService.setPasswordChangedAt(m.userId)),
+      );
+      this.eventsGateway.disconnectTenantClients(tenantId);
+      await this.cacheService.invalidateTenant(tenantId);
+    } else {
+      // Active again — only refresh the platform-level tenant cache
+      // so other api instances see the new status immediately.
+      await this.cacheService.invalidateTenant(tenantId);
+    }
 
     return updatedTenant;
   }

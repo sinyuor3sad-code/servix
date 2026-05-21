@@ -774,6 +774,26 @@ V-14a fixes admin-initiated and reset-flow session invalidation. The self-initia
 
 ---
 
+### V-14b-login — auth.service.login should skip suspended tenants (Engineer 2 / Engineer 3 UX)
+
+V-14b makes a suspended tenant fail at HTTP guard + WS handshake + immediate WS disconnect. But `auth.service.login()` still includes suspended tenants in the `tenantUsers` array because it filters on `tenant_user.status='active'`, not on `tenant.status`. A multi-tenant user (we have one on prod: `ptoll2055@gmail.com` linked to 2 tenants) whose `firstTenantUser` points to a suspended tenant gets a JWT pinned to it on login and is immediately blocked on every tenant-scoped request.
+
+**Fix (~5 lines):** add `tenant: { status: 'active' }` to the `tenantUsers.findMany` where clause in `auth.service.login` (and the parallel path in `getMe`). Multi-tenant users land in their next-best active tenant automatically.
+
+**Why deferred:** changes the login response shape (`tenants[]` will silently shrink when one is suspended). The frontend may rely on seeing every link to render a "switch tenant" UI; trimming server-side without a UX call is a small but real product decision. Open the card when Engineer 3 picks up the tenant-switch endpoint (V-01b).
+
+---
+
+### tenants.service.suspend orphan — dead code audit
+
+`apps/api/src/core/tenants/tenants.service.ts:144` exposes `suspend(id)` that flips `tenant.status='suspended'` with **no audit log and no cascade**. No controller in the repo calls it; `grep -rn "tenantsService.suspend\|tenants.service.suspend"` returns zero hits.
+
+If this method ever gets called — by accident, by a future controller, or by tests — it would suspend a tenant without the V-14b cascade running, leaving stale tokens and audit gaps. Safer to delete in a tiny cleanup PR.
+
+**Verify first:** `git log -p apps/api/src/core/tenants/tenants.service.ts | grep -A 5 "async suspend"` to confirm no historical caller, then delete. Engineer 2 owns.
+
+---
+
 ### V-14a-perf-counter — accurate `affectedUserCount` under partial Redis failure
 
 `admin.service.forceLogoutTenant` writes `affectedUserCount: members.length` to the audit row regardless of how many `setPasswordChangedAt` calls actually succeeded. `setPasswordChangedAt` swallows Redis errors internally, so a partial Redis outage produces an audit row that overstates how many sessions were invalidated.

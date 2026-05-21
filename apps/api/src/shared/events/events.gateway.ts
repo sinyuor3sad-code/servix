@@ -12,6 +12,7 @@ import { WsAuthGuard, WsSocket } from './ws-auth.guard';
 // @nestjs/platform-socket.io; we don't import it directly.
 interface WsServer {
   to(room: string): { emit(event: string, data: unknown): void };
+  in(room: string): { disconnectSockets(close?: boolean): void };
   emit(event: string, data: unknown): void;
 }
 
@@ -88,7 +89,7 @@ export class EventsGateway
       this.logger.warn(
         `WS handshake rejected | socket=${client.id} reason="${reason}"`,
       );
-      client.disconnect(true);
+      client.disconnect?.(true);
     }
   }
 
@@ -110,6 +111,18 @@ export class EventsGateway
 
   emitToAll(event: string, data: unknown): void {
     this.server.emit(event, data);
+  }
+
+  // V-14b: actively close every WS in the tenant room. Callers
+  // (e.g. admin.service.updateTenantStatus on suspend) invoke this
+  // right after the status flip so existing real-time sessions don't
+  // sit on a stale connection until the user takes an action. The
+  // V-01 handshake guard will already reject any reconnect attempt
+  // (tenant.status now fails the helper check, plus pwChangedAt was
+  // written for every member). This call is the immediate-close
+  // companion.
+  disconnectTenantClients(tenantId: string): void {
+    this.server.in(`tenant:${tenantId}`).disconnectSockets(true);
   }
 
   private queryString(client: GatewaySocket, key: string): string | null {
