@@ -122,7 +122,31 @@ export class EventsGateway
   // written for every member). This call is the immediate-close
   // companion.
   disconnectTenantClients(tenantId: string): void {
-    this.server.in(`tenant:${tenantId}`).disconnectSockets(true);
+    try {
+      this.server.in(`tenant:${tenantId}`).disconnectSockets(true);
+    } catch (err) {
+      this.logger.warn(
+        `disconnectTenantClients failed for tenant=${tenantId}: ${err instanceof Error ? err.message : 'unknown'}`,
+      );
+    }
+  }
+
+  // V-14c: same shape as disconnectTenantClients but scoped to a
+  // single user. The `user:<id>` room is joined for every
+  // authenticated socket in V-01.handleConnection, so this kicks
+  // every device the user has open. Wrapped in try/catch because a
+  // redis-adapter blip must not block the auth cascade — the JWT
+  // is already revoked via cacheService.setPasswordChangedAt, so a
+  // failed disconnect just delays the eventual close, not the
+  // security guarantee.
+  disconnectUserClients(userId: string): void {
+    try {
+      this.server.in(`user:${userId}`).disconnectSockets(true);
+    } catch (err) {
+      this.logger.warn(
+        `disconnectUserClients failed for user=${userId}: ${err instanceof Error ? err.message : 'unknown'}`,
+      );
+    }
   }
 
   private queryString(client: GatewaySocket, key: string): string | null {

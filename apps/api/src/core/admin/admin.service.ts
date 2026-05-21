@@ -519,7 +519,28 @@ export class AdminService {
     }
     if (!tu) throw new BadRequestException('المستخدم غير مرتبط بأي صالون');
 
+    const oldRoleId = tu.roleId;
     const oldRoleName = tu.role?.name || 'unknown';
+
+    // V-14c: cascade is always-on, even when newRoleId === oldRoleId.
+    // The no-op case still invalidates sessions — defensive over
+    // efficient, costs one Redis SETEX. Privilege downgrade is the
+    // dangerous direction (manager → staff with a live JWT keeps
+    // manager permissions until expiry), so we revoke unconditionally
+    // rather than branch on direction.
+    //
+    // Ordering mirrors V-14b: DB tx first (truth-of-record), then
+    // side effects. A Redis or WS failure after the tx leaves the
+    // role change persisted with audit row — strictly safer than
+    // the inverse.
+    //
+    // Note: auth.service.refreshTokens (line 357) re-signs new tokens
+    // with the OLD payload.roleId from the refresh token. Without
+    // V-14c, refreshing would keep handing out stale-role JWTs forever.
+    // V-14c writes pwChangedAt, which fails the refresh path's iat
+    // check (auth.service.ts:348) and forces a full re-login. Re-login
+    // reads firstTenantUser.roleId fresh from DB, picking up the new
+    // role. So V-14c closes the refresh-staleness gap as a side effect.
 
     await this.prisma.$transaction([
       this.prisma.tenantUser.update({
@@ -532,11 +553,14 @@ export class AdminService {
           action: 'admin_change_role',
           entityType: 'user',
           entityId: userId,
-          oldValues: { role: oldRoleName, tenantId: tu.tenantId },
-          newValues: { role: role.name, roleId },
+          oldValues: { role: oldRoleName, roleId: oldRoleId, tenantId: tu.tenantId },
+          newValues: { role: role.name, roleId, sessionsRevoked: true },
         },
       }),
     ]);
+
+    await this.cacheService.setPasswordChangedAt(userId);
+    this.eventsGateway.disconnectUserClients(userId);
 
     return { message: `تم تغيير الدور إلى ${role.nameAr}`, role };
   }

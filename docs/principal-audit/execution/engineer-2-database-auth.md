@@ -605,6 +605,29 @@ Stack: NestJS 10+ + Passport JWT + bcrypt + Google OAuth + 2FA TOTP + WebSocket 
 
 ---
 
+## ✅ V-14 triad — closed 2026-05-22
+
+The three-PR session-invalidation series is done. Every trigger now cascades through the same `cacheService.setPasswordChangedAt` primitive and the two revocation gates (`JwtStrategy.validate` for HTTP, `WsAuthGuard.validateConnection` for WS):
+
+| PR | Trigger | Mechanism | Tests |
+|---|---|---|---|
+| **V-14a** | Admin force-logout, password reset (self + admin + forgot-password) | `setPasswordChangedAt(userId)` + audit | 6 e2e |
+| **V-14b** | Admin tenant suspend | `setPasswordChangedAt` per member + `disconnectTenantClients(tenantId)` + cache invalidate + helper rejects `tenant.status≠active` | 10 e2e |
+| **V-14c** | Admin role change (any direction, incl. no-op) | `setPasswordChangedAt(userId)` + `disconnectUserClients(userId)` + audit enriched with `oldRoleId` + `sessionsRevoked: true` | 6 e2e |
+
+**Integration coverage:** V-01 WS handshake gate (9 e2e) shares the same primitive — total E2 invalidation surface = **31 e2e cases**, all green on `feature/ai-reception-phases-1-8` HEAD.
+
+**Refresh-path coverage as a side effect:** `auth.service.refreshTokens:348` was the only path that re-used `payload.roleId` to mint new tokens. After V-14c writes pwChangedAt, that check fails first (iat < pwChangedAt → 401), forcing full re-login that reads `firstTenantUser.roleId` fresh from DB. No direct refresh patch needed.
+
+**Remaining V-14 follow-ups** (all open, not blocking deploy):
+- **V-14a-perf-counter** — `Promise.allSettled` + fulfilled count for `affectedUserCount` accuracy under partial Redis failure
+- **V-14a-perf** — Redis pipeline batch write when a tenant grows past ~100 users
+- **V-14b-login** — `auth.service.login.findMany` filter on `tenant.status='active'` (decided direction: ✅ filter; ~1h, post-V-14c)
+- **V-14d** — self "logout everywhere" endpoint (deferred until support requests it)
+- **V-14e-dry** — bundled cleanup (TenantGuard:34 redundant inline check + supertest TS in 3 specs + counter accuracy; ~15min chore PR)
+
+---
+
 ## 🔎 Follow-ups discovered (2026-05-19, during V-18)
 
 ### V-18b — additional un-indexed FK columns (Engineer 2 next)
