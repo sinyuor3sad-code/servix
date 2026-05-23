@@ -515,6 +515,7 @@ export class ManagerReplyHandler {
         instanceToken,
         to,
         message,
+        // non-security: human-like reply delay jitter (1–3s).
         delayMs: Math.floor(1000 + Math.random() * 2000),
       });
     } catch (err) {

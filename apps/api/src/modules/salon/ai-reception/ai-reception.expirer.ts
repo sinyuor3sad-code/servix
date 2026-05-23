@@ -79,6 +79,7 @@ export class AIReceptionExpirer {
           instanceToken,
           to: action.customerPhone,
           message: 'نعتذر، لم نتمكن من تأكيد طلبك في الوقت المحدد. يرجى التواصل مع الصالون مباشرة لترتيب موعد. 🙏',
+          // non-security: customer-message delay jitter (1–3s).
           delayMs: Math.floor(1000 + Math.random() * 2000),
         });
       } catch (err) {

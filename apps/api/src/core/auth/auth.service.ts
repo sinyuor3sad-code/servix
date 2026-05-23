@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
 import { v4 } from 'uuid';
-import { createHash } from 'crypto';
+import { createHash, randomInt } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { TenantDatabaseService } from '../../shared/database/tenant-database.service';
 import { CacheService } from '../../shared/cache/cache.service';
@@ -806,7 +806,10 @@ export class AuthService {
   // ══════════════ Email OTP Verification ══════════════
 
   private generateOtpCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    // V-13b: crypto.randomInt(min, max) — max is exclusive, so the
+    // range 100000..999999 inclusive is [100000, 1_000_000). All values
+    // are 6 digits by construction (no leading-zero padding needed).
+    return randomInt(100000, 1_000_000).toString();
   }
 
   private async sendEmailOtpInternal(email: string, fullName: string): Promise<void> {

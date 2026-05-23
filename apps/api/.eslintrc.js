@@ -46,5 +46,10 @@ module.exports = {
     // need their Decimal arithmetic refactored first. Flip to 'error' in a
     // single-line follow-up (V-44b) after Engineer 4's cleanup PR lands.
     '@servix/servix/no-decimal-to-number': 'warn',
+    // V-13b: error-grade. OTP generators were refactored to crypto.randomInt;
+    // 7 legitimate non-security Math.random sites carry `// non-security`
+    // annotations. The rule scans for the annotation on the same line or
+    // the immediately preceding line.
+    '@servix/servix/no-math-random-in-security': 'error',
   },
 };

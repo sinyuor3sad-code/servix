@@ -80,6 +80,7 @@ export class CalendarService {
       .join('\r\n');
 
     // Generate a unique ID for the event
+    // non-security: iCal UID — RFC 5545 only requires global uniqueness, not unpredictability.
     const uid = `servix-${Date.now()}-${Math.random().toString(36).substring(2, 9)}@servi-x.com`;
 
     return [

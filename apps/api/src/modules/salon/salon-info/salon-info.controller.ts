@@ -115,6 +115,7 @@ export class SalonInfoController {
     storage: diskStorage({
       destination: UPLOAD_DIR,
       filename: (_req, file, cb) => {
+        // non-security: file-upload filename uniqueness suffix; the file lives at a server-controlled path.
         const unique = Date.now() + '-' + Math.round(Math.random() * 1e6);
         cb(null, `logo-${unique}${extname(file.originalname)}`);
       },
@@ -163,6 +164,7 @@ export class SalonInfoController {
     storage: diskStorage({
       destination: COVER_DIR,
       filename: (_req, file, cb) => {
+        // non-security: file-upload filename uniqueness suffix; the file lives at a server-controlled path.
         const unique = Date.now() + '-' + Math.round(Math.random() * 1e6);
         cb(null, `cover-${unique}${extname(file.originalname)}`);
       },

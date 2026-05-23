@@ -7,6 +7,7 @@ import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { TenantClientFactory } from '../../../shared/database/tenant-client.factory';
 import { TenantPrismaClient } from '../../../shared/types';
 import { CacheService } from '../../../shared/cache/cache.service';
+import { randomInt } from 'crypto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { SlotsQueryDto } from './dto/slots-query.dto';
 import { SettingsService } from '../settings/settings.service';
@@ -365,7 +366,13 @@ export class BookingService {
       throw new BadRequestException('يرجى الانتظار قبل إرسال رمز جديد');
     }
 
-    const code = String(Math.floor(1000 + Math.random() * 9000));
+    // V-13b: crypto.randomInt with exclusive upper bound. Always 4
+    // digits; predictability gap closed. See V-13b-length follow-up
+    // about extending the search space — 4 digits = 10K possibilities
+    // is still weak against brute force; the cacheService rate-limit
+    // (canSendBookingOtp + 5 attempts/15min lockout) is what makes
+    // the current length acceptable.
+    const code = String(randomInt(1000, 10_000));
     await this.cacheService.setBookingOtp(phone, code);
     await this.cacheService.markBookingOtpSent(phone);
 

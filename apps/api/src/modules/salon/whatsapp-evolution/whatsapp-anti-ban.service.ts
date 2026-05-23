@@ -135,6 +135,7 @@ export class WhatsAppAntiBanService {
 
   private randomBetween(min: number, max: number): number {
     if (max <= min) return min;
+    // non-security: anti-ban delay jitter — statistical timing, not a credential.
     return Math.floor(min + Math.random() * (max - min));
   }
 }

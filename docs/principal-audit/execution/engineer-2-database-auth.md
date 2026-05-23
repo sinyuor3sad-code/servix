@@ -797,6 +797,20 @@ V-14a fixes admin-initiated and reset-flow session invalidation. The self-initia
 
 ---
 
+### V-13b-length — extend booking OTP from 4 → 6 digits
+
+V-13b closed the **predictability** gap on the booking OTP by replacing `Math.random` with `crypto.randomInt`. It did **not** extend the **search space**: 4 digits = 10K possibilities, still weak against a brute-force attacker who can throw 10K attempts at a phone within the OTP TTL window. The existing rate-limit (`cacheService.canSendBookingOtp`, ~5 attempts per phone per window) is what makes the current length acceptable in practice, not the entropy of the code.
+
+**Recommendation:**
+- Extend the booking OTP to **6 digits** (1M possibilities) — matches the email OTP and the SMS-OTP industry standard.
+- Verify the rate-limit covers verify attempts too, not just send attempts (audit `cacheService.verifyBookingOtp` for an attempt-counter + lockout-on-N-failures).
+
+**Why deferred from V-13b:** length change touches the booking client UX (`apps/booking/src/**`) — Engineer 3 frontend scope. crypto.randomInt fixes predictability but not the search space; the audit's "OTP entropy" finding is the predictability part, which is now closed.
+
+**Owner:** Engineer 3 (booking flow) or Engineer 2 (auth-adjacent). **P2**, ~2h including the frontend input field width + the rate-limit audit.
+
+---
+
 ### V-14b-login — auth.service.login should skip suspended tenants (Engineer 2 next slot, post-V-14c)
 
 V-14b makes a suspended tenant fail at HTTP guard + WS handshake + immediate WS disconnect. But `auth.service.login()` still includes suspended tenants in the `tenantUsers` array because it filters on `tenant_user.status='active'`, not on `tenant.status`. A multi-tenant user (we have one on prod: `ptoll2055@gmail.com` linked to 2 tenants) whose `firstTenantUser` points to a suspended tenant gets a JWT pinned to it on login and is immediately blocked on every tenant-scoped request.

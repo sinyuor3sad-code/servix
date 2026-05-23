@@ -181,6 +181,7 @@ export class AIAnalyticsService {
       instanceToken,
       to: settings.aiManagerPhone,
       message: report,
+      // non-security: report-send delay jitter (1–3s).
       delayMs: Math.floor(1000 + Math.random() * 2000),
     });
 

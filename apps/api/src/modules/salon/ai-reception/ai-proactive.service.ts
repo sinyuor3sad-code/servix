@@ -113,6 +113,7 @@ export class AIProactiveService {
           instanceToken,
           to: conversation.phone,
           message: FOLLOW_UP_REPLY,
+          // non-security: follow-up reply delay jitter (1–3s).
           delayMs: Math.floor(1000 + Math.random() * 2000),
         });
 

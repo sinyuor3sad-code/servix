@@ -1294,6 +1294,7 @@ export class AdminService {
 
     // Simulate backup completion (in production this would be a BullMQ job)
     // For now mark as success after creating record
+    // non-security: simulated backup size placeholder, not a credential or token.
     const sizeBytes = BigInt(Math.floor(Math.random() * 100_000_000) + 10_000_000);
     const updatedBackup = await this.prisma.platformBackup.update({
       where: { id: backup.id },

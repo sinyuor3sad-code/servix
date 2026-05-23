@@ -1588,6 +1588,7 @@ export class AIReceptionService {
   }
 
   private randomDelay(): number {
+    // non-security: AI typing-indicator delay (1.5–4.5s).
     return Math.floor(1500 + Math.random() * 3000);
   }
 }
