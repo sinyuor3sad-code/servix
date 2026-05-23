@@ -18,7 +18,7 @@ V8's `Math.random()` is backed by xorshift128+, a deterministic PRNG seeded once
 
 After V-13b:
 - Both call sites use `crypto.randomInt(min, max)` from Node's `crypto` module (backed by `/dev/urandom` on Linux). Format and bounds are byte-for-byte identical from the client's perspective.
-- A new ESLint rule `@servix/servix/no-math-random-in-security` at `error` severity prevents future regressions across `apps/api/src`. 7 legitimate non-security `Math.random` sites (anti-ban jitter, AI typing delays, file-upload uniqueness suffix, iCal UID, fake backup sizes) carry `// non-security` annotations consumed by the rule.
+- A new ESLint rule `@servix/servix/no-math-random-in-security` at `error` severity prevents future regressions across `apps/api/src`. 10 legitimate non-security `Math.random` sites across 9 files (anti-ban jitter, AI typing delays × 4, file-upload uniqueness suffix × 2, iCal UID, fake backup size, expirer scheduling jitter) carry `// non-security` annotations consumed by the rule. The "10 sites / 9 files" count (not "7" as initially reported in the V-13b pre-flight) was confirmed by `git diff HEAD~1..HEAD --stat` after the commit: `salon-info.controller.ts` carries two sites (logo upload + cover upload), and the original pre-flight under-counted by 3.
 
 ## Deploy posture
 

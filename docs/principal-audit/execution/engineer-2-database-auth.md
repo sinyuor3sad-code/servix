@@ -872,6 +872,12 @@ After V-14b shipped, three independent loose ends accumulated. They're each tiny
 
 3. **`admin.service.forceLogoutTenant` / `updateTenantStatus`** — V-14a-perf-counter. Replace `Promise.all` with `Promise.allSettled` and write `affectedUserCount` from the fulfilled count, not `members.length`. ~5 lines per call site.
 
+4. **Pre-existing lint errors surfaced during V-13b** — two errors persist in `pnpm exec eslint 'src/**/*.ts'` that are unrelated to V-13b's scope and were not addressed in the V-13b commit:
+   - `apps/api/src/modules/salon/ai-reception/ai-reception.service.ts:382` — `'assistantReplyText' is never reassigned. Use 'const' instead` (`prefer-const`). Engineer 3 / AI-reception scope. Single-line `let` → `const` fix.
+   - `apps/api/src/shared/ai/ai-provider.service.spec.ts:19` — `A 'require()' style import is forbidden` (`@typescript-eslint/no-require-imports`). Test file; convert the `require()` to an `import` statement at the top of the spec. Engineer 3 / AI-reception scope.
+
+   Bundle into V-14e-dry only if a member of Engineer 2 scope picks them up incidentally; otherwise hand off to Engineer 3 since both files belong to AI-reception. Calling them out here so the next pre-flight does not re-report them as "V-13b-induced". Pinpointed during V-13b lint verification 2026-05-24.
+
 Estimated total: ~15 min, scoped as a single chore PR. Engineer 2 owns. Opens right after V-14c lands.
 
 ---
