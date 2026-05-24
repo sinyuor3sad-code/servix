@@ -862,6 +862,83 @@ Engineer 2 owns.
 
 ---
 
+### V-13c-cleanup — consolidate TokenBlacklist into RefreshToken.revokedAt (~30 days post-V-13c)
+
+V-13c (refresh rotation + reuse detection) shipped with the existing `token_blacklist` table still in place. Logout writes to BOTH (revoke the `refresh_tokens` row AND blacklist the hash) as defence-in-depth during cutover. The blacklist read path is no longer consulted on the refresh path — `refresh_tokens` is the new source of truth — but the writes are still there.
+
+After 30 days of clean V-13c operation (no false-positive reuse detections, no operational issues attributable to the new path), this card:
+
+1. Drops the `await this.cacheService.blacklistRefreshToken(...)` calls from `auth.service.logout` and `auth.service.handleReuseDetected`.
+2. Adds a Prisma migration to drop `token_blacklist` (the table + the corresponding Prisma model). Leaf table, no FK fan-in, safe to drop in one transaction.
+3. Removes the dead `blacklistRefreshToken` / `isRefreshTokenBlacklisted` methods from `cache.service.ts` and their constants/TTL definitions.
+
+**Engineer 2 owns.** Schedule after 2026-06-25 (30 days post the V-13c production deploy, owner to confirm date). ~20 min chore PR.
+
+---
+
+### V-13c-alert — Prometheus counter + alertmanager rule for refresh-reuse events
+
+V-13c emits Sentry warnings on reuse detection but does NOT increment a Prometheus counter. The E1 stack (Prometheus + alertmanager + Telegram) is the project's preferred alert pipe — Sentry is best for crashes, not for security events that need oncall paging.
+
+This card:
+
+1. Adds a counter `servix_auth_refresh_reuse_total` (label: `userId` truncated to first 8 chars for cardinality safety) incremented in `handleReuseDetected`.
+2. Adds an alertmanager rule firing on any non-zero increment over 5min (so a single replay attempt is enough to page). Wires to the existing Telegram channel.
+3. Optional: companion counter `servix_auth_refresh_rotation_total` for the happy path, useful for "are tokens actually rotating?" observability.
+
+**Engineer 1 (Platform/Infra) owns** — Prometheus + alertmanager are E1 scope. Engineer 2 supplies the counter increment point as a one-line change once E1 lands the rule.
+
+---
+
+### V-13c-race-tuning — optimistic lock on the rotation update
+
+V-13c accepts a known race: two concurrent `/auth/refresh` calls with the same valid token both see `revoked_at IS NULL`, both succeed in issuing successors. The slower write loses `revoked_reason='rotated'` but both tokens are legitimate from the user's perspective.
+
+This is fine for normal usage (clients don't race refresh). It becomes annoying if a single user runs the app on two tabs that auto-refresh simultaneously — they get two parallel families. Not security-broken, just noisy.
+
+The hardening: replace the rotation `UPDATE` with optimistic locking:
+
+```sql
+UPDATE refresh_tokens
+SET revoked_at = NOW(), revoked_reason = 'rotated', replaced_by_token_id = $new
+WHERE id = $old AND revoked_at IS NULL
+RETURNING id;
+```
+
+If `RETURNING` is empty, the row was rotated by a concurrent request between our `findUnique` and our `update`. Re-read the row; if the concurrent rotation succeeded, treat ours as a benign duplicate (return the OTHER successor we can find by `family_id` + `replaced_by_token_id = $old`). If neither successor exists, treat as reuse (cascade).
+
+~30 min to implement, ~1h to test (race tests are flaky). Engineer 2 owns. Schedule when bored. Not blocking.
+
+---
+
+### V-13c-forensics — thread ip/UA into the 5 non-refresh issuance sites
+
+V-13c persists `ip_address` and `user_agent` columns on every `refresh_tokens` row but only the `/auth/refresh` controller threads them through. The 5 other callers of `generateTokens` (login, register, verify2FALogin, googleLogin × 2, verifyEmailOtp) write null. Reuse-detection forensics asks "what IP started this family?" — and for families started at login (the common case), the answer is currently null.
+
+This card threads ip/UA through all 5 sites. The controllers already extract `ip` for the existing audit logs; UA needs adding to controller signatures. ~1h, low risk. Engineer 2 owns. Schedule alongside V-13c-cleanup if convenient.
+
+---
+
+### V-13c-strategy-cleanup — delete dead JwtRefreshStrategy
+
+`apps/api/src/core/auth/strategies/jwt-refresh.strategy.ts` is a Passport strategy registered as a provider in `auth.module.ts` but no `@UseGuards(AuthGuard('jwt-refresh'))` exists anywhere in the codebase. Post-V-13c it would reject opaque tokens as bad signatures anyway. ~5min: delete the file, drop the import + provider line, drop `JwtRefreshPayload` from `shared/types`. Engineer 2 owns. Bundle into V-13c-cleanup if helpful.
+
+---
+
+### V-13c-gc — periodic cleanup of expired refresh_tokens rows
+
+`refresh_tokens` is append-only — V-13c never deletes rows, only flips `revoked_at`. At realistic traffic (~1k DAU × 1 family/day × 7 rotations/day) the table grows ~50k rows/week. Postgres handles that comfortably for years, but quarterly hygiene is good practice:
+
+```sql
+DELETE FROM refresh_tokens
+WHERE revoked_at < NOW() - INTERVAL '90 days'
+   OR (revoked_at IS NULL AND expires_at < NOW() - INTERVAL '90 days');
+```
+
+Wire as a daily Nest cron job (similar to `ai-reception.expirer.ts`) or a Postgres `pg_cron` job. ~1h. Engineer 2 owns. Schedule once table size matters; not urgent.
+
+---
+
 ### V-14e-dry — bundled cleanup (one small PR, post-V-14c)
 
 After V-14b shipped, three independent loose ends accumulated. They're each tiny, and the discipline cost of running them as separate PRs exceeds the work. Bundle into one cleanup PR:
