@@ -18,6 +18,7 @@ export type {
   TenantFeature,
   PlatformInvoice,
   PlatformAuditLog,
+  RefreshToken,
   TenantStatus,
   TenantTheme,
   TenantUserStatus,

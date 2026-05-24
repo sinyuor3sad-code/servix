@@ -5,13 +5,15 @@ import {
   Logger,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
 import { v4 } from 'uuid';
-import { createHash, randomInt } from 'crypto';
+import { createHash, randomBytes, randomInt } from 'crypto';
+import type { RefreshToken } from '../../shared/database';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { TenantDatabaseService } from '../../shared/database/tenant-database.service';
 import { CacheService } from '../../shared/cache/cache.service';
@@ -26,6 +28,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { TwoFactorService } from './two-factor.service';
 import { GoogleAuthService } from './google-auth.service';
 import { AuditService } from '../audit/audit.service';
+import { SentryService } from '../../shared/sentry/sentry.service';
 
 interface UserResponse {
   id: string;
@@ -99,6 +102,7 @@ export class AuthService {
     private readonly twoFactorService: TwoFactorService,
     private readonly googleAuthService: GoogleAuthService,
     private readonly auditService: AuditService,
+    private readonly sentryService: SentryService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResult> {
@@ -333,42 +337,215 @@ export class AuthService {
     };
   }
 
-  async refreshTokens(refreshToken: string): Promise<JwtTokens> {
-    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
-    const blacklisted = await this.cacheService.isRefreshTokenBlacklisted(tokenHash);
-    if (blacklisted) {
-      throw new UnauthorizedException('رمز التحديث غير صالح أو منتهي الصلاحية');
+  // V-13c: opaque refresh token rotation + reuse detection.
+  //   - rawToken is the 32-byte hex string given to the client at issue time.
+  //     We SHA-256 it and look up the row by hash. Raw value never persisted.
+  //   - DB unreachable → fail CLOSED (ServiceUnavailable). Refusing is safer
+  //     than minting tokens we can't audit. Deviates from the legacy blacklist
+  //     fail-open in cache.service.ts intentionally — reuse detection IS the
+  //     security control here, and an attacker exploiting DB outage to replay
+  //     a stolen token is exactly the threat model.
+  //   - Reuse path (row.revokedAt IS NOT NULL): cascade-revoke the family,
+  //     setPasswordChangedAt (kills outstanding access JWTs via V-14a),
+  //     belt-and-braces cache.blacklist for the existing TokenBlacklist short-
+  //     circuit, audit row + Sentry warning. See handleReuseDetected below.
+  //   - Race window: two concurrent refreshes of the same valid token both
+  //     see revokedAt=null and both succeed in issuing successors. The slower
+  //     write loses revokedReason='rotated'. Accepted false-positive per
+  //     V-13c-race-tuning follow-up.
+  async refreshTokens(
+    rawToken: string,
+    opts: { ipAddress?: string; userAgent?: string } = {},
+  ): Promise<JwtTokens> {
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+
+    let row: RefreshToken | null;
+    try {
+      row = await this.prisma.refreshToken.findUnique({ where: { tokenHash } });
+    } catch (err) {
+      this.logger.error(
+        `[refreshTokens] DB unreachable during lookup: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException(
+        'تعذّر التحقق من رمز التحديث. حاول مرة أخرى',
+      );
     }
 
-    try {
-      const payload = this.jwtService.verify<JwtPayload & { iat?: number }>(refreshToken, {
-        secret: this.configService.get<string>('jwt.refreshSecret'),
-      });
-
-      const pwdChangedAt = await this.cacheService.getPasswordChangedAt(payload.sub);
-      if (pwdChangedAt && payload.iat && payload.iat * 1000 < pwdChangedAt) {
-        throw new UnauthorizedException('رمز التحديث غير صالح أو منتهي الصلاحية');
-      }
-
-      return this.generateTokens({
-        sub: payload.sub,
-        email: payload.email,
-        tenantId: payload.tenantId,
-        roleId: payload.roleId,
-      });
-    } catch (err) {
-      if (err instanceof UnauthorizedException) throw err;
+    if (!row) {
+      // Unknown token: tampered, expired-and-cleaned, or a pre-V-13c legacy
+      // signed-JWT that the lookup-by-hash path naturally rejects.
       throw new UnauthorizedException(
         'رمز التحديث غير صالح أو منتهي الصلاحية',
       );
     }
+
+    if (row.revokedAt) {
+      // 🚨 Replay attack. Cascade response runs to completion; only after
+      // that do we return 401, so the attacker gets no timing channel
+      // distinguishing reused-vs-unknown.
+      await this.handleReuseDetected(row, rawToken, opts).catch((e) => {
+        this.logger.error(
+          `[refreshTokens] reuse-cascade failure: ${(e as Error).message}`,
+        );
+      });
+      throw new UnauthorizedException(
+        'رمز التحديث غير صالح أو منتهي الصلاحية',
+      );
+    }
+
+    if (row.expiresAt < new Date()) {
+      await this.prisma.refreshToken
+        .update({
+          where: { id: row.id },
+          data: { revokedAt: new Date(), revokedReason: 'expired' },
+        })
+        .catch(() => {});
+      throw new UnauthorizedException(
+        'رمز التحديث غير صالح أو منتهي الصلاحية',
+      );
+    }
+
+    // V-14a parity: pwChangedAt-after-issuance kills the token.
+    const pwdChangedAt = await this.cacheService.getPasswordChangedAt(row.userId);
+    if (pwdChangedAt && row.issuedAt.getTime() < pwdChangedAt) {
+      await this.prisma.refreshToken
+        .update({
+          where: { id: row.id },
+          data: { revokedAt: new Date(), revokedReason: 'pwd_changed' },
+        })
+        .catch(() => {});
+      throw new UnauthorizedException(
+        'رمز التحديث غير صالح أو منتهي الصلاحية',
+      );
+    }
+
+    // Re-derive payload from the user + their primary active tenantUser.
+    const user = await this.prisma.user.findUnique({
+      where: { id: row.userId },
+      include: {
+        tenantUsers: { where: { status: 'active' }, take: 1 },
+      },
+    });
+    if (!user) {
+      throw new UnauthorizedException(
+        'رمز التحديث غير صالح أو منتهي الصلاحية',
+      );
+    }
+    const firstTU = user.tenantUsers[0];
+
+    // Issue the successor in the same family.
+    const newTokens = await this.generateTokens(
+      {
+        sub: user.id,
+        email: user.email,
+        tenantId: firstTU?.tenantId ?? '',
+        roleId: firstTU?.roleId ?? '',
+      },
+      {
+        familyId: row.familyId,
+        ipAddress: opts.ipAddress,
+        userAgent: opts.userAgent,
+      },
+    );
+
+    // Wire predecessor → successor by hash lookup (the only handle we have
+    // on the row we just created without changing generateTokens' return shape).
+    const successorHash = createHash('sha256')
+      .update(newTokens.refreshToken)
+      .digest('hex');
+    const successor = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash: successorHash },
+    });
+
+    await this.prisma.refreshToken.update({
+      where: { id: row.id },
+      data: {
+        revokedAt: new Date(),
+        revokedReason: 'rotated',
+        replacedByTokenId: successor?.id ?? null,
+      },
+    });
+
+    return newTokens;
   }
 
-  async logout(refreshToken: string): Promise<{ message: string }> {
-    if (refreshToken?.trim()) {
-      const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
-      await this.cacheService.blacklistRefreshToken(tokenHash);
-    }
+  // V-13c: replay-attack response. Called when a refresh request lands on a
+  // row whose revokedAt is already set — meaning whoever just presented this
+  // token is using a copy. We assume the worst (attacker has the family's
+  // current valid token too) and kill everything: every unrevoked sibling
+  // in the family, plus the user's pwChangedAt to invalidate live access
+  // JWTs. Also writes to the legacy cache blacklist as belt-and-braces.
+  private async handleReuseDetected(
+    row: RefreshToken,
+    rawToken: string,
+    opts: { ipAddress?: string; userAgent?: string },
+  ): Promise<void> {
+    const cascade = await this.prisma.refreshToken.updateMany({
+      where: { familyId: row.familyId, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: 'reuse_detected' },
+    });
+
+    await this.cacheService.setPasswordChangedAt(row.userId);
+
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    await this.cacheService.blacklistRefreshToken(tokenHash, row.userId);
+
+    await this.auditService
+      .log({
+        userId: row.userId,
+        action: 'auth_refresh_reuse_detected',
+        entityType: 'RefreshToken',
+        entityId: row.id,
+        newValues: {
+          familyId: row.familyId,
+          reusedTokenId: row.id,
+          reusedTokenIssuedAt: row.issuedAt.toISOString(),
+          reusedTokenRevokedAt: row.revokedAt?.toISOString() ?? null,
+          reusedTokenRevokedReason: row.revokedReason ?? null,
+          cascadeRevokedCount: cascade.count,
+          ipAddress: opts.ipAddress ?? null,
+          userAgent: opts.userAgent ?? null,
+        },
+        ipAddress: opts.ipAddress,
+        userAgent: opts.userAgent,
+      })
+      .catch((e) => {
+        this.logger.error(
+          `[reuse-detected] audit write failed: ${(e as Error).message}`,
+        );
+      });
+
+    // captureMessage, not captureException — this is a security event, not
+    // a crash. Sentry-side it should fire alert rules tagged 'warning'.
+    this.sentryService.captureMessage(
+      'Refresh token reuse detected',
+      'warning',
+    );
+  }
+
+  async logout(rawToken: string): Promise<{ message: string }> {
+    if (!rawToken?.trim()) return { message: 'تم تسجيل الخروج بنجاح' };
+
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+
+    // V-13c: revoke the RefreshToken row (primary source of truth).
+    // updateMany — by hash, only-if-not-already-revoked — handles the
+    // "user clicks logout twice" idempotency case naturally.
+    await this.prisma.refreshToken
+      .updateMany({
+        where: { tokenHash, revokedAt: null },
+        data: { revokedAt: new Date(), revokedReason: 'logout' },
+      })
+      .catch((e) => {
+        this.logger.warn(
+          `[logout] refresh row revoke failed: ${(e as Error).message}`,
+        );
+      });
+
+    // V-13c coexistence with the legacy TokenBlacklist (V-13c-cleanup
+    // follow-up consolidates this). Belt-and-braces during cutover.
+    await this.cacheService.blacklistRefreshToken(tokenHash);
+
     return { message: 'تم تسجيل الخروج بنجاح' };
   }
 
@@ -573,25 +750,91 @@ export class AuthService {
     return { message: 'تم إعادة تعيين كلمة المرور بنجاح' };
   }
 
-  async generateTokens(payload: JwtPayload): Promise<JwtTokens> {
-    const tokenPayload = { sub: payload.sub, email: payload.email, tenantId: payload.tenantId, roleId: payload.roleId };
+  // V-13c: hybrid token issuance.
+  //   accessToken  = signed JWT (unchanged — 15min lifetime, JwtStrategy gates).
+  //   refreshToken = opaque 32-byte hex (256 bits), persisted in refresh_tokens
+  //     by SHA-256 hash. Raw value returned to the client once at issue time
+  //     and never stored. Lookup-by-hash is what makes reuse detection
+  //     possible (see refreshTokens above).
+  //
+  // opts:
+  //   familyId  — passed by the refresh path to chain the successor row to
+  //               the same family. Omitted by login/register/2FA/google/OTP
+  //               paths — a fresh login starts a new family.
+  //   ipAddress, userAgent — forensic columns. Currently only the /auth/refresh
+  //               controller threads them; the other 5 callers leave them null.
+  //               V-13c-forensics follow-up wires them up at issuance too.
+  async generateTokens(
+    payload: JwtPayload,
+    opts: {
+      familyId?: string;
+      ipAddress?: string;
+      userAgent?: string;
+    } = {},
+  ): Promise<JwtTokens> {
+    const tokenPayload = {
+      sub: payload.sub,
+      email: payload.email,
+      tenantId: payload.tenantId,
+      roleId: payload.roleId,
+    };
     const accessSecret = this.configService.get<string>('jwt.accessSecret', '');
-    const refreshSecret = this.configService.get<string>('jwt.refreshSecret', '');
-    const accessExpiration = this.configService.get('jwt.accessExpiration', '15m');
-    const refreshExpiration = this.configService.get('jwt.refreshExpiration', '7d');
+    const accessExpiration = this.configService.get(
+      'jwt.accessExpiration',
+      '15m',
+    );
+    const refreshExpirationSpec = this.configService.get<string>(
+      'jwt.refreshExpiration',
+      '7d',
+    );
 
-    const [accessToken, refreshToken] = await Promise.all([
+    const rawRefresh = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawRefresh).digest('hex');
+    const familyId = opts.familyId ?? v4();
+    const expiresAt = new Date(
+      Date.now() + this.parseRefreshExpirySeconds(refreshExpirationSpec) * 1000,
+    );
+
+    const [accessToken] = await Promise.all([
       this.jwtService.signAsync(tokenPayload, {
         secret: accessSecret,
         expiresIn: accessExpiration,
       }),
-      this.jwtService.signAsync(tokenPayload, {
-        secret: refreshSecret,
-        expiresIn: refreshExpiration,
+      this.prisma.refreshToken.create({
+        data: {
+          userId: payload.sub,
+          tokenHash,
+          familyId,
+          expiresAt,
+          ipAddress: opts.ipAddress ?? null,
+          userAgent: opts.userAgent ?? null,
+        },
       }),
     ]);
 
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken: rawRefresh };
+  }
+
+  // Parse expressions like '7d', '15m', '3600s', '24h'. Falls back to 7 days
+  // on parse failure to match the legacy default. Standalone helper so the
+  // refresh expiry doesn't pull in a dependency just for duration parsing.
+  private parseRefreshExpirySeconds(spec: string): number {
+    const SEVEN_DAYS = 7 * 24 * 3600;
+    const m = /^(\d+)([smhd])$/.exec(spec.trim());
+    if (!m) return SEVEN_DAYS;
+    const n = parseInt(m[1], 10);
+    switch (m[2]) {
+      case 's':
+        return n;
+      case 'm':
+        return n * 60;
+      case 'h':
+        return n * 3600;
+      case 'd':
+        return n * 24 * 3600;
+      default:
+        return SEVEN_DAYS;
+    }
   }
 
   // ══════════════ 2FA Login Verification ══════════════

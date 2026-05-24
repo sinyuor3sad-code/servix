@@ -109,8 +109,17 @@ export class AuthController {
   @ApiOperation({ summary: 'تحديث رمز الوصول باستخدام رمز التحديث' })
   @ApiResponse({ status: 200, description: 'تم تحديث الرمز بنجاح' })
   @ApiResponse({ status: 401, description: 'رمز التحديث غير صالح أو منتهي الصلاحية' })
-  async refresh(@Body() dto: RefreshTokenDto): Promise<JwtTokens> {
-    return this.authService.refreshTokens(dto.refreshToken);
+  @ApiResponse({ status: 503, description: 'تعذّر التحقق من رمز التحديث — حاول مرة أخرى' })
+  async refresh(@Body() dto: RefreshTokenDto, @Req() req: Request): Promise<JwtTokens> {
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      undefined;
+    const ua = req.headers['user-agent']?.slice(0, 500);
+    return this.authService.refreshTokens(dto.refreshToken, {
+      ipAddress: ip,
+      userAgent: ua,
+    });
   }
 
   @Post('logout')
