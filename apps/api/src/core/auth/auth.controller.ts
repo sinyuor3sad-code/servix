@@ -30,6 +30,7 @@ import {
   ResetPasswordDto,
   ChangePasswordDto,
   UpdateProfileDto,
+  LinkGoogleDto,
 } from './dto';
 
 @ApiTags('Auth')
@@ -313,6 +314,22 @@ export class AuthController {
     @Body() body: { idToken: string },
   ) {
     return this.authService.googleLogin(body.idToken);
+  }
+
+  @Post('google/link')
+  @ApiBearerAuth()
+  @RateLimit(10, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'ربط حساب Google بالحساب الحالي (V-13a)' })
+  @ApiResponse({ status: 200, description: 'تم ربط حساب Google بنجاح' })
+  @ApiResponse({ status: 400, description: 'البريد في حساب Google لا يطابق بريد حسابك' })
+  @ApiResponse({ status: 401, description: 'غير مصرح بالوصول' })
+  @ApiResponse({ status: 409, description: 'حساب Google مربوط بمستخدم آخر بالفعل' })
+  async linkGoogle(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: LinkGoogleDto,
+  ): Promise<{ message: string }> {
+    return this.authService.linkGoogle(userId, dto.idToken);
   }
 
   @Get('google/status')

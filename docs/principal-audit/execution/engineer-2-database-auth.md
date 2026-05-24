@@ -862,6 +862,107 @@ Engineer 2 owns.
 
 ---
 
+### V-13a-frontend — Google sign-in UI + Link-account settings panel
+
+V-13a hardens `POST /auth/google` and adds `POST /auth/google/link`, but no SERVIX-served frontend currently invokes either. This card builds:
+
+1. "Sign in with Google" button on `apps/dashboard/src/app/(auth)/login/page.tsx` (and matching for booking/admin if owners want it elsewhere). Uses Google Sign-In JavaScript SDK (loaded from `https://accounts.google.com/gsi/client`) → on token issue posts to `/auth/google`.
+2. Settings panel section: "Connected accounts" with a "Link Google" button. Click → trigger Google Sign-In → POST idToken to `/auth/google/link`. Show success/error messages from API response body (the V-13a Arabic message is already client-friendly).
+3. Error handling: surface the 401 from the takeover-block path verbatim — the message instructs the user to sign in with password first, which is the right next step.
+
+**Engineer 3 / dashboard owns** (frontend scope, not Engineer 2). ~6h. Schedule once V-13a is on prod and the API contract is stable. Block on no upstream changes; no schema or backend work required.
+
+---
+
+### V-13a-verify — switch to local JWKS verification via google-auth-library
+
+Current `GoogleAuthService.verifyIdToken` posts the idToken to `https://oauth2.googleapis.com/tokeninfo` and trusts the response. This is acceptable but:
+
+- Adds a sync network round-trip to every `/auth/google` and `/auth/google/link` call.
+- Trusts that endpoint to only return valid tokens (it does, but defense-in-depth says verify ourselves).
+- Doesn't verify the JWT signature against Google's JWKS locally — we trust Google's response, not the token's signature.
+
+This card:
+
+1. `pnpm add google-auth-library` in `apps/api/` (requires owner dep-add approval).
+2. Swap `verifyIdToken` to use `new OAuth2Client(clientId).verifyIdToken({ idToken, audience: clientId })`. This caches Google's JWKS in-process and verifies signature locally. Removes the per-call HTTP hop.
+3. Keep the same return shape (`{ sub, email, email_verified, name, picture }`) so no downstream changes.
+4. Update existing 1-2 GoogleAuthService unit tests.
+
+**Engineer 2 owns** (auth scope). ~1.5h. Schedule any time. Not security-blocking; pure hardening.
+
+---
+
+### V-13a-unlink — POST /auth/google/unlink endpoint
+
+Once V-13a-frontend ships a "Linked accounts" settings panel, users will want to unlink Google. ~5-line implementation:
+
+```ts
+@Post('google/unlink')
+@ApiBearerAuth() @RateLimit(10, 60)
+async unlinkGoogle(@CurrentUser('sub') userId: string): Promise<{ message: string }> {
+  return this.authService.unlinkGoogle(userId);
+}
+```
+
+```ts
+async unlinkGoogle(userId: string): Promise<{ message: string }> {
+  const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new UnauthorizedException('المستخدم غير موجود');
+  if (!user.googleId) return { message: 'لا يوجد حساب Google مربوط.' };
+  // Refuse if the user has no password (authProvider='google' only) — would lock them out.
+  if (user.authProvider === AUTH_PROVIDERS.GOOGLE) {
+    throw new BadRequestException('عيّن كلمة مرور أولاً قبل إلغاء ربط Google.');
+  }
+  await this.prisma.user.update({
+    where: { id: userId },
+    data: { googleId: null, authProvider: AUTH_PROVIDERS.LOCAL },
+  });
+  // + audit auth_google_unlinked
+  return { message: 'تم إلغاء ربط حساب Google.' };
+}
+```
+
+**Engineer 2 owns**. ~20 min implementation + 3 e2e tests. Schedule after V-13a-frontend lands (UX requirement).
+
+---
+
+### V-13a-phone-placeholder — fix synthetic phone for Google-only users
+
+`auth.service.googleLogin` fresh-create path writes `phone: 'g-${googleUser.sub.slice(0, 10)}'` to satisfy the `User.phone @unique @db.VarChar(15)` constraint. Risks:
+
+- Google `sub` values are 21-character decimal strings. First-10-chars collide once per ~10^10 users (low absolute risk but non-zero, and the constraint failure presents as a confusing 500 to the affected second user).
+- The synthetic phone is visible in the user's profile and can be confusing.
+
+Two viable fixes:
+
+**Option A** — make `phone` nullable. Migration: `ALTER TABLE users ALTER COLUMN phone DROP NOT NULL; DROP INDEX users_phone_key; CREATE UNIQUE INDEX users_phone_key ON users(phone) WHERE phone IS NOT NULL;` (partial unique index — multiple NULLs allowed). Removes synthetic phones entirely.
+
+**Option B** — keep NOT NULL but use a distinct format that cannot collide: e.g. `phone: 'google:${sub}'` (longer than 15 chars; requires VARCHAR widening too).
+
+Owner choice. Migration coordination required (touches a column used by many code paths — login lookup by phone, SMS sending, etc.). **Engineer 2 owns**. ~2h impl + careful regression sweep. Schedule when phone-on-Google-users matters operationally.
+
+---
+
+### V-13a-backfill — investigate legacy googleId+authProvider='local' rows
+
+V-13a's runbook (`docs/migrations/v13a-apply.md`) instructs ops to run this query on prod before deploy:
+
+```sql
+SELECT COUNT(*) FROM users WHERE google_id IS NOT NULL AND auth_provider = 'local';
+```
+
+If the count is non-zero, this card:
+
+1. Reviews the sample (`SELECT id, email, google_id, created_at, last_login_at FROM users WHERE google_id IS NOT NULL AND auth_provider = 'local' ORDER BY created_at LIMIT 50`).
+2. For each row, determines whether the Google link was legitimate (user genuinely signed in with Google in the past) or was a silent-link victim of the V-13a takeover gap.
+3. Optionally contacts users (out-of-band) to confirm.
+4. Either updates `auth_provider` to reflect reality, or revokes the `googleId` for confirmed-takeover rows.
+
+**Engineer 2 owns**. Effort depends on the count. Schedule immediately after V-13a deploy IF the pre-flight query returned > 0.
+
+---
+
 ### V-13c-cleanup — consolidate TokenBlacklist into RefreshToken.revokedAt (~30 days post-V-13c)
 
 V-13c (refresh rotation + reuse detection) shipped with the existing `token_blacklist` table still in place. Logout writes to BOTH (revoke the `refresh_tokens` row AND blacklist the hash) as defence-in-depth during cutover. The blacklist read path is no longer consulted on the refresh path — `refresh_tokens` is the new source of truth — but the writes are still there.

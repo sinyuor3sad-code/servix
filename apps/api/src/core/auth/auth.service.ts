@@ -29,6 +29,7 @@ import { TwoFactorService } from './two-factor.service';
 import { GoogleAuthService } from './google-auth.service';
 import { AuditService } from '../audit/audit.service';
 import { SentryService } from '../../shared/sentry/sentry.service';
+import { AUTH_PROVIDERS } from './auth.constants';
 
 interface UserResponse {
   id: string;
@@ -148,6 +149,10 @@ export class AuthService {
           email: dto.email,
           phone: dto.phone,
           passwordHash,
+          // V-13a: explicit instead of relying on schema default. Makes the
+          // register-path contract greppable and consistent with the Google
+          // paths that also stamp authProvider explicitly.
+          authProvider: AUTH_PROVIDERS.LOCAL,
         },
       });
       this.logger.log(`[AuthService.register] Created user id=${user.id}`);
@@ -944,42 +949,109 @@ export class AuthService {
 
   // ══════════════ Google OAuth ══════════════
 
+  // V-13a / A2-03 — Google OAuth account-takeover prevention.
+  //
+  // Pre-V-13a the flow silently linked a Google identity to any existing user
+  // whose email matched the Google profile's email — a textbook OAuth account
+  // takeover (attacker controls Google account for victim's email → presents
+  // valid idToken → SERVIX stamps attacker's googleId onto victim's row and
+  // issues attacker tokens, victim's password keeps working but every future
+  // /auth/google call from the attacker logs in as the victim).
+  //
+  // After V-13a the gate is strict:
+  //   1. Match by googleId → return tokens (returning user, no row mutation).
+  //   2. Match by email only → REJECT. Emit auth_google_takeover_blocked audit
+  //      row. Force the user to sign in with their password and use the new
+  //      POST /auth/link-google endpoint from an authenticated session.
+  //   3. No match → create a fresh GOOGLE-only user (no password, isEmailVerified
+  //      mirrors profile.email_verified — workspace accounts can be false).
   async googleLogin(idToken: string) {
     const googleUser = await this.googleAuthService.verifyIdToken(idToken);
 
-    // Check if user already exists by googleId or email
-    let user = await this.prisma.user.findFirst({
-      where: {
-        OR: [
-          { googleId: googleUser.sub },
-          { email: googleUser.email },
-        ],
-      },
+    // Match by googleId FIRST — the authoritative join. Email lookup is only
+    // consulted to detect the takeover-attempt case (path 2 above).
+    const userByGoogleId = await this.prisma.user.findUnique({
+      where: { googleId: googleUser.sub },
     });
 
-    if (user) {
-      // Link Google account if not already linked
-      if (!user.googleId) {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: { googleId: googleUser.sub, authProvider: 'google' },
-        });
+    let user = userByGoogleId;
+
+    if (!user) {
+      const existingByEmail = await this.prisma.user.findUnique({
+        where: { email: googleUser.email },
+      });
+
+      if (existingByEmail) {
+        // 🚨 Takeover attempt blocked. Forensic audit before throwing —
+        // the existingUser.id is the *victim*; tracking this user lets ops
+        // detect "same victim, multiple attempts" patterns. Best-effort
+        // (fire-and-forget catch) — audit failure must not surface as 500.
+        this.auditService
+          .log({
+            userId: existingByEmail.id,
+            action: 'auth_google_takeover_blocked',
+            entityType: 'User',
+            entityId: existingByEmail.id,
+            newValues: {
+              attemptedEmail: googleUser.email,
+              googleSub: googleUser.sub,
+              existingUserAuthProvider: existingByEmail.authProvider,
+              existingUserHasGoogleId: !!existingByEmail.googleId,
+              reason: 'email_match_without_googleId',
+            },
+          })
+          .catch((e) => {
+            this.logger.error(
+              `[googleLogin] takeover-blocked audit failed: ${(e as Error).message}`,
+            );
+          });
+
+        throw new UnauthorizedException(
+          'يوجد حساب مسجَّل بهذا البريد. سجّل الدخول بكلمة المرور أولاً، ثم اربط حساب Google من الإعدادات.',
+        );
       }
-    } else {
-      // Auto-register new user from Google
+
+      // Fresh user — Google-first registration.
       user = await this.prisma.user.create({
         data: {
           fullName: googleUser.name,
           email: googleUser.email,
-          phone: `g-${googleUser.sub.slice(0, 10)}`, // placeholder phone
-          passwordHash: await hash(v4(), BCRYPT_ROUNDS), // random password
+          phone: `g-${googleUser.sub.slice(0, 10)}`, // V-13a-phone-placeholder follow-up
+          passwordHash: await hash(v4(), BCRYPT_ROUNDS), // unusable bcrypt
           avatarUrl: googleUser.picture || null,
           googleId: googleUser.sub,
-          authProvider: 'google',
+          authProvider: AUTH_PROVIDERS.GOOGLE,
           isEmailVerified: googleUser.email_verified,
         },
       });
     }
+
+    // Success path (matched-by-googleId OR fresh-create). Audit the login so
+    // we have parity with auth.login's audit row at register/login paths.
+    //
+    // Defense-in-depth snapshot: email + authProvider are persisted in
+    // newValues even though they could be JOINed from users at query time.
+    // Reason: future email-change endpoints (planned in V-13a-frontend)
+    // would mutate users.email, breaking the audit-timeline reconstruction
+    // for "which email was on this account at the moment of login".
+    this.auditService
+      .log({
+        userId: user.id,
+        action: 'auth_google_login',
+        entityType: 'User',
+        entityId: user.id,
+        newValues: {
+          googleSub: googleUser.sub,
+          email: user.email,
+          authProvider: user.authProvider,
+          isNewUser: !userByGoogleId,
+        },
+      })
+      .catch((e) => {
+        this.logger.warn(
+          `[googleLogin] success audit failed: ${(e as Error).message}`,
+        );
+      });
 
     // Get tenant associations
     const tenantUsers = await this.prisma.tenantUser.findMany({
@@ -1018,6 +1090,84 @@ export class AuthService {
       tokens,
       isNewUser: tenantUsers.length === 0,
     };
+  }
+
+  // V-13a / A2-03 — explicit Google linking from an authenticated session.
+  // The complement to googleLogin's takeover-block path: users who already
+  // have a LOCAL account follow login-with-password → settings →
+  // "Link Google" → this endpoint. The auth boundary is the JWT (controller
+  // applies the default JwtAuthGuard); we trust req.user.sub as identity.
+  //
+  // Gates:
+  //   - idToken's email MUST match the JWT user's email (400 otherwise).
+  //     Defends against a malicious extension feeding a wrong-account
+  //     idToken to a logged-in victim.
+  //   - googleId MUST NOT already be linked to a different user. Enforced
+  //     atomically via the @unique constraint catching Prisma P2002 (avoids
+  //     the findUnique-then-update race window).
+  async linkGoogle(userId: string, idToken: string): Promise<{ message: string }> {
+    const googleUser = await this.googleAuthService.verifyIdToken(idToken);
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      // The JWT was validated, but the row was deleted between token issue
+      // and now. Treat as 401 — no point letting them link an account whose
+      // identity has been removed.
+      throw new UnauthorizedException('المستخدم غير موجود');
+    }
+
+    if (googleUser.email !== user.email) {
+      throw new BadRequestException(
+        'البريد الإلكتروني في حساب Google لا يطابق بريد حسابك.',
+      );
+    }
+
+    if (user.googleId === googleUser.sub) {
+      // Idempotent: re-linking the same Google identity is a no-op success.
+      return { message: 'حساب Google مربوط بالفعل.' };
+    }
+
+    try {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          googleId: googleUser.sub,
+          authProvider: AUTH_PROVIDERS.BOTH,
+        },
+      });
+    } catch (err) {
+      // Race-free uniqueness check: Prisma P2002 fires when googleId UNIQUE
+      // would be violated (= googleId is already linked to a different user).
+      if (
+        typeof err === 'object' && err !== null && 'code' in err &&
+        (err as { code: unknown }).code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'حساب Google مربوط بمستخدم آخر بالفعل.',
+        );
+      }
+      throw err;
+    }
+
+    this.auditService
+      .log({
+        userId: user.id,
+        action: 'auth_google_linked',
+        entityType: 'User',
+        entityId: user.id,
+        newValues: {
+          googleSub: googleUser.sub,
+          previousAuthProvider: user.authProvider,
+          newAuthProvider: AUTH_PROVIDERS.BOTH,
+        },
+      })
+      .catch((e) => {
+        this.logger.warn(
+          `[linkGoogle] audit failed: ${(e as Error).message}`,
+        );
+      });
+
+    return { message: 'تم ربط حساب Google بنجاح.' };
   }
 
   private generateSlug(text: string): string {
