@@ -7,7 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { compare, hash } from 'bcryptjs';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
 import { CacheService } from '../../shared/cache/cache.service';
@@ -472,34 +472,71 @@ export class AdminService {
     return { message: 'تم تعيين كلمة مرور جديدة بنجاح' };
   }
 
-  async sendPasswordResetLink(id: string, adminId: string) {
+  // V-24 / A2-08 — Admin reset link is now hash-at-rest.
+  //
+  // Pre-V-24, this method stored the raw 32-byte token directly in
+  // password_resets.token and console.log'd the raw value to stdout.
+  // Two distinct gaps in one method: anyone with DB read access (or a
+  // backup) had every active admin-reset token, and anyone with log
+  // access (SSH, journald, Loki forwarders) saw them too.
+  //
+  // Incidental fix: pre-V-24 the admin link was also un-redeemable —
+  // auth.service.resetPassword hashes the submitted token and looks
+  // up by hash, while admin stored raw, so the lookup always missed.
+  // V-24 unifies storage (both flows now write the hash); the existing
+  // self-serve verifier serves the admin flow without changes.
+  //
+  // Raw token return: the API response carries the raw token (admin
+  // delivers manually). MailService wiring for AdminModule is the
+  // V-24-email follow-up; until then this is the only way to surface
+  // the token to the admin without re-introducing the log leak.
+  async sendPasswordResetLink(
+    id: string,
+    adminId: string,
+  ): Promise<{ message: string; token: string; expiresAt: Date }> {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('المستخدم غير موجود');
 
-    const token = randomBytes(32).toString('hex');
+    // Generate raw OUTSIDE the tx, hash, persist only the hash.
+    // The raw value never crosses the await boundary into Prisma.
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     await this.prisma.$transaction([
       this.prisma.passwordReset.create({
-        data: { userId: id, token, expiresAt },
+        data: { userId: id, token: tokenHash, expiresAt },
       }),
       this.prisma.platformAuditLog.create({
         data: {
           userId: adminId,
-          action: 'admin_send_reset_link',
+          action: 'admin_password_reset_link_sent',
           entityType: 'user',
           entityId: id,
-          newValues: { sentTo: user.email },
+          // V-24: forensic-correlation-only — tokenHashPrefix (8 chars =
+          // 2^32 collision space) is enough to confirm "was this audit row
+          // for this specific link?" without persisting enough hash material
+          // for an attacker who reads the audit table to brute-force the
+          // sha256 preimage back to the raw token. Never log the full hash
+          // or the raw token in this audit row.
+          newValues: {
+            sentTo: user.email,
+            expiresAt: expiresAt.toISOString(),
+            tokenHashPrefix: tokenHash.slice(0, 8),
+          },
         },
       }),
     ]);
 
-    // TODO: Send email with reset link when MailService is available in AdminModule
-    // For now, log it
-    // eslint-disable-next-line no-console
-    console.log(`[AdminResetLink] User ${user.email} → token: ${token}`);
-
-    return { message: `تم إنشاء رابط التعيين وإرساله إلى ${user.email}` };
+    // V-24: raw token returned in response body for admin to deliver
+    // manually. Email wiring tracked as V-24-email follow-up (requires
+    // MailService in AdminModule). The pre-V-24 console.log of the raw
+    // token is deleted — never log secrets.
+    return {
+      message: `تم إنشاء رابط إعادة تعيين كلمة المرور للمستخدم ${user.email}. سلّم الرابط يدوياً.`,
+      token: rawToken,
+      expiresAt,
+    };
   }
 
   async changeUserRole(userId: string, roleId: string, tenantId: string | undefined, adminId: string) {

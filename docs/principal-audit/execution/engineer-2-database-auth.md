@@ -862,6 +862,52 @@ Engineer 2 owns.
 
 ---
 
+### V-24-rename — rename `password_resets.token` → `tokenHash`
+
+V-24 left the column name as `token` even though post-V-24 it holds a sha256 hex exclusively. Renaming to `tokenHash` would make the contract explicit at the schema level and prevent future code from re-introducing a raw-vs-hash confusion. Migration:
+
+1. Prisma schema: `token` → `tokenHash` with `@map("token_hash")` (or rename the column physically — see Phase A decision).
+2. Platform SQL migration: `ALTER TABLE password_resets RENAME COLUMN token TO token_hash; ALTER INDEX password_resets_token_key RENAME TO password_resets_token_hash_key;`
+3. Update 4 call sites (3 in `auth.service.ts`: `forgotPassword`, `verifyResetToken`, `resetPassword`; 1 in `admin.service.ts:sendPasswordResetLink`).
+
+**Engineer 2 owns.** ~20 min. Schedule any time. Cosmetic; not security-blocking.
+
+---
+
+### V-24-email — wire MailService into AdminModule
+
+`admin.service.sendPasswordResetLink` returns the raw token in the API response body. The admin reads it and delivers manually (Slack, ticket, in-person). The original implementation had a `// TODO: Send email with reset link when MailService is available in AdminModule` comment + a `console.log` leak (the leak is fixed by V-24; the TODO remains).
+
+This card:
+
+1. Import `MailModule` into `AdminModule` (`apps/api/src/core/admin/admin.module.ts`).
+2. Inject `MailService` into `AdminService` constructor.
+3. In `sendPasswordResetLink`, after the DB tx, call `mailService.send({ to: user.email, subject, body, html })` with a reset-URL containing the raw token (same shape as `auth.service.forgotPassword:673-680`).
+4. Decision: keep returning `token` in the API response (defense-in-depth in case the email fails), OR drop it (cleaner). My lean: keep it but mark deprecated; remove in a follow-up once email reliability is proven.
+5. New audit field `emailDispatched: boolean` in `admin_password_reset_link_sent` newValues so ops can correlate "audit row present but email failed".
+
+**Engineer 2 owns.** ~1h. Schedule once V-24 is on prod and the response shape is stable.
+
+---
+
+### V-24-audit-completion + V-24-self-serve-audit — bundle: PasswordReset.initiatedBy + completion audits
+
+V-24 enriched `admin_password_reset_link_sent` but did NOT add `admin_password_reset_completed` / `admin_password_reset_failed` audit rows. The reason: `auth.service.resetPassword` is the verifier for BOTH self-serve and admin flows, and it has no way to distinguish initiator today. Pre-V-24 it also has NO audit row on success — a self-serve user redeeming a reset token leaves no trail at all, which is a SOC2 / PDPL gap.
+
+This card bundles both:
+
+1. Schema: add `initiatedBy` column to `PasswordReset` (VARCHAR(20), default 'self_serve', accepted values `self_serve` | `admin`).
+2. `admin.service.sendPasswordResetLink` writes `initiatedBy: 'admin'`.
+3. `auth.service.forgotPassword` writes `initiatedBy: 'self_serve'` explicitly.
+4. `auth.service.resetPassword` reads `reset.initiatedBy` and emits one of:
+   - `auth_password_reset_completed` (self-serve)
+   - `admin_password_reset_completed` (admin)
+5. Failure path (invalid / expired / used token): emit `auth_password_reset_failed` / `admin_password_reset_failed` (only when the token row exists — pure "unknown token" 400 stays silent to avoid audit-log spam from random probing).
+
+**Engineer 2 owns.** ~1.5h + a small platform migration. Schedule alongside `V-24-rename` if convenient (both touch the same schema).
+
+---
+
 ### V-13a-frontend — Google sign-in UI + Link-account settings panel
 
 V-13a hardens `POST /auth/google` and adds `POST /auth/google/link`, but no SERVIX-served frontend currently invokes either. This card builds:
