@@ -844,27 +844,112 @@ export class AuthService {
 
   // ══════════════ 2FA Login Verification ══════════════
 
+  // V-25 / A2-09 — 2FA verify lockout parity.
+  //
+  // Pre-V-25, this endpoint was protected only by the controller's
+  // @RateLimit(10, 60) decorator and accepted unlimited TOTP guesses
+  // beyond that. Each guess also burned ~150ms of bcrypt CPU (the
+  // password is re-verified per call), so failed attempts doubled as
+  // a CPU DoS vector against the API.
+  //
+  // After V-25 the path mirrors login (auth.service.ts:212-271):
+  //   1. IP-block gate          (fast-reject blocked IPs before any DB hit)
+  //   2. User lookup
+  //   3. Account-lock gate      (fast-reject locked accounts BEFORE bcrypt)
+  //   4. bcrypt compare         (password verify)
+  //   5. 2FA-enabled check
+  //   6. TOTP verify
+  //   7. fail/success counters  (shared with login per Phase A decision 1)
+  //
+  // Counters are shared with login (same Redis keyspace LOGIN_FAIL_IP_PREFIX
+  // / LOGIN_FAIL_ACCOUNT_PREFIX) so an attacker pivoting from password-
+  // brute-force to 2FA-brute-force on the same account accumulates against
+  // the same threshold (LOGIN_ACCOUNT_LOCK_THRESHOLD = 10, 24h TTL). A
+  // legitimate user typo-ing both their password (4×) and their TOTP (6×)
+  // ends up locked at 10 — accepted trade-off for the cumulative attacker
+  // tracking.
+  //
+  // All audit writes are fire-and-forget (.catch + logger.warn) — audit
+  // slowness must never delay the hot path or surface as 500.
   async verify2FALogin(
     emailOrPhone: string,
     password: string,
     code: string,
-    _ip: string,
+    ip: string,
   ): Promise<{ user: any; tokens: JwtTokens }> {
-    // Re-authenticate
+    // 1️⃣ IP-block gate — fast-reject before any DB or bcrypt work.
+    // No audit per-attempt here; the block itself was audited at trigger
+    // time on the login path that originally crossed the threshold.
+    const blockSeconds = await this.cacheService.checkLoginIpBlock(ip);
+    if (blockSeconds > 0) {
+      throw new UnauthorizedException(
+        `تم تجاوز الحد المسموح من محاولات الدخول. حاول مرة أخرى بعد ${Math.ceil(blockSeconds / 60)} دقيقة`,
+      );
+    }
+
+    // 2️⃣ User lookup.
     const user = await this.prisma.user.findFirst({
       where: { OR: [{ email: emailOrPhone }, { phone: emailOrPhone }] },
     });
-    if (!user) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    if (!user) {
+      // IP-only counter for unknown identifiers (parity with login).
+      await this.cacheService.incrementLoginFailIp(ip);
+      throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
 
+    // 3️⃣ Account-lock gate — BEFORE bcrypt to save ~150ms of CPU on
+    // locked accounts under a brute-force load.
+    if (await this.cacheService.isAccountLocked(user.id)) {
+      this.auditService
+        .log({
+          userId: user.id,
+          action: 'auth_2fa_verify_failed',
+          entityType: 'User',
+          entityId: user.id,
+          newValues: { reason: 'account_locked' },
+          ipAddress: ip,
+        })
+        .catch((e) => this.logger.warn(`[2fa-verify-failed audit] ${(e as Error).message}`));
+      throw new UnauthorizedException(
+        'تم قفل الحساب بسبب محاولات دخول فاشلة متعددة. تواصل مع الدعم الفني',
+      );
+    }
+
+    // 4️⃣ bcrypt password verify.
     const isPasswordValid = await compare(password, user.passwordHash);
-    if (!isPasswordValid) throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    if (!isPasswordValid) {
+      await this.handle2FAFailure(user, ip, 'password_invalid');
+      throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
 
+    // 5️⃣ 2FA-enabled check — misconfigured account, NOT a credential
+    // failure; do NOT increment counters (would allow an attacker to lock
+    // out a user by disabling 2FA out-of-band then probing this endpoint).
     if (!user.twoFactorEnabled || !user.twoFactorSecret) {
       throw new BadRequestException('التحقق الثنائي غير مفعل');
     }
 
+    // 6️⃣ TOTP code verify.
     const isCodeValid = this.twoFactorService.verifyToken(user.twoFactorSecret, code);
-    if (!isCodeValid) throw new BadRequestException('رمز التحقق غير صحيح');
+    if (!isCodeValid) {
+      await this.handle2FAFailure(user, ip, 'code_invalid');
+      throw new BadRequestException('رمز التحقق غير صحيح');
+    }
+
+    // 7️⃣ Success — reset both counters (parity with login.line:270-271).
+    await this.cacheService.resetLoginFailIp(ip);
+    await this.cacheService.resetLoginFailAccount(user.id);
+
+    this.auditService
+      .log({
+        userId: user.id,
+        action: 'auth_2fa_verify_success',
+        entityType: 'User',
+        entityId: user.id,
+        newValues: { ip },
+        ipAddress: ip,
+      })
+      .catch((e) => this.logger.warn(`[2fa-verify-success audit] ${(e as Error).message}`));
 
     const tenantUsers = await this.prisma.tenantUser.findMany({
       where: { userId: user.id, status: 'active' },
@@ -886,6 +971,64 @@ export class AuthService {
       user: this.mapUserResponse(user),
       tokens,
     };
+  }
+
+  // V-25: shared fail handler for both password-invalid and code-invalid
+  // paths inside verify2FALogin. Increments BOTH counters (IP + account),
+  // mirrors login.line:251-265 — including the SMS notification on the
+  // lock-transition. Audit row carries the failure reason so post-incident
+  // analysis can distinguish password brute-force from code brute-force.
+  private async handle2FAFailure(
+    user: { id: string; phone: string },
+    ip: string,
+    reason: 'password_invalid' | 'code_invalid',
+  ): Promise<void> {
+    const ipResult = await this.cacheService.incrementLoginFailIp(ip);
+    const accResult = await this.cacheService.incrementLoginFailAccount(user.id);
+
+    this.auditService
+      .log({
+        userId: user.id,
+        action: 'auth_2fa_verify_failed',
+        entityType: 'User',
+        entityId: user.id,
+        newValues: {
+          reason,
+          ipFailCount: ipResult.count,
+          ipBlockSeconds: ipResult.blockSeconds,
+          accountFailCount: accResult.count,
+          accountLocked: accResult.locked,
+        },
+        ipAddress: ip,
+      })
+      .catch((e) => this.logger.warn(`[2fa-verify-failed audit] ${(e as Error).message}`));
+
+    if (accResult.locked) {
+      // Lockout transition — fire SMS + lockout audit row. Both are
+      // transition-only (incrementLoginFailAccount returns locked=true ONLY
+      // when count crosses the threshold), so user receives at most 1 SMS
+      // per 24h lockout cycle even under sustained brute-force.
+      await this.smsService.send({
+        to: user.phone,
+        message:
+          'SERVIX: تم قفل حسابك بسبب محاولات دخول فاشلة. تواصل مع الدعم الفني',
+      }).catch((e) => this.logger.warn(`[2fa-lockout SMS] ${(e as Error).message}`));
+
+      this.auditService
+        .log({
+          userId: user.id,
+          action: 'auth_2fa_lockout_triggered',
+          entityType: 'User',
+          entityId: user.id,
+          newValues: {
+            triggeringReason: reason,
+            accountFailCount: accResult.count,
+            lockoutTtlSeconds: 24 * 60 * 60,
+          },
+          ipAddress: ip,
+        })
+        .catch((e) => this.logger.warn(`[2fa-lockout-triggered audit] ${(e as Error).message}`));
+    }
   }
 
   // ══════════════ 2FA Methods ══════════════

@@ -862,6 +862,20 @@ Engineer 2 owns.
 
 ---
 
+### V-25-sms-cost — SMS-budget monitoring on lockout transitions
+
+V-25 mirrors `login`'s SMS notification on the account-lockout transition (`auth.service.handle2FAFailure` → `smsService.send` when `accResult.locked = true`). Transition-only firing caps the attacker's ability to spam SMS to ~1 message per 24h per victim, which is acceptable.
+
+For owners who want explicit cost visibility:
+
+1. Add a Prometheus counter `servix_auth_lockout_sms_total{path}` incremented on each `smsService.send` from the lockout transition (`login` and `verify2FALogin` both).
+2. Alertmanager rule: alert if `rate(servix_auth_lockout_sms_total[1h]) > N` (N to be tuned — likely ~5-10/hour signals an attack campaign vs normal user lockouts).
+3. Optional: emit `auth_lockout_sms_sent` audit row with `cost_estimate_sar` populated from the active SMS provider tariff.
+
+**Engineer 1 (Platform/Infra)** owns the Prometheus + alertmanager wiring. Engineer 2 supplies the counter increment as a one-line change once E1 lands the rule. Low priority — only worth scheduling if SMS spend on auth becomes operationally noticeable.
+
+---
+
 ### V-24-rename — rename `password_resets.token` → `tokenHash`
 
 V-24 left the column name as `token` even though post-V-24 it holds a sha256 hex exclusively. Renaming to `tokenHash` would make the contract explicit at the schema level and prevent future code from re-introducing a raw-vs-hash confusion. Migration:
