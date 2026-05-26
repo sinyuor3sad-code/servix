@@ -862,6 +862,36 @@ Engineer 2 owns.
 
 ---
 
+### V-30 — JWT secret/expiry env validation (verify-only ✅ 2026-05-26)
+
+**Status:** verified clean. No commit needed on the runtime / schema / config side.
+
+V-30 / A2-11 (HIGH P1) was the Joi-hardening of `JWT_ACCESS_SECRET` + `JWT_REFRESH_SECRET` + `ENCRYPTION_KEY` at `apps/api/src/shared/config/env.validation.ts` — owned and shipped by Engineer 1 in E7 alongside V-29 (`.env.example` sanitization) and the prod-side secret rotation to 80-char base64. See `docs/principal-audit/execution/e8-changelog.md:926-947` for the original work record.
+
+Engineer 2's verify-only audit (this entry) confirmed:
+
+1. **Schema layer** (`env.validation.ts:19-30, 48-56`):
+   - `JWT_ACCESS_SECRET` + `JWT_REFRESH_SECRET`: `Joi.string().min(64).pattern(PLACEHOLDER_PATTERN, { invert: true }).required()`. Custom error messages identify the offending env var.
+   - `JWT_ACCESS_EXPIRATION` default `15m`; `JWT_REFRESH_EXPIRATION` default `7d`.
+   - `ENCRYPTION_KEY`: same shape as JWT secrets, conditional `.when('NODE_ENV', { is: 'production', then: required+min64+pattern })`.
+   - `PLACEHOLDER_PATTERN = /<REQUIRED|change[-_ ]?me/i` — case-insensitive, catches `<REQUIRED…`, `change-me`, `change_me`, `CHANGE_ME`, `Change Me`.
+
+2. **Boot gate** (`app.module.ts:48`): `validationSchema: AppConfigValidationSchema` wires Joi into `ConfigModule.forRoot`. NestJS runs validation eagerly at module init — boot fails before any service is instantiated if any required env is missing or invalid.
+
+3. **Config factory** (`jwt.config.ts`): secrets read raw via `process.env.JWT_*_SECRET` (no `|| 'fallback-secret'` literal). Expirations have `'15m'` / `'7d'` factory fallbacks matching Joi defaults — consistent two-layer defense.
+
+4. **20 runtime call sites scanned** — all `configService.get<string>('jwt.accessSecret', '')` and `… || ''` patterns are defensive TypeScript-narrowing fallbacks (the lookup returns `string | undefined`, the fallback satisfies downstream `string` type requirements). Post-Joi these branches are **unreachable** — Joi guarantees the env is set to ≥ 64 chars at boot. The 5 critical sites (auth.service.generateTokens, jwt.strategy, jwt-refresh.strategy, events.module, admin.service ×5) all use the same defensive pattern. No hardcoded literal secrets anywhere.
+
+5. **Boot Joi behavior** verified with 6 representative cases (8-char short, `<REQUIRED…` placeholder, `change-me` placeholder, `CHANGE_ME` case-insensitive, missing required, valid 80-char). All reject/accept correctly. Case-insensitivity confirmed.
+
+6. **Expiry consistency**: user-facing JWT access = 15m, refresh = 7d, consistent across `jwt.config.ts`, `auth.module.ts:27`, `auth.service.generateTokens`. Documented exception: `admin.service.login:163-169` reads `session_duration` from `platform_settings` (default 1440 minutes) — explicit admin-panel UX choice, not an env-bypass. Out of V-30 scope; documented here for cross-reference.
+
+7. **`jwt-refresh.strategy.ts:18`** continues to read `jwt.refreshSecret` even though it became dead code post-V-13c (opaque refresh tokens don't go through Passport JWT verification anymore). The fallback is defensive but the file itself is scheduled for deletion via `V-13c-strategy-cleanup`. Not a V-30 issue.
+
+**No drift in Engineer 2 scope.** No commit to source / tests / migrations. This entry is the verification record.
+
+---
+
 ### V-25-sms-cost — SMS-budget monitoring on lockout transitions
 
 V-25 mirrors `login`'s SMS notification on the account-lockout transition (`auth.service.handle2FAFailure` → `smsService.send` when `accResult.locked = true`). Transition-only firing caps the attacker's ability to spam SMS to ~1 message per 24h per victim, which is acceptable.
