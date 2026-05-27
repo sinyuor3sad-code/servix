@@ -862,6 +862,49 @@ Engineer 2 owns.
 
 ---
 
+### V-38-cleanup — remove redundant `@UseGuards(TenantGuard)` decorators (~30 files)
+
+V-38 registered `TenantGuard` as a global `APP_GUARD`. The 30 explicit `@UseGuards(TenantGuard)` decorators on salon controllers + 2 non-salon (`core/notifications`, `shared/whatsapp/whatsapp-connect`) became redundant — NestJS dedupes (each guard instance runs once per request even if registered multiply). They serve as inline documentation but represent ~30 lines of future maintenance noise (rename, refactor risk).
+
+This card:
+1. Removes `@UseGuards(TenantGuard)` from the 30 salon controllers + 2 non-salon.
+2. Removes the `TenantGuard` import where it's the only `@UseGuards` argument (cleaner file head).
+3. Where `@UseGuards(TenantGuard, FeatureGuard)` exists (e.g., `ai-consultant.controller.ts`), keeps only `@UseGuards(FeatureGuard)`.
+4. Updates V-14e-dry section: the tenant.status redundant check at `tenant.guard.ts:80-82` is still tracked there; this card can bundle the removal if convenient.
+
+**Engineer 2 owns.** ~20 min mechanical edit + run regression battery. Schedule any time post-V-38 ships to prod.
+
+---
+
+### V-38-audit — Prometheus counter for `assertActiveTenantUser` rejections
+
+V-38 closes the global gap for stale-tenant-membership JWTs. Operators may want visibility into how often the new 403 fires (signal: legitimate user with old JWT after support revoked their TenantUser, OR an attack against a stale token).
+
+Add Prometheus counter `servix_tenant_membership_rejected_total{path}` incremented inside `assertActiveTenantUser` when it throws. Alertmanager rule fires if `rate(...) > 5/hour`.
+
+**Engineer 1 (Platform/Infra)** owns the Prometheus + alertmanager wiring. Engineer 2 supplies the counter increment as a one-line change once E1 lands the rule. Low priority — only worth scheduling if 403 frequency becomes operationally noticeable.
+
+---
+
+### V-38-defense-in-depth — re-check `request.user` independently of `request.tenant`
+
+Post-V-38 TenantGuard's `if (!tenant) return true` short-circuits BEFORE checking `request.user`. Designed correctly: TenantMiddleware deliberately skips tenant context for `/admin/*` etc., and admin routes don't need a tenant. But if a bug ever causes JwtAuthGuard to fail-silent (e.g., return true without setting `request.user`), TenantGuard would let an unauthenticated request through to those routes.
+
+Defensive variant — fire `if (!user) throw` BEFORE the tenant check:
+
+```ts
+const user = request.user;
+if (!user) throw new ForbiddenException(...);   // defense vs upstream JwtAuthGuard bug
+const tenant = request.tenant;
+if (!tenant) return true;                       // delegation to TenantMiddleware (admin/public)
+```
+
+Not currently exploitable (JwtAuthGuard hasn't shown such a bug), but matches the V-14b "trust nothing about upstream guards" philosophy. ~5 min change + 1 new test asserting the throw fires when user is undefined on a non-public route.
+
+**Engineer 2 owns.** Low priority — schedule alongside V-38-cleanup.
+
+---
+
 ### V-37b-feature-flag — remove spoofable `x-tenant-id` from feature-flag guard (Engineer 3)
 
 Same spoofable-header pattern as V-37 (now fixed in `quota.guard.ts`) lives at `apps/api/src/shared/feature-flags/feature-flag.guard.ts:35`:

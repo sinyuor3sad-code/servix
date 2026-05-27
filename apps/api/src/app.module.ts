@@ -15,7 +15,7 @@ import { AiModule } from './shared/ai';
 import { CalendarModule } from './shared/calendar';
 import { JobsModule } from './shared/jobs';
 // Sentry is optionally loaded via instrument.ts
-import { JwtAuthGuard, SubscriptionWriteGuard, RateLimitGuard } from './shared/guards';
+import { JwtAuthGuard, SubscriptionWriteGuard, RateLimitGuard, TenantGuard } from './shared/guards';
 import { TenantMiddleware } from './shared/middleware/tenant.middleware';
 import { AuthModule } from './core/auth/auth.module';
 import { TenantsModule } from './core/tenants/tenants.module';
@@ -96,6 +96,15 @@ import { winstonConfig } from './shared/logger/winston.config';
     {
       provide: APP_GUARD,
       useClass: TenantMiddleware,
+    },
+    // V-38 / A2-13: TenantGuard registered globally AFTER TenantMiddleware
+    // so request.tenant is populated. Verifies the JWT user has an
+    // ACTIVE TenantUser row linking them to the JWT's tenant — closes
+    // the gap for future controllers added without the explicit
+    // @UseGuards(TenantGuard) decorator. See docs/migrations/v38-apply.md.
+    {
+      provide: APP_GUARD,
+      useClass: TenantGuard,
     },
     {
       provide: APP_GUARD,
