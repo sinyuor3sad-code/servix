@@ -862,6 +862,49 @@ Engineer 2 owns.
 
 ---
 
+### V-60-audit-fail — forensic audit on ValidationPipe rejections
+
+V-60 hardened 7 auth endpoints with class-validator DTOs + `forbidNonWhitelisted: true`. Malformed payloads now correctly return 400, but the rejection happens at the global `ValidationPipe` BEFORE the controller method runs — services never see the request, so `auditService.log()` is never invoked for these 400s. Operators lose visibility into payload-shape attacks (probing for missing fields, extra fields, type mismatches at scale).
+
+This card adds a thin global exception filter that intercepts `BadRequestException` thrown by `ValidationPipe` and emits a forensic audit row:
+
+```ts
+@Catch(BadRequestException)
+export class ValidationAuditFilter implements ExceptionFilter {
+  catch(exception: BadRequestException, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const req = ctx.getRequest<Request>();
+    const res = ctx.getResponse<Response>();
+    const body = exception.getResponse() as { message?: string[] };
+
+    // Only audit ValidationPipe failures (class-validator wraps messages in
+    // a string[] array; other BadRequest paths use a single string).
+    if (Array.isArray(body?.message)) {
+      this.auditService.log({
+        userId: (req.user as { sub?: string })?.sub ?? 'anonymous',
+        action: 'http_validation_failed',
+        entityType: 'Request',
+        entityId: req.url,
+        newValues: {
+          path: req.url, method: req.method,
+          errors: body.message,                 // class-validator messages
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent']?.slice(0, 500),
+        },
+      }).catch(() => {});
+    }
+
+    res.status(400).json(exception.getResponse());
+  }
+}
+```
+
+Wire as `useGlobalFilters` in `main.ts` (or `APP_FILTER` provider). Audit volume: bounded by attacker traffic + accidental client misuse; transition-only firing not applicable (every 400 emits one row). Operators should monitor `SELECT count(*) FROM platform_audit_logs WHERE action='http_validation_failed' GROUP BY new_values->>'path'` for spikes signalling probing campaigns.
+
+**Engineer 2 owns** (auth scope, plus shared filter infrastructure). ~1h. Schedule once V-60 is on prod and the 400-rate baseline is established.
+
+---
+
 ### V-30 — JWT secret/expiry env validation (verify-only ✅ 2026-05-26)
 
 **Status:** verified clean. No commit needed on the runtime / schema / config side.

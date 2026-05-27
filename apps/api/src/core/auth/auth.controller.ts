@@ -31,6 +31,13 @@ import {
   ChangePasswordDto,
   UpdateProfileDto,
   LinkGoogleDto,
+  Verify2FALoginDto,
+  VerifyResetTokenDto,
+  VerifyOtpDto,
+  ResendOtpDto,
+  Verify2FADto,
+  Disable2FADto,
+  GoogleLoginDto,
 } from './dto';
 
 @ApiTags('Auth')
@@ -93,14 +100,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'التحقق الثنائي بعد تسجيل الدخول' })
   async verify2FALogin(
-    @Body() body: { emailOrPhone: string; password: string; code: string },
+    @Body() dto: Verify2FALoginDto,
     @Req() req: Request,
   ): Promise<{
     user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
     tokens: JwtTokens;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-    return this.authService.verify2FALogin(body.emailOrPhone, body.password, body.code, ip);
+    return this.authService.verify2FALogin(dto.emailOrPhone, dto.password, dto.code, ip);
   }
 
   @Post('refresh')
@@ -163,9 +170,9 @@ export class AuthController {
   @ApiOperation({ summary: 'التحقق من صلاحية رمز إعادة التعيين' })
   @ApiResponse({ status: 200, description: 'صالح أو غير صالح' })
   async verifyResetToken(
-    @Body() body: { token: string },
+    @Body() dto: VerifyResetTokenDto,
   ): Promise<{ valid: boolean; email?: string }> {
-    return this.authService.verifyResetToken(body.token);
+    return this.authService.verifyResetToken(dto.token);
   }
 
   @Post('verify-otp')
@@ -176,7 +183,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'تم التحقق بنجاح — يُعيد tokens' })
   @ApiResponse({ status: 400, description: 'رمز التحقق غير صحيح أو منتهي' })
   async verifyOtp(
-    @Body() body: { email: string; code: string },
+    @Body() dto: VerifyOtpDto,
   ): Promise<{
     user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
     tenants: Array<{
@@ -189,7 +196,7 @@ export class AuthController {
     }>;
     tokens: JwtTokens;
   }> {
-    return this.authService.verifyEmailOtp(body.email, body.code);
+    return this.authService.verifyEmailOtp(dto.email, dto.code);
   }
 
   @Post('resend-otp')
@@ -200,9 +207,9 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'تم إرسال رمز جديد' })
   @ApiResponse({ status: 400, description: 'يرجى الانتظار قبل إعادة الإرسال' })
   async resendOtp(
-    @Body() body: { email: string },
+    @Body() dto: ResendOtpDto,
   ): Promise<{ message: string }> {
-    return this.authService.resendEmailOtp(body.email);
+    return this.authService.resendEmailOtp(dto.email);
   }
 
   @Get('me')
@@ -278,9 +285,9 @@ export class AuthController {
   @ApiOperation({ summary: 'تأكيد تفعيل التحقق الثنائي بالرمز' })
   async verify2FA(
     @CurrentUser('sub') userId: string,
-    @Body() body: { code: string },
+    @Body() dto: Verify2FADto,
   ): Promise<{ message: string }> {
-    return this.authService.verify2FA(userId, body.code);
+    return this.authService.verify2FA(userId, dto.code);
   }
 
   @Delete('2fa')
@@ -289,9 +296,9 @@ export class AuthController {
   @ApiOperation({ summary: 'إلغاء التحقق الثنائي' })
   async disable2FA(
     @CurrentUser('sub') userId: string,
-    @Body() body: { password: string },
+    @Body() dto: Disable2FADto,
   ): Promise<{ message: string }> {
-    return this.authService.disable2FA(userId, body.password);
+    return this.authService.disable2FA(userId, dto.password);
   }
 
   @Get('2fa/status')
@@ -311,9 +318,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'تسجيل الدخول بحساب Google' })
   async googleLogin(
-    @Body() body: { idToken: string },
+    @Body() dto: GoogleLoginDto,
   ) {
-    return this.authService.googleLogin(body.idToken);
+    return this.authService.googleLogin(dto.idToken);
   }
 
   @Post('google/link')

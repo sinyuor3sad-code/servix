@@ -6,3 +6,11 @@ export { ResetPasswordDto } from './reset-password.dto';
 export { ChangePasswordDto } from './change-password.dto';
 export { UpdateProfileDto } from './update-profile.dto';
 export { LinkGoogleDto } from './link-google.dto';
+// V-60: auth body validation hardening
+export { Verify2FALoginDto } from './verify-2fa-login.dto';
+export { VerifyResetTokenDto } from './verify-reset-token.dto';
+export { VerifyOtpDto } from './verify-otp.dto';
+export { ResendOtpDto } from './resend-otp.dto';
+export { Verify2FADto } from './verify-2fa.dto';
+export { Disable2FADto } from './disable-2fa.dto';
+export { GoogleLoginDto } from './google-login.dto';
