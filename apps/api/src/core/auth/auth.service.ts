@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { compare, hash } from 'bcryptjs';
+import { compare, hash, hashSync } from 'bcryptjs';
 import { v4 } from 'uuid';
 import { createHash, randomBytes, randomInt } from 'crypto';
 import type { RefreshToken } from '../../shared/database';
@@ -85,6 +85,26 @@ interface MeResult {
 }
 
 const BCRYPT_ROUNDS = 12;
+
+// V-41 / A2-15 — pre-computed dummy hash used to equalize bcrypt timing
+// on the user-not-found branches of login + verify2FALogin. Without this
+// the user-not-found path skips compare() entirely (~5-20ms total) while
+// the user-found+wrong-password path burns ~150ms — a trivially-observable
+// delta over network noise (Riyadh DC p99 ~100ms) that an attacker uses
+// to enumerate valid emails.
+//
+// hashSync runs ONCE at module init (~150ms one-time boot cost, invisible
+// at request time). Auto-syncs with BCRYPT_ROUNDS — if the cost factor
+// changes, the dummy hash regenerates on next deploy with matching cost,
+// preserving timing parity automatically. No magic-constant drift risk.
+//
+// The compare() return value is always false (this placeholder string
+// won't match any real password) and is deliberately discarded — the
+// only side effect we want is the ~150ms CPU work.
+const DUMMY_BCRYPT_HASH = hashSync(
+  'v41-timing-equalization-placeholder-not-a-real-password',
+  BCRYPT_ROUNDS,
+);
 
 const RESET_TOKEN_EXPIRY_HOURS = 1;
 
@@ -233,6 +253,12 @@ export class AuthService {
     }
 
     if (!user) {
+      // V-41: equalize timing with the wrong-password branch by running
+      // bcrypt against a pre-computed dummy hash. The return value
+      // (always false) is intentionally discarded — only the ~150ms
+      // CPU cost matters. Without this, response time alone enumerates
+      // valid emails.
+      await compare(dto.password, DUMMY_BCRYPT_HASH);
       await this.cacheService.incrementLoginFailIp(ip);
       throw new UnauthorizedException('بيانات الدخول غير صحيحة');
     }
@@ -683,6 +709,22 @@ export class AuthService {
         to: user.phone,
         message: `SERVIX: تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدكم الإلكتروني`,
       });
+    } else {
+      // V-41: timing equalization. The found-user branch above takes
+      // ~1-3 seconds (passwordReset.create + mailService.send +
+      // smsService.send — all network I/O). Without this jitter the
+      // not-found branch returns in ~10ms, letting an attacker enumerate
+      // valid emails from a single request's response time. Range
+      // 800-1500ms is matched to the typical observed mail+SMS p50 on
+      // prod; sophisticated statistical analysis could still distinguish
+      // (jitter doesn't perfectly mimic real-IO variance shape) but the
+      // bar is raised from "single-request leak" to "needs N samples
+      // and statistical analysis" — adequate for P2.
+      //
+      // crypto.randomInt (NOT Math.random) per V-13b's no-Math-random
+      // ESLint rule — security-sensitive timing source.
+      const jitterMs = randomInt(800, 1501); // [800, 1500] inclusive
+      await new Promise((resolve) => setTimeout(resolve, jitterMs));
     }
 
     await this.cacheService.incrementForgotPasswordAttempt(email);
@@ -892,6 +934,9 @@ export class AuthService {
       where: { OR: [{ email: emailOrPhone }, { phone: emailOrPhone }] },
     });
     if (!user) {
+      // V-41: equalize timing with the wrong-password branch (line 925)
+      // via dummy bcrypt. Same rationale as login (auth.service.ts:236-243).
+      await compare(password, DUMMY_BCRYPT_HASH);
       // IP-only counter for unknown identifiers (parity with login).
       await this.cacheService.incrementLoginFailIp(ip);
       throw new UnauthorizedException('بيانات الدخول غير صحيحة');

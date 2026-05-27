@@ -862,6 +862,42 @@ Engineer 2 owns.
 
 ---
 
+### V-41b-resend-otp-uniform — unify `/auth/resend-otp` 4-message variance
+
+`auth.service.resendEmailOtp` (auth.service.ts:1526-1548) returns 4 distinct messages:
+
+1. User not found → `"إذا كان البريد مسجلاً، سيتم إرسال رمز تحقق جديد"` (generic ✓)
+2. User found + already verified → `"البريد الإلكتروني مُؤكد بالفعل"` 🚨 reveals existence + state
+3. User found + rate-limited → `"يرجى الانتظار 60 ثانية قبل إعادة الإرسال"` 🚨 reveals existence + recent OTP send
+4. User found + OK → `"تم إرسال رمز تحقق جديد إلى بريدك الإلكتروني"` 🚨 reveals existence
+
+Branches 2-4 leak existence via message variance + network IO timing (sendEmailOtpInternal fires only on branch 4).
+
+V-41 left this as accepted UX trade-off because unifying breaks "already verified" / "wait 60s" feedback users expect. This follow-up either:
+
+**Option A** — full uniformity: always return branch-1's generic message + apply jitter (similar to V-41's forgotPassword pattern) on branches 1/2 to equalize with branch 4's network IO.
+**Option B** — partial: unify branches 1+4 only; keep "already verified" as informational + accept its leak.
+
+Owner choice driven by UX preference. ~1.5h either option. **Engineer 2 owns.**
+
+---
+
+### V-41-audit — Prometheus counter for enumeration-probing patterns
+
+V-41 closes the per-request enumeration channel. An attacker resorting to statistical/sampling attacks (sending N probes to distinguish via aggregate timing variance) is much slower but still possible.
+
+Add Prometheus counters at the V-41-hardened paths:
+
+- `servix_auth_login_unknown_email_total{ip}` — increments inside login's `if (!user)` branch
+- `servix_auth_2fa_unknown_email_total{ip}` — same for verify2FALogin
+- `servix_auth_forgot_unknown_email_total{ip}` — increments inside forgotPassword's `else` branch
+
+Alertmanager rule: alert if `rate(servix_auth_*_unknown_email_total[10m]) by (ip) > 20`. Operational signal that an IP is iterating email lists — V-41's per-request mitigation works, but the campaign is still visible at aggregate volume.
+
+**Engineer 1 (Platform/Infra)** owns Prometheus + alertmanager wiring. Engineer 2 supplies counter increments as one-liners. Low priority — schedule when WAF / fail2ban telemetry doesn't already cover this.
+
+---
+
 ### V-38-cleanup — remove redundant `@UseGuards(TenantGuard)` decorators (~30 files)
 
 V-38 registered `TenantGuard` as a global `APP_GUARD`. The 30 explicit `@UseGuards(TenantGuard)` decorators on salon controllers + 2 non-salon (`core/notifications`, `shared/whatsapp/whatsapp-connect`) became redundant — NestJS dedupes (each guard instance runs once per request even if registered multiply). They serve as inline documentation but represent ~30 lines of future maintenance noise (rename, refactor risk).
