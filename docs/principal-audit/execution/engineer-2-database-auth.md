@@ -862,6 +862,57 @@ Engineer 2 owns.
 
 ---
 
+### V-37b-feature-flag — remove spoofable `x-tenant-id` from feature-flag guard (Engineer 3)
+
+Same spoofable-header pattern as V-37 (now fixed in `quota.guard.ts`) lives at `apps/api/src/shared/feature-flags/feature-flag.guard.ts:35`:
+
+```ts
+tenantId: request.tenant?.id || request.headers?.['x-tenant-id'],
+```
+
+**Lower severity than the QuotaGuard case** because:
+1. JWT-derived `request.tenant?.id` has PRIORITY (header is fallback only — opposite of pre-V-37 QuotaGuard's ordering).
+2. Feature-flag decisions are informational ("is this flag on for this tenant?"), not authorization.
+
+Still worth closing: defense-in-depth + audit-log integrity if the flag-eval result is ever persisted with the tenantId. Fix is one line — delete the `|| request.headers?.['x-tenant-id']` fallback.
+
+**Engineer 3 (shared/feature-flags is E3 scope) owns**. ~5 min impl + spec update. Schedule any time.
+
+---
+
+### V-37c-detect-resource — replace controller-name pattern matching with explicit metadata
+
+`quota.guard.ts:61-69` `detectResource` does case-insensitive substring matching on the controller class name:
+
+```ts
+const controller = context.getClass().name.toLowerCase();
+if (controller.includes('employee')) return 'employees';
+if (controller.includes('client'))   return 'clients';
+// ...
+```
+
+Fragile — rename `EmployeesController` → `StaffController` and quota silently breaks. Replace with an explicit `@QuotaResource('employees')` method decorator + `Reflector.get()` lookup. ~30 min + tests.
+
+**Engineer 2 owns.** Low priority — schedule when refactoring the quota plumbing or when wiring `QuotaGuard` as global `APP_GUARD`.
+
+---
+
+### V-37d-quota-fail-policy — re-evaluate fail-open on DB errors
+
+`quota.guard.ts:96-99` returns `0` on DB-count failure (`return 0; // fail-open on DB errors`). Allows resource creation to proceed when the count query throws — opposite of V-13c's fail-CLOSED stance for security-critical counts.
+
+For quota specifically, fail-open is defensible:
+- Wrong direction: a transient DB blip during a quota-near-limit POST shouldn't deny a legitimate user.
+- Symmetric: fail-CLOSED on quota would let an attacker DoS the DB to cause widespread feature lockout.
+
+But the policy isn't documented anywhere — a future engineer might flip it inconsistently. This card:
+1. Adds an inline comment explaining the chosen policy (fail-open + rationale).
+2. Considers a metric `servix_quota_db_error_total` so ops know when the fail-open is exercised.
+
+**Engineer 2 owns**. ~20 min. Schedule at the next quota incident or quarterly hygiene pass.
+
+---
+
 ### V-60-audit-fail — forensic audit on ValidationPipe rejections
 
 V-60 hardened 7 auth endpoints with class-validator DTOs + `forbidNonWhitelisted: true`. Malformed payloads now correctly return 400, but the rejection happens at the global `ValidationPipe` BEFORE the controller method runs — services never see the request, so `auditService.log()` is never invoked for these 400s. Operators lose visibility into payload-shape attacks (probing for missing fields, extra fields, type mismatches at scale).

@@ -22,8 +22,19 @@ export class QuotaGuard implements CanActivate {
     // Only check on creation (POST)
     if (request.method !== 'POST') return true;
 
-    const tenantId = request.headers?.['x-tenant-id'] || request.user?.tenantId;
-    if (!tenantId) return true; // No tenant context (admin routes)
+    // V-37: trust JWT only. The pre-V-37 chain
+    //   request.headers?.['x-tenant-id'] || request.user?.tenantId
+    // let an attacker spoof the x-tenant-id header to poison the
+    // warn-log audit trail (and any future code that re-uses this
+    // local variable for an actual decision). request.tenant +
+    // request.tenantDb come from TenantMiddleware (JWT-derived), so
+    // the live quota count was always correct — but the local var
+    // is now consistent with that contract too. Header is silently
+    // ignored: no caller in the SERVIX frontend sends it (Phase A
+    // grep confirmed). See feature-flag.guard.ts:35 for the same
+    // pattern (V-37b follow-up, Engineer 3 scope).
+    const tenantId = request.user?.tenantId;
+    if (!tenantId) return true; // No tenant context (admin routes / pre-tenant signup)
 
     const resource = this.detectResource(context);
     if (!resource) return true; // Not a quota-managed resource
