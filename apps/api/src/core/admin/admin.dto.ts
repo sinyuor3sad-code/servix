@@ -9,6 +9,8 @@ import {
   IsIn,
   IsUUID,
   IsObject,
+  Length,
+  Matches,
 } from 'class-validator';
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -23,6 +25,27 @@ export class AdminLoginDto {
   @IsString({ message: 'كلمة المرور يجب أن تكون نصاً' })
   @IsNotEmpty({ message: 'كلمة المرور مطلوبة' })
   password: string;
+}
+
+// V-43 — admin 2FA verification (login step 2). Re-submits email +
+// password (full re-auth, no temp token) plus the 6-digit TOTP code.
+export class AdminVerify2FADto {
+  @ApiProperty({ description: 'البريد الإلكتروني', example: 'admin@servi-x.com' })
+  @IsEmail({}, { message: 'البريد الإلكتروني غير صالح' })
+  @IsNotEmpty({ message: 'البريد الإلكتروني مطلوب' })
+  email: string;
+
+  @ApiProperty({ description: 'كلمة المرور' })
+  @IsString({ message: 'كلمة المرور يجب أن تكون نصاً' })
+  @IsNotEmpty({ message: 'كلمة المرور مطلوبة' })
+  password: string;
+
+  @ApiProperty({ description: 'رمز التحقق الثنائي (6 أرقام)', example: '123456' })
+  @IsString({ message: 'رمز التحقق يجب أن يكون نصاً' })
+  @IsNotEmpty({ message: 'رمز التحقق مطلوب' })
+  @Length(6, 6, { message: 'رمز التحقق يجب أن يكون 6 أرقام بالضبط' })
+  @Matches(/^\d{6}$/, { message: 'رمز التحقق يجب أن يحتوي على أرقام فقط' })
+  code: string;
 }
 
 const TENANT_STATUSES = ['active', 'suspended'] as const;

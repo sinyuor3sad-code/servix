@@ -6,11 +6,13 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -32,6 +34,7 @@ import {
   GetInvoicesDto,
   GetAuditLogsDto,
   AdminLoginDto,
+  AdminVerify2FADto,
   AdminRefreshDto,
   UpdateSettingsDto,
   TriggerBackupDto,
@@ -68,12 +71,44 @@ export class AdminController {
   @ApiResponse({ status: 401, description: 'بيانات الدخول غير صحيحة' })
   async login(
     @Body() dto: AdminLoginDto,
+    @Req() req: Request,
+  ): Promise<
+    | {
+        user: { id: string; email: string; fullName: string; role: string };
+        accessToken: string;
+        refreshToken: string;
+      }
+    | { requires2FA: true }
+  > {
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      undefined;
+    return this.adminService.login(dto.email, dto.password, ip);
+  }
+
+  @Post('auth/2fa/verify')
+  @Public()
+  @Roles()
+  @RateLimit(5, 300)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'التحقق الثنائي لمدير المنصة (V-43)' })
+  @ApiResponse({ status: 200, description: 'تم تسجيل الدخول بنجاح' })
+  @ApiResponse({ status: 401, description: 'بيانات الدخول أو رمز التحقق غير صحيح' })
+  @ApiResponse({ status: 403, description: 'الوصول غير مسموح من هذا العنوان' })
+  async verify2FA(
+    @Body() dto: AdminVerify2FADto,
+    @Req() req: Request,
   ): Promise<{
     user: { id: string; email: string; fullName: string; role: string };
     accessToken: string;
     refreshToken: string;
   }> {
-    return this.adminService.login(dto.email, dto.password);
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      undefined;
+    return this.adminService.verify2FALogin(dto.email, dto.password, dto.code, ip);
   }
 
   @Get('stats')

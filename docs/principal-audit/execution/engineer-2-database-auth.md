@@ -862,6 +862,53 @@ Engineer 2 owns.
 
 ---
 
+### V-43-mandatory-2fa — tighten admin 2FA from enforce-if-enabled to mandatory
+
+V-43 shipped 2FA as **enforce-if-enabled** (decision 1) — a super_admin without `twoFactorEnabled` logs in with password alone. This was deliberate to avoid locking out an un-enrolled super_admin on deploy.
+
+Once ops confirms ALL active super_admins have `twoFactorEnabled=true` (query in `docs/migrations/v43-apply.md`), this card flips enforcement to **mandatory**:
+
+1. `admin.service.login` rejects password-only login for super_admins whose `twoFactorEnabled=false` with a clear "2FA enrollment required" error.
+2. Add an enrollment-grace path: a short-lived token that ONLY permits `/auth/2fa/setup` + `/auth/2fa/verify`, nothing else, so a fresh super_admin can enroll.
+3. Audit `admin_login_2fa_enrollment_required`.
+
+**Owner decision required** before flipping (lockout risk). **Engineer 2 owns.** ~2h. Schedule after enrollment is confirmed prod-wide.
+
+---
+
+### V-43-audit-counter — Prometheus counter for blocked-IP admin login attempts
+
+V-43's IP allowlist blocks pre-user-lookup, so there's no `userId` to write a `PlatformAuditLog` row (userId is NOT NULL per V-78). Blocked attempts are currently `logger.warn`'d only.
+
+Add a Prometheus counter `servix_admin_login_blocked_ip_total{ip}` incremented in `assertAdminIpAllowed` on block. Alertmanager rule: alert on ANY increment (admin login from a non-allowlisted IP is always worth investigating — either a misconfigured operator or an attack).
+
+**Engineer 1 (Platform/Infra)** owns Prometheus + alertmanager. Engineer 2 supplies the one-line increment once E1 lands the rule.
+
+---
+
+### V-43-env — Joi validation for ADMIN_IP_ALLOWLIST CSV format
+
+V-43 reads `ADMIN_IP_ALLOWLIST` via `configService.get(..., '')` with no boot-time format validation. A malformed entry fails closed (matches nothing), so the security risk is "operator accidentally locks themselves out," not "allowlist silently disabled." Still, a boot-time Joi check that each CSV entry parses as IPv4 or IPv4-CIDR would catch typos before deploy.
+
+Add to `env.validation.ts`: a custom Joi validator that splits the CSV and validates each entry against an IPv4/CIDR regex (or reuses the `isIpAllowed` helper's parse logic).
+
+**Engineer 1 (Platform/Infra)** owns `env.validation.ts`. Engineer 2 can supply the validator function. Low priority.
+
+---
+
+### V-43-parity — full V-25/V-41 hardening parity on admin login
+
+V-43 added 2FA + IP-allowlist + audit + bcrypt-timing-equalization to admin login, but did NOT add the IP-block + account-lockout layers that user `/auth/login` has (V-25). An attacker who knows a super_admin email + is on the allowlist (or allowlist disabled) can still brute-force the password subject only to `@RateLimit(5, 300)`.
+
+This card brings admin login to full V-25 parity:
+1. `cacheService.checkLoginIpBlock` + `incrementLoginFailIp` (shared counter with user login, or admin-specific).
+2. `cacheService.isAccountLocked` + `incrementLoginFailAccount` for the super_admin.
+3. Account-lock SMS notification (super_admin phone).
+
+Lower priority because `@RateLimit(5, 300)` (5 attempts / 5min / IP) + the tiny known super_admin set make brute-force far less valuable than against the broad user base. **Engineer 2 owns.** ~1.5h. Schedule alongside V-43-mandatory-2fa.
+
+---
+
 ### V-41b-resend-otp-uniform — unify `/auth/resend-otp` 4-message variance
 
 `auth.service.resendEmailOtp` (auth.service.ts:1526-1548) returns 4 distinct messages:

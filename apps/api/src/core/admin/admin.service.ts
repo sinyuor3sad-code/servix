@@ -1,17 +1,21 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { compare, hash } from 'bcryptjs';
+import { compare, hash, hashSync } from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
 import { CacheService } from '../../shared/cache/cache.service';
 import { EventsGateway } from '../../shared/events/events.gateway';
+import { TwoFactorService } from '../auth/two-factor.service';
+import { isIpAllowed } from '../../shared/security/ip-allowlist.helper';
 import type {
   Tenant,
   Subscription,
@@ -103,8 +107,28 @@ interface AdminLoginResult {
   refreshToken: string;
 }
 
+// V-43: when the super_admin has 2FA enabled, the first step returns this
+// shape instead of tokens — the caller must then POST email+password+code
+// to /admin/auth/2fa/verify to complete the login.
+interface AdminLogin2FAChallenge {
+  requires2FA: true;
+}
+
+// V-43 / A2-15 parity (decision 7): dummy hash to equalize bcrypt timing
+// on the admin user-not-found branch, preventing super_admin email
+// enumeration via response time. Same rationale as auth.service's
+// DUMMY_BCRYPT_HASH (V-41) — kept as a local const here rather than
+// importing auth.service's module-scoped one, to avoid coupling admin
+// internals to auth internals. hashSync runs once at module init.
+const ADMIN_DUMMY_BCRYPT_HASH = hashSync(
+  'v43-admin-timing-equalization-placeholder-not-a-real-password',
+  12,
+);
+
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private readonly prisma: PlatformPrismaClient,
     private readonly jwtService: JwtService,
@@ -112,48 +136,151 @@ export class AdminService {
     private readonly platformSettings: PlatformSettingsService,
     private readonly cacheService: CacheService,
     private readonly eventsGateway: EventsGateway,
+    private readonly twoFactorService: TwoFactorService,
   ) {}
 
-  async login(email: string, password: string): Promise<AdminLoginResult> {
+  // V-43 / A2-17 — admin login step 1.
+  //
+  // Pre-V-43 this issued tokens after a bare password check — no IP
+  // allowlist, no 2FA enforcement even for a 2FA-enabled super_admin,
+  // and zero audit. super_admin is the highest-privilege principal
+  // (cross-tenant control), so a leaked password meant full admin
+  // access with no second factor.
+  //
+  // After V-43:
+  //   1. Optional IP allowlist (ADMIN_IP_ALLOWLIST env, CSV of IPv4/CIDR).
+  //      Blocked IPs are logged + counted (V-43-audit-counter) — NOT
+  //      audit-rowed, because PlatformAuditLog.userId is NOT NULL (V-78)
+  //      and the block fires before user resolution.
+  //   2. Credential + super_admin-role verification (with V-41-parity
+  //      bcrypt timing equalization on user-not-found).
+  //   3. If the super_admin has 2FA enabled → return { requires2FA }
+  //      (no tokens). Caller completes via POST /admin/auth/2fa/verify.
+  //      Enforce-if-enabled (decision 1) — un-enrolled super_admins are
+  //      NOT locked out; V-43-mandatory-2fa follow-up tightens later.
+  //   4. Otherwise → issue tokens (audited admin_login_success).
+  async login(
+    email: string,
+    password: string,
+    ip?: string,
+  ): Promise<AdminLoginResult | AdminLogin2FAChallenge> {
+    this.assertAdminIpAllowed(ip);
+
+    const { user, superAdminRole, tenantUser } =
+      await this.assertAdminCredentials(email, password, ip);
+
+    if (user.twoFactorEnabled && user.twoFactorSecret) {
+      await this.writeAdminAudit(user.id, 'admin_login_2fa_required', { ip });
+      return { requires2FA: true };
+    }
+
+    return this.issueAdminTokens(user, superAdminRole.id, tenantUser.tenantId, ip);
+  }
+
+  // V-43 — admin login step 2: 2FA verification. Re-checks the password
+  // (the temp-token-less design re-authenticates fully, mirroring the
+  // user-facing verify2FALogin contract) + the TOTP code, then issues
+  // admin tokens. Cannot reuse auth.service.verify2FALogin: that builds
+  // a non-admin payload from tenantUsers[0]; admin needs roleId =
+  // superAdminRole.id.
+  async verify2FALogin(
+    email: string,
+    password: string,
+    code: string,
+    ip?: string,
+  ): Promise<AdminLoginResult> {
+    this.assertAdminIpAllowed(ip);
+
+    const { user, superAdminRole, tenantUser } =
+      await this.assertAdminCredentials(email, password, ip);
+
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+      // Not a 2FA account — this endpoint shouldn't have been called.
+      throw new BadRequestException('التحقق الثنائي غير مفعّل لهذا الحساب');
+    }
+
+    const codeValid = this.twoFactorService.verifyToken(user.twoFactorSecret, code);
+    if (!codeValid) {
+      await this.writeAdminAudit(user.id, 'admin_login_2fa_failed', { ip });
+      throw new UnauthorizedException('رمز التحقق غير صحيح');
+    }
+
+    return this.issueAdminTokens(user, superAdminRole.id, tenantUser.tenantId, ip);
+  }
+
+  // V-43 — IP allowlist gate. ADMIN_IP_ALLOWLIST empty = disabled (all
+  // IPs allowed). Blocked attempts are logged + (via follow-up) counted,
+  // NOT audit-rowed (no userId at this pre-lookup stage).
+  private assertAdminIpAllowed(ip?: string): void {
+    const allowlist = this.configService.get<string>('ADMIN_IP_ALLOWLIST', '');
+    if (isIpAllowed(ip, allowlist)) return;
+
+    // V-43-audit-counter: blocked-IP → Prometheus counter (Engineer 1).
+    // audit row impossible here (PlatformAuditLog.userId NOT NULL, V-78).
+    this.logger.warn(
+      `[admin-login] blocked by IP allowlist: ip=${ip ?? 'unknown'}`,
+    );
+    throw new ForbiddenException('الوصول غير مسموح من هذا العنوان');
+  }
+
+  // V-43 — shared credential + super_admin-role check for both login
+  // steps. Includes V-41-parity bcrypt timing equalization.
+  private async assertAdminCredentials(
+    email: string,
+    password: string,
+    ip?: string,
+  ): Promise<{
+    user: { id: string; email: string; fullName: string; passwordHash: string; twoFactorEnabled: boolean; twoFactorSecret: string | null };
+    superAdminRole: { id: string };
+    tenantUser: { tenantId: string };
+  }> {
     const user = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
     });
 
     if (!user) {
+      // V-41 parity: equalize timing with the wrong-password branch so
+      // response time can't enumerate super_admin emails.
+      await compare(password, ADMIN_DUMMY_BCRYPT_HASH);
       throw new UnauthorizedException('بيانات الدخول غير صحيحة');
     }
 
     const isValid = await compare(password, user.passwordHash);
     if (!isValid) {
+      await this.writeAdminAudit(user.id, 'admin_login_failed', { ip });
       throw new UnauthorizedException('بيانات الدخول غير صحيحة');
     }
 
-    // Check that this user has super_admin role
     const superAdminRole = await this.prisma.role.findUnique({
       where: { name: 'super_admin' },
     });
-
     if (!superAdminRole) {
       throw new UnauthorizedException('ليس لديك صلاحية الدخول لوحة الإدارة');
     }
 
     const tenantUser = await this.prisma.tenantUser.findFirst({
-      where: {
-        userId: user.id,
-        roleId: superAdminRole.id,
-        status: 'active',
-      },
+      where: { userId: user.id, roleId: superAdminRole.id, status: 'active' },
     });
-
     if (!tenantUser) {
       throw new UnauthorizedException('ليس لديك صلاحية الدخول لوحة الإدارة');
     }
 
+    return { user, superAdminRole, tenantUser };
+  }
+
+  // V-43 — issue admin tokens (the pre-V-43 token-signing block, now
+  // shared between login + verify2FALogin) + audit admin_login_success.
+  private async issueAdminTokens(
+    user: { id: string; email: string; fullName: string },
+    superAdminRoleId: string,
+    tenantId: string,
+    ip?: string,
+  ): Promise<AdminLoginResult> {
     const tokenPayload = {
       sub: user.id,
       email: user.email,
-      tenantId: tenantUser.tenantId,
-      roleId: superAdminRole.id,
+      tenantId,
+      roleId: superAdminRoleId,
     };
 
     const accessSecret = this.configService.get<string>('jwt.accessSecret', '');
@@ -179,6 +306,8 @@ export class AdminService {
       data: { lastLoginAt: new Date() },
     });
 
+    await this.writeAdminAudit(user.id, 'admin_login_success', { ip });
+
     return {
       user: {
         id: user.id,
@@ -189,6 +318,31 @@ export class AdminService {
       accessToken,
       refreshToken,
     };
+  }
+
+  // V-43 — fire-and-forget admin-login audit row. Uses the admin.service
+  // house pattern (direct platformAuditLog.create, not AuditService).
+  // userId is always a resolved super_admin id here (blocked-IP path
+  // never reaches this — it has no userId and uses logger.warn instead).
+  private async writeAdminAudit(
+    userId: string,
+    action: string,
+    newValues: Record<string, unknown>,
+  ): Promise<void> {
+    await this.prisma.platformAuditLog
+      .create({
+        data: {
+          userId,
+          action,
+          entityType: 'User',
+          entityId: userId,
+          newValues: newValues as never,
+          ipAddress: (newValues.ip as string) ?? null,
+        },
+      })
+      .catch((e) =>
+        this.logger.warn(`[admin-login audit ${action}] ${(e as Error).message}`),
+      );
   }
 
   async getStats(): Promise<AdminStats & { pendingTenants: number; recentTenants: Tenant[] }> {
