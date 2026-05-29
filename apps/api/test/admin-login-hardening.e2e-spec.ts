@@ -13,6 +13,7 @@ import { PlatformSettingsService } from '../src/shared/database/platform-setting
 import { CacheService } from '../src/shared/cache/cache.service';
 import { EventsGateway } from '../src/shared/events/events.gateway';
 import { TwoFactorService } from '../src/core/auth/two-factor.service';
+import { TwoFactorBackupCodeService } from '../src/core/auth/two-factor-backup-code.service';
 
 /**
  * V-43 — Admin login hardening: 2FA enforcement + IP allowlist + audit.
@@ -103,6 +104,7 @@ describe('V-43 — admin login hardening', () => {
         { provide: CacheService, useValue: {} },
         { provide: EventsGateway, useValue: {} },
         { provide: TwoFactorService, useValue: { verifyToken } },
+        { provide: TwoFactorBackupCodeService, useValue: { store: jest.fn(), verifyAndConsume: jest.fn(), deleteAll: jest.fn(), countUnused: jest.fn() } },
       ],
     }).compile();
     service = module.get(AdminService);

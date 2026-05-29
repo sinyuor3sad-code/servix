@@ -4,6 +4,7 @@ import request from 'supertest';
 import { AuthController } from '../src/core/auth/auth.controller';
 import { AuthService } from '../src/core/auth/auth.service';
 import { TwoFactorService } from '../src/core/auth/two-factor.service';
+import { TwoFactorBackupCodeService } from '../src/core/auth/two-factor-backup-code.service';
 import { GoogleAuthService } from '../src/core/auth/google-auth.service';
 
 /**
@@ -52,6 +53,7 @@ describe('V-60 — auth DTO validation enforcement', () => {
       providers: [
         { provide: AuthService, useValue: mockAuthService },
         { provide: TwoFactorService, useValue: {} },
+        { provide: TwoFactorBackupCodeService, useValue: { store: jest.fn(), verifyAndConsume: jest.fn(), deleteAll: jest.fn(), countUnused: jest.fn() } },
         { provide: GoogleAuthService, useValue: { isEnabled: () => true } },
         // Stub global JwtAuthGuard reflection lookup so @Public endpoints work
         // without the real APP_GUARD chain. @CurrentUser decorator on protected

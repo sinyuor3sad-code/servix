@@ -310,6 +310,21 @@ export class AuthController {
     return this.authService.get2FAStatus(userId);
   }
 
+  // V-42: rotate single-use backup codes. Reuses Verify2FADto — regeneration
+  // requires a valid CURRENT TOTP (defense-in-depth). Rate-limited like the
+  // login-time 2FA challenge.
+  @Post('2fa/backup-codes/regenerate')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @RateLimit(5, 300)
+  @ApiOperation({ summary: 'إعادة توليد رموز الاسترداد (يتطلب رمز TOTP حالي)' })
+  async regenerateBackupCodes(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: Verify2FADto,
+  ): Promise<{ backupCodes: string[] }> {
+    return this.authService.regenerateBackupCodes(userId, dto.code);
+  }
+
   // ════════════ Google OAuth ════════════
 
   @Post('google')

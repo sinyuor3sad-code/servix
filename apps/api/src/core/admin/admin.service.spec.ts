@@ -11,6 +11,7 @@ import { PlatformSettingsService } from '../../shared/database/platform-settings
 import { CacheService } from '../../shared/cache/cache.service';
 import { EventsGateway } from '../../shared/events/events.gateway';
 import { TwoFactorService } from '../auth/two-factor.service';
+import { TwoFactorBackupCodeService } from '../auth/two-factor-backup-code.service';
 
 const mockPrisma = {
   tenant: {
@@ -74,6 +75,13 @@ const mockTwoFactorService = {
   verifyToken: jest.fn(),
 };
 
+const mockBackupCodeService = {
+  store: jest.fn(),
+  verifyAndConsume: jest.fn(),
+  deleteAll: jest.fn(),
+  countUnused: jest.fn(),
+};
+
 describe('AdminService', () => {
   let service: AdminService;
 
@@ -88,6 +96,7 @@ describe('AdminService', () => {
         { provide: CacheService, useValue: mockCacheService },
         { provide: EventsGateway, useValue: mockEventsGateway },
         { provide: TwoFactorService, useValue: mockTwoFactorService },
+        { provide: TwoFactorBackupCodeService, useValue: mockBackupCodeService },
       ],
     }).compile();
 

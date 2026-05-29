@@ -13,6 +13,7 @@ import { CacheService } from '../../shared/cache/cache.service';
 import { MailService } from '../../shared/mail/mail.service';
 import { SmsService } from '../../shared/sms/sms.service';
 import { TwoFactorService } from './two-factor.service';
+import { TwoFactorBackupCodeService } from './two-factor-backup-code.service';
 import { GoogleAuthService } from './google-auth.service';
 import { TenantDatabaseService } from '../../shared/database/tenant-database.service';
 
@@ -111,6 +112,7 @@ const mockMailService = { send: jest.fn().mockResolvedValue(undefined) };
 const mockSmsService = { send: jest.fn().mockResolvedValue(undefined) };
 const mockTenantDatabaseService = { createTenantDatabase: jest.fn().mockResolvedValue(undefined) };
 const mockTwoFactorService = { generateSecret: jest.fn(), generateOtpAuthUrl: jest.fn(), verifyToken: jest.fn(), generateBackupCodes: jest.fn() };
+const mockBackupCodeService = { store: jest.fn(), verifyAndConsume: jest.fn(), deleteAll: jest.fn(), countUnused: jest.fn() };
 const mockGoogleAuthService = { verifyIdToken: jest.fn(), isEnabled: jest.fn().mockReturnValue(false) };
 const mockAuditService = { log: jest.fn().mockResolvedValue(undefined) };
 const mockSentryService = { captureMessage: jest.fn() };
@@ -133,6 +135,7 @@ describe('AuthService', () => {
         { provide: SmsService, useValue: mockSmsService },
         { provide: TenantDatabaseService, useValue: mockTenantDatabaseService },
         { provide: TwoFactorService, useValue: mockTwoFactorService },
+        { provide: TwoFactorBackupCodeService, useValue: mockBackupCodeService },
         { provide: GoogleAuthService, useValue: mockGoogleAuthService },
         { provide: AuditService, useValue: mockAuditService },
         { provide: SentryService, useValue: mockSentryService },

@@ -15,6 +15,7 @@ import { PlatformSettingsService } from '../../shared/database/platform-settings
 import { CacheService } from '../../shared/cache/cache.service';
 import { EventsGateway } from '../../shared/events/events.gateway';
 import { TwoFactorService } from '../auth/two-factor.service';
+import { TwoFactorBackupCodeService } from '../auth/two-factor-backup-code.service';
 import { isIpAllowed } from '../../shared/security/ip-allowlist.helper';
 import type {
   Tenant,
@@ -137,6 +138,7 @@ export class AdminService {
     private readonly cacheService: CacheService,
     private readonly eventsGateway: EventsGateway,
     private readonly twoFactorService: TwoFactorService,
+    private readonly backupCodeService: TwoFactorBackupCodeService,
   ) {}
 
   // V-43 / A2-17 — admin login step 1.
@@ -199,10 +201,24 @@ export class AdminService {
       throw new BadRequestException('التحقق الثنائي غير مفعّل لهذا الحساب');
     }
 
-    const codeValid = this.twoFactorService.verifyToken(user.twoFactorSecret, code);
+    // V-42: route by format — 6 digits → TOTP, otherwise → backup code.
+    // NOTE: the admin path has no V-25 account-lockout yet (deferred to
+    // V-43-parity); backup-code failures here are audit-only + @RateLimit(5,300),
+    // identical to the admin TOTP-failure path — so backup is no weaker than
+    // TOTP on this endpoint. Full admin lockout lands with V-43-parity.
+    const isTotpFormat = /^\d{6}$/.test(code);
+    const codeValid = isTotpFormat
+      ? this.twoFactorService.verifyToken(user.twoFactorSecret, code)
+      : await this.backupCodeService.verifyAndConsume(user.id, code);
     if (!codeValid) {
-      await this.writeAdminAudit(user.id, 'admin_login_2fa_failed', { ip });
+      await this.writeAdminAudit(user.id, 'admin_login_2fa_failed', {
+        ip,
+        method: isTotpFormat ? 'totp' : 'backup_code',
+      });
       throw new UnauthorizedException('رمز التحقق غير صحيح');
+    }
+    if (!isTotpFormat) {
+      await this.writeAdminAudit(user.id, 'admin_login_2fa_backup_code_used', { ip });
     }
 
     return this.issueAdminTokens(user, superAdminRole.id, tenantUser.tenantId, ip);

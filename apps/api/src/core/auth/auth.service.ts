@@ -26,6 +26,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { TwoFactorService } from './two-factor.service';
+import { TwoFactorBackupCodeService } from './two-factor-backup-code.service';
 import { GoogleAuthService } from './google-auth.service';
 import { AuditService } from '../audit/audit.service';
 import { SentryService } from '../../shared/sentry/sentry.service';
@@ -124,6 +125,7 @@ export class AuthService {
     private readonly googleAuthService: GoogleAuthService,
     private readonly auditService: AuditService,
     private readonly sentryService: SentryService,
+    private readonly backupCodeService: TwoFactorBackupCodeService,
   ) {}
 
   async register(dto: RegisterDto): Promise<RegisterResult> {
@@ -974,11 +976,36 @@ export class AuthService {
       throw new BadRequestException('التحقق الثنائي غير مفعل');
     }
 
-    // 6️⃣ TOTP code verify.
-    const isCodeValid = this.twoFactorService.verifyToken(user.twoFactorSecret, code);
+    // 6️⃣ Code verify — V-42: route by format. A 6-digit code is a TOTP; any
+    // other shape is treated as a backup (recovery) code. BOTH failure paths
+    // go through handle2FAFailure, so a backup code can NEVER bypass the V-25
+    // lockout that TOTP attempts are subject to.
+    const isTotpFormat = /^\d{6}$/.test(code);
+    const isCodeValid = isTotpFormat
+      ? this.twoFactorService.verifyToken(user.twoFactorSecret, code)
+      : await this.backupCodeService.verifyAndConsume(user.id, code);
     if (!isCodeValid) {
-      await this.handle2FAFailure(user, ip, 'code_invalid');
+      await this.handle2FAFailure(
+        user,
+        ip,
+        isTotpFormat ? 'code_invalid' : 'backup_code_invalid',
+      );
       throw new BadRequestException('رمز التحقق غير صحيح');
+    }
+
+    // V-42: a consumed backup code is a security-relevant recovery event.
+    if (!isTotpFormat) {
+      const remainingCodes = await this.backupCodeService.countUnused(user.id);
+      this.auditService
+        .log({
+          userId: user.id,
+          action: 'auth_2fa_backup_code_used',
+          entityType: 'User',
+          entityId: user.id,
+          newValues: { ip, remainingCodes },
+          ipAddress: ip,
+        })
+        .catch((e) => this.logger.warn(`[2fa-backup-used audit] ${(e as Error).message}`));
     }
 
     // 7️⃣ Success — reset both counters (parity with login.line:270-271).
@@ -1026,7 +1053,7 @@ export class AuthService {
   private async handle2FAFailure(
     user: { id: string; phone: string },
     ip: string,
-    reason: 'password_invalid' | 'code_invalid',
+    reason: 'password_invalid' | 'code_invalid' | 'backup_code_invalid',
   ): Promise<void> {
     const ipResult = await this.cacheService.incrementLoginFailIp(ip);
     const accResult = await this.cacheService.incrementLoginFailAccount(user.id);
@@ -1092,6 +1119,11 @@ export class AuthService {
       data: { twoFactorSecret: secret },
     });
 
+    // V-42: persist the (hashed) backup codes so the codes shown here are the
+    // ones that work for recovery. Inert until 2FA is enabled — verifyAndConsume
+    // is only reachable through verify2FALogin, which requires twoFactorEnabled.
+    await this.backupCodeService.store(userId, backupCodes);
+
     return { secret, otpAuthUrl, backupCodes };
   }
 
@@ -1123,6 +1155,9 @@ export class AuthService {
       data: { twoFactorEnabled: false, twoFactorSecret: null },
     });
 
+    // V-42: drop backup codes too — no stale recovery vector after disable.
+    await this.backupCodeService.deleteAll(userId);
+
     return { message: 'تم إلغاء التحقق الثنائي' };
   }
 
@@ -1133,6 +1168,38 @@ export class AuthService {
     });
     if (!user) throw new NotFoundException('المستخدم غير موجود');
     return { enabled: user.twoFactorEnabled };
+  }
+
+  // V-42: rotate backup codes. Requires a valid CURRENT TOTP (defense-in-depth
+  // — a hijacked session alone must not be able to silently replace recovery
+  // codes). store() invalidates the old set (delete + insert) atomically.
+  async regenerateBackupCodes(
+    userId: string,
+    code: string,
+  ): Promise<{ backupCodes: string[] }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+      throw new BadRequestException('التحقق الثنائي غير مفعل');
+    }
+    if (!this.twoFactorService.verifyToken(user.twoFactorSecret, code)) {
+      throw new BadRequestException('رمز التحقق غير صحيح');
+    }
+
+    const backupCodes = this.twoFactorService.generateBackupCodes();
+    await this.backupCodeService.store(userId, backupCodes);
+
+    this.auditService
+      .log({
+        userId,
+        action: 'auth_2fa_backup_codes_regenerated',
+        entityType: 'User',
+        entityId: userId,
+        newValues: { count: backupCodes.length },
+      })
+      .catch((e) => this.logger.warn(`[2fa-backup-regenerated audit] ${(e as Error).message}`));
+
+    return { backupCodes };
   }
 
   // ══════════════ Google OAuth ══════════════

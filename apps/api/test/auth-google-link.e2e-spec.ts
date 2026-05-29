@@ -13,6 +13,7 @@ import { MailService } from '../src/shared/mail/mail.service';
 import { SmsService } from '../src/shared/sms/sms.service';
 import { TenantDatabaseService } from '../src/shared/database/tenant-database.service';
 import { TwoFactorService } from '../src/core/auth/two-factor.service';
+import { TwoFactorBackupCodeService } from '../src/core/auth/two-factor-backup-code.service';
 import { GoogleAuthService } from '../src/core/auth/google-auth.service';
 import { AuditService } from '../src/core/audit/audit.service';
 import { SentryService } from '../src/shared/sentry/sentry.service';
@@ -128,6 +129,7 @@ describe('V-13a — Google OAuth takeover prevention + linkGoogle', () => {
         { provide: SmsService, useValue: {} },
         { provide: TenantDatabaseService, useValue: {} },
         { provide: TwoFactorService, useValue: {} },
+        { provide: TwoFactorBackupCodeService, useValue: { store: jest.fn(), verifyAndConsume: jest.fn(), deleteAll: jest.fn(), countUnused: jest.fn() } },
         { provide: GoogleAuthService, useValue: { verifyIdToken } },
         { provide: AuditService, useValue: { log: auditLog } },
         { provide: SentryService, useValue: { captureMessage: jest.fn() } },
