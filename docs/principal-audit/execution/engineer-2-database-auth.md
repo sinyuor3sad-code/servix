@@ -642,6 +642,33 @@ Dead-code removal. Deleted `apps/api/src/shared/security/rate-limit.guard.ts` (`
 
 ---
 
+## ✅ V-75 — closed 2026-05-29 (platform + tenant)
+
+`updatedAt @updatedAt @map("updated_at") @db.Timestamptz()` added to the three models that had `created_at` but no `updated_at`. **The card spanned two schemas** — the brief said tenant-only, but `Referral` is actually a *platform* model; owner approved splitting into two commits (clean toolchain isolation):
+
+| Model | Schema | Table | Migration | Commit |
+|---|---|---|---|---|
+| Referral | platform | `referrals` | `platform-migrations/20260529_v75_referral_updated_at.sql` | `17dd2c2` |
+| SelfOrder + InvoiceFeedback | tenant | `self_orders` / `invoice_feedbacks` | `migrations/20260529_v75_tenant_updated_at/migration.sql` (V-18 workaround) | `31ca546` |
+
+Migration shape (both): `ADD COLUMN NOT NULL DEFAULT now()` → backfill `updated_at = created_at` → `DROP DEFAULT` (matches `@updatedAt`: app-managed, no DB default — avoids db-push drift). Verified up→down→up + backfill (temp-clones) on local `servix_platform` (~2.4ms) and a scratch `db push`'d tenant DB (~3.0ms); end-state `NOT NULL`, no default on all three. tsc clean · full API suite 700/700 · lint 0 errors. The three models have zero application consumers today → purely additive, no behavior change.
+
+**⏳ PENDING PROD-APPLY (tenant half — do NOT forget at next deploy):** the tenant migration does not auto-apply (toolchain broken, V-77+). Each **existing** tenant DB needs the manual procedure from the migration header: `psql "$TENANT_DATABASE_URL" -1 -f prisma/migrations/20260529_v75_tenant_updated_at/migration.sql` then `npx prisma migrate resolve --schema=prisma/tenant.prisma --applied 20260529_v75_tenant_updated_at`. Any **new** tenant via `create-tenant.ts` (`db push`) picks up the column automatically. Platform half applies via the standard `psql -f platform-migrations/*.sql` step. Real owner owns prod application; not applied by E2.
+
+---
+
+## ✅ Test gate greened — 2026-05-29 (standalone `fix(test)` `32ddc31`)
+
+The API Jest gate was **pre-RED on HEAD `b676491`** — 15 failures / 3 suites — failing `ci.yml › test` on the prod branch independent of any V-card (parallels the lint V-124b finding). All were **stale test setups** from prior service changes, not production bugs. Deputy-owner authorized a standalone fix; the `appointments` spec was a cross-scope (E3) authorization (real owner may reattribute later).
+
+- **`auth.service.spec` (E2):** bcryptjs mock missing `hashSync` (V-41 module-init dummy hash → suite failed to LOAD); missing `SentryService` DI provider; `mockPrisma` missing the V-13c `refreshToken` model. Rewrote login + refreshTokens tests for the V-13c opaque-token contract (hash lookup, rotation + predecessor revoke, reuse-detection family cascade, expiry, pwd-change) — **restores** security coverage dark since V-41.
+- **`admin.service.spec` (E2) — ⚠️ V-43 regression:** V-43 (`b676491`) added `CacheService` to `AdminService` (DI graph also needs `EventsGateway`, `TwoFactorService`) but did **not** update the spec's providers → V-43 was committed/pushed with `admin.service.spec` red. Added the missing mocks/providers + `tenantUser.findMany`.
+- **`appointments.service.spec` (E3):** advisory lock moved to `tx.$executeRaw` (service:166-168) but the test still asserted `$queryRaw`. Added `$executeRaw` + fixed the assertions.
+
+Result: **65 suites / 700 tests green**; gate now enforceable per-card (§6). **Systemic follow-up (E1/owner):** both the lint gate (V-124b) and the test gate were red on `feature/ai-reception-phases-1-8` — `ci.yml` lint/test jobs appear **not to be gating pushes** to this branch. Worth verifying branch protection / required status checks.
+
+---
+
 ## 🔎 Follow-ups discovered (2026-05-19, during V-18)
 
 ### V-18b — additional un-indexed FK columns (Engineer 2 next)
