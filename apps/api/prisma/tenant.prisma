@@ -628,6 +628,8 @@ model Invoice {
   @@index([createdAt])
   @@index([posShiftId])
   @@index([terminalId, nfcClaimedAt])
+  @@index([clientId, status])
+  @@index([status, createdAt])
   @@map("invoices")
 }
 
