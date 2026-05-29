@@ -711,6 +711,21 @@ Result: **65 suites / 700 tests green**; gate now enforceable per-card (§6). **
 
 ---
 
+## ✅ V-42 — closed 2026-05-30 (2FA backup codes) — commit `4e67df5`
+
+Single-use 2FA recovery codes (setup2FA previously *generated* codes but never persisted them → recovery was impossible). New platform table `two_factor_backup_codes` (one row/code, bcrypt cost 12 = passwords, `used_at` single-use) + `TwoFactorBackupCodeService` (store / verifyAndConsume / deleteAll / countUnused). Migration `platform-migrations/20260529_v42_2fa_backup_codes.sql` — standard psql flow (working toolchain), DDL drift-free vs `db push`, up/down/up ~3.4ms. Codes from the existing CSPRNG `TwoFactorService.generateBackupCodes` (randomBytes — V-13b clean).
+
+Wiring (all E2): `setup2FA` persists hashed codes; `disable2FA` deletes them; `verify2FALogin` (auth + admin) routes by format (`/^\d{6}$/`→TOTP, else→backup). **Race-safe single-use** via atomic guarded `updateMany({where:{id, usedAt:null}})` (count===1 wins). **No lockout bypass** (USER path): failed backup → same `handle2FAFailure` (V-25, reason `backup_code_invalid`). Endpoint `POST /auth/2fa/backup-codes/regenerate` (JWT + current TOTP + `@RateLimit(5,300)`, reuses `Verify2FADto`). Audit: `auth_2fa_backup_code_used`, `auth_2fa_backup_codes_regenerated`.
+
+**⚠️ admin path:** `admin.service.verify2FALogin` accepts backup codes, but admin has NO V-25 lockout yet (pre-existing **V-43-parity** gap) — backup failures there are **audit-only** (`admin_login_2fa_failed` method=backup_code) + `@RateLimit(5,300)`, identical to admin-TOTP failure (so backup ≤ TOTP strength on that endpoint). Full admin lockout lands with V-43-parity.
+
+Verified: full API suite **708/708**; e2e **5/5** (single-use, exhaustion, regenerate-invalidates, backup→V-25 lockout, format-routing) + 7 sibling auth/admin e2e specs updated for the new DI dep (**72/72**); tsc clean; lint 0; `/security-review` **CLEAN**.
+
+### V-42-entropy — optional LOW follow-up
+`generateBackupCodes` yields 32-bit codes (`randomBytes(4)`). **Not a vuln** — single-use + bcrypt-12 + V-25 lockout (~10 attempts) make brute-force negligible (~2×10⁻⁸); at/above industry norm (Google's 8-digit ≈ 27-bit, also hashed). If more margin is ever wanted: `randomBytes(4)→(8)` (changes code length + touches tests/UX). **Do not gold-plate** — owner-deferred at V-42 review.
+
+---
+
 ## 🔎 Follow-ups discovered (2026-05-19, during V-18)
 
 ### V-18b — additional un-indexed FK columns (Engineer 2 next)
