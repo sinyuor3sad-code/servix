@@ -657,6 +657,16 @@ Migration shape (both): `ADD COLUMN NOT NULL DEFAULT now()` → backfill `update
 
 ---
 
+## ✅ V-76 — closed 2026-05-29 (tenant)
+
+Two composite indices added to `invoices` (tenant): `@@index([clientId, status])` → `invoices_client_id_status_idx`, `@@index([status, createdAt])` → `invoices_status_created_at_idx`. The pre-existing single-column indices don't cover these multi-column predicates. Commit `f66bd85`; migration `migrations/20260529_v76_invoice_composite_indices/migration.sql`.
+
+`CREATE INDEX CONCURRENTLY IF NOT EXISTS` + the `prisma+migrate:no-transaction` directive (no write-lock, idempotent). Index names match Prisma's `@@index` output (verified via db push → no drift). Verified up→down→up with the actual file on a scratch tenant DB (CREATE/DROP CONCURRENTLY in autocommit); `indexdef` confirms `(client_id, status)` and `(status, created_at)`; ~3ms on an empty table (CONCURRENTLY → non-blocking at any prod size). tsc clean · 700/700 · lint 0.
+
+**⏳ PENDING PROD-APPLY (tenant — do NOT forget at next deploy):** same posture as V-75 — not auto-applied (toolchain broken, V-77+). Each EXISTING tenant DB: `psql "$TENANT_DATABASE_URL" -f prisma/migrations/20260529_v76_invoice_composite_indices/migration.sql` (**NO `-1`** — CONCURRENTLY needs autocommit) then `npx prisma migrate resolve --schema=prisma/tenant.prisma --applied 20260529_v76_invoice_composite_indices`. New tenants (db push) get them automatically. Real owner owns prod application.
+
+---
+
 ## ✅ Test gate greened — 2026-05-29 (standalone `fix(test)` `32ddc31`)
 
 The API Jest gate was **pre-RED on HEAD `b676491`** — 15 failures / 3 suites — failing `ci.yml › test` on the prod branch independent of any V-card (parallels the lint V-124b finding). All were **stale test setups** from prior service changes, not production bugs. Deputy-owner authorized a standalone fix; the `appointments` spec was a cross-scope (E3) authorization (real owner may reattribute later).
