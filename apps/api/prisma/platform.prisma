@@ -426,6 +426,7 @@ model Referral {
   isRedeemed       Boolean   @default(false) @map("is_redeemed")
   redeemedAt       DateTime? @map("redeemed_at") @db.Timestamptz()
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
   referrerTenant Tenant  @relation("referrer", fields: [referrerTenantId], references: [id])
   referredTenant Tenant? @relation("referred", fields: [referredTenantId], references: [id])
