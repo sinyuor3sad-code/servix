@@ -1333,6 +1333,7 @@ model SelfOrder {
   expiresAt     DateTime        @map("expires_at") @db.Timestamptz()
   claimedAt     DateTime?       @map("claimed_at") @db.Timestamptz()
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
 
   invoice Invoice?
 
@@ -1354,6 +1355,7 @@ model InvoiceFeedback {
   googleClicked     Boolean  @default(false) @map("google_clicked")
   followUpStatus    String   @default("new") @map("follow_up_status") @db.VarChar(30)
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
