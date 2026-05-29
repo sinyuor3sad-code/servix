@@ -679,6 +679,38 @@ Result: **65 suites / 700 tests green**; gate now enforceable per-card (§6). **
 
 ---
 
+## ⏸️ V-79 — DEFERRED 2026-05-29 (VARCHAR→Enum, 8 fields, LOW severity)
+
+**Deferred by owner after a non-destructive exploration (no code written). Do NOT start until ALL reopen-gates below are met.**
+
+**Scope (8 audited fields + 1 folded-in on reopen):**
+
+| Field | schema · table.col | Candidate enum | Notes |
+|---|---|---|---|
+| `initiator` | platform · `platform_backups.initiator` | auto, manual | 1 consumer (admin) |
+| `channel` | platform · `platform_notifications.channel` | email, sms, push, whatsapp | E2/E3 (notifications) |
+| `target` | platform · `platform_notifications.target` | all, basic, pro, enterprise, expiring, trial | E2/E3 |
+| `billingMode` | platform · `plan_addons.billing_mode` | recurring, one_time, usage | 0 code consumers |
+| `publicTokenStatus` | **tenant** · `invoices.public_token_status` | active, revoked *(seen)* | E4 (invoices) + E3 (booking) |
+| `source` | **tenant** · `invoice_feedbacks.source` | qr, …? **UNCONFIRMED** | needs prod audit |
+| `followUpStatus` | **tenant** · `invoice_feedbacks.follow_up_status` | new, reviewed *(seen)* | E4/E3 (feedback) |
+| `ReviewRequest.source` | **tenant** · `review_requests.source` | invoice, …? | **9th field — fold into V-79 on reopen** |
+
+**❌ PERMANENTLY EXCLUDED — `authProvider`** (`users.auth_provider`): V-13a *Phase A decision 3* deliberately kept it VARCHAR + the `AUTH_PROVIDERS` TS constant (`core/auth/auth.constants.ts`) as the source of truth. V-79 does **not** touch it and **V-13a is not reopened**.
+
+**Why deferred:** (a) **prod value-audit is a hard pre-flight** — local `servix_platform` has 0 rows in all 5 platform tables and there's no local tenant DB, so the distinct-value sets are unknown (esp. `source`); `ALTER … TYPE enum` fails hard on a single out-of-set row. (b) **cross-scope blast radius** — enum-izing changes Prisma's generated types; consumers of `channel/target/publicTokenStatus/source/followUpStatus` live in E3 (booking/notifications) and E4 (invoices/feedback). (c) 3 fields are tenant → manual V-18 workaround **× N tenant DBs** while the toolchain is broken (V-77+). All for a **LOW**-severity finding → waiting is cheap.
+
+**🔓 Reopen gates (ALL required):**
+1. E1 fixes the tenant migration toolchain (V-77+).
+2. Prod value-audit (`SELECT DISTINCT <col>`) on the chosen fields — platform DB + **every** tenant DB — by owner/E1; resolves unconfirmed values (#7 `source`).
+3. E3/E4 coordination/authorization for the cross-scope fields.
+
+**On reopen — method:** **expand/contract per field** (add new enum column → backfill → switch reads/writes → drop old column in a later migration); **NOT** in-place `ALTER … TYPE ::enum` (takes ACCESS EXCLUSIVE, no gradual rollout, unsafe across N tenant DBs). Each phase = its own commit (V-75 pattern).
+
+**🚩 Critical-path note (E1/owner):** the broken tenant toolchain (V-77+) is now the recurring tax — it forced the raw-SQL + `migrate resolve` workaround on V-75 & V-76 and is the primary reason V-79 is deferred. Recommend raising its priority with E1; it encumbers every remaining E2 tenant migration.
+
+---
+
 ## 🔎 Follow-ups discovered (2026-05-19, during V-18)
 
 ### V-18b — additional un-indexed FK columns (Engineer 2 next)
