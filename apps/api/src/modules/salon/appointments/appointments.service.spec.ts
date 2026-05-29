@@ -26,6 +26,7 @@ const mockDb = {
   commitment: { findFirst: jest.fn() },
   $transaction: jest.fn(),
   $queryRaw: jest.fn().mockResolvedValue([]),
+  $executeRaw: jest.fn().mockResolvedValue(0),
 };
 
 const mockCommitmentsService = {
@@ -90,10 +91,12 @@ describe('AppointmentsService', () => {
         appointmentServices: [],
       });
       const queryRaw = jest.fn().mockResolvedValue([]);
+      const executeRaw = jest.fn().mockResolvedValue(0);
       mockDb.$transaction.mockImplementation((fn: (tx: unknown) => unknown) =>
         fn({
           ...mockDb,
           $queryRaw: queryRaw,
+          $executeRaw: executeRaw,
           appointment: {
             ...mockDb.appointment,
             create: mockDb.appointment.create,
@@ -110,9 +113,12 @@ describe('AppointmentsService', () => {
         startTime: '15:00',
       } as never);
 
-      expect(String(queryRaw.mock.calls[0][0][0])).toContain('pg_advisory_xact_lock');
-      expect(queryRaw.mock.calls[0][1]).toBe('servix:appointments:emp-1:2026-04-15');
-      expect(String(queryRaw.mock.calls[1][0][0])).toContain('SELECT id FROM "appointments"');
+      // The advisory lock is issued via tx.$executeRaw (pg_advisory_xact_lock
+      // returns void; $queryRaw can't deserialize it); the conflict check uses
+      // tx.$queryRaw.
+      expect(String(executeRaw.mock.calls[0][0][0])).toContain('pg_advisory_xact_lock');
+      expect(executeRaw.mock.calls[0][1]).toBe('servix:appointments:emp-1:2026-04-15');
+      expect(String(queryRaw.mock.calls[0][0][0])).toContain('SELECT id FROM "appointments"');
       expect(mockDb.appointment.create).toHaveBeenCalledTimes(1);
     });
 

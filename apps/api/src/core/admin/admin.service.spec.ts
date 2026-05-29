@@ -8,6 +8,9 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
+import { CacheService } from '../../shared/cache/cache.service';
+import { EventsGateway } from '../../shared/events/events.gateway';
+import { TwoFactorService } from '../auth/two-factor.service';
 
 const mockPrisma = {
   tenant: {
@@ -37,6 +40,9 @@ const mockPrisma = {
     findMany: jest.fn(),
     count: jest.fn(),
   },
+  tenantUser: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
   $transaction: jest.fn(),
 };
 
@@ -54,6 +60,20 @@ const mockPlatformSettingsService = {
   invalidateCache: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockCacheService = {
+  setPasswordChangedAt: jest.fn().mockResolvedValue(undefined),
+  invalidateTenant: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockEventsGateway = {
+  disconnectTenantClients: jest.fn(),
+  disconnectUserClients: jest.fn(),
+};
+
+const mockTwoFactorService = {
+  verifyToken: jest.fn(),
+};
+
 describe('AdminService', () => {
   let service: AdminService;
 
@@ -65,6 +85,9 @@ describe('AdminService', () => {
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: PlatformSettingsService, useValue: mockPlatformSettingsService },
+        { provide: CacheService, useValue: mockCacheService },
+        { provide: EventsGateway, useValue: mockEventsGateway },
+        { provide: TwoFactorService, useValue: mockTwoFactorService },
       ],
     }).compile();
 

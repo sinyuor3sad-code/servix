@@ -18,6 +18,7 @@ import { TenantDatabaseService } from '../../shared/database/tenant-database.ser
 
 jest.mock('bcryptjs', () => ({
   hash: jest.fn().mockResolvedValue('hashed_password'),
+  hashSync: jest.fn(() => 'hashed_dummy'),
   compare: jest.fn(),
 }));
 
@@ -59,6 +60,12 @@ const mockPrisma = {
   },
   tenantFeature: {
     createMany: jest.fn(),
+  },
+  refreshToken: {
+    findUnique: jest.fn(),
+    create: jest.fn().mockResolvedValue({}),
+    update: jest.fn().mockResolvedValue({}),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
   },
   $transaction: jest.fn(),
 };
@@ -106,8 +113,10 @@ const mockTenantDatabaseService = { createTenantDatabase: jest.fn().mockResolved
 const mockTwoFactorService = { generateSecret: jest.fn(), generateOtpAuthUrl: jest.fn(), verifyToken: jest.fn(), generateBackupCodes: jest.fn() };
 const mockGoogleAuthService = { verifyIdToken: jest.fn(), isEnabled: jest.fn().mockReturnValue(false) };
 const mockAuditService = { log: jest.fn().mockResolvedValue(undefined) };
+const mockSentryService = { captureMessage: jest.fn() };
 
 import { AuditService } from '../audit/audit.service';
+import { SentryService } from '../../shared/sentry/sentry.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -126,6 +135,7 @@ describe('AuthService', () => {
         { provide: TwoFactorService, useValue: mockTwoFactorService },
         { provide: GoogleAuthService, useValue: mockGoogleAuthService },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: SentryService, useValue: mockSentryService },
       ],
     }).compile();
 
@@ -377,56 +387,95 @@ describe('AuthService', () => {
   });
 
   describe('refreshTokens', () => {
-    it('يجب إرجاع توكنات جديدة لرمز تحديث صالح', async () => {
-      const payload = {
-        sub: 'user-id',
+    // V-13c: refresh is an opaque 32-byte token. The service SHA-256-hashes the
+    // presented value and looks up the row; rotation issues a successor in the
+    // same family and revokes the predecessor. Reuse of an already-revoked row
+    // triggers a family-wide cascade revoke + pwChangedAt bump. (Pre-V-13c this
+    // verified a signed JWT against a cache blacklist — that contract is gone.)
+    const validRow = {
+      id: 'rt-1',
+      userId: 'user-id',
+      familyId: 'fam-1',
+      issuedAt: new Date('2026-01-01T00:00:00Z'),
+      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      revokedAt: null,
+      revokedReason: null,
+    };
+
+    it('يجب إرجاع توكنات جديدة لرمز تحديث صالح ويُدوّر السلف', async () => {
+      // findUnique fires twice: presented-token lookup, then successor lookup.
+      mockPrisma.refreshToken.findUnique
+        .mockResolvedValueOnce(validRow)
+        .mockResolvedValueOnce({ id: 'rt-2' });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-id',
         email: 'test@example.com',
-        tenantId: 'tenant-id',
-        roleId: 'role-id',
-      };
-      mockJwtService.verify.mockReturnValue(payload);
+        tenantUsers: [{ tenantId: 'tenant-id', roleId: 'role-id' }],
+      });
 
       const result = await service.refreshTokens('valid-refresh-token');
 
       expect(result.accessToken).toBe('mock-token');
-      expect(result.refreshToken).toBe('mock-token');
-      expect(mockJwtService.verify).toHaveBeenCalledWith(
-        'valid-refresh-token',
-        { secret: 'test-refresh-secret' },
+      expect(result.refreshToken).toMatch(/^[a-f0-9]{64}$/);
+      expect(mockPrisma.refreshToken.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'rt-1' },
+          data: expect.objectContaining({ revokedReason: 'rotated' }),
+        }),
       );
     });
 
-    it('يجب رفض رمز التحديث المنتهي أو غير الصالح', async () => {
-      mockJwtService.verify.mockImplementation(() => {
-        throw new Error('invalid token');
-      });
+    it('يجب رفض رمز تحديث غير موجود', async () => {
+      mockPrisma.refreshToken.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.refreshTokens('invalid-refresh-token'),
+        service.refreshTokens('unknown-refresh-token'),
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    describe('refreshTokens - token blacklist (SEC-2)', () => {
-      it('يجب رفض الرمز الموجود في القائمة السوداء', async () => {
-        mockCacheService.isRefreshTokenBlacklisted.mockResolvedValue(true);
+    it('يجب رفض رمز تحديث منتهي الصلاحية', async () => {
+      mockPrisma.refreshToken.findUnique.mockResolvedValue({
+        ...validRow,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+      await expect(
+        service.refreshTokens('expired-refresh-token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    describe('refreshTokens - reuse detection (SEC-2)', () => {
+      it('يجب رفض رمز مُلغى ويُنفّذ cascade revoke على العائلة', async () => {
+        mockPrisma.refreshToken.findUnique.mockResolvedValue({
+          ...validRow,
+          revokedAt: new Date(),
+          revokedReason: 'rotated',
+        });
 
         await expect(
-          service.refreshTokens('blacklisted-refresh-token'),
+          service.refreshTokens('reused-refresh-token'),
         ).rejects.toThrow(UnauthorizedException);
+
+        expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { familyId: 'fam-1', revokedAt: null },
+            data: expect.objectContaining({ revokedReason: 'reuse_detected' }),
+          }),
+        );
+        expect(mockCacheService.setPasswordChangedAt).toHaveBeenCalledWith(
+          'user-id',
+        );
       });
 
       it('يجب رفض التحديث عند تغيير كلمة المرور بعد إصدار التوكن', async () => {
-        mockJwtService.verify.mockReturnValue({
-          sub: 'user-id',
-          email: 'test@example.com',
-          tenantId: 'tenant-id',
-          roleId: 'role-id',
-          iat: 1000000,
+        mockPrisma.refreshToken.findUnique.mockResolvedValue({
+          ...validRow,
+          issuedAt: new Date(1_000_000),
         });
-        mockCacheService.getPasswordChangedAt.mockResolvedValue(1000000001);
+        mockCacheService.getPasswordChangedAt.mockResolvedValueOnce(2_000_000);
 
         await expect(
-          service.refreshTokens('valid-refresh-token'),
+          service.refreshTokens('pwd-changed-refresh-token'),
         ).rejects.toThrow(UnauthorizedException);
       });
     });
