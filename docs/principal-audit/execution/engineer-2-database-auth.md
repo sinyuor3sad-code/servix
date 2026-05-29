@@ -628,6 +628,20 @@ The three-PR session-invalidation series is done. Every trigger now cascades thr
 
 ---
 
+## ✅ V-124 — closed 2026-05-29
+
+Dead-code removal. Deleted `apps/api/src/shared/security/rate-limit.guard.ts` (`AuthThrottlerGuard` — an unused `ThrottlerGuard` subclass, zero consumers; its only reference was its own barrel re-export) and dropped that re-export line from `shared/security/index.ts`.
+
+**Name-collision trap (why this is safe):** a *second*, actively-used `rate-limit.guard.ts` lives at `shared/guards/` and exports `RateLimitGuard` + `RateLimit` — the global `APP_GUARD` in `app.module.ts`, used by auth/admin/compliance controllers. That file is **untouched**. `SecurityModule` (still registered `app.module.ts:55`, provides `ThrottlerModule` for `@Throttle()`) is also **kept**. Only the orphaned `AuthThrottlerGuard` file was removed → no runtime/behavior change.
+
+**Verification:** `tsc --noEmit` clean · `eslint shared/security/index.ts` clean (exit 0) · `shared/security` + active `shared/guards/rate-limit.guard` specs **24/24** green. No migration, no auth-flow surface → e2e / migration / security-review not applicable.
+
+**Follow-ups discovered during V-124:**
+- **V-124a-lint-fix-mutates** *(tooling — owner/E1 package-script decision)* — the API `lint` script is `eslint "{src,apps,libs,test}/**/*.ts" --fix`, so a plain `pnpm --filter @servix/api lint` **mutates source workspace-wide**. It auto-applied a `prefer-const` fix to E4's `ai-reception.service.ts:382` (out of scope; reverted). Recommend a no-`--fix` `lint:check` script (or CI runs eslint without `--fix`) so verification can't silently edit other engineers' files.
+- **V-124b-preexisting-lint-error** *(cross-engineer — E4 / shared-AI, NOT E2)* — `pnpm lint` currently **FAILS** workspace-wide: `shared/ai/ai-provider.service.spec.ts:19` has a `@typescript-eslint/no-require-imports` **error** (`const OpenAIModule = require('openai')`). Pre-existing on HEAD `b676491`, untouched by V-124 (`git diff HEAD` empty for that file) → `ci.yml › lint-and-typecheck` is red on the prod branch independent of this card. Fix belongs to E4: convert to ESM `import`/`jest.requireActual`. Flagged to owner.
+
+---
+
 ## 🔎 Follow-ups discovered (2026-05-19, during V-18)
 
 ### V-18b — additional un-indexed FK columns (Engineer 2 next)
