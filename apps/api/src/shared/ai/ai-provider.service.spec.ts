@@ -1,4 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
+import * as OpenAIModule from 'openai';
 import { CircuitBreakerService } from '../resilience/circuit-breaker.service';
 import { AIProviderService } from './ai-provider.service';
 import type { GeminiService, AIReceptionResponse } from './gemini.service';
@@ -16,8 +17,7 @@ jest.mock('openai', () => {
   return { __esModule: true, default: FakeOpenAI };
 });
 
-const OpenAIModule = require('openai');
-const openAICreateMock: jest.Mock = OpenAIModule.default.__create;
+const openAICreateMock: jest.Mock = (OpenAIModule.default as any).__create;
 
 class StubMetricsService {
   circuitState = { set: jest.fn() };

@@ -379,7 +379,7 @@ export class AIReceptionService {
       services: salonContext.services,
       settings,
     });
-    let assistantReplyText = safe.reply;
+    const assistantReplyText = safe.reply;
 
     // Merge any data the AI extracted into conversation state (so the next
     // turn has it), even before deciding the route.
