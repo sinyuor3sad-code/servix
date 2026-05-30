@@ -616,6 +616,49 @@ model PlatformAuditLog {
   @@map("platform_audit_logs")
 }
 
+// ─────────────────── Audit Outbox (V-35) ───────────────────
+// Transactional-outbox staging so an audit event is never silently lost.
+// Writers persist a row here (optionally inside their business tx via the
+// V-35b log(data, tx?) overload); AuditOutboxProcessor (V-35b, BullMQ)
+// drains pending rows into platform_audit_logs with at-least-once delivery
+// + retry, and a sweeper re-enqueues rows orphaned by a crash.
+//
+// No FKs by design: the outbox is a lightweight, always-writable buffer —
+// referential integrity (user_id, tenant_id) is enforced on the terminal
+// platform_audit_logs insert during drain, so a transient/invalid FK never
+// blocks (or rolls back) the writer's business transaction.
+//
+// Lifecycle: pending → processing → delivered | failed (terminal after the
+// worker exhausts retries; surfaced via servix_audit_outbox_lag_seconds).
+model AuditOutbox {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Audit payload — mirrors PlatformAuditLog (no FK; validated on drain)
+  tenantId   String? @map("tenant_id") @db.Uuid
+  userId     String  @map("user_id") @db.Uuid
+  action     String  @db.VarChar(50)
+  entityType String  @map("entity_type") @db.VarChar(50)
+  entityId   String  @map("entity_id") @db.Uuid
+  oldValues  Json?   @map("old_values") @db.JsonB
+  newValues  Json?   @map("new_values") @db.JsonB
+  ipAddress  String? @map("ip_address") @db.VarChar(45)
+  userAgent  String? @map("user_agent") @db.Text
+
+  // Outbox state machine (drained by AuditOutboxProcessor — V-35b)
+  status      String    @default("pending") @db.VarChar(20) // pending | processing | delivered | failed
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error") @db.Text
+  auditLogId  String?   @map("audit_log_id") @db.Uuid // delivered platform_audit_logs id (idempotency/trace)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  processedAt DateTime? @map("processed_at") @db.Timestamptz()
+
+  // Serves the drain query (status='pending' ORDER BY created_at) and the
+  // lag gauge: now() - min(created_at) WHERE status='pending'.
+  @@index([status, createdAt])
+  @@map("platform_audit_outbox")
+}
+
 // ─────────────────── Token Blacklist (Redis fallback) ───────────────────
 
 model TokenBlacklist {
