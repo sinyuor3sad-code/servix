@@ -28,6 +28,8 @@ import {
   RefreshTokenDto,
   ForgotPasswordDto,
   ResetPasswordDto,
+  RequestAccountUnlockDto,
+  UnlockAccountDto,
   ChangePasswordDto,
   UpdateProfileDto,
   LinkGoogleDto,
@@ -162,6 +164,32 @@ export class AuthController {
     @Body() dto: ResetPasswordDto,
   ): Promise<{ message: string }> {
     return this.authService.resetPassword(dto);
+  }
+
+  // V-40a — account self-unlock (post-V-25-lockout recovery via email).
+  @Post('request-unlock')
+  @Public()
+  @RateLimit(5, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'V-40a — طلب فك قفل الحساب (رابط بالبريد)' })
+  @ApiResponse({ status: 200, description: 'تم الإرسال إذا كان الحساب مسجلاً ومقفلاً' })
+  async requestAccountUnlock(
+    @Body() dto: RequestAccountUnlockDto,
+  ): Promise<{ message: string }> {
+    return this.authService.requestAccountUnlock(dto.email);
+  }
+
+  @Post('unlock')
+  @Public()
+  @RateLimit(10, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'V-40a — فك قفل الحساب باستخدام الرمز' })
+  @ApiResponse({ status: 200, description: 'تم فك قفل الحساب' })
+  @ApiResponse({ status: 400, description: 'رمز فك القفل غير صالح أو مستخدم أو منتهٍ' })
+  async unlockAccount(
+    @Body() dto: UnlockAccountDto,
+  ): Promise<{ message: string }> {
+    return this.authService.unlockAccount(dto.token);
   }
 
   @Post('verify-reset-token')

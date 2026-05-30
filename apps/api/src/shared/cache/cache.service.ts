@@ -7,6 +7,7 @@ const TENANT_CACHE_PREFIX = 'servix:tenant:';
 const SETTINGS_CACHE_PREFIX = 'servix:settings:';
 const PLATFORM_SETTINGS_CACHE_KEY = 'servix:platform_settings';
 const FORGOT_PASSWORD_PREFIX = 'servix:forgot_pwd:';
+const ACCOUNT_UNLOCK_PREFIX = 'servix:account_unlock_req:';
 const LOGIN_FAIL_IP_PREFIX = 'servix:login_fail_ip:';
 const LOGIN_FAIL_ACCOUNT_PREFIX = 'servix:login_fail_account:';
 const REFRESH_BLACKLIST_PREFIX = 'servix:blacklist:';
@@ -20,6 +21,10 @@ export const TENANT_CACHE_TTL_SECONDS = 300;
 /** Forgot password rate limit: max 3 requests per hour */
 export const FORGOT_PASSWORD_RATE_LIMIT = 3;
 export const FORGOT_PASSWORD_RATE_TTL_SECONDS = 3600;
+
+/** V-40a account-unlock request rate limit: max 3 emails per hour per address */
+export const ACCOUNT_UNLOCK_RATE_LIMIT = 3;
+export const ACCOUNT_UNLOCK_RATE_TTL_SECONDS = 3600;
 
 /** Refresh token blacklist TTL: 7 days (matches token expiry) */
 export const REFRESH_BLACKLIST_TTL_SECONDS = 7 * 24 * 3600;
@@ -221,6 +226,33 @@ export class CacheService implements OnModuleDestroy {
       const count = await this.redis.incr(key);
       if (count === 1) {
         await this.redis.expire(key, FORGOT_PASSWORD_RATE_TTL_SECONDS);
+      }
+      return count;
+    } catch {
+      return 0;
+    }
+  }
+
+  // V-40a — account-unlock request rate limit. Mirrors forgot-password but in
+  // a separate key namespace so the two flows don't share a budget.
+  async checkAccountUnlockRateLimit(email: string): Promise<boolean> {
+    if (!this.enabled || !this.redis) return true;
+    try {
+      const key = `${ACCOUNT_UNLOCK_PREFIX}${email.toLowerCase()}`;
+      const count = await this.redis.get(key);
+      return parseInt(count || '0', 10) < ACCOUNT_UNLOCK_RATE_LIMIT;
+    } catch {
+      return true;
+    }
+  }
+
+  async incrementAccountUnlockAttempt(email: string): Promise<number> {
+    if (!this.enabled || !this.redis) return 0;
+    try {
+      const key = `${ACCOUNT_UNLOCK_PREFIX}${email.toLowerCase()}`;
+      const count = await this.redis.incr(key);
+      if (count === 1) {
+        await this.redis.expire(key, ACCOUNT_UNLOCK_RATE_TTL_SECONDS);
       }
       return count;
     } catch {

@@ -14,3 +14,6 @@ export { ResendOtpDto } from './resend-otp.dto';
 export { Verify2FADto } from './verify-2fa.dto';
 export { Disable2FADto } from './disable-2fa.dto';
 export { GoogleLoginDto } from './google-login.dto';
+// V-40a: account self-unlock
+export { RequestAccountUnlockDto } from './request-account-unlock.dto';
+export { UnlockAccountDto } from './unlock-account.dto';

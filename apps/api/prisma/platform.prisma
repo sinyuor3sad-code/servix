@@ -160,6 +160,7 @@ model User {
   platformNotifications PlatformNotification[]
   refreshTokens         RefreshToken[]
   backupCodes           TwoFactorBackupCode[]
+  accountUnlocks        AccountUnlock[]
 
   @@map("users")
 }
@@ -179,6 +180,23 @@ model TwoFactorBackupCode {
 
   @@index([userId])
   @@map("two_factor_backup_codes")
+}
+
+// ─────────────────── Account Unlock Tokens (V-40a) ───────────────────
+
+model AccountUnlock {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  // sha256 of the raw token (V-24 parity — the raw value is never stored).
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz()
+  usedAt    DateTime? @map("used_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account_unlocks")
 }
 
 // ─────────────────── Password Reset Tokens ───────────────────

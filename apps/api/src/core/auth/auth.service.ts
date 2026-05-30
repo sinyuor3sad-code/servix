@@ -799,6 +799,134 @@ export class AuthService {
     return { message: 'تم إعادة تعيين كلمة المرور بنجاح' };
   }
 
+  // ══════════════ V-40a — Account self-unlock ══════════════
+  //
+  // Mitigates the V-25 lockout-as-DoS: an attacker who fails login 10× on a
+  // known account locks the victim for 24h. Self-unlock lets the victim
+  // recover immediately via an emailed link instead of waiting / contacting
+  // support. (Reduces IMPACT only — the CAPTCHA half, V-40b, reduces
+  // LIKELIHOOD and is gated; V-40 stays partially open.)
+
+  async requestAccountUnlock(email: string): Promise<{ message: string }> {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const canProceed =
+      await this.cacheService.checkAccountUnlockRateLimit(normalizedEmail);
+    if (!canProceed) {
+      throw new BadRequestException(
+        'تم تجاوز الحد المسموح من طلبات فك القفل. حاول مرة أخرى بعد ساعة',
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    // Act ONLY when the account exists AND is actually locked — but the
+    // response is uniform either way (V-41 enumeration parity): we never
+    // reveal existence or lock-state.
+    if (user && (await this.cacheService.isAccountLocked(user.id))) {
+      const rawToken = v4();
+      const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 1);
+
+      await this.prisma.accountUnlock.create({
+        data: { userId: user.id, tokenHash, expiresAt },
+      });
+
+      const unlockUrl = `${this.configService.get('APP_URL', 'http://localhost:3000')}/unlock-account?token=${rawToken}`;
+      await this.mailService.send({
+        to: user.email,
+        subject: 'فك قفل الحساب - SERVIX',
+        body: `مرحباً ${user.fullName}،\n\nطلبتم فك قفل حسابكم. استخدم الرابط التالي خلال ساعة:\n${unlockUrl}\n\nإذا لم تطلبوا ذلك، تجاهلوا هذه الرسالة (يبقى الحساب مقفلاً).`,
+        html: `<p>مرحباً ${user.fullName}،</p><p>طلبتم فك قفل حسابكم. <a href="${unlockUrl}">اضغط هنا</a> خلال ساعة.</p><p>إذا لم تطلبوا ذلك، تجاهلوا هذه الرسالة.</p>`,
+      });
+
+      this.auditService
+        .log({
+          userId: user.id,
+          action: 'account_unlock_requested',
+          entityType: 'User',
+          entityId: user.id,
+        })
+        .catch((e) => this.logger.warn(`[account-unlock-requested audit] ${(e as Error).message}`));
+    } else {
+      // V-41 timing equalization: the act branch does a DB write + mail send;
+      // jitter the no-op branch so response time can't distinguish
+      // exists-and-locked from not. crypto.randomInt per V-13b.
+      const jitterMs = randomInt(800, 1501);
+      await new Promise((resolve) => setTimeout(resolve, jitterMs));
+    }
+
+    await this.cacheService.incrementAccountUnlockAttempt(normalizedEmail);
+
+    return {
+      message: 'إذا كان الحساب مسجلاً ومقفلاً، ستصلك رسالة بفك القفل',
+    };
+  }
+
+  async unlockAccount(token: string): Promise<{ message: string }> {
+    if (!token?.trim()) {
+      throw new BadRequestException('رمز فك القفل غير صالح أو منتهي الصلاحية');
+    }
+
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const unlock = await this.prisma.accountUnlock.findUnique({
+      where: { tokenHash },
+    });
+
+    // Unknown token → uniform error, NO audit row (anti-probing-spam;
+    // V-24-audit-completion: only audit the completion/failure of a REAL,
+    // existing unlock request).
+    if (!unlock) {
+      throw new BadRequestException('رمز فك القفل غير صالح أو منتهي الصلاحية');
+    }
+
+    if (unlock.expiresAt < new Date()) {
+      await this.writeUnlockFailedAudit(unlock.userId, 'expired');
+      throw new BadRequestException('انتهت صلاحية رمز فك القفل');
+    }
+
+    // Atomic single-use: only one concurrent request flips used_at from null.
+    const consumed = await this.prisma.accountUnlock.updateMany({
+      where: { id: unlock.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    if (consumed.count !== 1) {
+      await this.writeUnlockFailedAudit(unlock.userId, 'already_used');
+      throw new BadRequestException('تم استخدام رمز فك القفل مسبقاً');
+    }
+
+    // Clear ONLY the account lock + its counter. IP-fail counters are left
+    // intact on purpose — a brute-forcing IP stays blocked even after the
+    // legitimate victim unlocks their own account.
+    await this.cacheService.resetLoginFailAccount(unlock.userId);
+
+    this.auditService
+      .log({
+        userId: unlock.userId,
+        action: 'account_unlock_completed',
+        entityType: 'User',
+        entityId: unlock.userId,
+      })
+      .catch((e) => this.logger.warn(`[account-unlock-completed audit] ${(e as Error).message}`));
+
+    return { message: 'تم فك قفل الحساب بنجاح. يمكنك تسجيل الدخول الآن' };
+  }
+
+  private async writeUnlockFailedAudit(userId: string, reason: string): Promise<void> {
+    this.auditService
+      .log({
+        userId,
+        action: 'account_unlock_failed',
+        entityType: 'User',
+        entityId: userId,
+        newValues: { reason },
+      })
+      .catch((e) => this.logger.warn(`[account-unlock-failed audit] ${(e as Error).message}`));
+  }
+
   // V-13c: hybrid token issuance.
   //   accessToken  = signed JWT (unchanged — 15min lifetime, JwtStrategy gates).
   //   refreshToken = opaque 32-byte hex (256 bits), persisted in refresh_tokens
