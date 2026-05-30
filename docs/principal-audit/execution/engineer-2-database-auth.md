@@ -726,6 +726,28 @@ Verified: full API suite **708/708**; e2e **5/5** (single-use, exhaustion, regen
 
 ---
 
+## 🟡 V-40 — PARTIAL (V-40a closed, V-40b gated) — 2026-05-30
+
+**V-40 is NOT fully closed.** The lockout-DoS (V-25 locks an account 24h after 10 failed logins → a targeted DoS on a known victim) is split into two halves:
+
+### ✅ V-40a — email self-unlock (closed, commit `d4bab80`) — reduces IMPACT
+New platform table `account_unlocks` (sha256 `token_hash` @unique, `expires_at`, `used_at` single-use) + `AccountUnlock` model + migration `20260530_v40a_account_unlocks.sql` (psql flow, drift-free vs db push, up/down/up). Two public auth endpoints (mirror `forgotPassword`):
+- `POST /auth/request-unlock`: rate-limit FIRST (keyed by email, 3/h — never leaks account state); emails a 1h token ONLY when the account exists AND is locked, else V-41 timing jitter; uniform message always.
+- `POST /auth/unlock`: sha256 lookup → expiry → **atomic single-use** (`updateMany where used_at IS NULL`, count===1) → `resetLoginFailAccount` (**ACCOUNT keys only — the IP-fail block is left intact**, so a brute-forcing IP stays blocked). Unknown token → no audit (anti-probing); expired/reused → `account_unlock_failed`.
+- `cache.service`: `checkAccountUnlockRateLimit`/`incrementAccountUnlockAttempt` (mirror the forgot-password limiter, separate namespace). Audit: `account_unlock_requested`/`_completed`/`_failed`.
+- Verified: 708/708 · e2e 6/6 · tsc/lint clean · migration drift-free + up/down/up · /security-review CLEAN.
+
+**Honest limit:** self-unlock cuts DoS **impact** (victim recovers in minutes, not 24h) but NOT **likelihood** — an attacker can immediately re-lock (10 more failures). Cat-and-mouse until V-40b lands.
+
+### 🚪 V-40b — CAPTCHA (GATED — frontend cluster with V-39+V-68) — reduces LIKELIHOOD
+Raises attacker cost so triggering a lockout isn't cheap. Gated (multi-scope); open together with the frontend-auth gate cluster when the dashboard owner is ready:
+- **Provider:** Cloudflare Turnstile (free, no PII, PDPL-friendly; owner may change).
+- **Server (E2):** verify the token via the existing `fetch` + `CircuitBreakerService` — likely **no new dep**; require progressively (after K failed logins).
+- **Frontend (E3):** Turnstile widget on dashboard + booking login forms, conditional render.
+- **Config (E1):** `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` in Joi env validation.
+
+---
+
 ## 🔎 Follow-ups discovered (2026-05-19, during V-18)
 
 ### V-18b — additional un-indexed FK columns (Engineer 2 next)
