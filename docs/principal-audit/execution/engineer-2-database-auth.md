@@ -1550,4 +1550,58 @@ Audit logs keep their valid `tenant_id` reference forever — PDPL article 12 + 
   - لو registry insert نجح ثم `CREATE DATABASE` فشل → احذف registry row
 - وحدة reconciliation يومية (cron) تكتب drift entries لـ alerting
 
+---
+
+## V-35 — Audit Outbox (مكتملة محليًا، غير مدفوعة) — 2026-05-31
+
+**Finding:** V-35 / A2-18 — Audit Logging Reliability. كانت كل نداءات
+`AuditService.log()` تُكتب مباشرةً إلى `platform_audit_logs` بنمط fire-and-forget
+(`.catch(() => {})`) ⇒ أي فشل عابر = **فقدان صامت** للحدث.
+
+**القرار (الهجين، معتمد):** auth ذرّي داخل نطاق E2 + tenant reliable-enqueue،
+**بلا** dual outbox (الـ dual يتطلب تعديل `tenant.prisma` + loop migration على كل
+tenant DBs — محظور على بلوكر V-77+، ولا يتناسب مع التهديد الفعلي).
+
+### Commits (محلية، غير مدفوعة — STOP-before-push)
+- **V-35a** `30b09ef` — جدول `platform_audit_outbox` (platform). raw SQL في
+  `prisma/platform-migrations/20260530_v35_audit_outbox.sql` (نمط db-push، لا
+  `prisma/migrations/`). بلا FK بالتصميم؛ up/down/up + drift-clean.
+- **V-35b** `8d7d34d` — الـ runtime:
+  - `AuditService.log(data, tx?)` ⇒ يكتب outbox (pending). مع `tx` = ذرّي مع
+    معاملة الـ caller؛ بدونه = awaited fail-loud.
+  - `AuditOutboxProcessor` (**@Interval**، ليس BullMQ — انحراف مقصود: الجدول هو
+    الطابور الدائم، و`FOR UPDATE SKIP LOCKED` يكفي للتزامن متعدد الـ instances بلا
+    Redis): claim بـ SKIP LOCKED → insert بـ `ON CONFLICT(id) DO NOTHING`
+    (exactly-once) → poison بعد 5 محاولات ⇒ `failed` terminal → sweeper يستعيد
+    الـ processing العالق → مقاييس `servix_audit_outbox_lag_seconds` +
+    `_delivered_total` + `_failed_total` على prom-client **default registry**
+    (بلا لمس `shared/metrics` — كل النطاق داخل core/audit + core/auth).
+  - **auth:** كل الـ16 نداء صارت atomic أو awaited fail-loud؛ **صفر**
+    `.catch(() => {})` صامت. ATOMIC (1): `auth.register` (داخل tx). awaited
+    fail-loud (15): login, email_verified, refresh_reuse_detected,
+    account_unlock_{requested,completed,failed}, 2fa_{verify_failed×2,
+    verify_success,backup_code_used,lockout_triggered,backup_codes_regenerated},
+    google_takeover_blocked, google_login, google_linked. (كل `.catch` مُزال كان
+    logging-only؛ مؤكَّد بنجاح كامل الـ suite بما فيها اختبارات V-40a/V-42/V-13c.)
+
+### بوابات الجودة (كلها خضراء، محليًا)
+type-check نظيف · lint 0 errors (26 warnings قديمة في zatca/pdf فقط) · unit
+1425/1425 (CI command) · chaos 42/42 · e2e 7/7 (atomic rollback+commit، drain،
+idempotency، poison→failed، sweeper، **multi-instance no-double-promotion**) ·
+migration drift-clean.
+
+### الفجوة المتبقّية (موثّقة، مقبولة للشحن)
+مسارات **tenant (E3/E4)** لم تُمَسّ — تبقى `.catch(() => {})`. تستفيد الآن من
+retry/durability للأعطال العابرة، لكن **انقطاع outbox مستدام** يبقى مبتلَعًا
+(كتابتها التجارية على tenant DB ولا تشارك outbox الـ platform في نفس الـ tx).
+chaos case 2b يثبّت هذه الفجوة بوضوح.
+
+### Follow-ups
+- **V-35-tenant-atomicity** (مؤجّلة): dual outbox (tenant) أو إسقاط `.catch` في
+  E3/E4. مبوّبة على: (أ) إصلاح toolchain الـ V-77+، (ب) قرار امتثال **PDPL م.12** —
+  **يُرفع لـ Engineer 4** (مالك PDPL) + المالك لتأكيد قبول الفجوة أو رفع الأولوية.
+- **V-35d** (alert): قاعدة Prometheus على `lag > 60s` (+ `failed_total > 0`)
+  متروكة لـ **Engineer 1** (`tooling/prometheus/` خط أحمر #1) — E2 يورّد المقياس
+  فقط. بطاقة مرافقة.
+
 **Engineer 2 dependency:** الـ V-18 runbook يستثني hthr و platform-admin بدقة. أي tenants مستقبلية تنشأ بـ drift سيُستثنى من V-18 loop تلقائياً (الـ filter في الـ runbook يعتمد على وجود الـ DB).
