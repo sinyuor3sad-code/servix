@@ -200,6 +200,22 @@ export class AuthService {
       });
       this.logger.log(`[AuthService.register] Created tenantUser id=${tenantUser.id}, roleId=${ownerRole.id}`);
 
+      // V-35b: the audit row joins THIS platform transaction, so it is atomic
+      // with the user/tenant/tenantUser creation. If the outbox insert fails,
+      // registration rolls back (no silent loss); if registration rolls back,
+      // the audit row is discarded with it.
+      await this.auditService.log(
+        {
+          tenantId: tenant.id,
+          userId: user.id,
+          action: 'auth.register',
+          entityType: 'User',
+          entityId: user.id,
+          newValues: { email: user.email, tenantSlug: tenant.slug },
+        },
+        tx,
+      );
+
       return { user, tenant };
     });
 
@@ -212,16 +228,6 @@ export class AuthService {
 
     // Generate and send email OTP
     await this.sendEmailOtpInternal(result.user.email, result.user.fullName);
-
-    // Audit log: registration (fire-and-forget)
-    this.auditService.log({
-      tenantId: result.tenant.id,
-      userId: result.user.id,
-      action: 'auth.register',
-      entityType: 'User',
-      entityId: result.user.id,
-      newValues: { email: result.user.email, tenantSlug: result.tenant.slug },
-    }).catch(() => {});
 
     return {
       user: this.mapUserResponse(result.user),
@@ -298,14 +304,18 @@ export class AuthService {
     await this.cacheService.resetLoginFailIp(ip);
     await this.cacheService.resetLoginFailAccount(user.id);
 
-    // Audit log: successful login (fire-and-forget)
-    this.auditService.log({
+    // Audit log: successful login. V-35b — awaited fail-loud (no silent
+    // swallow). The outbox insert is a tiny no-FK platform write that only
+    // fails if the platform DB is down, in which case the refresh-token write
+    // below fails anyway — so this adds no new failure mode while guaranteeing
+    // the login event is never silently lost.
+    await this.auditService.log({
       userId: user.id,
       action: 'auth.login',
       entityType: 'User',
       entityId: user.id,
       newValues: { ip },
-    }).catch(() => {});
+    });
 
     const tenantUsers = await this.prisma.tenantUser.findMany({
       where: { userId: user.id, status: 'active' },
@@ -541,11 +551,6 @@ export class AuthService {
         },
         ipAddress: opts.ipAddress,
         userAgent: opts.userAgent,
-      })
-      .catch((e) => {
-        this.logger.error(
-          `[reuse-detected] audit write failed: ${(e as Error).message}`,
-        );
       });
 
     // captureMessage, not captureException — this is a security event, not
@@ -843,14 +848,13 @@ export class AuthService {
         html: `<p>مرحباً ${user.fullName}،</p><p>طلبتم فك قفل حسابكم. <a href="${unlockUrl}">اضغط هنا</a> خلال ساعة.</p><p>إذا لم تطلبوا ذلك، تجاهلوا هذه الرسالة.</p>`,
       });
 
-      this.auditService
+      await this.auditService
         .log({
           userId: user.id,
           action: 'account_unlock_requested',
           entityType: 'User',
           entityId: user.id,
-        })
-        .catch((e) => this.logger.warn(`[account-unlock-requested audit] ${(e as Error).message}`));
+        });
     } else {
       // V-41 timing equalization: the act branch does a DB write + mail send;
       // jitter the no-op branch so response time can't distinguish
@@ -903,28 +907,26 @@ export class AuthService {
     // legitimate victim unlocks their own account.
     await this.cacheService.resetLoginFailAccount(unlock.userId);
 
-    this.auditService
+    await this.auditService
       .log({
         userId: unlock.userId,
         action: 'account_unlock_completed',
         entityType: 'User',
         entityId: unlock.userId,
-      })
-      .catch((e) => this.logger.warn(`[account-unlock-completed audit] ${(e as Error).message}`));
+      });
 
     return { message: 'تم فك قفل الحساب بنجاح. يمكنك تسجيل الدخول الآن' };
   }
 
   private async writeUnlockFailedAudit(userId: string, reason: string): Promise<void> {
-    this.auditService
+    await this.auditService
       .log({
         userId,
         action: 'account_unlock_failed',
         entityType: 'User',
         entityId: userId,
         newValues: { reason },
-      })
-      .catch((e) => this.logger.warn(`[account-unlock-failed audit] ${(e as Error).message}`));
+      });
   }
 
   // V-13c: hybrid token issuance.
@@ -1075,7 +1077,7 @@ export class AuthService {
     // 3️⃣ Account-lock gate — BEFORE bcrypt to save ~150ms of CPU on
     // locked accounts under a brute-force load.
     if (await this.cacheService.isAccountLocked(user.id)) {
-      this.auditService
+      await this.auditService
         .log({
           userId: user.id,
           action: 'auth_2fa_verify_failed',
@@ -1083,8 +1085,7 @@ export class AuthService {
           entityId: user.id,
           newValues: { reason: 'account_locked' },
           ipAddress: ip,
-        })
-        .catch((e) => this.logger.warn(`[2fa-verify-failed audit] ${(e as Error).message}`));
+        });
       throw new UnauthorizedException(
         'تم قفل الحساب بسبب محاولات دخول فاشلة متعددة. تواصل مع الدعم الفني',
       );
@@ -1124,7 +1125,7 @@ export class AuthService {
     // V-42: a consumed backup code is a security-relevant recovery event.
     if (!isTotpFormat) {
       const remainingCodes = await this.backupCodeService.countUnused(user.id);
-      this.auditService
+      await this.auditService
         .log({
           userId: user.id,
           action: 'auth_2fa_backup_code_used',
@@ -1132,15 +1133,14 @@ export class AuthService {
           entityId: user.id,
           newValues: { ip, remainingCodes },
           ipAddress: ip,
-        })
-        .catch((e) => this.logger.warn(`[2fa-backup-used audit] ${(e as Error).message}`));
+        });
     }
 
     // 7️⃣ Success — reset both counters (parity with login.line:270-271).
     await this.cacheService.resetLoginFailIp(ip);
     await this.cacheService.resetLoginFailAccount(user.id);
 
-    this.auditService
+    await this.auditService
       .log({
         userId: user.id,
         action: 'auth_2fa_verify_success',
@@ -1148,8 +1148,7 @@ export class AuthService {
         entityId: user.id,
         newValues: { ip },
         ipAddress: ip,
-      })
-      .catch((e) => this.logger.warn(`[2fa-verify-success audit] ${(e as Error).message}`));
+      });
 
     const tenantUsers = await this.prisma.tenantUser.findMany({
       where: { userId: user.id, status: 'active' },
@@ -1186,7 +1185,7 @@ export class AuthService {
     const ipResult = await this.cacheService.incrementLoginFailIp(ip);
     const accResult = await this.cacheService.incrementLoginFailAccount(user.id);
 
-    this.auditService
+    await this.auditService
       .log({
         userId: user.id,
         action: 'auth_2fa_verify_failed',
@@ -1200,8 +1199,7 @@ export class AuthService {
           accountLocked: accResult.locked,
         },
         ipAddress: ip,
-      })
-      .catch((e) => this.logger.warn(`[2fa-verify-failed audit] ${(e as Error).message}`));
+      });
 
     if (accResult.locked) {
       // Lockout transition — fire SMS + lockout audit row. Both are
@@ -1214,7 +1212,7 @@ export class AuthService {
           'SERVIX: تم قفل حسابك بسبب محاولات دخول فاشلة. تواصل مع الدعم الفني',
       }).catch((e) => this.logger.warn(`[2fa-lockout SMS] ${(e as Error).message}`));
 
-      this.auditService
+      await this.auditService
         .log({
           userId: user.id,
           action: 'auth_2fa_lockout_triggered',
@@ -1226,8 +1224,7 @@ export class AuthService {
             lockoutTtlSeconds: 24 * 60 * 60,
           },
           ipAddress: ip,
-        })
-        .catch((e) => this.logger.warn(`[2fa-lockout-triggered audit] ${(e as Error).message}`));
+        });
     }
   }
 
@@ -1317,15 +1314,14 @@ export class AuthService {
     const backupCodes = this.twoFactorService.generateBackupCodes();
     await this.backupCodeService.store(userId, backupCodes);
 
-    this.auditService
+    await this.auditService
       .log({
         userId,
         action: 'auth_2fa_backup_codes_regenerated',
         entityType: 'User',
         entityId: userId,
         newValues: { count: backupCodes.length },
-      })
-      .catch((e) => this.logger.warn(`[2fa-backup-regenerated audit] ${(e as Error).message}`));
+      });
 
     return { backupCodes };
   }
@@ -1369,7 +1365,7 @@ export class AuthService {
         // the existingUser.id is the *victim*; tracking this user lets ops
         // detect "same victim, multiple attempts" patterns. Best-effort
         // (fire-and-forget catch) — audit failure must not surface as 500.
-        this.auditService
+        await this.auditService
           .log({
             userId: existingByEmail.id,
             action: 'auth_google_takeover_blocked',
@@ -1382,11 +1378,6 @@ export class AuthService {
               existingUserHasGoogleId: !!existingByEmail.googleId,
               reason: 'email_match_without_googleId',
             },
-          })
-          .catch((e) => {
-            this.logger.error(
-              `[googleLogin] takeover-blocked audit failed: ${(e as Error).message}`,
-            );
           });
 
         throw new UnauthorizedException(
@@ -1417,7 +1408,7 @@ export class AuthService {
     // Reason: future email-change endpoints (planned in V-13a-frontend)
     // would mutate users.email, breaking the audit-timeline reconstruction
     // for "which email was on this account at the moment of login".
-    this.auditService
+    await this.auditService
       .log({
         userId: user.id,
         action: 'auth_google_login',
@@ -1429,11 +1420,6 @@ export class AuthService {
           authProvider: user.authProvider,
           isNewUser: !userByGoogleId,
         },
-      })
-      .catch((e) => {
-        this.logger.warn(
-          `[googleLogin] success audit failed: ${(e as Error).message}`,
-        );
       });
 
     // Get tenant associations
@@ -1532,7 +1518,7 @@ export class AuthService {
       throw err;
     }
 
-    this.auditService
+    await this.auditService
       .log({
         userId: user.id,
         action: 'auth_google_linked',
@@ -1543,11 +1529,6 @@ export class AuthService {
           previousAuthProvider: user.authProvider,
           newAuthProvider: AUTH_PROVIDERS.BOTH,
         },
-      })
-      .catch((e) => {
-        this.logger.warn(
-          `[linkGoogle] audit failed: ${(e as Error).message}`,
-        );
       });
 
     return { message: 'تم ربط حساب Google بنجاح.' };
@@ -1684,15 +1665,16 @@ export class AuthService {
       roleId: firstTenantUser?.roleId ?? '',
     });
 
-    // Audit log
-    this.auditService.log({
+    // Audit log: email verified. V-35b — awaited fail-loud (no silent swallow);
+    // see the login-audit note above for why this adds no new failure mode.
+    await this.auditService.log({
       userId: user.id,
       tenantId: firstTenantUser?.tenantId,
       action: 'auth.email_verified',
       entityType: 'User',
       entityId: user.id,
       newValues: { email: user.email },
-    }).catch(() => {});
+    });
 
     return {
       user: this.mapUserResponse(user),
