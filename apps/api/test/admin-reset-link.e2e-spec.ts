@@ -71,7 +71,7 @@ function resetRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: RESET_ROW_ID,
     userId: TARGET_USER_ID,
-    token: 'placeholder-hash',
+    tokenHash: 'placeholder-hash',
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     usedAt: null,
     createdAt: new Date(),
@@ -162,9 +162,9 @@ describe('V-24 — admin reset link hash-at-rest', () => {
     expect(passwordResetCreate).toHaveBeenCalledTimes(1);
     const createArgs = passwordResetCreate.mock.calls[0][0].data;
     const expectedHash = createHash('sha256').update(result.token).digest('hex');
-    expect(createArgs.token).toBe(expectedHash);
-    expect(createArgs.token).not.toBe(result.token); // hash !== raw
-    expect(createArgs.token).toHaveLength(64);
+    expect(createArgs.tokenHash).toBe(expectedHash);
+    expect(createArgs.tokenHash).not.toBe(result.token); // hash !== raw
+    expect(createArgs.tokenHash).toHaveLength(64);
     expect(createArgs.userId).toBe(TARGET_USER_ID);
 
     // Audit row: contains 8-char prefix, never the full hash, never the raw.
@@ -186,20 +186,20 @@ describe('V-24 — admin reset link hash-at-rest', () => {
   it('end-to-end: admin-issued raw token redeems via auth.resetPassword (incidental V-24 correctness fix)', async () => {
     // Admin issues a link.
     userFindUnique.mockResolvedValueOnce(targetUserRow());
-    const createCaptured: { data?: { token: string; userId: string; expiresAt: Date } } = {};
-    passwordResetCreate.mockImplementationOnce((args: { data: { token: string; userId: string; expiresAt: Date } }) => {
+    const createCaptured: { data?: { tokenHash: string; userId: string; expiresAt: Date } } = {};
+    passwordResetCreate.mockImplementationOnce((args: { data: { tokenHash: string; userId: string; expiresAt: Date } }) => {
       createCaptured.data = args.data;
-      return Promise.resolve(resetRow({ token: args.data.token }));
+      return Promise.resolve(resetRow({ tokenHash: args.data.tokenHash }));
     });
     platformAuditLogCreate.mockResolvedValueOnce({});
 
     const issued = await admin.sendPasswordResetLink(TARGET_USER_ID, ADMIN_ID);
-    const persistedHash = createCaptured.data!.token;
+    const persistedHash = createCaptured.data!.tokenHash;
 
     // User submits the raw token (as they would from the email URL).
     // The verifier hashes it and looks up — POST-V-24 this MUST succeed.
     passwordResetFindUnique.mockResolvedValueOnce(resetRow({
-      token: persistedHash,
+      tokenHash: persistedHash,
       user: targetUserRow(),
     }));
     userUpdate.mockResolvedValueOnce({});
@@ -210,7 +210,7 @@ describe('V-24 — admin reset link hash-at-rest', () => {
     // Verifier hashed the submitted raw and found the row.
     expect(passwordResetFindUnique).toHaveBeenCalledTimes(1);
     const findArgs = passwordResetFindUnique.mock.calls[0][0];
-    expect(findArgs.where.token).toBe(persistedHash);
+    expect(findArgs.where.tokenHash).toBe(persistedHash);
     // Password was updated, row marked used.
     expect(userUpdate).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: TARGET_USER_ID },

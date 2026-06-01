@@ -645,7 +645,8 @@ export class AdminService {
   // V-24 / A2-08 — Admin reset link is now hash-at-rest.
   //
   // Pre-V-24, this method stored the raw 32-byte token directly in
-  // password_resets.token and console.log'd the raw value to stdout.
+  // password_resets.token_hash (then named `token`) and console.log'd the
+  // raw value to stdout.
   // Two distinct gaps in one method: anyone with DB read access (or a
   // backup) had every active admin-reset token, and anyone with log
   // access (SSH, journald, Loki forwarders) saw them too.
@@ -675,7 +676,7 @@ export class AdminService {
 
     await this.prisma.$transaction([
       this.prisma.passwordReset.create({
-        data: { userId: id, token: tokenHash, expiresAt },
+        data: { userId: id, tokenHash, expiresAt },
       }),
       this.prisma.platformAuditLog.create({
         data: {

@@ -698,7 +698,7 @@ export class AuthService {
       await this.prisma.passwordReset.create({
         data: {
           userId: user.id,
-          token: tokenHash,
+          tokenHash,
           expiresAt,
         },
       });
@@ -749,7 +749,7 @@ export class AuthService {
 
     const tokenHash = createHash('sha256').update(token).digest('hex');
     const reset = await this.prisma.passwordReset.findUnique({
-      where: { token: tokenHash },
+      where: { tokenHash },
       include: { user: { select: { email: true } } },
     });
 
@@ -767,7 +767,7 @@ export class AuthService {
 
     const tokenHash = createHash('sha256').update(dto.token).digest('hex');
     const reset = await this.prisma.passwordReset.findUnique({
-      where: { token: tokenHash },
+      where: { tokenHash },
       include: { user: true },
     });
 
