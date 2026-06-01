@@ -21,11 +21,22 @@ import type { UserWithTenants } from './users.service';
 import type { User } from '../../shared/database';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { JwtAuthGuard } from '../../shared/guards';
+import { JwtAuthGuard, RolesGuard } from '../../shared/guards';
+import { Roles } from '../../shared/decorators';
 
+// V-idor-users (HIGH / cross-tenant IDOR + account takeover): these are
+// platform user-administration routes over the shared platform users table.
+// Pre-fix the class carried only JwtAuthGuard with no @Roles, so ANY
+// authenticated user could GET /users (list every platform user's PII:
+// email/phone), GET/PUT/DELETE /users/:id on any account — and PUT /users/:id
+// can change another account's email/phone, an account-takeover vector (change
+// email → password reset). Locked to super_admin (fail-closed, class scope).
+// User self-service lives on the existing /auth/me routes (GET/PUT), so the full
+// lock is regression-free. Role resolved server-side from the verified JWT.
 @ApiTags('المستخدمون - Users')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('super_admin')
 @Controller({ path: 'users', version: '1' })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
