@@ -304,6 +304,47 @@ describe('AuthService', () => {
       expect(result.tenants[0].isOwner).toBe(true);
     });
 
+    it('V-14b-login: يستبعد المنشآت المعلّقة من قائمة الدخول (tenant.status=active في where)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      (compare as jest.Mock).mockResolvedValue(true);
+      mockPrisma.tenantUser.findMany.mockResolvedValue([
+        {
+          id: 'tu-id',
+          tenantId: 'tenant-id',
+          roleId: 'role-id',
+          isOwner: true,
+          tenant: { id: 'tenant-id', nameAr: 'صالون', nameEn: 'Salon', slug: 'salon' },
+          role: { id: 'role-id', name: 'owner', nameAr: 'مالك' },
+        },
+      ]);
+      mockPrisma.user.update.mockResolvedValue(mockUser);
+
+      await service.login(loginDto, '127.0.0.1');
+
+      // The query must require BOTH an active membership AND an active tenant,
+      // so a suspended tenant never pins the issued JWT.
+      expect(mockPrisma.tenantUser.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId: 'user-id',
+            status: 'active',
+            tenant: { status: 'active' },
+          }),
+        }),
+      );
+    });
+
+    it('V-14b-login: مستخدم كل منشآته معلّقة → خطأ "لا صالون مرتبط" (لا توكن)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      (compare as jest.Mock).mockResolvedValue(true);
+      // DB filters out the suspended tenant ⇒ empty list.
+      mockPrisma.tenantUser.findMany.mockResolvedValue([]);
+
+      await expect(service.login(loginDto, '127.0.0.1')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
     it('يجب رفض الدخول لكلمة مرور خاطئة', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(mockUser);
       (compare as jest.Mock).mockResolvedValue(false);

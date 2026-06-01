@@ -317,8 +317,13 @@ export class AuthService {
       newValues: { ip },
     });
 
+    // V-14b-login: skip suspended tenants so a multi-tenant user falls through
+    // to their next active tenant and the issued JWT pins to an active one —
+    // instead of pinning to a suspended tenant that 403s on every subsequent
+    // tenant-scoped request. tenant_user.status='active' alone is not enough;
+    // the tenant itself must be active.
     const tenantUsers = await this.prisma.tenantUser.findMany({
-      where: { userId: user.id, status: 'active' },
+      where: { userId: user.id, status: 'active', tenant: { status: 'active' } },
       include: {
         tenant: {
           select: { id: true, nameAr: true, nameEn: true, slug: true },
@@ -463,10 +468,15 @@ export class AuthService {
     }
 
     // Re-derive payload from the user + their primary active tenantUser.
+    // V-14b-login: also require the tenant itself to be active, so a refresh
+    // never re-pins the JWT to a suspended tenant.
     const user = await this.prisma.user.findUnique({
       where: { id: row.userId },
       include: {
-        tenantUsers: { where: { status: 'active' }, take: 1 },
+        tenantUsers: {
+          where: { status: 'active', tenant: { status: 'active' } },
+          take: 1,
+        },
       },
     });
     if (!user) {
@@ -1150,8 +1160,10 @@ export class AuthService {
         ipAddress: ip,
       });
 
+    // V-14b-login: skip suspended tenants (see login()). The 2FA path issues a
+    // JWT too, so it must pin to an active tenant for the same reason.
     const tenantUsers = await this.prisma.tenantUser.findMany({
-      where: { userId: user.id, status: 'active' },
+      where: { userId: user.id, status: 'active', tenant: { status: 'active' } },
       include: {
         tenant: { select: { id: true, nameAr: true, nameEn: true, slug: true } },
         role: { select: { id: true, name: true, nameAr: true } },
@@ -1423,8 +1435,10 @@ export class AuthService {
       });
 
     // Get tenant associations
+    // V-14b-login: skip suspended tenants (see login()). The Google path issues
+    // a JWT too, so it must pin to an active tenant for the same reason.
     const tenantUsers = await this.prisma.tenantUser.findMany({
-      where: { userId: user.id, status: 'active' },
+      where: { userId: user.id, status: 'active', tenant: { status: 'active' } },
       include: {
         tenant: { select: { id: true, nameAr: true, nameEn: true, slug: true } },
         role: { select: { id: true, name: true, nameAr: true } },
