@@ -951,13 +951,25 @@ V-14b makes a suspended tenant fail at HTTP guard + WS handshake + immediate WS 
 
 ---
 
-### tenants.service.suspend orphan — dead code audit
+### tenants.service.suspend orphan — ⚠️ RECLASSIFIED → folded into V-tenants-authz (2026-06-01)
 
-`apps/api/src/core/tenants/tenants.service.ts:144` exposes `suspend(id)` that flips `tenant.status='suspended'` with **no audit log and no cascade**. No controller in the repo calls it; `grep -rn "tenantsService.suspend\|tenants.service.suspend"` returns zero hits.
+**البطاقة كانت مبنية على فرضية بائتة.** ادّعت «صفر callers، احذفها». الواقع وقت التنفيذ: `suspend()` **يُستدعى** من مسار حيّ موثّق `DELETE /api/v1/tenants/:id` (controller سطر 82) وله spec. **لم يُحذف.** الاستكشاف كشف ما هو أخطر بكثير ⇒ أُعيد التصنيف وطُوي في **V-tenants-authz** أدناه (الجزء أ: ثغرة التفويض، الجزء ب: غياب الـ cascade).
 
-If this method ever gets called — by accident, by a future controller, or by tests — it would suspend a tenant without the V-14b cascade running, leaving stale tokens and audit gaps. Safer to delete in a tiny cleanup PR.
+---
 
-**Verify first:** `git log -p apps/api/src/core/tenants/tenants.service.ts | grep -A 5 "async suspend"` to confirm no historical caller, then delete. Engineer 2 owns.
+### V-tenants-authz — HIGH cross-tenant IDOR على TenantsController — ✅ مدفوعة 2026-06-01
+
+> **🔴 finding فات الأودِت الأصلي.** `grep` في `docs/principal-audit/` رجع فارغًا — الأودِت لم يلتقط هذا الـ HIGH. اكتُشف صدفةً أثناء استكشاف بطاقة «suspend orphan» التنظيفية. (⇒ شغّل IDOR sweep على بقية الـ controllers — انظر V-idor-sweep.)
+
+**الثغرة (مؤكَّدة، تحليل ساكن + e2e):** `TenantsController` (`/tenants/*`) كان يحمل **فقط** `@UseGuards(JwtAuthGuard)` بلا `@Roles`. الـ `TenantGuard` العام يتحقق فقط من مستأجر المتصل (من JWT `request.tenant`) ولا يقارن `:id` في المسار إطلاقًا. النتيجة: **أي مستخدم صالون مصادَق يقدر** `DELETE/PUT /tenants/<أي-id>` ⇒ تعليق/تعديل/قراءة اشتراك/تبديل مميزات أي صالون آخر — عمليات منصّية يفترض أنها super_admin-only. (ما قبل الإطلاق ⇒ غير مُستغلّة فعليًا الآن، لكن must-fix قبل الإطلاق.)
+
+**الإصلاح (الجزء أ — authz، fail-closed):** قفل class-level `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('super_admin')` — نفس نمط `AdminController` المثبت. القفل على مستوى الـ class ⇒ أي route مستقبلي يرث الحارس. لا route هنا self-service للمستأجر (الـ dashboard يستخدم `/admin/tenants/*` super_admin، و`/auth` `/settings` `/subscriptions` للخدمة الذاتية)، فالقفل الكامل بلا regression. الدور يُحلّ خادميًا من JWT `roleId` عبر `role.findUnique`.
+
+**الإصلاح (الجزء ب — cascade):** `suspend(id, actorUserId)` صار يكتب status flip + audit row (`tenant.suspend`، `affectedUserCount`) ذرّيًا في tx واحد، ثم ينفّذ cascade الـ V-14b بعد commit (`setPasswordChangedAt` لكل عضو → `disconnectTenantClients` → `invalidateTenant`) — موازٍ لـ `admin.service.updateTenantStatus`. + حارس already-suspended يمنع cascade مكرّر.
+
+**التحقق:** type-check + lint نظيفان · unit 726/726 · **e2e tenants-authz 8/8** (الحارس الحقيقي مقابل metadata الـ controller الحقيقية: غير-super_admin/بلا-roleId ⇒ 403، super_admin ⇒ pass) · tenants.service.spec 10/10 (cascade + audit + already-suspended). **/security-review CLEAN** (يغلق ثغرة، لا يفتح سطحًا). حدّ الإثبات: الـ e2e guard-level (لا HTTP bootstrap كامل — غير متوفّر بالمستودع)، لكنه يشغّل الحارس الفعلي.
+
+**Follow-up:** `V-idor-sweep` — مسح كل controllers الحاملة `@Param('id')` بحثًا عن نظائر تمرّر الـ id للـ service بلا فحص ملكية/دور.
 
 ---
 
