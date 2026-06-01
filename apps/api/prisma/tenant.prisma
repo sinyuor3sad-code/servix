@@ -274,31 +274,31 @@ enum CampaignTrigger {
 // ─────────────────── Salon Info ───────────────────
 
 model SalonInfo {
-  id            String   @id @default(uuid()) @db.Uuid
-  nameAr        String   @map("name_ar") @db.VarChar(100)
-  nameEn        String?  @map("name_en") @db.VarChar(100)
-  taglineAr     String?  @map("tagline_ar") @db.VarChar(200)
-  descriptionAr String?  @map("description_ar") @db.Text
-  phone         String?  @db.VarChar(15)
-  email         String?  @db.VarChar(100)
-  address       String?  @db.Text
-  city          String?  @db.VarChar(50)
-  workingDays   Json     @default("{}") @map("working_days") @db.JsonB
-  openingTime   String   @default("09:00") @map("opening_time") @db.VarChar(5)
-  closingTime   String   @default("22:00") @map("closing_time") @db.VarChar(5)
-  slotDuration  Int      @default(30) @map("slot_duration")
-  bufferTime    Int      @default(10) @map("buffer_time")
-  currency      String   @default("SAR") @db.VarChar(3)
-  taxPercentage Decimal  @default(15.0) @map("tax_percentage") @db.Decimal(5, 2)
-  taxNumber     String?  @map("tax_number") @db.VarChar(20)
+  id                     String   @id @default(uuid()) @db.Uuid
+  nameAr                 String   @map("name_ar") @db.VarChar(100)
+  nameEn                 String?  @map("name_en") @db.VarChar(100)
+  taglineAr              String?  @map("tagline_ar") @db.VarChar(200)
+  descriptionAr          String?  @map("description_ar") @db.Text
+  phone                  String?  @db.VarChar(15)
+  email                  String?  @db.VarChar(100)
+  address                String?  @db.Text
+  city                   String?  @db.VarChar(50)
+  workingDays            Json     @default("{}") @map("working_days") @db.JsonB
+  openingTime            String   @default("09:00") @map("opening_time") @db.VarChar(5)
+  closingTime            String   @default("22:00") @map("closing_time") @db.VarChar(5)
+  slotDuration           Int      @default(30) @map("slot_duration")
+  bufferTime             Int      @default(10) @map("buffer_time")
+  currency               String   @default("SAR") @db.VarChar(3)
+  taxPercentage          Decimal  @default(15.0) @map("tax_percentage") @db.Decimal(5, 2)
+  taxNumber              String?  @map("tax_number") @db.VarChar(20)
   // ──── ZATCA Required Fields ────
-  commercialRegistration String? @map("commercial_registration") @db.VarChar(20)
-  street                String? @db.VarChar(200)
-  district              String? @db.VarChar(100)
-  buildingNumber        String? @map("building_number") @db.VarChar(10)
-  postalCode            String? @map("postal_code") @db.VarChar(10)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  commercialRegistration String?  @map("commercial_registration") @db.VarChar(20)
+  street                 String?  @db.VarChar(200)
+  district               String?  @db.VarChar(100)
+  buildingNumber         String?  @map("building_number") @db.VarChar(10)
+  postalCode             String?  @map("postal_code") @db.VarChar(10)
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   // ──── العرض العام (Smart Menu) ────
   logoUrl          String? @map("logo_url") @db.VarChar(500)
@@ -474,7 +474,12 @@ model EmployeeBreak {
 model Client {
   id          String       @id @default(uuid()) @db.Uuid
   fullName    String       @map("full_name") @db.VarChar(100)
-  phone       String       @db.VarChar(15)
+  // V-74 / A1-011: phone is the client's natural key — @unique enables the
+  // booking upsert-by-phone path (V-89, E4) and blocks duplicate client rows.
+  // Kept required (no nullability change) so the generated type stays `string`
+  // and no E3/E4 caller breaks. The unique index subsumes the old plain
+  // @@index([phone]), which is dropped to avoid a redundant second index.
+  phone       String       @unique @db.VarChar(15)
   email       String?      @db.VarChar(100)
   gender      Gender       @default(female)
   dateOfBirth DateTime?    @map("date_of_birth") @db.Date
@@ -497,7 +502,6 @@ model Client {
   debts               ClientDebt[]
   heldBills           PosHeldBill[]
 
-  @@index([phone])
   @@index([fullName])
   @@index([isActive])
   @@map("clients")
@@ -573,24 +577,24 @@ model AppointmentService {
 // ─────────────────── Invoices ───────────────────
 
 model Invoice {
-  id             String        @id @default(uuid()) @db.Uuid
-  appointmentId  String?       @map("appointment_id") @db.Uuid
-  posShiftId     String?       @map("pos_shift_id") @db.Uuid
-  clientId       String        @map("client_id") @db.Uuid
-  invoiceNumber  String        @unique @map("invoice_number") @db.VarChar(20)
-  subtotal       Decimal       @default(0) @db.Decimal(10, 2)
-  discountAmount Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
-  taxAmount      Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
-  total          Decimal       @default(0) @db.Decimal(10, 2)
-  status         InvoiceStatus @default(draft)
-  receiptSnapshot        Json? @map("receipt_snapshot") @db.JsonB
-  receiptSnapshotVersion Int   @default(1) @map("receipt_snapshot_version")
-  notes          String?       @db.Text
-  createdBy      String        @map("created_by") @db.Uuid
-  paidAt         DateTime?     @map("paid_at") @db.Timestamptz()
-  deletedAt      DateTime?     @map("deleted_at") @db.Timestamptz()
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  id                     String        @id @default(uuid()) @db.Uuid
+  appointmentId          String?       @map("appointment_id") @db.Uuid
+  posShiftId             String?       @map("pos_shift_id") @db.Uuid
+  clientId               String        @map("client_id") @db.Uuid
+  invoiceNumber          String        @unique @map("invoice_number") @db.VarChar(20)
+  subtotal               Decimal       @default(0) @db.Decimal(10, 2)
+  discountAmount         Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  taxAmount              Decimal       @default(0) @map("tax_amount") @db.Decimal(10, 2)
+  total                  Decimal       @default(0) @db.Decimal(10, 2)
+  status                 InvoiceStatus @default(draft)
+  receiptSnapshot        Json?         @map("receipt_snapshot") @db.JsonB
+  receiptSnapshotVersion Int           @default(1) @map("receipt_snapshot_version")
+  notes                  String?       @db.Text
+  createdBy              String        @map("created_by") @db.Uuid
+  paidAt                 DateTime?     @map("paid_at") @db.Timestamptz()
+  deletedAt              DateTime?     @map("deleted_at") @db.Timestamptz()
+  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt              DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
 
   // ──── الوصول العام (Invoice QR) ────
   publicToken          String?   @unique @map("public_token") @db.VarChar(64)
@@ -606,8 +610,8 @@ model Invoice {
   selfOrderId String? @unique @map("self_order_id") @db.Uuid
 
   // ──── NFC Tap-to-Invoice ────
-  terminalId        String?   @map("terminal_id") @db.VarChar(50)
-  nfcClaimedAt      DateTime? @map("nfc_claimed_at") @db.Timestamptz()
+  terminalId   String?   @map("terminal_id") @db.VarChar(50)
+  nfcClaimedAt DateTime? @map("nfc_claimed_at") @db.Timestamptz()
 
   appointment         Appointment?         @relation(fields: [appointmentId], references: [id])
   posShift            PosShift?            @relation(fields: [posShiftId], references: [id])
@@ -1055,7 +1059,7 @@ model ClientDna {
 // ═══════════════════════════════════════════════════════════
 
 model ZatcaCertificate {
-  id                 String    @id @default(uuid()) @db.Uuid
+  id                  String    @id @default(uuid()) @db.Uuid
   csrContent          String    @map("csr_content") @db.Text
   privateKey          String    @map("private_key") @db.Text
   // V-23 phase-1: encrypted variant for the secret material. csr_content and
@@ -1064,13 +1068,13 @@ model ZatcaCertificate {
   // See docs/migrations/v23-encryption-rollout.md.
   privateKeyEncrypted Bytes?    @map("private_key_encrypted")
   publicKey           String?   @map("public_key") @db.Text
-  certificateContent String?   @map("certificate_content") @db.Text
-  csid               String?   @db.VarChar(500)
-  csidExpiresAt      DateTime? @map("csid_expires_at") @db.Timestamptz()
-  isProduction       Boolean   @default(false) @map("is_production")
-  isActive           Boolean   @default(true) @map("is_active")
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  certificateContent  String?   @map("certificate_content") @db.Text
+  csid                String?   @db.VarChar(500)
+  csidExpiresAt       DateTime? @map("csid_expires_at") @db.Timestamptz()
+  isProduction        Boolean   @default(false) @map("is_production")
+  isActive            Boolean   @default(true) @map("is_active")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
   zatcaInvoices ZatcaInvoice[]
 
@@ -1241,30 +1245,30 @@ model ClientDebt {
 // ─────────────────── POS Shifts (Cash Drawer) ───────────────────
 
 model PosShift {
-  id               String    @id @default(uuid()) @db.Uuid
-  openedBy         String    @map("opened_by") @db.Uuid
-  closedBy         String?   @map("closed_by") @db.Uuid
-  openingBalance   Decimal   @map("opening_balance") @db.Decimal(10, 2)
-  closingBalance   Decimal?  @map("closing_balance") @db.Decimal(10, 2)
-  expectedCash     Decimal?  @map("expected_cash") @db.Decimal(10, 2)
-  cashDifference   Decimal?  @map("cash_difference") @db.Decimal(10, 2)
-  totalSales       Decimal   @default(0) @map("total_sales") @db.Decimal(10, 2)
-  totalCash        Decimal   @default(0) @map("total_cash") @db.Decimal(10, 2)
-  totalCard        Decimal   @default(0) @map("total_card") @db.Decimal(10, 2)
-  totalTransfer    Decimal   @default(0) @map("total_transfer") @db.Decimal(10, 2)
-  totalRefunds     Decimal   @default(0) @map("total_refunds") @db.Decimal(10, 2)
-  totalDiscounts   Decimal   @default(0) @map("total_discounts") @db.Decimal(10, 2)
-  totalExpenses    Decimal   @default(0) @map("total_expenses") @db.Decimal(10, 2)
-  invoiceCount     Int       @default(0) @map("invoice_count")
-  status           String    @default("open") @db.VarChar(10) // open | closed
-  openedAt         DateTime  @default(now()) @map("opened_at") @db.Timestamptz()
-  closedAt         DateTime? @map("closed_at") @db.Timestamptz()
-  notes            String?   @db.Text
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  id             String    @id @default(uuid()) @db.Uuid
+  openedBy       String    @map("opened_by") @db.Uuid
+  closedBy       String?   @map("closed_by") @db.Uuid
+  openingBalance Decimal   @map("opening_balance") @db.Decimal(10, 2)
+  closingBalance Decimal?  @map("closing_balance") @db.Decimal(10, 2)
+  expectedCash   Decimal?  @map("expected_cash") @db.Decimal(10, 2)
+  cashDifference Decimal?  @map("cash_difference") @db.Decimal(10, 2)
+  totalSales     Decimal   @default(0) @map("total_sales") @db.Decimal(10, 2)
+  totalCash      Decimal   @default(0) @map("total_cash") @db.Decimal(10, 2)
+  totalCard      Decimal   @default(0) @map("total_card") @db.Decimal(10, 2)
+  totalTransfer  Decimal   @default(0) @map("total_transfer") @db.Decimal(10, 2)
+  totalRefunds   Decimal   @default(0) @map("total_refunds") @db.Decimal(10, 2)
+  totalDiscounts Decimal   @default(0) @map("total_discounts") @db.Decimal(10, 2)
+  totalExpenses  Decimal   @default(0) @map("total_expenses") @db.Decimal(10, 2)
+  invoiceCount   Int       @default(0) @map("invoice_count")
+  status         String    @default("open") @db.VarChar(10) // open | closed
+  openedAt       DateTime  @default(now()) @map("opened_at") @db.Timestamptz()
+  closedAt       DateTime? @map("closed_at") @db.Timestamptz()
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
-  invoices         Invoice[]
-  heldBills        PosHeldBill[]
+  invoices  Invoice[]
+  heldBills PosHeldBill[]
 
   @@index([status])
   @@index([openedAt])
@@ -1431,22 +1435,22 @@ model AIConversation {
 /// manager approval before execution. Each action has a human-friendly
 /// auto-incrementing ID (per tenant) used in WhatsApp messages.
 model AIPendingAction {
-  id               Int                    @id @default(autoincrement())
-  conversationId   String                 @map("conversation_id")
-  type             AIPendingActionType
-  payload          Json                   @db.JsonB // {clientName, service, date, time, ...}
-  status           AIPendingActionStatus  @default(awaiting_manager)
-  managerMessageId String?                @map("manager_message_id") @db.VarChar(100)
-  customerPhone    String                 @map("customer_phone") @db.VarChar(20)
-  expiresAt        DateTime               @map("expires_at") @db.Timestamptz()
-  timeoutNotificationSent Boolean         @default(false) @map("timeout_notification_sent")
-  timeoutNotifiedAt       DateTime?       @map("timeout_notified_at") @db.Timestamptz()
-  doNotDisturb     Boolean                @default(false) @map("do_not_disturb")
-  cancelledAt      DateTime?              @map("cancelled_at") @db.Timestamptz()
-  cancelReason     String?                @map("cancel_reason") @db.VarChar(100)
-  resolvedAt       DateTime?              @map("resolved_at") @db.Timestamptz()
-  resolvedBy       String?                @map("resolved_by") @db.VarChar(20) // manager phone
-  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz()
+  id                      Int                   @id @default(autoincrement())
+  conversationId          String                @map("conversation_id")
+  type                    AIPendingActionType
+  payload                 Json                  @db.JsonB // {clientName, service, date, time, ...}
+  status                  AIPendingActionStatus @default(awaiting_manager)
+  managerMessageId        String?               @map("manager_message_id") @db.VarChar(100)
+  customerPhone           String                @map("customer_phone") @db.VarChar(20)
+  expiresAt               DateTime              @map("expires_at") @db.Timestamptz()
+  timeoutNotificationSent Boolean               @default(false) @map("timeout_notification_sent")
+  timeoutNotifiedAt       DateTime?             @map("timeout_notified_at") @db.Timestamptz()
+  doNotDisturb            Boolean               @default(false) @map("do_not_disturb")
+  cancelledAt             DateTime?             @map("cancelled_at") @db.Timestamptz()
+  cancelReason            String?               @map("cancel_reason") @db.VarChar(100)
+  resolvedAt              DateTime?             @map("resolved_at") @db.Timestamptz()
+  resolvedBy              String?               @map("resolved_by") @db.VarChar(20) // manager phone
+  createdAt               DateTime              @default(now()) @map("created_at") @db.Timestamptz()
 
   conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -1460,24 +1464,24 @@ model AIPendingAction {
 /// owner to step in. The owner's reply becomes training data (see
 /// AIKnowledgeSnippet) so similar questions answer themselves next time.
 model AIEscalation {
-  id               Int       @id @default(autoincrement())
-  conversationId   String    @map("conversation_id")
-  customerPhone    String    @map("customer_phone") @db.VarChar(20)
-  customerName     String?   @map("customer_name") @db.VarChar(100)
-  customerQuestion String    @map("customer_question") @db.Text
-  lastCustomerMessage String? @map("last_customer_message") @db.Text
-  customerContext  String?   @map("customer_context") @db.Text
-  escalationType   String    @default("unclear") @map("escalation_type") @db.VarChar(50)
-  uncertainReason  String?   @map("uncertain_reason") @db.VarChar(200)
-  relatedRequestId Int?      @map("related_request_id")
-  notifiedManager  Boolean   @default(false) @map("notified_manager")
-  lastNotifiedAt   DateTime? @map("last_notified_at") @db.Timestamptz()
-  occurrenceCount  Int       @default(1) @map("occurrence_count")
-  status           String    @default("pending") @db.VarChar(20) // pending, answered, expired, cancelled
-  managerAnswer    String?   @map("manager_answer") @db.Text
-  snippetId        Int?      @map("snippet_id")
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  answeredAt       DateTime? @map("answered_at") @db.Timestamptz()
+  id                  Int       @id @default(autoincrement())
+  conversationId      String    @map("conversation_id")
+  customerPhone       String    @map("customer_phone") @db.VarChar(20)
+  customerName        String?   @map("customer_name") @db.VarChar(100)
+  customerQuestion    String    @map("customer_question") @db.Text
+  lastCustomerMessage String?   @map("last_customer_message") @db.Text
+  customerContext     String?   @map("customer_context") @db.Text
+  escalationType      String    @default("unclear") @map("escalation_type") @db.VarChar(50)
+  uncertainReason     String?   @map("uncertain_reason") @db.VarChar(200)
+  relatedRequestId    Int?      @map("related_request_id")
+  notifiedManager     Boolean   @default(false) @map("notified_manager")
+  lastNotifiedAt      DateTime? @map("last_notified_at") @db.Timestamptz()
+  occurrenceCount     Int       @default(1) @map("occurrence_count")
+  status              String    @default("pending") @db.VarChar(20) // pending, answered, expired, cancelled
+  managerAnswer       String?   @map("manager_answer") @db.Text
+  snippetId           Int?      @map("snippet_id")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  answeredAt          DateTime? @map("answered_at") @db.Timestamptz()
 
   conversation AIConversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   snippet      AIKnowledgeSnippet? @relation(fields: [snippetId], references: [id], onDelete: SetNull)
