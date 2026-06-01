@@ -1246,15 +1246,16 @@ For owners who want explicit cost visibility:
 
 ---
 
-### V-24-rename — rename `password_resets.token` → `tokenHash`
+### V-24-rename — rename `password_resets.token` → `tokenHash` — ✅ مدفوعة 2026-06-01 (`65e65e1`)
 
-V-24 left the column name as `token` even though post-V-24 it holds a sha256 hex exclusively. Renaming to `tokenHash` would make the contract explicit at the schema level and prevent future code from re-introducing a raw-vs-hash confusion. Migration:
+V-24 left the column name as `token` even though post-V-24 it holds a sha256 hex exclusively. Renamed to `tokenHash` to make the contract explicit at the schema level and prevent future code from re-introducing a raw-vs-hash confusion.
 
-1. Prisma schema: `token` → `tokenHash` with `@map("token_hash")` (or rename the column physically — see Phase A decision).
-2. Platform SQL migration: `ALTER TABLE password_resets RENAME COLUMN token TO token_hash; ALTER INDEX password_resets_token_key RENAME TO password_resets_token_hash_key;`
-3. Update 4 call sites (3 in `auth.service.ts`: `forgotPassword`, `verifyResetToken`, `resetPassword`; 1 in `admin.service.ts:sendPasswordResetLink`).
+**التنفيذ (`65e65e1`):**
+1. `platform.prisma`: `token` → `tokenHash @map("token_hash")`؛ `@@index([tokenHash])`.
+2. `platform-migrations/20260601_v24_rename_token_to_token_hash.sql`: **RENAME COLUMN + RENAME INDEX** (ليس Prisma drop+add المدمّر — يحفظ الصفوف). أسماء تطابق Prisma @@unique/@@index (drift-clean). psql-applied.
+3. 4 call sites محدّثة (auth.service: forgotPassword/verifyResetToken/resetPassword؛ admin.service: sendPasswordResetLink). الـ hash + single-use + expiry بلا تغيير — اسم الحقل فقط.
 
-**Engineer 2 owns.** ~20 min. Schedule any time. Cosmetic; not security-blocking.
+**التحقق:** scratch DB — RENAME يحفظ قيمة صف مزروع؛ up/down/up نظيف؛ drift-clean. type-check + lint + unit 725/725 + e2e (admin-reset-link/auth-enumeration) 12/12 خضراء. **/security-review CLEAN** (RENAME غير مدمّر، عقد الـ hash محفوظ، لا سطح injection/bypass جديد).
 
 ---
 
@@ -1450,9 +1451,9 @@ This card threads ip/UA through all 5 sites. The controllers already extract `ip
 
 ---
 
-### V-13c-strategy-cleanup — delete dead JwtRefreshStrategy
+### V-13c-strategy-cleanup — delete dead JwtRefreshStrategy — ✅ مدفوعة 2026-06-01 (`801143f`)
 
-`apps/api/src/core/auth/strategies/jwt-refresh.strategy.ts` is a Passport strategy registered as a provider in `auth.module.ts` but no `@UseGuards(AuthGuard('jwt-refresh'))` exists anywhere in the codebase. Post-V-13c it would reject opaque tokens as bad signatures anyway. ~5min: delete the file, drop the import + provider line, drop `JwtRefreshPayload` from `shared/types`. Engineer 2 owns. Bundle into V-13c-cleanup if helpful.
+`jwt-refresh.strategy.ts` كان Passport strategy مسجّلًا كـ provider في `auth.module.ts` بلا أي `@UseGuards(AuthGuard('jwt-refresh'))` في الكود (dead code post-V-13c — كان سيرفض الـ opaque tokens كتواقيع خاطئة). حُذف الملف + import + provider entry. `JwtRefreshPayload` كان self-contained داخل الملف (لا في `shared/types` كما خمّنت البطاقة). zero refs (grep clean)؛ type-check + lint + unit 725/725 (DI يُحلّ بدونه) خضراء؛ لا تغيير سلوكي.
 
 ---
 
