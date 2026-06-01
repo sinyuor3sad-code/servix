@@ -1008,6 +1008,28 @@ Once ops confirms ALL active super_admins have `twoFactorEnabled=true` (query in
 
 ---
 
+### V-idor-sweep — authorization sweep of all :id / resource-path controllers (2026-06-01)
+
+تشغيل بعد اكتشاف V-tenants-authz (finding فات الأودِت). مُسحت كل 34 controller حاملة `@Param`. **`JwtAuthGuard` عام (APP_GUARD)** ⇒ كل المسارات مصادَقة؛ فالمخاطرة **تفويض** (مستخدم مصادَق غير مخوّل)، لا auth-bypass.
+
+**القاعدة المعمارية:** salon controllers (`src/modules/salon/*`) تعمل على **tenant DB** (`req.tenantDb` مثبّت على مستأجر الـ JWT) ⇒ عزل database-per-tenant يمنع cross-tenant IDOR بنيويًا. الخطر يتركّز في **core/platform controllers** (platform DB، `:id` معرّف عام).
+
+**🔴 HIGH — مفتوحة كبطاقات فورية:**
+- **V-idor-users — `UsersController`** (`/users/*`، `JwtAuthGuard` فقط، لا `@Roles`، لا ownership): `GET /users` يسرد **كل** مستخدمي المنصة (PII: email/phone)؛ `GET/PUT/DELETE /users/:id` على **أي** مستخدم. `PUT /users/:id` يغيّر email/phone لأي حساب ⇒ **متجه account-takeover** (تغيير email ثم reset). أخطر من tenants.
+- **V-idor-rbac — `RolesController` + `FeaturesController`**: `@Roles('admin')` موجودة لكن **`RolesGuard` غير مطبّقة** (class فيه `@UseGuards(JwtAuthGuard)` فقط، وRolesGuard ليست عامة) ⇒ **الديكوريتر خامل تمامًا**. أي مستخدم مصادَق: `POST/PUT/DELETE /roles`, **`PUT /roles/:id/permissions`** (تعيين صلاحيات لأي دور ⇒ **privilege escalation / RBAC tampering**)، و`POST/PUT /features`. نفس فئة بَق V-tenants-authz.
+
+**🟠 MEDIUM:**
+- **`AuditController`** (`/audit-logs`, `JwtAuthGuard` فقط، لا `@Roles`): أي مستخدم مصادَق يقرأ **سجلات تدقيق كل المستأجرين** (`findAll`/`findOne`) ⇒ تسريب معلومات عبر-مستأجر. يجب super_admin.
+- **`SubscriptionsController` `POST /subscriptions`** (createSubscription): يأخذ tenantId من الـ DTO بلا role/ownership ⇒ مستخدم قد ينشئ/يغيّر اشتراك أي مستأجر. (مسارات current/cancel/renew آمنة — تستخدم `@CurrentUser('tenantId')`.)
+
+**✅ آمنة (تحقّقت):** كل salon controllers (tenant-DB isolation)؛ `notifications` (`TenantGuard` + scope بـ `tenantDb`+`user.sub`)؛ `subscriptions` self-service routes؛ `features GET`/`subscriptions plans` (catalog read)؛ `uploads` (مصادَق عبر JwtAuthGuard العام — `DELETE /:key` بلا ownership = تنظيف low-risk، ليس IDOR منصّي).
+
+**الخطة:** V-idor-users + V-idor-rbac = HIGH، تُنفَّذ فورًا بنفس نمط V-tenants-authz (class-level `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('super_admin')`، أو ownership-check حيث self-service مقصود). audit + subscriptions-POST = MEDIUM، تليها. كلها E2 (Identity/Access).
+
+**درس للمالك:** الأودِت الأصلي أغفل فئة كاملة (authz على core controllers) — ثلاث HIGH على الأقل (tenants + users + rbac). يستحق مراجعة مستقلة لمنهجية الأودِت.
+
+---
+
 ### V-43-audit-counter — Prometheus counter for blocked-IP admin login attempts
 
 V-43's IP allowlist blocks pre-user-lookup, so there's no `userId` to write a `PlatformAuditLog` row (userId is NOT NULL per V-78). Blocked attempts are currently `logger.warn`'d only.
