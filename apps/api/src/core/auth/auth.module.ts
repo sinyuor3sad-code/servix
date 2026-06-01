@@ -4,7 +4,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import jwtConfig from '../../shared/config/jwt.config';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { AuthService } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import { TwoFactorBackupCodeService } from './two-factor-backup-code.service';
@@ -31,7 +30,7 @@ import { SmsModule } from '../../shared/sms/sms.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, TwoFactorService, TwoFactorBackupCodeService, GoogleAuthService, JwtStrategy, JwtRefreshStrategy],
+  providers: [AuthService, TwoFactorService, TwoFactorBackupCodeService, GoogleAuthService, JwtStrategy],
   exports: [AuthService, TwoFactorService, GoogleAuthService],
 })
 export class AuthModule {}
