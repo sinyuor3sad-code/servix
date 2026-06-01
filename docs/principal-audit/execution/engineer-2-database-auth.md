@@ -931,7 +931,11 @@ V-13b closed the **predictability** gap on the booking OTP by replacing `Math.ra
 
 ---
 
-### V-14b-login — auth.service.login should skip suspended tenants (Engineer 2 next slot, post-V-14c)
+### V-14b-login — auth.service.login should skip suspended tenants — ✅ مدفوعة 2026-06-01
+
+**أُغلقت في launch-finishing mode** (المالك أذن بالتنفيذ الذاتي؛ الاتجاه محسوم 2026-05-21؛ ما قبل الإطلاق فلا مستخدمي multi-tenant أحياء يتأثرون بتغيّر picker). أُضيف `tenant: { status: 'active' }` إلى الـ where في **4 مسارات** تُصدر/تشتق JWT: `login`، `verify2FALogin`، `googleLogin`، وإعادة اشتقاق `refreshTokens` (`take:1`) — حتى لا يُثبَّت أو يُعاد تثبيت JWT على مستأجر معلّق. فرع `length===0` يرمي UnauthorizedException نظيفًا. أكثر تقييدًا (fail-safe، لا يضيف مستأجرًا قطّ). unit 728/728؛ /security-review CLEAN. (التفاصيل التاريخية أدناه.)
+
+---
 
 V-14b makes a suspended tenant fail at HTTP guard + WS handshake + immediate WS disconnect. But `auth.service.login()` still includes suspended tenants in the `tenantUsers` array because it filters on `tenant_user.status='active'`, not on `tenant.status`. A multi-tenant user (we have one on prod: `ptoll2055@gmail.com` linked to 2 tenants) whose `firstTenantUser` points to a suspended tenant gets a JWT pinned to it on login and is immediately blocked on every tenant-scoped request.
 
