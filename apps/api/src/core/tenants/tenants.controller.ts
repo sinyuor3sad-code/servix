@@ -26,12 +26,25 @@ import type { Tenant } from '../../shared/database';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { ToggleFeaturesDto } from './dto/toggle-features.dto';
-import { JwtAuthGuard } from '../../shared/guards';
-import { CurrentUser } from '../../shared/decorators';
+import { JwtAuthGuard, RolesGuard } from '../../shared/guards';
+import { CurrentUser, Roles } from '../../shared/decorators';
 
+// V-tenants-authz (HIGH / cross-tenant IDOR): every route here is a
+// PLATFORM operation (create/suspend/update any tenant by :id, read any
+// tenant's subscription, toggle any tenant's features). Pre-fix the class
+// carried only JwtAuthGuard with no @Roles, and the global TenantGuard only
+// checks the caller's OWN tenant (request.tenant from the JWT) — it never
+// compares the :id path param — so ANY authenticated salon user could
+// DELETE/PUT /tenants/<any-id>. Locked to super_admin, matching
+// AdminController's pattern. The admin UI already drives all of this via the
+// super_admin /admin/tenants/* routes; nothing legitimately calls bare
+// /tenants/* as tenant self-service (dashboard uses /auth, /settings,
+// /subscriptions). Fail-closed at class scope so any future route added here
+// inherits the super_admin gate. See docs/principal-audit (V-tenants-authz).
 @ApiTags('المنشآت - Tenants')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('super_admin')
 @Controller({ path: 'tenants', version: '1' })
 export class TenantsController {
   constructor(private readonly tenantsService: TenantsService) {}
@@ -78,8 +91,9 @@ export class TenantsController {
   @ApiResponse({ status: 404, description: 'المنشأة غير موجودة' })
   async suspend(
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') actorUserId: string,
   ): Promise<Tenant> {
-    return this.tenantsService.suspend(id);
+    return this.tenantsService.suspend(id, actorUserId);
   }
 
   @Get(':id/subscription')
