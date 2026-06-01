@@ -1605,3 +1605,33 @@ chaos case 2b يثبّت هذه الفجوة بوضوح.
   فقط. بطاقة مرافقة.
 
 **Engineer 2 dependency:** الـ V-18 runbook يستثني hthr و platform-admin بدقة. أي tenants مستقبلية تنشأ بـ drift سيُستثنى من V-18 loop تلقائياً (الـ filter في الـ runbook يعتمد على وجود الـ DB).
+
+---
+
+## V-74 — Client.phone @unique (tenant) — 2026-06-01 ✅ مدفوعة
+
+**Finding:** V-74 / A1-011 (MEDIUM، يفك V-89 في E4). الهاتف لم يكن فريدًا
+(`@@index([phone])` عادي) ⇒ صفوف عملاء مكرّرة ممكنة، و booking لا يستطيع
+upsert-by-phone.
+
+**سياق الإطلاق:** ما قبل الإطلاق، صفر بيانات tenant حيّة ⇒ خطوة الـ dedup في
+البطاقة = no-op الآن (موثّقة في رأس الـ migration لأي re-apply مستقبلي على DB
+مأهولة).
+
+**التنفيذ (`03660d3`):**
+- `tenant.prisma`: `Client.phone` يكتسب `@unique`؛ أُسقط `@@index([phone])`
+  العادي (الـ unique index يكفيه — لا فهرس ثانٍ مكرّر). `phone` يبقى **NOT NULL**
+  ⇒ نوع Prisma يبقى `string`، صفر كسر في callers E3/E4. (التحويل لـ nullable
+  قرار سلوكي منفصل، غير مبنّد هنا.)
+- migration `20260601_v74_client_phone_unique` (tenant، no-transaction):
+  `CREATE UNIQUE INDEX CONCURRENTLY clients_phone_key` +
+  `DROP INDEX CONCURRENTLY clients_phone_idx`. أسماء تطابق Prisma @@unique
+  (drift-clean). تطبيق عبر workaround V-18 (psql، بلا `-1`/autocommit) حتى يصلح
+  E1 toolchain الـ tenant (V-77+)؛ المستأجرون الجدد عبر create-tenant db push.
+
+**التحقق:** scratch tenant DB — up → re-run idempotent → down → up نظيف؛
+`clients_phone_key` UNIQUE موجود و`clients_phone_idx` مُسقَط؛ إدراج هاتف مكرّر
+**مرفوض**؛ drift-clean. type-check + lint + unit 725/725 خضراء. (لا
+/security-review — schema/migration بلا سطح auth/token.)
+
+**تنسيق:** **Engineer 4 (V-89)** — booking endpoint يقدر الآن upsert by phone.
