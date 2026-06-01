@@ -1014,19 +1014,20 @@ Once ops confirms ALL active super_admins have `twoFactorEnabled=true` (query in
 
 **القاعدة المعمارية:** salon controllers (`src/modules/salon/*`) تعمل على **tenant DB** (`req.tenantDb` مثبّت على مستأجر الـ JWT) ⇒ عزل database-per-tenant يمنع cross-tenant IDOR بنيويًا. الخطر يتركّز في **core/platform controllers** (platform DB، `:id` معرّف عام).
 
-**🔴 HIGH — مفتوحة كبطاقات فورية:**
-- **V-idor-users — `UsersController`** (`/users/*`، `JwtAuthGuard` فقط، لا `@Roles`، لا ownership): `GET /users` يسرد **كل** مستخدمي المنصة (PII: email/phone)؛ `GET/PUT/DELETE /users/:id` على **أي** مستخدم. `PUT /users/:id` يغيّر email/phone لأي حساب ⇒ **متجه account-takeover** (تغيير email ثم reset). أخطر من tenants.
-- **V-idor-rbac — `RolesController` + `FeaturesController`**: `@Roles('admin')` موجودة لكن **`RolesGuard` غير مطبّقة** (class فيه `@UseGuards(JwtAuthGuard)` فقط، وRolesGuard ليست عامة) ⇒ **الديكوريتر خامل تمامًا**. أي مستخدم مصادَق: `POST/PUT/DELETE /roles`, **`PUT /roles/:id/permissions`** (تعيين صلاحيات لأي دور ⇒ **privilege escalation / RBAC tampering**)، و`POST/PUT /features`. نفس فئة بَق V-tenants-authz.
+**النتيجة: ✅ العنقود كله مُغلق ومدفوع 2026-06-01 (3 HIGH + 2 MEDIUM).** كلٌّ بنمط V-tenants-authz (class/method `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('super_admin')`، fail-closed)، e2e برهان runtime (الحارس الحقيقي مقابل metadata الـ controller الفعلية)، و/security-review CLEAN.
 
-**🟠 MEDIUM:**
-- **`AuditController`** (`/audit-logs`, `JwtAuthGuard` فقط، لا `@Roles`): أي مستخدم مصادَق يقرأ **سجلات تدقيق كل المستأجرين** (`findAll`/`findOne`) ⇒ تسريب معلومات عبر-مستأجر. يجب super_admin.
-- **`SubscriptionsController` `POST /subscriptions`** (createSubscription): يأخذ tenantId من الـ DTO بلا role/ownership ⇒ مستخدم قد ينشئ/يغيّر اشتراك أي مستأجر. (مسارات current/cancel/renew آمنة — تستخدم `@CurrentUser('tenantId')`.)
+**🔴 HIGH — مُغلقة:**
+- **V-idor-users** (`050e784`←`906fe89`) — `UsersController` مقفول super_admin بالكامل. كان: `GET /users` يسرد كل مستخدمي المنصة (PII)، `PUT /users/:id` يغيّر email/phone لأي حساب ⇒ account-takeover. الخدمة الذاتية تبقى على `/auth/me`. e2e 7/7.
+- **V-idor-rbac** (`050e784`) — `RolesController` + `FeaturesController` مقفولان super_admin. كان: `@Roles('admin')` **خاملة** (RolesGuard غير مطبّقة + 'admin' ليس دورًا مزروعًا) ⇒ `PUT /roles/:id/permissions` = privilege escalation لأي مستخدم. e2e 6/6.
+- **V-tenants-authz** (`ae5dabd`) — سبق إغلاقه (القسم أعلاه). e2e 8/8.
 
-**✅ آمنة (تحقّقت):** كل salon controllers (tenant-DB isolation)؛ `notifications` (`TenantGuard` + scope بـ `tenantDb`+`user.sub`)؛ `subscriptions` self-service routes؛ `features GET`/`subscriptions plans` (catalog read)؛ `uploads` (مصادَق عبر JwtAuthGuard العام — `DELETE /:key` بلا ownership = تنظيف low-risk، ليس IDOR منصّي).
+**🟠 MEDIUM — مُغلقة:**
+- **`AuditController`** — مقفول super_admin بالكامل (class scope). كان: أي مستخدم يقرأ سجلات تدقيق كل المستأجرين. e2e ✓.
+- **`SubscriptionsController` `POST /`** — مقفول super_admin (method scope؛ RolesGuard على الـ class، @Roles على POST فقط). الخدمة الذاتية (current/cancel/renew) تبقى مفتوحة (RolesGuard يعيد true بلا @Roles، تشتق tenantId من JWT). e2e ✓.
 
-**الخطة:** V-idor-users + V-idor-rbac = HIGH، تُنفَّذ فورًا بنفس نمط V-tenants-authz (class-level `@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles('super_admin')`، أو ownership-check حيث self-service مقصود). audit + subscriptions-POST = MEDIUM، تليها. كلها E2 (Identity/Access).
+**✅ آمنة بنيويًا (تحقّقت، بلا تغيير):** كل salon controllers (tenant-DB isolation)؛ `notifications` (`TenantGuard` + scope بـ `tenantDb`+`user.sub`)؛ `subscriptions` self-service؛ catalog reads؛ `uploads` (مصادَق؛ `DELETE /:key` بلا ownership = تنظيف low-risk، ليس IDOR منصّي — follow-up اختياري).
 
-**درس للمالك:** الأودِت الأصلي أغفل فئة كاملة (authz على core controllers) — ثلاث HIGH على الأقل (tenants + users + rbac). يستحق مراجعة مستقلة لمنهجية الأودِت.
+**درس للمالك (مؤكَّد):** الأودِت الأصلي (2026-05-14) أغفل **فئة authz كاملة على core/platform controllers** — 3 HIGH (tenants/users/rbac) + 2 MEDIUM، نمط منهجي (`@Roles` خامل أو غائب على مسارات platform-DB، اعتماد ضمني على TenantGuard الذي لا يفحص `:id`). يستحق مراجعة مستقلة لمنهجية الأودِت — فحص التفويض لم يكن ضمن نطاقه.
 
 ---
 
