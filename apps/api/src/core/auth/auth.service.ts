@@ -1599,6 +1599,48 @@ export class AuthService {
     return { message: 'تم ربط حساب Google بنجاح.' };
   }
 
+  // V-13a-unlink — remove a Google link from the current account.
+  //   * No googleId            → idempotent no-op (nothing to unlink).
+  //   * authProvider === GOOGLE → REFUSE: a pure-Google account has no usable
+  //     password (a random hash satisfies NOT NULL), so unlinking would lock
+  //     the user out. They must set a password first.
+  //   * otherwise (BOTH)        → revert to LOCAL; the password remains usable.
+  async unlinkGoogle(userId: string): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('المستخدم غير موجود');
+    }
+    if (!user.googleId) {
+      return { message: 'لا يوجد حساب Google مربوط.' };
+    }
+    if (user.authProvider === AUTH_PROVIDERS.GOOGLE) {
+      throw new BadRequestException(
+        'عيّن كلمة مرور أولاً قبل إلغاء ربط حساب Google.',
+      );
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        googleId: null,
+        authProvider: AUTH_PROVIDERS.LOCAL,
+      },
+    });
+
+    await this.auditService.log({
+      userId: user.id,
+      action: 'auth_google_unlinked',
+      entityType: 'User',
+      entityId: user.id,
+      newValues: {
+        previousAuthProvider: user.authProvider,
+        newAuthProvider: AUTH_PROVIDERS.LOCAL,
+      },
+    });
+
+    return { message: 'تم إلغاء ربط حساب Google.' };
+  }
+
   private generateSlug(text: string): string {
     return text
       .toLowerCase()

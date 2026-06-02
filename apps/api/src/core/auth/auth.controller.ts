@@ -382,6 +382,20 @@ export class AuthController {
     return this.authService.linkGoogle(userId, dto.idToken);
   }
 
+  @Post('google/unlink')
+  @ApiBearerAuth()
+  @RateLimit(10, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'إلغاء ربط حساب Google عن الحساب الحالي (V-13a-unlink)' })
+  @ApiResponse({ status: 200, description: 'تم إلغاء الربط (أو لا يوجد ربط)' })
+  @ApiResponse({ status: 400, description: 'حساب Google فقط — عيّن كلمة مرور أولاً' })
+  @ApiResponse({ status: 401, description: 'غير مصرح بالوصول' })
+  async unlinkGoogle(
+    @CurrentUser('sub') userId: string,
+  ): Promise<{ message: string }> {
+    return this.authService.unlinkGoogle(userId);
+  }
+
   @Get('google/status')
   @Public()
   @ApiOperation({ summary: 'هل Google OAuth مُفعّل؟' })

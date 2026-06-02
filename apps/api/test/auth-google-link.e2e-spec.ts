@@ -302,4 +302,57 @@ describe('V-13a — Google OAuth takeover prevention + linkGoogle', () => {
     expect(userUpdate).not.toHaveBeenCalled();
     expect(auditLog).not.toHaveBeenCalled();
   });
+
+  // ───────────────────────── unlinkGoogle (V-13a-unlink) ─────────────────
+
+  it('unlinkGoogle: BOTH account → googleId cleared, authProvider LOCAL, audit auth_google_unlinked', async () => {
+    userFindUnique.mockResolvedValueOnce(
+      userRow({ id: USER_ID, googleId: 'google-sub-9999', authProvider: AUTH_PROVIDERS.BOTH }),
+    );
+    userUpdate.mockResolvedValueOnce({});
+
+    const result = await service.unlinkGoogle(USER_ID);
+
+    expect(result.message).toMatch(/تم إلغاء ربط/);
+    expect(userUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: USER_ID },
+        data: { googleId: null, authProvider: AUTH_PROVIDERS.LOCAL },
+      }),
+    );
+    expect(auditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'auth_google_unlinked', userId: USER_ID }),
+    );
+  });
+
+  it('unlinkGoogle: Google-only account (no usable password) → 400, refuses (no mutation)', async () => {
+    userFindUnique.mockResolvedValueOnce(
+      userRow({ id: USER_ID, googleId: 'google-sub-9999', authProvider: AUTH_PROVIDERS.GOOGLE }),
+    );
+
+    await expect(service.unlinkGoogle(USER_ID)).rejects.toThrow(BadRequestException);
+
+    expect(userUpdate).not.toHaveBeenCalled();
+    expect(auditLog).not.toHaveBeenCalled();
+  });
+
+  it('unlinkGoogle: no Google linked → idempotent no-op message, no mutation', async () => {
+    userFindUnique.mockResolvedValueOnce(
+      userRow({ id: USER_ID, googleId: null, authProvider: AUTH_PROVIDERS.LOCAL }),
+    );
+
+    const result = await service.unlinkGoogle(USER_ID);
+
+    expect(result.message).toMatch(/لا يوجد حساب Google/);
+    expect(userUpdate).not.toHaveBeenCalled();
+    expect(auditLog).not.toHaveBeenCalled();
+  });
+
+  it('unlinkGoogle: user row missing → 401', async () => {
+    userFindUnique.mockResolvedValueOnce(null);
+
+    await expect(service.unlinkGoogle(USER_ID)).rejects.toThrow(UnauthorizedException);
+
+    expect(userUpdate).not.toHaveBeenCalled();
+  });
 });
