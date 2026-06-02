@@ -1060,7 +1060,25 @@ Add to `env.validation.ts`: a custom Joi validator that splits the CSV and valid
 
 ---
 
-### V-43-parity — full V-25/V-41 hardening parity on admin login
+### V-43-parity — full V-25/V-41 hardening parity on admin login — ✅ مدفوعة 2026-06-02 (`3e5f9e2`)
+
+**أُغلقت:** V-43 أضاف 2FA + IP-allowlist + audit + bcrypt-timing لكنه ترك مسار الأدمن **بلا** طبقات V-25 (IP-block الديناميكي + قفل الحساب). الآن:
+1. **`assertAdminCredentials`** (المشترك بين login + verify2FALogin): `checkLoginIpBlock` في القمة → 401 إن كان الـ IP محظورًا؛ `isAccountLocked` قبل الـ bcrypt compare؛ البريد المجهول + كلمة المرور الخاطئة كلاهما يزيد عدّاد الـ IP.
+2. **`registerAdminLoginFailure`** (helper، `Promise<never>`): يزيد عدّادَي IP+account، يرمي 401 المناسب (block/lock/generic مُمرَّرة)، ويرسل SMS للـ super_admin على **انتقال** القفل فقط (`incrementLoginFailAccount` يعيد `locked=true` مرة واحدة لكل دورة → ≤ SMS واحد/24س) + صف audit `admin_login_account_locked`.
+3. **`verify2FALogin`**: فشل رمز TOTP/backup صار يغذّي عدّادات القفل أيضًا (يغلق brute-force العامل الثاني بكلمة مرور معروفة).
+4. **`issueAdminTokens`** (القمع الوحيد للنجاح الحقيقي — login بلا 2FA + verify بعد الرمز): يعيد تعيين العدّادين. تحدّي 2FA لا يمرّ عبره، فكلمة المرور الصحيحة وحدها لا تصفّر عدّاد فشل الـ 2FA.
+
+العدّادات تشارك keyspace الـ Redis مع `auth.service.login` (IP + userId) → لا مراوغة بالتنقّل بين مسارَي دخول المستخدم والأدمن.
+
+**قرار التصميم (NAEB):** اخترت keyspace **مشترك** (لا admin-specific) — البطاقة سمحت بالاثنين؛ المشترك يمنع المراوغة بين النقطتين وأبسط. الـ reset في `issueAdminTokens` (نقطة واحدة) أصرم من نسخة المستخدم (التي تصفّر قبل 2FA) — تشديد مقصود موثَّق.
+
+**التحقق:** `admin-login-hardening.e2e-spec` +7 حالات (IP محظور→لا lookup؛ حساب مقفل→لا compare؛ كلمة خاطئة تزيد؛ انتقال القفل→SMS+audit؛ بريد مجهول→IP فقط؛ نجاح يصفّر؛ رمز 2FA خاطئ يزيد) = **17/17**. admin unit **11/11** (أُضيف provider لـ SmsService في الـ spec وإلا فشل DI). type-check + eslint نظيفان (ملف الـ e2e مستثنى من اللينت في إعداد المشروع؛ تحقّق ts-jest عبر test/tsconfig).
+
+**ملاحظة متابعة:** `V-43-mandatory-2fa` (إلزام تسجيل 2FA لكل super_admin) و`V-43-env` (Joi لـ ADMIN_IP_ALLOWLIST) ما زالتا مفتوحتين — خارج نطاق هذه البطاقة.
+
+---
+
+#### الوصف الأصلي (تاريخي)
 
 V-43 added 2FA + IP-allowlist + audit + bcrypt-timing-equalization to admin login, but did NOT add the IP-block + account-lockout layers that user `/auth/login` has (V-25). An attacker who knows a super_admin email + is on the allowlist (or allowlist disabled) can still brute-force the password subject only to `@RateLimit(5, 300)`.
 
