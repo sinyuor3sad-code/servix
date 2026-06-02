@@ -1397,7 +1397,25 @@ This card:
 
 ---
 
-### V-24-audit-completion + V-24-self-serve-audit — bundle: PasswordReset.initiatedBy + completion audits
+### V-24-audit-completion + V-24-self-serve-audit — bundle: PasswordReset.initiatedBy + completion audits — ✅ مدفوعة 2026-06-02 (`27df4df`)
+
+**أُغلقت (الحزمة كاملة):** قبل V-24 لم يكن استرداد رمز إعادة التعيين يترك **أي** صف audit (فجوة SOC2/PDPL، الأسوأ للـ self-serve)، ولا تمييز بين إكمال self-serve وإكمال رابط الأدمن.
+1. **المخطط (platform):** `PasswordReset.initiatedBy VARCHAR(20) NOT NULL DEFAULT 'self_serve'` (Prisma `@default` → DB default **مُبقى** فلا drift). Migration `prisma/platform-migrations/20260602_v24_audit_completion_initiated_by.sql` — `ADD COLUMN` يملأ الصفوف الموجودة بـ `self_serve` (صحيح: كل صف قبل-migration كان self-serve؛ الأدمن يبدأ وسم `'admin'` مع هذه البطاقة).
+2. `admin.service.sendPasswordResetLink` يكتب `initiatedBy: 'admin'`.
+3. `auth.service.forgotPassword` يكتب `initiatedBy: 'self_serve'` صراحةً.
+4. `auth.service.resetPassword` يقرأ `reset.initiatedBy` ويُصدر عبر helper `writeResetAudit` (best-effort — تعثّر سجل forensic يجب ألّا يُفشل reset مُنفَّذًا): `<prefix>_password_reset_completed` عند النجاح، `<prefix>_password_reset_failed` عند رمز **موجود** مستخدَم/منتهٍ (prefix = admin|auth). الرمز **المجهول يبقى صامتًا** (لا صف) ضد probe-spam.
+
+**التحقق (up/down/up + drift على scratch DB):** pre-state diff يكشف العمود؛ UP يطبّق + يملأ الصف الموجود `self_serve` + الصفوف الجديدة default `self_serve`؛ `prisma migrate diff` = **"No difference detected"** (drift-clean)؛ DOWN يسقط؛ re-UP نظيف.
+
+**⏳ PENDING PROD-APPLY (platform — المالك):** هذه platform migration لا تُطبَّق تلقائيًا. عند النشر:
+`psql "$PLATFORM_DATABASE_URL" -f apps/api/prisma/platform-migrations/20260602_v24_audit_completion_initiated_by.sql`
+(لا يحتاج `migrate resolve` — المنصّة على `db push` بلا `_prisma_migrations`). آمن: `ADD COLUMN` بـ DEFAULT، غير مُقفِل عمليًا على جدول صغير.
+
+**التحقق:** `admin-reset-link.e2e` **9/9** (+self-serve completed، +unknown صامت؛ تعزيز admin-completed + expired-failed). auth+admin unit **39/39**. type-check + eslint نظيفان.
+
+---
+
+#### الوصف الأصلي (تاريخي)
 
 V-24 enriched `admin_password_reset_link_sent` but did NOT add `admin_password_reset_completed` / `admin_password_reset_failed` audit rows. The reason: `auth.service.resetPassword` is the verifier for BOTH self-serve and admin flows, and it has no way to distinguish initiator today. Pre-V-24 it also has NO audit row on success — a self-serve user redeeming a reset token leaves no trail at all, which is a SOC2 / PDPL gap.
 
