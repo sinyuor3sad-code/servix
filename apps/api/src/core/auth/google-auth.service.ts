@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { OAuth2Client } from 'google-auth-library';
 
 interface GoogleTokenPayload {
   sub: string;         // Google user ID
@@ -11,15 +12,21 @@ interface GoogleTokenPayload {
 
 /**
  * Google OAuth2 Service
- * Handles Google ID Token verification and user data extraction.
- * Uses Google's tokeninfo endpoint (no SDK dependency).
+ * Verifies Google ID tokens LOCALLY against Google's JWKS (V-13a-verify) via
+ * google-auth-library's OAuth2Client.verifyIdToken: it validates the JWT
+ * SIGNATURE, audience, issuer and expiry in-process (JWKS keys fetched + cached
+ * by the client). Replaces the prior per-call round-trip to the tokeninfo
+ * endpoint — one fewer network hop, and we trust the token's cryptographic
+ * signature rather than a remote endpoint's say-so.
  */
 @Injectable()
 export class GoogleAuthService {
   private readonly clientId: string;
+  private readonly oauthClient: OAuth2Client;
 
   constructor(private readonly configService: ConfigService) {
     this.clientId = this.configService.get<string>('GOOGLE_CLIENT_ID', '');
+    this.oauthClient = new OAuth2Client(this.clientId);
   }
 
   /**
@@ -32,31 +39,23 @@ export class GoogleAuthService {
     }
 
     try {
-      // Verify token using Google's tokeninfo endpoint
-      const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
-      
-      if (!res.ok) {
+      // verifyIdToken checks the signature (against cached JWKS), audience ===
+      // clientId, issuer, and expiry — throwing on any failure. The explicit
+      // aud/exp checks the tokeninfo path needed are now handled internally.
+      const ticket = await this.oauthClient.verifyIdToken({
+        idToken,
+        audience: this.clientId,
+      });
+      const payload = ticket.getPayload();
+      if (!payload?.sub) {
         throw new UnauthorizedException('رمز Google غير صالح');
-      }
-
-      const payload = await res.json() as Record<string, string>;
-
-      // Verify the token was issued for our app
-      if (payload.aud !== this.clientId) {
-        throw new UnauthorizedException('رمز Google غير صالح لهذا التطبيق');
-      }
-
-      // Check token expiry
-      const expiry = parseInt(payload.exp, 10) * 1000;
-      if (Date.now() > expiry) {
-        throw new UnauthorizedException('انتهت صلاحية رمز Google');
       }
 
       return {
         sub: payload.sub,
-        email: payload.email,
-        email_verified: payload.email_verified === 'true',
-        name: payload.name,
+        email: payload.email ?? '',
+        email_verified: payload.email_verified === true,
+        name: payload.name ?? '',
         picture: payload.picture || undefined,
       };
     } catch (error) {
