@@ -15,6 +15,7 @@ import { EventsGateway } from '../src/shared/events/events.gateway';
 import { TwoFactorService } from '../src/core/auth/two-factor.service';
 import { TwoFactorBackupCodeService } from '../src/core/auth/two-factor-backup-code.service';
 import { SmsService } from '../src/shared/sms/sms.service';
+import { MailService } from '../src/shared/mail/mail.service';
 
 /**
  * V-43 — Admin login hardening: 2FA enforcement + IP allowlist + audit.
@@ -135,6 +136,7 @@ describe('V-43 — admin login hardening', () => {
         },
         { provide: EventsGateway, useValue: {} },
         { provide: SmsService, useValue: { send: smsSend } },
+        { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
         { provide: TwoFactorService, useValue: { verifyToken } },
         { provide: TwoFactorBackupCodeService, useValue: { store: jest.fn(), verifyAndConsume: jest.fn(), deleteAll: jest.fn(), countUnused: jest.fn() } },
       ],
