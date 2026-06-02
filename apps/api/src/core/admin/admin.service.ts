@@ -2269,9 +2269,13 @@ export class AdminService {
       where: { tenantId },
       select: { userId: true },
     });
-    await Promise.all(
+    // V-14a-perf-counter: count writes that actually landed in Redis, so a
+    // partial outage produces an honest affectedUserCount instead of
+    // overstating it as members.length. setPasswordChangedAt never throws.
+    const results = await Promise.all(
       members.map((m) => this.cacheService.setPasswordChangedAt(m.userId)),
     );
+    const affectedUserCount = results.filter(Boolean).length;
 
     await this.prisma.platformAuditLog.create({
       data: {
@@ -2282,7 +2286,8 @@ export class AdminService {
         entityId: tenantId,
         newValues: {
           action: 'force_logout_all_users',
-          affectedUserCount: members.length,
+          affectedUserCount,
+          attemptedUserCount: members.length,
         },
       },
     });
@@ -2290,7 +2295,8 @@ export class AdminService {
     return {
       success: true,
       tenantId,
-      affectedUserCount: members.length,
+      affectedUserCount,
+      attemptedUserCount: members.length,
       message: 'تم تسجيل خروج جميع مستخدمي المنشأة',
     };
   }

@@ -408,14 +408,23 @@ export class CacheService implements OnModuleDestroy {
   /** SEC-2: On password change — invalidate all refresh tokens for user (token issued before this time is invalid) */
   private readonly PWD_CHANGED_PREFIX = 'servix:pwd_changed:';
 
-  async setPasswordChangedAt(userId: string): Promise<void> {
-    if (!this.enabled || !this.redis) return;
+  // V-14a-perf-counter: returns whether the write actually landed in Redis.
+  // Still swallows errors (never throws — callers rely on that for fire-and-
+  // forget cascades), but the boolean lets bulk callers (force-logout / tenant
+  // suspend) record an ACCURATE affectedUserCount instead of overstating it as
+  // members.length when Redis is partially down. Existing `await …` callers that
+  // ignore the return value are unaffected.
+  async setPasswordChangedAt(userId: string): Promise<boolean> {
+    if (!this.enabled || !this.redis) return false;
     try {
       const key = `${this.PWD_CHANGED_PREFIX}${userId}`;
       const ts = Date.now().toString();
       await this.redis.setex(key, REFRESH_BLACKLIST_TTL_SECONDS, ts);
+      return true;
     } catch {
-      // ignore
+      // ignore — degrade gracefully; the HTTP guard chain still blocks via
+      // tenant.status / pwChangedAt on the next request once Redis recovers.
+      return false;
     }
   }
 

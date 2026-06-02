@@ -62,7 +62,9 @@ const mockPlatformSettingsService = {
 };
 
 const mockCacheService = {
-  setPasswordChangedAt: jest.fn().mockResolvedValue(undefined),
+  // V-14a-perf-counter: real setPasswordChangedAt returns boolean (Redis-write
+  // success). Default to true (Redis up); tests override per-call for outages.
+  setPasswordChangedAt: jest.fn().mockResolvedValue(true),
   invalidateTenant: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -291,6 +293,43 @@ describe('AdminService', () => {
       await expect(
         service.updateTenantStatus('nonexistent', 'suspended', 'admin-id'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('forceLogoutTenant — V-14a-perf-counter', () => {
+    it('يسجّل affectedUserCount = عدد الكتابات الناجحة فقط (لا members.length) عند فشل Redis جزئي', async () => {
+      mockPrisma.tenant.findUnique.mockResolvedValue({ id: 'tid', status: 'active' });
+      mockPrisma.tenantUser.findMany.mockResolvedValue([
+        { userId: 'u1' },
+        { userId: 'u2' },
+        { userId: 'u3' },
+      ]);
+      // u2's Redis write fails (returns false); u1/u3 succeed.
+      mockCacheService.setPasswordChangedAt
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
+      mockPrisma.platformAuditLog.create.mockResolvedValue({ id: 'a' });
+
+      const result = await service.forceLogoutTenant('tid', 'admin-id');
+
+      expect(result.affectedUserCount).toBe(2); // not 3
+      expect(result.attemptedUserCount).toBe(3);
+      const auditArg = mockPrisma.platformAuditLog.create.mock.calls.at(-1)![0];
+      expect(auditArg.data.newValues.affectedUserCount).toBe(2);
+      expect(auditArg.data.newValues.attemptedUserCount).toBe(3);
+    });
+
+    it('affectedUserCount يساوي العدد الكامل عندما تنجح كل الكتابات', async () => {
+      mockPrisma.tenant.findUnique.mockResolvedValue({ id: 'tid', status: 'active' });
+      mockPrisma.tenantUser.findMany.mockResolvedValue([{ userId: 'u1' }, { userId: 'u2' }]);
+      mockCacheService.setPasswordChangedAt.mockResolvedValue(true);
+      mockPrisma.platformAuditLog.create.mockResolvedValue({ id: 'a' });
+
+      const result = await service.forceLogoutTenant('tid', 'admin-id');
+
+      expect(result.affectedUserCount).toBe(2);
+      expect(result.attemptedUserCount).toBe(2);
     });
   });
 });
