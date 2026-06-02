@@ -66,7 +66,7 @@ const mockPrisma = {
     findUnique: jest.fn(),
     create: jest.fn().mockResolvedValue({}),
     update: jest.fn().mockResolvedValue({}),
-    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
   },
   $transaction: jest.fn(),
 };
@@ -461,11 +461,60 @@ describe('AuthService', () => {
 
       expect(result.accessToken).toBe('mock-token');
       expect(result.refreshToken).toMatch(/^[a-f0-9]{64}$/);
-      expect(mockPrisma.refreshToken.update).toHaveBeenCalledWith(
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'rt-1' },
+          where: { id: 'rt-1', revokedAt: null },
           data: expect.objectContaining({ revokedReason: 'rotated' }),
         }),
+      );
+    });
+
+    it('V-13c-race-tuning: lost the rotation CAS but predecessor is rotated → returns the minted successor (benign)', async () => {
+      mockPrisma.refreshToken.findUnique
+        .mockResolvedValueOnce(validRow) // presented token
+        .mockResolvedValueOnce({ id: 'rt-2' }) // successor lookup
+        .mockResolvedValueOnce({
+          ...validRow,
+          revokedAt: new Date(),
+          revokedReason: 'rotated',
+        }); // re-read after the lost CAS
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 0 }); // lost
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-id',
+        email: 'test@example.com',
+        tenantUsers: [{ tenantId: 'tenant-id', roleId: 'role-id' }],
+      });
+
+      const result = await service.refreshTokens('raced-refresh-token');
+
+      // Benign concurrent rotation: returns the successor we minted, no cascade.
+      expect(result.refreshToken).toMatch(/^[a-f0-9]{64}$/);
+      expect(mockCacheService.setPasswordChangedAt).not.toHaveBeenCalled();
+    });
+
+    it('V-13c-race-tuning: lost the CAS to a reuse-revoke → 401 + orphan successor revoked', async () => {
+      mockPrisma.refreshToken.findUnique
+        .mockResolvedValueOnce(validRow) // presented token
+        .mockResolvedValueOnce({ id: 'rt-2' }) // successor lookup
+        .mockResolvedValueOnce({
+          ...validRow,
+          revokedAt: new Date(),
+          revokedReason: 'reuse_detected',
+        }); // re-read: predecessor was reuse-revoked, not rotated
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 0 }); // lost
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-id',
+        email: 'test@example.com',
+        tenantUsers: [{ tenantId: 'tenant-id', roleId: 'role-id' }],
+      });
+
+      await expect(
+        service.refreshTokens('raced-into-reuse'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      // The orphan successor (rt-2) we minted is revoked so it can't be used.
+      expect(mockPrisma.refreshToken.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'rt-2' } }),
       );
     });
 

@@ -405,10 +405,13 @@ export class AuthService {
   //     setPasswordChangedAt (kills outstanding access JWTs via V-14a),
   //     belt-and-braces cache.blacklist for the existing TokenBlacklist short-
   //     circuit, audit row + Sentry warning. See handleReuseDetected below.
-  //   - Race window: two concurrent refreshes of the same valid token both
-  //     see revokedAt=null and both succeed in issuing successors. The slower
-  //     write loses revokedReason='rotated'. Accepted false-positive per
-  //     V-13c-race-tuning follow-up.
+  //   - Race (V-13c-race-tuning): the rotation revoke is an optimistic
+  //     compare-and-set (updateMany WHERE id=? AND revoked_at IS NULL). Exactly
+  //     one of two concurrent refreshes flips the row; the loser re-reads — a
+  //     benign concurrent 'rotated' returns the successor it already minted
+  //     (both are legitimate family members; the orphan ages out via V-13c-gc),
+  //     while anything else (reuse/logout/pwd_changed mid-rotation) revokes our
+  //     orphan successor and 401s.
   async refreshTokens(
     rawToken: string,
     opts: { ipAddress?: string; userAgent?: string } = {},
@@ -518,14 +521,50 @@ export class AuthService {
       where: { tokenHash: successorHash },
     });
 
-    await this.prisma.refreshToken.update({
-      where: { id: row.id },
+    // V-13c-race-tuning: optimistic compare-and-set. Only the request that
+    // flips revoked_at NULL→NOW wins the rotation; a concurrent refresh of the
+    // same token loses (count=0) and is classified below instead of silently
+    // minting a second parallel family.
+    const claim = await this.prisma.refreshToken.updateMany({
+      where: { id: row.id, revokedAt: null },
       data: {
         revokedAt: new Date(),
         revokedReason: 'rotated',
         replacedByTokenId: successor?.id ?? null,
       },
     });
+
+    if (claim.count === 0) {
+      const current = await this.prisma.refreshToken.findUnique({
+        where: { id: row.id },
+      });
+      if (current?.revokedReason === 'rotated') {
+        // Benign concurrent rotation (e.g. two tabs auto-refreshing at once).
+        // The successor we minted is a valid token in the same family — return
+        // it; the predecessor already points at the other request's successor.
+        // The extra successor row is harmless and aged out by V-13c-gc.
+        this.logger.debug(
+          `[refreshTokens] benign concurrent rotation on family ${row.familyId}`,
+        );
+        return newTokens;
+      }
+      // Revoked for any OTHER reason (reuse_detected / logout / pwd_changed)
+      // between our findUnique and here → our successor must not survive.
+      if (successor) {
+        await this.prisma.refreshToken
+          .update({
+            where: { id: successor.id },
+            data: {
+              revokedAt: new Date(),
+              revokedReason: current?.revokedReason ?? 'reuse_detected',
+            },
+          })
+          .catch(() => {});
+      }
+      throw new UnauthorizedException(
+        'رمز التحديث غير صالح أو منتهي الصلاحية',
+      );
+    }
 
     return newTokens;
   }
