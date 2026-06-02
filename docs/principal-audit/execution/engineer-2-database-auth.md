@@ -1622,7 +1622,18 @@ If `RETURNING` is empty, the row was rotated by a concurrent request between our
 
 ---
 
-### V-13c-forensics — thread ip/UA into the 5 non-refresh issuance sites
+### V-13c-forensics — thread ip/UA into the 5 non-refresh issuance sites — ✅ مدفوعة 2026-06-02 (`b7605c8`)
+
+**أُغلقت:** V-13c يحفظ `ip_address`/`user_agent` على كل صف `refresh_tokens`، لكن `/auth/refresh` وحده كان يمرّرهما — بقية callers لـ `generateTokens` (login، verify2FALogin، googleLogin ×2، verifyEmailOtp) تكتب null، فالعائلات المبدوءة عند الدخول (الحالة الشائعة) أصلها null ⇒ يُفشِل forensics كشف-إعادة-الاستخدام ("أي IP فتح العائلة؟").
+- `generateTokens` يقبل `opts.{ipAddress,userAgent}` أصلًا؛ الآن الأربع دوال تقبلهما وتمرّرهما.
+- `auth.controller`: المعالجات الأربعة تستخرج `userAgent` (هيدر user-agent، مقصوص 500، مثل معالج refresh) + ip؛ معالجا verify-otp وgoogle نالا `@Req`. الكل اختياري (النداءات القديمة تترجم، تُكتب null).
+- `register` لا يُصدر توكنات (التحقق أولًا) — لا نداء generateTokens فيه (السكتش عدّ 5 مواقع؛ فعليًا register ليس منها).
+
+**التحقق:** `auth-google-link` يؤكّد أن عائلة Google-login تُسجّل ip/UA المُمرَّرين على `refreshToken.create`. full unit **740/740**؛ e2e **11/11**. type-check + eslint نظيفان.
+
+---
+
+#### الوصف الأصلي (تاريخي)
 
 V-13c persists `ip_address` and `user_agent` columns on every `refresh_tokens` row but only the `/auth/refresh` controller threads them through. The 5 other callers of `generateTokens` (login, register, verify2FALogin, googleLogin × 2, verifyEmailOtp) write null. Reuse-detection forensics asks "what IP started this family?" — and for families started at login (the common case), the answer is currently null.
 
