@@ -1518,7 +1518,26 @@ async unlinkGoogle(userId: string): Promise<{ message: string }> {
 
 ---
 
-### V-13a-phone-placeholder — fix synthetic phone for Google-only users
+### V-13a-phone-placeholder — fix synthetic phone for Google-only users — ✅ مدفوعة 2026-06-02 (`e001542`، Option A)
+
+**أُغلقت — Option A (المالك اختار):** الهاتف الاصطناعي `g-<sub[0:10]>` (خطر تصادم unique ~1/10^10 + تسرّب في الملف الشخصي) أُزيل بجعل `phone` **nullable**.
+
+**قرار التصميم (NAEB — تصحيح السكتش):** سكتش البطاقة قال «DROP INDEX + CREATE partial `WHERE phone IS NOT NULL`». في **Postgres** الـ UNIQUE القياسي يعامل NULLs كمتمايزة (يسمح بعدة صفوف بلا هاتف أصلًا)، وPrisma `@unique` يولّد فهرسًا **كاملًا** — فالـ partial **غير ضروري + يُحدِث drift**. الصحيح: `phone String? @unique` + `ALTER COLUMN phone DROP NOT NULL` فقط (الفهرس الكامل القائم `users_phone_key` يبقى). **تحقّقت drift-clean.**
+
+- Migration `20260602_v13a_phone_nullable.sql`.
+- `googleLogin`: يُسقِط الهاتف الاصطناعي (null الآن).
+- **مسح null-safety (موجَّه بـ tsc):** `auth.service` (أنواع UserResponse/MeResult/mapUserResponse/handle2FAFailure → string|null؛ SMS القفل/forgotPassword/2FA محروسة `if (user.phone)` → بلا هاتف = بريد فقط)؛ `auth.controller` (5 أنواع إرجاع inline)؛ `admin.service` (cleanPhone في الاستعادة)؛ `data-rights.service` (DSAR export/rectify/erase تتخطّى بحث phone→client للمستخدم بلا هاتف).
+- **cross-scope:** `data-rights.service.ts` نطاق E4 — الحُرّاس الأربعة نتيجة ميكانيكية حتمية للعمود nullable (tsc لا يترجم بدونها)، حافظة للسلوك. للمالك الحقيقي إعادة النسب لـ E4.
+
+**⏳ PENDING PROD-APPLY (platform — المالك):** `psql "$PLATFORM_DATABASE_URL" -f apps/api/prisma/platform-migrations/20260602_v13a_phone_nullable.sql` (لا migrate resolve). **تنبيه rollback:** `SET NOT NULL` يفشل بمجرّد وجود صف Google-only (phone NULL) — الـ rollback آمن فقط قبل أول حساب بلا هاتف.
+
+**التحقق:** scratch up/down/up + **drift-clean**؛ سلوك: هاتفان متمايزان OK، تكرار غير-فارغ **مرفوض** (unique قائم)، هاتفان NULL **كلاهما يُدرَج**. full unit **740/740**؛ e2e (google-link/admin-login/admin-reset) **37/37** (+تأكيد googleLogin ينشئ phone:null). type-check + eslint نظيفان.
+
+**ملاحظة:** V-13a-backfill (فحص صفوف googleId+local قديمة على prod) تبقى مفتوحة — تُنفَّذ بعد النشر إن رجع العدّ > 0.
+
+---
+
+#### الوصف الأصلي (تاريخي)
 
 `auth.service.googleLogin` fresh-create path writes `phone: 'g-${googleUser.sub.slice(0, 10)}'` to satisfy the `User.phone @unique @db.VarChar(15)` constraint. Risks:
 
