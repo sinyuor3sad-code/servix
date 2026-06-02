@@ -209,12 +209,15 @@ export class AiConsultantService {
     // ─── Batch 7: Service names for top services + ALL services catalog ───
     const serviceIds = topServices.map((s) => s.serviceId);
     const [topServiceDetails, allServices, serviceCategories] = await Promise.all([
-      serviceIds.length > 0
-        ? db.service.findMany({
-            where: { id: { in: serviceIds } },
-            select: { id: true, nameAr: true, price: true },
-          })
-        : Promise.resolve([]),
+      // V-e3-ai-consultant-types: always run the query (an empty `in: []` simply
+      // returns []). The previous `serviceIds.length > 0 ? … : Promise.resolve([])`
+      // ternary made the empty branch infer never[], the two branches unified to
+      // never[], and serviceMap's value type collapsed to {} — which broke
+      // serviceMap.get(...).nameAr / .price under test/tsconfig.json (TS2339).
+      db.service.findMany({
+        where: { id: { in: serviceIds } },
+        select: { id: true, nameAr: true, price: true },
+      }),
       db.service.findMany({
         where: { isActive: true },
         select: { nameAr: true, price: true, duration: true, categoryId: true },
