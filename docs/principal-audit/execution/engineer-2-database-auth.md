@@ -1207,7 +1207,15 @@ But the policy isn't documented anywhere — a future engineer might flip it inc
 
 ---
 
-### V-60-audit-fail — forensic audit on ValidationPipe rejections
+### V-60-audit-fail — forensic audit on ValidationPipe rejections — ⚠️ RECLASSIFIED → Phase-5 counter (2026-06-01)
+
+**لا يُنفَّذ كما هو مُواصَف — السكتش غير متوافق مع المخطط + مكرّر:**
+1. **غير متوافق مع المخطط:** `platform_audit_logs.userId` هو **NOT NULL UUID مع FK إلى users** (V-78، مُبقى عمدًا لـ PDPL/SOC2). معظم فشل validation الـ auth **غير مصادَق** (register/login/reset)، فسكتش البطاقة `userId: 'anonymous'` ليس UUID ولا له FK target ⇒ عبر outbox الـ V-35: الكتابة في الـ outbox تنجح (بلا FK) لكن الـ drain إلى `platform_audit_logs` **يفشل دائمًا** (FK + uuid cast) ⇒ poison ⇒ dead-letter ⇒ ضجيج `failed_total` alert. مسموم بنيويًا.
+2. **مكرّر:** `GlobalExceptionFilter` القائم (`shared/filters/http-exception.filter.ts`) يلتقط **كل** الاستثناءات بما فيها `VALIDATION_ERROR` (سطر 54) ويرسلها إلى **Sentry** (`@SentryExceptionCaptured`). فرؤية فشل الـ validation **موجودة أصلًا**.
+
+**التصحيح:** الشكل الصحيح للتلِمتري لطلبات غير مصادَقة = **Prometheus counter** `servix_http_validation_failed_total{path,method}` من filter، **لا** صف audit (الذي مُصمَّم user-bound بـ V-78). يُعاد تبويبه إلى **Phase-5 counters** (E2 يورّد الزيادة، E1 يربط alert rule) — أولوية منخفضة، بعد الذيل الجوهري. الكتابة في audit logs تتطلب إمّا `userId` nullable (يخالف قرار V-78) أو صف system-user اصطناعي — قراران أكبر من البطاقة، مؤجَّلان.
+
+<details><summary>الوصف الأصلي (سكتش معطوب — لا تطبّقه)</summary>
 
 V-60 hardened 7 auth endpoints with class-validator DTOs + `forbidNonWhitelisted: true`. Malformed payloads now correctly return 400, but the rejection happens at the global `ValidationPipe` BEFORE the controller method runs — services never see the request, so `auditService.log()` is never invoked for these 400s. Operators lose visibility into payload-shape attacks (probing for missing fields, extra fields, type mismatches at scale).
 
@@ -1247,6 +1255,8 @@ export class ValidationAuditFilter implements ExceptionFilter {
 Wire as `useGlobalFilters` in `main.ts` (or `APP_FILTER` provider). Audit volume: bounded by attacker traffic + accidental client misuse; transition-only firing not applicable (every 400 emits one row). Operators should monitor `SELECT count(*) FROM platform_audit_logs WHERE action='http_validation_failed' GROUP BY new_values->>'path'` for spikes signalling probing campaigns.
 
 **Engineer 2 owns** (auth scope, plus shared filter infrastructure). ~1h. Schedule once V-60 is on prod and the 400-rate baseline is established.
+
+</details>
 
 ---
 
