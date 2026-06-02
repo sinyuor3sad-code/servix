@@ -1601,7 +1601,19 @@ This card:
 
 ---
 
-### V-13c-race-tuning — optimistic lock on the rotation update
+### V-13c-race-tuning — optimistic lock on the rotation update — ✅ مدفوعة 2026-06-02 (`128b340`)
+
+**أُغلقت:** السباق المقبول سابقًا (طلبا refresh متزامنان بنفس الرمز يريان `revoked_at IS NULL` فيُصدران خَلَفَين ⇒ عائلتان متوازيتان — ضجيج لا ثغرة). الآن إبطال التدوير = **compare-and-set تفاؤلي**: `updateMany WHERE id=? AND revoked_at IS NULL`. طلب واحد فقط يقلب الصف (`count=1`) يفوز؛ الخاسر (`count=0`) يُعيد قراءة السلف ويصنّف:
+- `revoked_reason='rotated'` → سباق حميد: يعيد الخَلَف الذي سكّه (رمز صالح في العائلة؛ السلف يشير لخَلَف الطلب الآخر؛ الصف الزائد يُنظَّف بـ V-13c-gc).
+- أي سبب آخر (reuse_detected / logout / pwd_changed أثناء التدوير) → إبطال الخَلَف اليتيم + 401 (الجلسة أُبطِلت من تحتنا).
+
+إبطالات expired/pwd_changed تبقى غير-مشروطة (نهائية، بلا خَلَف — الإبطال المزدوج هناك غير ضار).
+
+**التحقق:** +2 اختبار (سباق حميد يعيد الخَلَف بلا cascade؛ سباق خاسر لإعادة-استخدام → 401 + إبطال اليتيم rt-2)؛ اختبار التدوير القائم محدَّث ليؤكّد `updateMany` المشروط. unit **742/742**. type-check + eslint نظيفان. (الاختبار حتمي عبر mock الـ `count`؛ لا اعتماد على توقيت حقيقي.)
+
+---
+
+#### الوصف الأصلي (تاريخي)
 
 V-13c accepts a known race: two concurrent `/auth/refresh` calls with the same valid token both see `revoked_at IS NULL`, both succeed in issuing successors. The slower write loses `revoked_reason='rotated'` but both tokens are legitimate from the user's perspective.
 
