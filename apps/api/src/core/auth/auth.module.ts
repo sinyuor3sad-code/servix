@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import { TwoFactorBackupCodeService } from './two-factor-backup-code.service';
 import { GoogleAuthService } from './google-auth.service';
+import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
 import { AuthController } from './auth.controller';
 import { MailModule } from '../../shared/mail/mail.module';
 import { SmsModule } from '../../shared/sms/sms.module';
@@ -30,7 +31,7 @@ import { SmsModule } from '../../shared/sms/sms.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, TwoFactorService, TwoFactorBackupCodeService, GoogleAuthService, JwtStrategy],
+  providers: [AuthService, TwoFactorService, TwoFactorBackupCodeService, GoogleAuthService, JwtStrategy, RefreshTokenCleanupService],
   exports: [AuthService, TwoFactorService, GoogleAuthService],
 })
 export class AuthModule {}
