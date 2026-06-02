@@ -1174,7 +1174,28 @@ Still worth closing: defense-in-depth + audit-log integrity if the flag-eval res
 
 ---
 
-### V-37c-detect-resource — replace controller-name pattern matching with explicit metadata
+### V-37-unwired — QuotaGuard is registered nowhere → plan quotas NOT enforced at runtime (NEW finding, 2026-06-02)
+
+**اكتشاف أثناء ذيل E2 (pre-flight لـ V-37c):** `QuotaGuard` (`shared/guards/quota.guard.ts`) **غير موصول إطلاقًا**:
+- ليست في `app.module` ضمن الـ `APP_GUARD` الخمسة (RateLimitGuard · JwtAuthGuard · TenantMiddleware · TenantGuard · SubscriptionWriteGuard).
+- لا يوجد أي `@UseGuards(QuotaGuard)` على أي controller.
+- **صفر استيراد** في الشجرة كلها — `grep -rn "QuotaGuard" src` المرجع الوحيد هو `quota.guard.ts` + الـ spec. كلاس لا يُستورَد لا يستطيع NestJS DI إنشاءه ⇒ **لا يعمل أبدًا**.
+
+⇒ **حدود الخطة لا تُفرَض وقت التشغيل** (`basic`: 5 موظفين / 100 عميل / 500 موعد…، `pro`، `premium`). أي مستأجر على أي خطة ينشئ موارد بلا حد. الأصل (A-audit + سكتش V-37) افترض الحارس فعّالًا — **لم يكن**.
+
+**الأثر:** ليست ثغرة أمنية، بل **فجوة تكامل فوترة/منتج** (لا حافز للترقية بين الخطط). درجة: **متوسطة** على مسار الإطلاق.
+
+**القرار (تصميم — يُرفع للمالك):** الإصلاح الحقيقي = **توصيل QuotaGuard كـ `APP_GUARD`** — لكنه **تغيّر سلوكي** (يبدأ رفض POST عند الحد) يمسّ كل مسارات إنشاء موارد الصالون (E3/E4) **و** قد يكسر مستأجرين تجاوزوا الحد غير-المفروض حاليًا (يحتاج grandfathering للموجودين). ⇒ **قرار منتج/مالك خارج نطاق ذيل E2** — يُرفع كبطاقة مستقلة مُولوَّاة، لا يُوصَّل من طرف E2 ذاتيًا.
+
+**أثر على V-37c + V-37d (كلاهما ⏸️ DEFERRED):** كلتاهما **تقوية لحارس ميت**، وكلتاهما **مشروطة في نصّها الأصلي** بحدث التوصيل:
+- V-37c نصًّا: «schedule … **when wiring QuotaGuard as global APP_GUARD**» — الشرط غير محقّق.
+- V-37d نصًّا: «schedule at the next quota incident or quarterly hygiene pass» — مسار fail-open + العدّاد `servix_quota_db_error_total` **لن يُنفَّذا أبدًا** على حارس لا يعمل.
+
+⇒ يُؤجَّلان ليُنفَّذا **مع** بطاقة التوصيل: عندها يصبح تطبيق `@QuotaResource` على الـ5 controllers ذا معنى (وبلا churn عبر-نطاقي على شيفرة ميتة الآن)، ويصبح عدّاد V-37d حيًّا. **لا shipping لتقوية شيفرة ميتة** — نفس مبدأ V-60 (لا تشحن سكتشًا سابقًا لأوانه لمجرّد إغلاق بطاقة).
+
+---
+
+### V-37c-detect-resource — replace controller-name pattern matching with explicit metadata — ⏸️ DEFERRED 2026-06-02 (انظر V-37-unwired أعلاه)
 
 `quota.guard.ts:61-69` `detectResource` does case-insensitive substring matching on the controller class name:
 
@@ -1191,7 +1212,7 @@ Fragile — rename `EmployeesController` → `StaffController` and quota silentl
 
 ---
 
-### V-37d-quota-fail-policy — re-evaluate fail-open on DB errors
+### V-37d-quota-fail-policy — re-evaluate fail-open on DB errors — ⏸️ DEFERRED 2026-06-02 (انظر V-37-unwired أعلاه)
 
 `quota.guard.ts:96-99` returns `0` on DB-count failure (`return 0; // fail-open on DB errors`). Allows resource creation to proceed when the count query throws — opposite of V-13c's fail-CLOSED stance for security-critical counts.
 
