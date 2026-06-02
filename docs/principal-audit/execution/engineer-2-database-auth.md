@@ -977,24 +977,29 @@ V-14b makes a suspended tenant fail at HTTP guard + WS handshake + immediate WS 
 
 ---
 
-### V-14a-perf-counter — accurate `affectedUserCount` under partial Redis failure
+### V-14a-perf-counter — accurate `affectedUserCount` under partial Redis failure — ✅ مدفوعة 2026-06-01
 
-`admin.service.forceLogoutTenant` writes `affectedUserCount: members.length` to the audit row regardless of how many `setPasswordChangedAt` calls actually succeeded. `setPasswordChangedAt` swallows Redis errors internally, so a partial Redis outage produces an audit row that overstates how many sessions were invalidated.
+**تصحيح سكتش البطاقة:** الـ sketch الأصلي (`Promise.allSettled` + عدّ fulfilled) **لا يحقق هدفه** — `setPasswordChangedAt` يبتلع خطأ Redis داخليًا في `try/catch` ويُرجع `void` دائمًا، فكل الإدخالات تظهر `fulfilled` بصرف النظر عن حالة Redis ⇒ العدّ = `members.length` كما هو. الإصلاح الحقيقي: أجعل `setPasswordChangedAt` يُرجع `boolean` (نجاح كتابة Redis)، ثم أعدّ `filter(Boolean)`.
 
-**Behaviour today (acceptable):** the audit log records "we attempted to log out N users", not "we logged out exactly N users". No security implication — the failure mode is reporting drift under outage, not a privilege escalation.
+**التنفيذ:**
+- `shared/cache/cache.service.ts`: `setPasswordChangedAt(): Promise<boolean>` (كان `void`) — لا يزال لا يرمي (الـ cascades تعتمد على fire-and-forget)، لكن يُرجع true/false. كل الـ callers الحاليين `await` بلا استهلاك القيمة ⇒ متوافق رجعيًا (type-check نظيف).
+- `admin.service.forceLogoutTenant`: `affectedUserCount = results.filter(Boolean).length` + حقل جديد `attemptedUserCount = members.length` في الـ audit + الـ response. (مسار `updateTenantStatus` يكتب الـ audit داخل الـ tx قبل الـ cascade بحكم التصميم — يسجّل "attempted"، موثّق، خارج نطاق هذه البطاقة.)
 
-**Fix (when convenient):** switch the `Promise.all` to `Promise.allSettled`, count the fulfilled entries, and write that count instead. ~5 lines. Bundle with V-14a-perf (batch write) if both land together — same call site.
+**التحقق:** type-check + lint نظيفان · unit 730/730 (اختباران جديدان: فشل Redis جزئي ⇒ count دقيق 2/3؛ نجاح كامل ⇒ 2/2). لا أثر أمني (دقّة تقرير، ليس escalation).
+
+<details><summary>سكتش البطاقة الأصلي (مُصحَّح أعلاه)</summary>
 
 ```ts
-// sketch
+// sketch (FLAWED — setPasswordChangedAt never rejects, so all are fulfilled)
 const results = await Promise.allSettled(
   members.map((m) => this.cacheService.setPasswordChangedAt(m.userId)),
 );
 const succeeded = results.filter((r) => r.status === 'fulfilled').length;
 // audit row gets { affectedUserCount: succeeded, attemptedCount: members.length }
 ```
+</details>
 
-Engineer 2 owns.
+(تاريخي — Engineer 2 owns؛ أُغلقت بالإصلاح المُصحَّح أعلاه.)
 
 ---
 
