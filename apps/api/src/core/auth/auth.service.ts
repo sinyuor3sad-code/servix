@@ -1765,22 +1765,40 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
     });
-    if (!user) {
-      // Don't reveal if email exists
-      return { message: 'إذا كان البريد مسجلاً، سيتم إرسال رمز تحقق جديد' };
+
+    // V-41b / A2-?? — enumeration hardening on /auth/resend-otp.
+    // The pre-V-41b code returned 4 distinct outcomes (generic / "already
+    // verified" / 400 "wait 60s" / "code sent"), so response BODY *and* HTTP
+    // STATUS leaked whether the email existed and its verification state.
+    // V-41 closed the same channel on login + forgotPassword; this brings
+    // resend-otp to parity (Option A — full uniformity):
+    //   * ONE generic 200 body on every path (below);
+    //   * real work happens ONLY for an existing, not-yet-verified account
+    //     that is outside the per-email 60s resend cooldown;
+    //   * every other path (unknown email / already verified / cooldown
+    //     active) takes the SAME jittered time so single-request latency
+    //     can't distinguish them either.
+    // Residual: the actionable send branch does real mail I/O (~1-3s) vs the
+    // jittered branches (800-1500ms) — same accepted P2 residual as
+    // forgotPassword (needs N samples + statistical analysis, not a single
+    // request). Controller @RateLimit(3,60) (IP-based, existence-independent)
+    // still caps raw flooding. UX cost: the "already verified" / "wait 60s"
+    // hints are gone — accepted for the enumeration win.
+    if (
+      user &&
+      !user.isEmailVerified &&
+      (await this.cacheService.canSendEmailOtp(normalizedEmail))
+    ) {
+      await this.sendEmailOtpInternal(user.email, user.fullName);
+    } else {
+      // crypto.randomInt (NOT Math.random) per V-13b's no-Math-random rule;
+      // range matched to the send branch's mail p50.
+      const jitterMs = randomInt(800, 1501); // [800, 1500] inclusive
+      await new Promise((resolve) => setTimeout(resolve, jitterMs));
     }
 
-    if (user.isEmailVerified) {
-      return { message: 'البريد الإلكتروني مُؤكد بالفعل' };
-    }
-
-    const canSend = await this.cacheService.canSendEmailOtp(normalizedEmail);
-    if (!canSend) {
-      throw new BadRequestException('يرجى الانتظار 60 ثانية قبل إعادة الإرسال');
-    }
-
-    await this.sendEmailOtpInternal(user.email, user.fullName);
-
-    return { message: 'تم إرسال رمز تحقق جديد إلى بريدك الإلكتروني' };
+    return {
+      message: 'إذا كان البريد مسجلاً وغير مُؤكد، فسيصلك رمز تحقق جديد',
+    };
   }
 }

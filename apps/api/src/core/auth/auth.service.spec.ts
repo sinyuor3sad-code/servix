@@ -604,4 +604,73 @@ describe('AuthService', () => {
       ).rejects.toThrow(BadRequestException);
     });
   });
+
+  describe('resendEmailOtp (V-41b — uniform response)', () => {
+    const GENERIC = 'إذا كان البريد مسجلاً وغير مُؤكد، فسيصلك رمز تحقق جديد';
+    const unverified = {
+      id: 'u1',
+      fullName: 'سارة',
+      email: 'sara@example.com',
+      phone: '+966500000000',
+      isEmailVerified: false,
+    };
+
+    it('مستخدم موجود غير مؤكَّد خارج فترة الانتظار: يرسل الرمز ويعيد الرسالة العامة', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(unverified);
+      // canSendEmailOtp default mock = true → actionable path (no jitter).
+      const result = await service.resendEmailOtp('SARA@example.com');
+
+      expect(result.message).toBe(GENERIC);
+      expect(mockMailService.send).toHaveBeenCalled();
+    });
+
+    it('بريد غير معروف: نفس الرسالة العامة بلا إرسال (لا يكشف الوجود)', async () => {
+      jest.useFakeTimers();
+      try {
+        mockPrisma.user.findUnique.mockResolvedValue(null);
+        const p = service.resendEmailOtp('nobody@example.com');
+        await jest.advanceTimersByTimeAsync(2000); // flush the jitter setTimeout
+        const result = await p;
+
+        expect(result.message).toBe(GENERIC);
+        expect(mockMailService.send).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('بريد مؤكَّد بالفعل: نفس الرسالة العامة بلا إرسال (لا يكشف الحالة)', async () => {
+      jest.useFakeTimers();
+      try {
+        mockPrisma.user.findUnique.mockResolvedValue({
+          ...unverified,
+          isEmailVerified: true,
+        });
+        const p = service.resendEmailOtp('sara@example.com');
+        await jest.advanceTimersByTimeAsync(2000);
+        const result = await p;
+
+        expect(result.message).toBe(GENERIC);
+        expect(mockMailService.send).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('ضمن فترة الانتظار: لا يرمي 400 — نفس الرسالة العامة بلا إرسال (regression)', async () => {
+      jest.useFakeTimers();
+      try {
+        mockPrisma.user.findUnique.mockResolvedValue(unverified);
+        mockCacheService.canSendEmailOtp.mockResolvedValueOnce(false);
+        const p = service.resendEmailOtp('sara@example.com');
+        await jest.advanceTimersByTimeAsync(2000);
+        const result = await p;
+
+        expect(result.message).toBe(GENERIC);
+        expect(mockMailService.send).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
 });
