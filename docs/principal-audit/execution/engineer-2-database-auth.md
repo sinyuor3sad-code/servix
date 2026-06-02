@@ -1527,7 +1527,7 @@ Wire as a daily Nest cron job (similar to `ai-reception.expirer.ts`) or a Postgr
 3. ✅ V-14a-perf-counter — أُغلق منفصلًا (`7c505c8`).
 4. lint-errors (item 4) = نطاق E3، تبقى لهم.
 
-**⚠️ follow-up مفصول (V-idor-sweep-grade scope discipline): `V-e3-ai-consultant-types`** — الملفات الخمسة e2e لا تعمل runtime بعد إصلاح supertest بسبب **خطأ نوع موجود مسبقًا في نطاق E3**: `ai-consultant.service.ts:331-332` — `serviceMap.get(s.serviceId)` يُستنتَج `{}` فلا `nameAr`/`price` (`TS2339`). يظهر فقط تحت `test/tsconfig.json` (الـ e2e bootstrap يستورد AppModule)، **لا** في `pnpm type-check` الرئيسي ولا في الـ unit gate. آخر من لمسه `a2d2bd9` (ليس هذه الجلسة). **أُرفع لـ Engineer 3.** (هذه الملفات تحتاج DB services حيّة أيضًا، فليست في unit gate.)
+**✅ `V-e3-ai-consultant-types` — أُصلح (`d18328a`، cross-scope بإذن المالك).** السبب الجذري: `topServiceDetails` بُني عبر ternary فرعه الفارغ `Promise.resolve([])` يُستنتَج `never[]` ⇒ توحيد الفرعين `never[]` ⇒ قيمة `serviceMap` تنهار إلى `{}` ⇒ `TS2339` على `.nameAr`/`.price` تحت `test/tsconfig.json` فقط. الإصلاح: تشغيل `findMany` دائمًا (`in: []` يرجع `[]`)، بلا تغيير سلوكي. الملفات الخمسة e2e **تترجم الآن** (خطأ ai-consultant زال)؛ تحتاج بيئة CI e2e (أسرار 64-char + Postgres/Redis حيّة) لتمرير الـ assertions — محليًا تتوقف عند بوابة Joi (V-29/V-30) لرفضها سرّ الـ dev placeholder، وهو متوقّع. unit 730/730؛ authz e2e 34/34 سليمة.
 
 ---
 
