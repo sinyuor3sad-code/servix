@@ -1519,7 +1519,19 @@ Wire as a daily Nest cron job (similar to `ai-reception.expirer.ts`) or a Postgr
 
 ---
 
-### V-14e-dry — bundled cleanup (one small PR, post-V-14c)
+### V-14e-dry — bundled cleanup — ✅ مدفوعة 2026-06-01
+
+**أُغلقت:**
+1. ✅ `tenant.guard.ts` — أُزيل الفحص inline `if (tenant.status === 'suspended')` (مكرّر + أضيق من `assertActiveTenantUser` الذي يرفض أي حالة غير active). تغيّر الرسالة `'حساب الصالون معلّق'` → `'حساب الصالون غير مفعّل'`، والتغطية أوسع (cancelled/pending أيضًا). spec #5 محدّث (الرفض الآن عبر الـ helper + DB lookup).
+2. ✅ supertest TS2349 — حُوّلت 5 ملفات (`admin/booking/tenant-isolation/auth/invoice`.e2e) من `import * as request` إلى `import request from 'supertest'` (esModuleInterop=true، النمط الصحيح). الـ TS2349 زال (هدف V-14e/V-14e-dry).
+3. ✅ V-14a-perf-counter — أُغلق منفصلًا (`7c505c8`).
+4. lint-errors (item 4) = نطاق E3، تبقى لهم.
+
+**⚠️ follow-up مفصول (V-idor-sweep-grade scope discipline): `V-e3-ai-consultant-types`** — الملفات الخمسة e2e لا تعمل runtime بعد إصلاح supertest بسبب **خطأ نوع موجود مسبقًا في نطاق E3**: `ai-consultant.service.ts:331-332` — `serviceMap.get(s.serviceId)` يُستنتَج `{}` فلا `nameAr`/`price` (`TS2339`). يظهر فقط تحت `test/tsconfig.json` (الـ e2e bootstrap يستورد AppModule)، **لا** في `pnpm type-check` الرئيسي ولا في الـ unit gate. آخر من لمسه `a2d2bd9` (ليس هذه الجلسة). **أُرفع لـ Engineer 3.** (هذه الملفات تحتاج DB services حيّة أيضًا، فليست في unit gate.)
+
+---
+
+<details><summary>الوصف الأصلي للبطاقة (تاريخي)</summary>
 
 After V-14b shipped, three independent loose ends accumulated. They're each tiny, and the discipline cost of running them as separate PRs exceeds the work. Bundle into one cleanup PR:
 
@@ -1537,9 +1549,11 @@ After V-14b shipped, three independent loose ends accumulated. They're each tiny
 
 Estimated total: ~15 min, scoped as a single chore PR. Engineer 2 owns. Opens right after V-14c lands.
 
+</details>
+
 ---
 
-### V-14e — test-infra: supertest namespace-import TS issue (pre-existing)
+### V-14e — test-infra: supertest namespace-import TS issue (pre-existing) — ✅ مغلق ضمن V-14e-dry (2026-06-01)
 
 `apps/api/test/auth.e2e-spec.ts:7` and `apps/api/test/admin.e2e-spec.ts:7` both use `import * as request from 'supertest';` which TypeScript flags as not-callable under the current `@types/supertest` typing (`TS2349: This expression is not callable.`). The pattern was added in commit `3538b5a` (Initial project commit, 2026-03-19) and no later commit touched it.
 
