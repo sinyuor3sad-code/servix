@@ -1073,7 +1073,15 @@ Lower priority because `@RateLimit(5, 300)` (5 attempts / 5min / IP) + the tiny 
 
 ---
 
-### V-41b-resend-otp-uniform — unify `/auth/resend-otp` 4-message variance
+### V-41b-resend-otp-uniform — unify `/auth/resend-otp` 4-message variance — ✅ مدفوعة 2026-06-02 (`b68357e`)
+
+**أُغلقت — Option A (توحيد كامل، مطابق لمعالجة V-41 في forgotPassword):** `resendEmailOtp` كانت ترجع 4 نتائج (عامة / "مُؤكد بالفعل" / 400 "انتظر 60 ثانية" / "تم الإرسال") ⇒ **البودي والـ HTTP status** يسرّبان وجود البريد وحالة تأكيده. الآن: رسالة 200 عامة واحدة على كل المسارات؛ العمل الحقيقي (`sendEmailOtpInternal`) **فقط** لمستخدم موجود غير مؤكَّد خارج cooldown الـ60 ثانية؛ كل مسار آخر jitter موحَّد (`randomInt(800,1501)`، crypto لـ V-13b). **لا 400 على الـ cooldown** — `sendEmailOtpInternal` يفرض الـ cooldown داخليًا بتخطٍّ صامت، فالرمي الخارجي كان التسريب الوحيد. residual: فرع الإرسال الحقيقي (~1-3s) مقابل jitter (800-1500ms) = نفس residual المقبول P2 في forgotPassword (يحتاج عيّنات + تحليل إحصائي، لا طلبًا واحدًا). `@RateLimit(3,60)` (IP، مستقل عن الوجود) يكبح الفيضان. الرسالة الموحَّدة الجديدة: «إذا كان البريد مسجلاً وغير مُؤكد، فسيصلك رمز تحقق جديد».
+
+**قرار التصميم (NAEB):** اختير **Option A** (لا B) للاتساق الأمني مع V-41 — التوحيد الكامل يغلق القناة، بينما B يُبقي تسريب "مُؤكد بالفعل". **مقايضة UX مقبولة:** تلميحا "مُؤكد بالفعل" / "انتظر 60 ثانية" زالا. قابلة للعكس إلى B إن فضّل المالك الـ UX.
+
+**التحقق:** 4 اختبارات unit جديدة (إرسال فعّال؛ بريد مجهول؛ مؤكَّد؛ cooldown لا يرمي — regression) عبر fake timers. `auth.service.spec` **28/28**. type-check + eslint نظيفان. الـ e2e الوحيد (`auth-dto-validation`) يـ mock الخدمة فلا يتأثّر بتغيّر الرسائل.
+
+<details><summary>الوصف الأصلي للبطاقة (تاريخي)</summary>
 
 `auth.service.resendEmailOtp` (auth.service.ts:1526-1548) returns 4 distinct messages:
 
@@ -1090,6 +1098,8 @@ V-41 left this as accepted UX trade-off because unifying breaks "already verifie
 **Option B** — partial: unify branches 1+4 only; keep "already verified" as informational + accept its leak.
 
 Owner choice driven by UX preference. ~1.5h either option. **Engineer 2 owns.**
+
+</details>
 
 ---
 
