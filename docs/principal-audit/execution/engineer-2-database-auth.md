@@ -1474,7 +1474,17 @@ This card:
 
 ---
 
-### V-13a-unlink — POST /auth/google/unlink endpoint
+### V-13a-unlink — POST /auth/google/unlink endpoint — ✅ مدفوعة 2026-06-02 (`3afa68a`)
+
+**أُغلقت:** نظير `/auth/google/link` لإلغاء الربط (لوحة "الحسابات المرتبطة" في V-13a-frontend ستستدعيه).
+- **controller:** `@Post('google/unlink') @ApiBearerAuth @RateLimit(10,60)` → 200.
+- **`auth.service.unlinkGoogle`:** بلا googleId → no-op idempotent؛ `authProvider === GOOGLE` → **400 رفض** (حساب Google نقي بلا كلمة مرور قابلة — الإلغاء يقفل المستخدم؛ يضبط كلمة مرور أولًا)؛ غير ذلك (BOTH) → `googleId=null` + `authProvider=LOCAL`؛ audit `auth_google_unlinked` (previous/new، يطابق linkGoogle).
+
+**التحقق:** `auth-google-link.e2e` +4 حالات (BOTH→LOCAL + audit؛ Google-only رفض؛ بلا ربط no-op؛ مستخدم مفقود 401) = **11/11**. type-check + eslint نظيفان. (ملاحظة: V-13a-frontend — زر/لوحة الواجهة — تبقى نطاق E3/dashboard.)
+
+---
+
+#### الوصف الأصلي (تاريخي)
 
 Once V-13a-frontend ships a "Linked accounts" settings panel, users will want to unlink Google. ~5-line implementation:
 
