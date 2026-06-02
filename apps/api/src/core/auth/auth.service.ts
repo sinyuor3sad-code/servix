@@ -36,7 +36,7 @@ interface UserResponse {
   id: string;
   fullName: string;
   email: string;
-  phone: string;
+  phone: string | null; // V-13a-phone-placeholder: null for Google-only accounts
   avatarUrl: string | null;
 }
 
@@ -80,7 +80,7 @@ interface MeResult {
   id: string;
   fullName: string;
   email: string;
-  phone: string;
+  phone: string | null; // V-13a-phone-placeholder: null for Google-only accounts
   avatarUrl: string | null;
   tenantUsers: TenantWithRole[];
 }
@@ -290,10 +290,14 @@ export class AuthService {
         );
       }
       if (accResult.locked) {
-        await this.smsService.send({
-          to: user.phone,
-          message: 'SERVIX: تم قفل حسابك بسبب محاولات دخول فاشلة. تواصل مع الدعم الفني',
-        });
+        // V-13a-phone-placeholder: Google-only accounts have no phone — skip SMS
+        // (the lockout still applies; they recover via email self-unlock / support).
+        if (user.phone) {
+          await this.smsService.send({
+            to: user.phone,
+            message: 'SERVIX: تم قفل حسابك بسبب محاولات دخول فاشلة. تواصل مع الدعم الفني',
+          });
+        }
         throw new UnauthorizedException(
           'تم قفل الحساب بسبب محاولات دخول فاشلة متعددة. تواصل مع الدعم الفني',
         );
@@ -725,10 +729,13 @@ export class AuthService {
         html: `<p>مرحباً ${user.fullName}،</p><p>طلبتم إعادة تعيين كلمة المرور. <a href="${resetUrl}">اضغط هنا</a> خلال ساعة.</p><p>إذا لم تطلبوا ذلك، تجاهلوا هذه الرسالة.</p>`,
       });
 
-      await this.smsService.send({
-        to: user.phone,
-        message: `SERVIX: تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدكم الإلكتروني`,
-      });
+      // V-13a-phone-placeholder: Google-only accounts have no phone — email only.
+      if (user.phone) {
+        await this.smsService.send({
+          to: user.phone,
+          message: `SERVIX: تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدكم الإلكتروني`,
+        });
+      }
     } else {
       // V-41: timing equalization. The found-user branch above takes
       // ~1-3 seconds (passwordReset.create + mailService.send +
@@ -1241,7 +1248,7 @@ export class AuthService {
   // lock-transition. Audit row carries the failure reason so post-incident
   // analysis can distinguish password brute-force from code brute-force.
   private async handle2FAFailure(
-    user: { id: string; phone: string },
+    user: { id: string; phone: string | null },
     ip: string,
     reason: 'password_invalid' | 'code_invalid' | 'backup_code_invalid',
   ): Promise<void> {
@@ -1269,11 +1276,14 @@ export class AuthService {
       // transition-only (incrementLoginFailAccount returns locked=true ONLY
       // when count crosses the threshold), so user receives at most 1 SMS
       // per 24h lockout cycle even under sustained brute-force.
-      await this.smsService.send({
-        to: user.phone,
-        message:
-          'SERVIX: تم قفل حسابك بسبب محاولات دخول فاشلة. تواصل مع الدعم الفني',
-      }).catch((e) => this.logger.warn(`[2fa-lockout SMS] ${(e as Error).message}`));
+      // V-13a-phone-placeholder: skip SMS for phone-less (Google-only) accounts.
+      if (user.phone) {
+        await this.smsService.send({
+          to: user.phone,
+          message:
+            'SERVIX: تم قفل حسابك بسبب محاولات دخول فاشلة. تواصل مع الدعم الفني',
+        }).catch((e) => this.logger.warn(`[2fa-lockout SMS] ${(e as Error).message}`));
+      }
 
       await this.auditService
         .log({
@@ -1453,7 +1463,7 @@ export class AuthService {
         data: {
           fullName: googleUser.name,
           email: googleUser.email,
-          phone: `g-${googleUser.sub.slice(0, 10)}`, // V-13a-phone-placeholder follow-up
+          phone: null, // V-13a-phone-placeholder: Google-only accounts carry no phone (was a colliding `g-<sub[0:10]>` synthetic)
           passwordHash: await hash(v4(), BCRYPT_ROUNDS), // unusable bcrypt
           avatarUrl: googleUser.picture || null,
           googleId: googleUser.sub,
@@ -1655,7 +1665,7 @@ export class AuthService {
     id: string;
     fullName: string;
     email: string;
-    phone: string;
+    phone: string | null;
     avatarUrl: string | null;
   }): UserResponse {
     return {

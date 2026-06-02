@@ -60,7 +60,7 @@ export class AuthController {
   async register(
     @Body() dto: RegisterDto,
   ): Promise<{
-    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tenant: { id: string; nameAr: string; nameEn: string; slug: string };
     requiresVerification: boolean;
     message: string;
@@ -80,7 +80,7 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Req() req: Request,
   ): Promise<{
-    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tenants: Array<{
       id: string;
       tenantId: string;
@@ -105,7 +105,7 @@ export class AuthController {
     @Body() dto: Verify2FALoginDto,
     @Req() req: Request,
   ): Promise<{
-    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tokens: JwtTokens;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
@@ -213,7 +213,7 @@ export class AuthController {
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
   ): Promise<{
-    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tenants: Array<{
       id: string;
       tenantId: string;
@@ -251,7 +251,7 @@ export class AuthController {
     id: string;
     fullName: string;
     email: string;
-    phone: string;
+    phone: string | null;
     avatarUrl: string | null;
     tenantUsers: Array<{
       id: string;
@@ -277,7 +277,7 @@ export class AuthController {
     id: string;
     fullName: string;
     email: string;
-    phone: string;
+    phone: string | null;
     avatarUrl: string | null;
   }> {
     return this.authService.updateMe(userId, dto);

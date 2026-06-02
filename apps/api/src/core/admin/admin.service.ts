@@ -1078,7 +1078,11 @@ export class AdminService {
 
     // Restore: remove anonymization suffix and reactivate
     const cleanEmail = user.email.replace(/_deleted_\d+$/, '');
-    const cleanPhone = user.phone.replace(/_deleted_\d+$/, '');
+    // V-13a-phone-placeholder: phone is nullable (Google-only users) — only
+    // strip the anonymization suffix when a phone exists.
+    const cleanPhone = user.phone
+      ? user.phone.replace(/_deleted_\d+$/, '')
+      : null;
     const cleanName = user.fullName.replace(/^\[محذوف\] /, '').replace(/^\[قيد الحذف\] /, '');
 
     await this.prisma.$transaction([

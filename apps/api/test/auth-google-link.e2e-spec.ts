@@ -157,6 +157,8 @@ describe('V-13a — Google OAuth takeover prevention + linkGoogle', () => {
     expect(createData.googleId).toBe('google-sub-9999');
     expect(createData.authProvider).toBe(AUTH_PROVIDERS.GOOGLE);
     expect(createData.isEmailVerified).toBe(true);
+    // V-13a-phone-placeholder: Google-first accounts carry NO synthetic phone.
+    expect(createData.phone).toBeNull();
 
     // Audit: auth_google_login with isNewUser=true + email/authProvider snapshot
     // (defense-in-depth against future email-change paths mutating users.email).

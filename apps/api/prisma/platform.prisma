@@ -135,7 +135,12 @@ model User {
   id                       String    @id @default(uuid()) @db.Uuid
   fullName                 String    @map("full_name") @db.VarChar(100)
   email                    String    @unique @db.VarChar(100)
-  phone                    String    @unique @db.VarChar(15)
+  // V-13a-phone-placeholder (Option A): nullable so Google-first accounts carry
+  // NO synthetic phone (the old `g-<sub[0:10]>` placeholder risked collisions +
+  // leaked into the profile). Postgres UNIQUE treats NULLs as distinct, so the
+  // standard @unique index already permits many phone-less accounts — no partial
+  // index needed (a partial index would also drift vs Prisma's @unique).
+  phone                    String?   @unique @db.VarChar(15)
   passwordHash             String    @map("password_hash") @db.VarChar(255)
   avatarUrl                String?   @map("avatar_url") @db.VarChar(500)
   isEmailVerified          Boolean   @default(false) @map("is_email_verified")
