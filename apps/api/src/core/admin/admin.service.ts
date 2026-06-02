@@ -767,7 +767,9 @@ export class AdminService {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     await this.prisma.passwordReset.create({
-      data: { userId: id, tokenHash, expiresAt },
+      // V-24-audit-completion: tag the admin flow so auth.service.resetPassword
+      // emits admin_password_reset_* (not auth_*) when this token is redeemed.
+      data: { userId: id, tokenHash, expiresAt, initiatedBy: 'admin' },
     });
 
     // V-24-email: dispatch the link (same shape as auth.service.forgotPassword).

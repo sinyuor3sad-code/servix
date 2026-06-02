@@ -710,6 +710,9 @@ export class AuthService {
           userId: user.id,
           tokenHash,
           expiresAt,
+          // V-24-audit-completion: tag the initiating flow so resetPassword
+          // emits the right completion/failure audit (self_serve vs admin).
+          initiatedBy: 'self_serve',
         },
       });
 
@@ -781,13 +784,29 @@ export class AuthService {
       include: { user: true },
     });
 
+    // V-24-self-serve-audit: an UNKNOWN token stays SILENT (no audit row) so
+    // random token-probing can't spam the audit log. Once the row EXISTS, every
+    // outcome (used / expired / completed) is audited under the prefix of the
+    // flow that issued it: self_serve → auth_password_reset_*, admin →
+    // admin_password_reset_*.
     if (!reset) {
       throw new BadRequestException('رمز إعادة التعيين غير صالح أو منتهي الصلاحية');
     }
+
+    const auditPrefix = reset.initiatedBy === 'admin' ? 'admin' : 'auth';
+
     if (reset.usedAt) {
+      await this.writeResetAudit(auditPrefix, 'failed', reset.userId, {
+        reason: 'already_used',
+        initiatedBy: reset.initiatedBy,
+      });
       throw new BadRequestException('تم استخدام رمز إعادة التعيين مسبقاً');
     }
     if (reset.expiresAt < new Date()) {
+      await this.writeResetAudit(auditPrefix, 'failed', reset.userId, {
+        reason: 'expired',
+        initiatedBy: reset.initiatedBy,
+      });
       throw new BadRequestException('انتهت صلاحية رمز إعادة التعيين');
     }
 
@@ -811,7 +830,39 @@ export class AuthService {
     // a forgot-password flow in the first place.
     await this.cacheService.setPasswordChangedAt(reset.userId);
 
+    // V-24-self-serve-audit: success trail. Pre-V-24 there was NONE — a
+    // SOC2/PDPL gap, especially for self-serve resets which left no record at
+    // all of who redeemed a token and when.
+    await this.writeResetAudit(auditPrefix, 'completed', reset.userId, {
+      initiatedBy: reset.initiatedBy,
+    });
+
     return { message: 'تم إعادة تعيين كلمة المرور بنجاح' };
+  }
+
+  // V-24-self-serve-audit — emit a password-reset audit row. Best-effort: a
+  // forensic-log hiccup must NEVER fail an already-committed reset (the password
+  // change is the critical write; this row is forensic). Action prefix reflects
+  // the initiating flow (auth_* self-serve / admin_* admin panel).
+  private async writeResetAudit(
+    prefix: 'auth' | 'admin',
+    outcome: 'completed' | 'failed',
+    userId: string,
+    newValues: Record<string, unknown>,
+  ): Promise<void> {
+    await this.auditService
+      .log({
+        userId,
+        action: `${prefix}_password_reset_${outcome}`,
+        entityType: 'User',
+        entityId: userId,
+        newValues,
+      })
+      .catch((e) =>
+        this.logger.warn(
+          `[reset-audit ${prefix}_${outcome}] ${(e as Error).message}`,
+        ),
+      );
   }
 
   // ══════════════ V-40a — Account self-unlock ══════════════

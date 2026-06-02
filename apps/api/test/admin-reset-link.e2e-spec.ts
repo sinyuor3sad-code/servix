@@ -75,6 +75,7 @@ function resetRow(overrides: Partial<Record<string, unknown>> = {}) {
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     usedAt: null,
     createdAt: new Date(),
+    initiatedBy: 'self_serve',
     user: targetUserRow(),
     ...overrides,
   } as never;
@@ -93,6 +94,7 @@ describe('V-24 — admin reset link hash-at-rest', () => {
   const txFn = jest.fn().mockImplementation(async (ops: unknown[]) => Promise.all(ops));
   const setPasswordChangedAt = jest.fn().mockResolvedValue(undefined);
   const mailSend = jest.fn().mockResolvedValue(undefined);
+  const auditLog = jest.fn().mockResolvedValue(undefined);
 
   const mockPrisma = {
     user: { findUnique: userFindUnique, update: userUpdate },
@@ -110,10 +112,11 @@ describe('V-24 — admin reset link hash-at-rest', () => {
     [
       userFindUnique, passwordResetCreate, passwordResetFindUnique,
       passwordResetUpdate, userUpdate, platformAuditLogCreate, setPasswordChangedAt,
-      mailSend,
+      mailSend, auditLog,
     ].forEach((fn) => fn.mockReset());
     setPasswordChangedAt.mockResolvedValue(undefined);
     mailSend.mockResolvedValue(undefined);
+    auditLog.mockResolvedValue(undefined);
     txFn.mockImplementation(async (ops: unknown[]) => Promise.all(ops));
 
     const module: TestingModule = await Test.createTestingModule({
@@ -139,7 +142,7 @@ describe('V-24 — admin reset link hash-at-rest', () => {
         { provide: TwoFactorService, useValue: {} },
         { provide: TwoFactorBackupCodeService, useValue: { store: jest.fn(), verifyAndConsume: jest.fn(), deleteAll: jest.fn(), countUnused: jest.fn() } },
         { provide: GoogleAuthService, useValue: {} },
-        { provide: AuditService, useValue: { log: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: auditLog } },
         { provide: SentryService, useValue: { captureMessage: jest.fn(), captureException: jest.fn() } },
       ],
     }).compile();
@@ -229,6 +232,7 @@ describe('V-24 — admin reset link hash-at-rest', () => {
     // The verifier hashes it and looks up — POST-V-24 this MUST succeed.
     passwordResetFindUnique.mockResolvedValueOnce(resetRow({
       tokenHash: persistedHash,
+      initiatedBy: 'admin', // issued via the admin panel
       user: targetUserRow(),
     }));
     userUpdate.mockResolvedValueOnce({});
@@ -250,6 +254,13 @@ describe('V-24 — admin reset link hash-at-rest', () => {
     }));
     // V-14a parity: pwChangedAt set on completion.
     expect(setPasswordChangedAt).toHaveBeenCalledWith(TARGET_USER_ID);
+    // V-24-audit-completion: admin-issued token redeemed → admin_ prefix.
+    expect(auditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin_password_reset_completed',
+        userId: TARGET_USER_ID,
+      }),
+    );
   });
 
   it('resetPassword + invalid token → BadRequest, no mutation', async () => {
@@ -275,6 +286,10 @@ describe('V-24 — admin reset link hash-at-rest', () => {
 
     expect(userUpdate).not.toHaveBeenCalled();
     expect(passwordResetUpdate).not.toHaveBeenCalled();
+    // V-24-self-serve-audit: token row exists but expired → failed audit.
+    expect(auditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'auth_password_reset_failed' }),
+    );
   });
 
   it('resetPassword + already-used token → BadRequest (idempotency: can\'t reuse a used token)', async () => {
@@ -288,6 +303,31 @@ describe('V-24 — admin reset link hash-at-rest', () => {
 
     expect(userUpdate).not.toHaveBeenCalled();
     expect(passwordResetUpdate).not.toHaveBeenCalled();
+  });
+
+  it('V-24-self-serve-audit: self-serve completion emits auth_password_reset_completed', async () => {
+    passwordResetFindUnique.mockResolvedValueOnce(resetRow({ initiatedBy: 'self_serve' }));
+    userUpdate.mockResolvedValueOnce({});
+    passwordResetUpdate.mockResolvedValueOnce({});
+
+    await auth.resetPassword({ token: 'd'.repeat(64), password: 'NewStrongPass1!' });
+
+    expect(auditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'auth_password_reset_completed',
+        userId: TARGET_USER_ID,
+      }),
+    );
+  });
+
+  it('V-24-self-serve-audit: UNKNOWN token stays silent (no audit row — anti-probe)', async () => {
+    passwordResetFindUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      auth.resetPassword({ token: 'e'.repeat(64), password: 'NewStrongPass1!' }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(auditLog).not.toHaveBeenCalled();
   });
 
   it('sendPasswordResetLink: user not found → NotFoundException, no DB writes', async () => {

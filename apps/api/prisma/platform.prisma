@@ -211,6 +211,11 @@ model PasswordReset {
   expiresAt DateTime  @map("expires_at") @db.Timestamptz()
   usedAt    DateTime? @map("used_at") @db.Timestamptz()
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  // V-24-audit-completion: which flow created this reset — 'self_serve'
+  // (user via /auth/forgot-password) or 'admin' (super_admin via the panel).
+  // Lets auth.service.resetPassword emit the correct completion/failure audit
+  // action without having to guess the initiator.
+  initiatedBy String  @default("self_serve") @map("initiated_by") @db.VarChar(20)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
