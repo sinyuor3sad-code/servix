@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { compare, hash, hashSync } from 'bcryptjs';
 import { SmsService } from '../../shared/sms/sms.service';
+import { MailService } from '../../shared/mail/mail.service';
 import { createHash, randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
@@ -141,6 +142,7 @@ export class AdminService {
     private readonly twoFactorService: TwoFactorService,
     private readonly backupCodeService: TwoFactorBackupCodeService,
     private readonly smsService: SmsService,
+    private readonly mailService: MailService,
   ) {}
 
   // V-43 / A2-17 — admin login step 1.
@@ -744,56 +746,81 @@ export class AdminService {
   // V-24 unifies storage (both flows now write the hash); the existing
   // self-serve verifier serves the admin flow without changes.
   //
-  // Raw token return: the API response carries the raw token (admin
-  // delivers manually). MailService wiring for AdminModule is the
-  // V-24-email follow-up; until then this is the only way to surface
-  // the token to the admin without re-introducing the log leak.
+  // V-24-email — the reset link is now EMAILED to the user (MailService is
+  // injectable via the @Global MailModule; no AdminModule edit needed). The raw
+  // token is STILL returned in the response body as a deliberate fallback: if
+  // the dispatch fails the admin can deliver the link manually, and
+  // emailDispatched is audited so ops can spot "row present but mail failed".
+  // (Dropping the raw-token return is a future cleanup once email reliability
+  // is proven — kept for now, defense-in-depth.)
   async sendPasswordResetLink(
     id: string,
     adminId: string,
-  ): Promise<{ message: string; token: string; expiresAt: Date }> {
+  ): Promise<{ message: string; token: string; expiresAt: Date; emailDispatched: boolean }> {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('المستخدم غير موجود');
 
-    // Generate raw OUTSIDE the tx, hash, persist only the hash.
-    // The raw value never crosses the await boundary into Prisma.
+    // Generate raw, hash, persist only the hash. The raw value never crosses
+    // the await boundary into Prisma (V-24).
     const rawToken = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    await this.prisma.$transaction([
-      this.prisma.passwordReset.create({
-        data: { userId: id, tokenHash, expiresAt },
-      }),
-      this.prisma.platformAuditLog.create({
+    await this.prisma.passwordReset.create({
+      data: { userId: id, tokenHash, expiresAt },
+    });
+
+    // V-24-email: dispatch the link (same shape as auth.service.forgotPassword).
+    // Best-effort — the raw token is still returned as a manual-delivery
+    // fallback, so a mail outage degrades gracefully instead of blocking the
+    // admin.
+    const resetUrl = `${this.configService.get('APP_URL', 'http://localhost:3000')}/reset-password?token=${rawToken}`;
+    let emailDispatched = false;
+    try {
+      await this.mailService.send({
+        to: user.email,
+        subject: 'إعادة تعيين كلمة المرور - SERVIX',
+        body: `مرحباً ${user.fullName}،\n\nطلب مسؤول النظام إعادة تعيين كلمة المرور لحسابك. استخدم الرابط التالي خلال ساعة:\n${resetUrl}\n\nإذا لم تتوقع ذلك، تواصل مع الدعم الفني.`,
+        html: `<p>مرحباً ${user.fullName}،</p><p>طلب مسؤول النظام إعادة تعيين كلمة المرور لحسابك. <a href="${resetUrl}">اضغط هنا</a> خلال ساعة.</p><p>إذا لم تتوقع ذلك، تواصل مع الدعم الفني.</p>`,
+      });
+      emailDispatched = true;
+    } catch (e) {
+      this.logger.warn(
+        `[admin-reset-link] email dispatch failed for ${user.email}: ${(e as Error).message}`,
+      );
+    }
+
+    // Audit AFTER the dispatch attempt so emailDispatched reflects reality.
+    // Split out of the former 2-op tx (V-24-email) — the forensic audit is
+    // best-effort; the passwordReset row is the only critical write. Never
+    // persist the full hash or the raw token here — tokenHashPrefix (8 chars =
+    // 2^32 collision space) is forensic-correlation-only.
+    await this.prisma.platformAuditLog
+      .create({
         data: {
           userId: adminId,
           action: 'admin_password_reset_link_sent',
           entityType: 'user',
           entityId: id,
-          // V-24: forensic-correlation-only — tokenHashPrefix (8 chars =
-          // 2^32 collision space) is enough to confirm "was this audit row
-          // for this specific link?" without persisting enough hash material
-          // for an attacker who reads the audit table to brute-force the
-          // sha256 preimage back to the raw token. Never log the full hash
-          // or the raw token in this audit row.
           newValues: {
             sentTo: user.email,
             expiresAt: expiresAt.toISOString(),
             tokenHashPrefix: tokenHash.slice(0, 8),
+            emailDispatched,
           },
         },
-      }),
-    ]);
+      })
+      .catch((err) =>
+        this.logger.warn(`[admin-reset-link audit] ${(err as Error).message}`),
+      );
 
-    // V-24: raw token returned in response body for admin to deliver
-    // manually. Email wiring tracked as V-24-email follow-up (requires
-    // MailService in AdminModule). The pre-V-24 console.log of the raw
-    // token is deleted — never log secrets.
     return {
-      message: `تم إنشاء رابط إعادة تعيين كلمة المرور للمستخدم ${user.email}. سلّم الرابط يدوياً.`,
+      message: emailDispatched
+        ? `تم إرسال رابط إعادة تعيين كلمة المرور إلى ${user.email}.`
+        : `تعذّر إرسال البريد. سلّم الرابط للمستخدم ${user.email} يدوياً.`,
       token: rawToken,
       expiresAt,
+      emailDispatched,
     };
   }
 

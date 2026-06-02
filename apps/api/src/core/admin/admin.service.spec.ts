@@ -10,6 +10,7 @@ import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
 import { CacheService } from '../../shared/cache/cache.service';
 import { SmsService } from '../../shared/sms/sms.service';
+import { MailService } from '../../shared/mail/mail.service';
 import { EventsGateway } from '../../shared/events/events.gateway';
 import { TwoFactorService } from '../auth/two-factor.service';
 import { TwoFactorBackupCodeService } from '../auth/two-factor-backup-code.service';
@@ -86,6 +87,7 @@ const mockBackupCodeService = {
 };
 
 const mockSmsService = { send: jest.fn().mockResolvedValue(undefined) };
+const mockMailService = { send: jest.fn().mockResolvedValue(undefined) };
 
 describe('AdminService', () => {
   let service: AdminService;
@@ -103,6 +105,7 @@ describe('AdminService', () => {
         { provide: TwoFactorService, useValue: mockTwoFactorService },
         { provide: TwoFactorBackupCodeService, useValue: mockBackupCodeService },
         { provide: SmsService, useValue: mockSmsService },
+        { provide: MailService, useValue: mockMailService },
       ],
     }).compile();
 

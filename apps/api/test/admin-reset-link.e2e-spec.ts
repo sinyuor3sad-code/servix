@@ -92,6 +92,7 @@ describe('V-24 — admin reset link hash-at-rest', () => {
   const platformAuditLogCreate = jest.fn();
   const txFn = jest.fn().mockImplementation(async (ops: unknown[]) => Promise.all(ops));
   const setPasswordChangedAt = jest.fn().mockResolvedValue(undefined);
+  const mailSend = jest.fn().mockResolvedValue(undefined);
 
   const mockPrisma = {
     user: { findUnique: userFindUnique, update: userUpdate },
@@ -109,8 +110,10 @@ describe('V-24 — admin reset link hash-at-rest', () => {
     [
       userFindUnique, passwordResetCreate, passwordResetFindUnique,
       passwordResetUpdate, userUpdate, platformAuditLogCreate, setPasswordChangedAt,
+      mailSend,
     ].forEach((fn) => fn.mockReset());
     setPasswordChangedAt.mockResolvedValue(undefined);
+    mailSend.mockResolvedValue(undefined);
     txFn.mockImplementation(async (ops: unknown[]) => Promise.all(ops));
 
     const module: TestingModule = await Test.createTestingModule({
@@ -130,7 +133,7 @@ describe('V-24 — admin reset link hash-at-rest', () => {
         { provide: PlatformSettingsService, useValue: { get: jest.fn(), set: jest.fn() } },
         { provide: CacheService, useValue: { setPasswordChangedAt, getPasswordChangedAt: jest.fn().mockResolvedValue(null), blacklistRefreshToken: jest.fn().mockResolvedValue(undefined) } },
         { provide: EventsGateway, useValue: { disconnectUserClients: jest.fn(), disconnectTenantClients: jest.fn() } },
-        { provide: MailService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
+        { provide: MailService, useValue: { send: mailSend } },
         { provide: SmsService, useValue: { send: jest.fn().mockResolvedValue(undefined) } },
         { provide: TenantDatabaseService, useValue: {} },
         { provide: TwoFactorService, useValue: {} },
@@ -153,10 +156,16 @@ describe('V-24 — admin reset link hash-at-rest', () => {
 
     const result = await admin.sendPasswordResetLink(TARGET_USER_ID, ADMIN_ID);
 
-    // Response: raw token + expiry surfaced for manual delivery.
+    // Response: raw token + expiry surfaced as a manual-delivery fallback;
+    // V-24-email dispatched the link so emailDispatched=true + success message.
     expect(result.token).toMatch(/^[0-9a-f]{64}$/); // 32 bytes hex
     expect(result.expiresAt).toBeInstanceOf(Date);
-    expect(result.message).toMatch(/سلّم الرابط يدوياً/);
+    expect(result.emailDispatched).toBe(true);
+    expect(result.message).toMatch(/تم إرسال/);
+    // The reset email carried the raw token in the link URL.
+    expect(mailSend).toHaveBeenCalledTimes(1);
+    expect((mailSend.mock.calls[0][0] as { to: string }).to).toBe('noura@example.com');
+    expect((mailSend.mock.calls[0][0] as { html: string }).html).toContain(result.token);
 
     // DB write: column receives the HASH, never the raw.
     expect(passwordResetCreate).toHaveBeenCalledTimes(1);
@@ -177,10 +186,30 @@ describe('V-24 — admin reset link hash-at-rest', () => {
     expect(auditArgs.newValues.tokenHashPrefix).toHaveLength(8);
     expect(auditArgs.newValues.sentTo).toBe('noura@example.com');
     expect(auditArgs.newValues.expiresAt).toBe(result.expiresAt.toISOString());
+    expect(auditArgs.newValues.emailDispatched).toBe(true);
     // Regression-proof — full hash and raw token must NEVER appear.
     const auditJson = JSON.stringify(auditArgs.newValues);
     expect(auditJson).not.toContain(expectedHash);          // full hash absent
     expect(auditJson).not.toContain(result.token);          // raw absent
+  });
+
+  it('V-24-email: mail dispatch failure → emailDispatched=false, raw token still returned for manual delivery', async () => {
+    userFindUnique.mockResolvedValueOnce(targetUserRow());
+    passwordResetCreate.mockResolvedValueOnce(resetRow());
+    platformAuditLogCreate.mockResolvedValueOnce({});
+    mailSend.mockRejectedValueOnce(new Error('SMTP down'));
+
+    const result = await admin.sendPasswordResetLink(TARGET_USER_ID, ADMIN_ID);
+
+    // Graceful degradation: token still surfaced + flagged not-dispatched.
+    expect(result.emailDispatched).toBe(false);
+    expect(result.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.message).toMatch(/يدوياً/);
+    // The reset-token row was still persisted (the only critical write).
+    expect(passwordResetCreate).toHaveBeenCalledTimes(1);
+    // Audit records the failure so ops can correlate "row present, mail failed".
+    const auditArgs = platformAuditLogCreate.mock.calls[0][0].data;
+    expect(auditArgs.newValues.emailDispatched).toBe(false);
   });
 
   it('end-to-end: admin-issued raw token redeems via auth.resetPassword (incidental V-24 correctness fix)', async () => {
