@@ -126,4 +126,14 @@ describe('V-38 — TenantGuard global APP_GUARD', () => {
     // Short-circuit BEFORE the DB lookup.
     expect(tenantUserFindUnique).not.toHaveBeenCalled();
   });
+
+  it('6. V-38-defense-in-depth: non-public route with NO user (+ no tenant) → 403, before the no-tenant bypass', async () => {
+    stubReflector(false);
+    // Simulates a hypothetical upstream JwtAuthGuard fail-silent: route is not
+    // @Public(), tenant context absent, but request.user was never set. The
+    // guard must reject (not fall through the `if (!tenant) return true` bypass).
+    const ctx = makeContext({ user: null, tenant: null });
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+    expect(tenantUserFindUnique).not.toHaveBeenCalled();
+  });
 });

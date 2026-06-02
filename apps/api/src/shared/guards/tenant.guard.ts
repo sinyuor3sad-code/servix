@@ -61,6 +61,18 @@ export class TenantGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<
       Request & { tenant?: Tenant }
     >();
+
+    // V-38-defense-in-depth: this route is NOT @Public() (checked above), so a
+    // verified user MUST be present. Assert it BEFORE the no-tenant
+    // short-circuit, so a hypothetical upstream JwtAuthGuard fail-silent (return
+    // true without setting request.user) can't slip an unauthenticated request
+    // through to a no-tenant route (e.g. /admin/*). "Trust nothing about
+    // upstream guards" (V-14b philosophy).
+    const user = request.user as JwtPayload | undefined;
+    if (!user) {
+      throw new ForbiddenException('غير مصرح بالوصول لهذا الحساب');
+    }
+
     const tenant = request.tenant;
 
     // V-38 short-circuit #2: TenantMiddleware decided this route doesn't
@@ -68,11 +80,6 @@ export class TenantGuard implements CanActivate {
     // Don't demand tenant membership where the request has no tenant
     // binding to check against.
     if (!tenant) return true;
-
-    const user = request.user as JwtPayload | undefined;
-    if (!user) {
-      throw new ForbiddenException('غير مصرح بالوصول لهذا الحساب');
-    }
 
     // Duplicate of TenantMiddleware's tenant.status check (V-14e-dry
     // tracks the cleanup). Retained here for explicit defense-in-depth
