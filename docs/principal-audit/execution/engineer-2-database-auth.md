@@ -1659,7 +1659,17 @@ This card threads ip/UA through all 5 sites. The controllers already extract `ip
 
 ---
 
-### V-13c-gc — periodic cleanup of expired refresh_tokens rows
+### V-13c-gc — periodic cleanup of expired refresh_tokens rows — ✅ مدفوعة 2026-06-02 (`727f9d1`)
+
+**أُغلقت:** `refresh_tokens` append-only وقت التشغيل (التدوير/إعادة-الاستخدام يقلبان `revoked_at` فقط، بلا حذف) ⇒ نموّ ~50k صف/أسبوع. `RefreshTokenCleanupService` يضيف `@Cron` يوميًا (3 صباحًا) يحذف الصفوف الميتة منذ > 90 يومًا: `revoked_at < cutoff` أو (`revoked_at IS NULL AND expires_at < cutoff`). الـ90 يومًا تتجاوز أي قيمة forensic (الرمز المُبطَل/المنتهي منذ 90 يومًا لا يُقدَّم ثانيةً، وكشف-إعادة-الاستخدام يعمل ضمن عمر الرمز فقط).
+- مُسجَّل كـ provider في AuthModule؛ يعتمد على `ScheduleModule.forRoot` العام (الـ @Cron يُكتشَف بلا استيراد، كنمط audit-module).
+- `deleteMany` (عبارة واحدة، تطابق SQL البطاقة)؛ الأخطاء تُلتقط وتُسجَّل فلا يُسقِط blip في DB المجدوِل؛ يسجّل العدد المحذوف فقط عند > 0.
+
+**التحقق:** `refresh-token-cleanup.service.spec` **3/3** (شكل where + cutoff ~90 يومًا؛ ابتلاع الأخطاء؛ count=0 no-op). full unit **745/745**. type-check + eslint نظيفان. (لا migration — حذف بيانات فقط، لا تغيير مخطط.)
+
+---
+
+#### الوصف الأصلي (تاريخي)
 
 `refresh_tokens` is append-only — V-13c never deletes rows, only flips `revoked_at`. At realistic traffic (~1k DAU × 1 family/day × 7 rotations/day) the table grows ~50k rows/week. Postgres handles that comfortably for years, but quarterly hygiene is good practice:
 
