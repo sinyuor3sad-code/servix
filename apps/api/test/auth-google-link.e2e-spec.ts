@@ -148,10 +148,14 @@ describe('V-13a — Google OAuth takeover prevention + linkGoogle', () => {
     const created = userRow({ id: USER_ID, googleId: 'google-sub-9999', authProvider: AUTH_PROVIDERS.GOOGLE });
     userCreate.mockResolvedValueOnce(created);
 
-    const result = await service.googleLogin('valid-id-token');
+    const result = await service.googleLogin('valid-id-token', '203.0.113.5', 'jest-ua/1.0');
 
     expect(result.tokens.accessToken.split('.').length).toBe(3);
     expect(userCreate).toHaveBeenCalledTimes(1);
+    // V-13c-forensics: the new refresh-token family records its origin ip/UA.
+    const rtData = refreshTokenCreate.mock.calls[0][0].data;
+    expect(rtData.ipAddress).toBe('203.0.113.5');
+    expect(rtData.userAgent).toBe('jest-ua/1.0');
     const createData = userCreate.mock.calls[0][0].data;
     expect(createData.email).toBe('noura@example.com');
     expect(createData.googleId).toBe('google-sub-9999');

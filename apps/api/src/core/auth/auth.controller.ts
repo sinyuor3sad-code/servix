@@ -93,7 +93,8 @@ export class AuthController {
     requires2FA: boolean;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-    return this.authService.login(dto, ip);
+    const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
+    return this.authService.login(dto, ip, userAgent);
   }
 
   @Post('2fa/verify-login')
@@ -109,7 +110,8 @@ export class AuthController {
     tokens: JwtTokens;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-    return this.authService.verify2FALogin(dto.emailOrPhone, dto.password, dto.code, ip);
+    const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
+    return this.authService.verify2FALogin(dto.emailOrPhone, dto.password, dto.code, ip, userAgent);
   }
 
   @Post('refresh')
@@ -212,6 +214,7 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'رمز التحقق غير صحيح أو منتهي' })
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
+    @Req() req: Request,
   ): Promise<{
     user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tenants: Array<{
@@ -224,7 +227,9 @@ export class AuthController {
     }>;
     tokens: JwtTokens;
   }> {
-    return this.authService.verifyEmailOtp(dto.email, dto.code);
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
+    return this.authService.verifyEmailOtp(dto.email, dto.code, ip, userAgent);
   }
 
   @Post('resend-otp')
@@ -362,8 +367,11 @@ export class AuthController {
   @ApiOperation({ summary: 'تسجيل الدخول بحساب Google' })
   async googleLogin(
     @Body() dto: GoogleLoginDto,
+    @Req() req: Request,
   ) {
-    return this.authService.googleLogin(dto.idToken);
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
+    return this.authService.googleLogin(dto.idToken, ip, userAgent);
   }
 
   @Post('google/link')

@@ -237,7 +237,7 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto, ip: string): Promise<LoginResult> {
+  async login(dto: LoginDto, ip: string, userAgent?: string): Promise<LoginResult> {
     const blockSeconds = await this.cacheService.checkLoginIpBlock(ip);
     if (blockSeconds > 0) {
       throw new UnauthorizedException(
@@ -367,12 +367,16 @@ export class AuthService {
     }
 
     const firstTenantUser = tenantUsers[0];
-    const tokens = await this.generateTokens({
-      sub: user.id,
-      email: user.email,
-      tenantId: firstTenantUser.tenantId,
-      roleId: firstTenantUser.roleId,
-    });
+    const tokens = await this.generateTokens(
+      {
+        sub: user.id,
+        email: user.email,
+        tenantId: firstTenantUser.tenantId,
+        roleId: firstTenantUser.roleId,
+      },
+      // V-13c-forensics: capture the family origin (login).
+      { ipAddress: ip, userAgent },
+    );
 
     return {
       user: this.mapUserResponse(user),
@@ -1118,6 +1122,7 @@ export class AuthService {
     password: string,
     code: string,
     ip: string,
+    userAgent?: string,
   ): Promise<{ user: any; tokens: JwtTokens }> {
     // 1️⃣ IP-block gate — fast-reject before any DB or bcrypt work.
     // No audit per-attempt here; the block itself was audited at trigger
@@ -1229,12 +1234,16 @@ export class AuthService {
     });
 
     const firstTenantUser = tenantUsers[0];
-    const tokens = await this.generateTokens({
-      sub: user.id,
-      email: user.email,
-      tenantId: firstTenantUser?.tenantId ?? '',
-      roleId: firstTenantUser?.roleId ?? '',
-    });
+    const tokens = await this.generateTokens(
+      {
+        sub: user.id,
+        email: user.email,
+        tenantId: firstTenantUser?.tenantId ?? '',
+        roleId: firstTenantUser?.roleId ?? '',
+      },
+      // V-13c-forensics: capture the family origin (2FA login).
+      { ipAddress: ip, userAgent },
+    );
 
     return {
       user: this.mapUserResponse(user),
@@ -1417,7 +1426,7 @@ export class AuthService {
   //      POST /auth/link-google endpoint from an authenticated session.
   //   3. No match → create a fresh GOOGLE-only user (no password, isEmailVerified
   //      mirrors profile.email_verified — workspace accounts can be false).
-  async googleLogin(idToken: string) {
+  async googleLogin(idToken: string, ip?: string, userAgent?: string) {
     const googleUser = await this.googleAuthService.verifyIdToken(idToken);
 
     // Match by googleId FIRST — the authoritative join. Email lookup is only
@@ -1507,19 +1516,26 @@ export class AuthService {
     });
 
     const firstTenantUser = tenantUsers[0];
+    // V-13c-forensics: capture the family origin (Google login).
     const tokens = firstTenantUser
-      ? await this.generateTokens({
-          sub: user.id,
-          email: user.email,
-          tenantId: firstTenantUser.tenantId,
-          roleId: firstTenantUser.roleId,
-        })
-      : await this.generateTokens({
-          sub: user.id,
-          email: user.email,
-          tenantId: '',
-          roleId: '',
-        });
+      ? await this.generateTokens(
+          {
+            sub: user.id,
+            email: user.email,
+            tenantId: firstTenantUser.tenantId,
+            roleId: firstTenantUser.roleId,
+          },
+          { ipAddress: ip, userAgent },
+        )
+      : await this.generateTokens(
+          {
+            sub: user.id,
+            email: user.email,
+            tenantId: '',
+            roleId: '',
+          },
+          { ipAddress: ip, userAgent },
+        );
 
     return {
       user: this.mapUserResponse(user),
@@ -1722,7 +1738,7 @@ export class AuthService {
     });
   }
 
-  async verifyEmailOtp(email: string, code: string): Promise<{
+  async verifyEmailOtp(email: string, code: string, ip?: string, userAgent?: string): Promise<{
     user: UserResponse;
     tenants: TenantWithRole[];
     tokens: JwtTokens;
@@ -1775,12 +1791,16 @@ export class AuthService {
     });
 
     const firstTenantUser = tenantUsers[0];
-    const tokens = await this.generateTokens({
-      sub: user.id,
-      email: user.email,
-      tenantId: firstTenantUser?.tenantId ?? '',
-      roleId: firstTenantUser?.roleId ?? '',
-    });
+    const tokens = await this.generateTokens(
+      {
+        sub: user.id,
+        email: user.email,
+        tenantId: firstTenantUser?.tenantId ?? '',
+        roleId: firstTenantUser?.roleId ?? '',
+      },
+      // V-13c-forensics: capture the family origin (email-OTP verification).
+      { ipAddress: ip, userAgent },
+    );
 
     // Audit log: email verified. V-35b — awaited fail-loud (no silent swallow);
     // see the login-audit note above for why this adds no new failure mode.
