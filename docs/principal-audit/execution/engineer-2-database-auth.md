@@ -1445,7 +1445,17 @@ V-13a hardens `POST /auth/google` and adds `POST /auth/google/link`, but no SERV
 
 ---
 
-### V-13a-verify — switch to local JWKS verification via google-auth-library
+### V-13a-verify — switch to local JWKS verification via google-auth-library — ✅ مدفوعة 2026-06-02 (`2e73fee`)
+
+**أُغلقت:** `verifyIdToken` كان يرسل كل idToken إلى `oauth2.googleapis.com/tokeninfo` ويثق بالرد (round-trip لكل نداء + ثقة بنقطة بعيدة لا بتوقيع الرمز). الآن **محليًا**: `new OAuth2Client(clientId).verifyIdToken({ idToken, audience: clientId })` يتحقّق من **توقيع** الـ JWT مقابل JWKS جوجل (مُخزَّن in-process) + audience + issuer + expiry. أُزيل الـ HTTP hop وفحوص aud/exp اليدوية (صارت داخلية). شكل الإرجاع ثابت (`{sub,email,email_verified,name,picture}`) → بلا تغيير في `auth.service.googleLogin`.
+
+- `pnpm add google-auth-library@^10.6.2` (**dep-add مأذون من المالك**). يستخدم gaxios لا axios؛ أضاف **0** ثغرات high/critical — بوابة CI (`pnpm audit --prod --audit-level=critical`) تبقى 0 critical (تحقّقت: لا ظهور لـ google-auth/gaxios في مسارات high+).
+
+**التحقق:** `google-auth.service.spec` جديد **6/6** (تحقّق محلي + mapping؛ client-id غير مضبوط → لا تحقّق؛ فشل التحقق → 401؛ payload بلا sub؛ defaulting للحقول؛ isEnabled). `auth-google-link.e2e` **7/7** (يـ mock الخدمة → يثبت أن التبديل شفّاف للمستهلك). type-check + eslint نظيفان.
+
+---
+
+#### الوصف الأصلي (تاريخي)
 
 Current `GoogleAuthService.verifyIdToken` posts the idToken to `https://oauth2.googleapis.com/tokeninfo` and trusts the response. This is acceptable but:
 
