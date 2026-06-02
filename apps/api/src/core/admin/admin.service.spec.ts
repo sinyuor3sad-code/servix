@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
 import { CacheService } from '../../shared/cache/cache.service';
+import { SmsService } from '../../shared/sms/sms.service';
 import { EventsGateway } from '../../shared/events/events.gateway';
 import { TwoFactorService } from '../auth/two-factor.service';
 import { TwoFactorBackupCodeService } from '../auth/two-factor-backup-code.service';
@@ -84,6 +85,8 @@ const mockBackupCodeService = {
   countUnused: jest.fn(),
 };
 
+const mockSmsService = { send: jest.fn().mockResolvedValue(undefined) };
+
 describe('AdminService', () => {
   let service: AdminService;
 
@@ -99,6 +102,7 @@ describe('AdminService', () => {
         { provide: EventsGateway, useValue: mockEventsGateway },
         { provide: TwoFactorService, useValue: mockTwoFactorService },
         { provide: TwoFactorBackupCodeService, useValue: mockBackupCodeService },
+        { provide: SmsService, useValue: mockSmsService },
       ],
     }).compile();
 

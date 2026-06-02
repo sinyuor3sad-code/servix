@@ -9,6 +9,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { compare, hash, hashSync } from 'bcryptjs';
+import { SmsService } from '../../shared/sms/sms.service';
 import { createHash, randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
@@ -139,6 +140,7 @@ export class AdminService {
     private readonly eventsGateway: EventsGateway,
     private readonly twoFactorService: TwoFactorService,
     private readonly backupCodeService: TwoFactorBackupCodeService,
+    private readonly smsService: SmsService,
   ) {}
 
   // V-43 / A2-17 — admin login step 1.
@@ -202,10 +204,10 @@ export class AdminService {
     }
 
     // V-42: route by format — 6 digits → TOTP, otherwise → backup code.
-    // NOTE: the admin path has no V-25 account-lockout yet (deferred to
-    // V-43-parity); backup-code failures here are audit-only + @RateLimit(5,300),
-    // identical to the admin TOTP-failure path — so backup is no weaker than
-    // TOTP on this endpoint. Full admin lockout lands with V-43-parity.
+    // V-43-parity: both TOTP and backup-code failures now feed the V-25 IP +
+    // account lockout counters (see registerAdminLoginFailure below), on top of
+    // @RateLimit(5,300) — so the second factor can't be brute-forced even with
+    // a known password.
     const isTotpFormat = /^\d{6}$/.test(code);
     const codeValid = isTotpFormat
       ? this.twoFactorService.verifyToken(user.twoFactorSecret, code)
@@ -215,7 +217,15 @@ export class AdminService {
         ip,
         method: isTotpFormat ? 'totp' : 'backup_code',
       });
-      throw new UnauthorizedException('رمز التحقق غير صحيح');
+      // V-43-parity: count the 2FA-code failure against the same lockout
+      // counters as a password failure. Throws block / lock / generic, and
+      // SMSes the super_admin on the lock transition.
+      await this.registerAdminLoginFailure(
+        user,
+        ip ?? 'unknown',
+        ip,
+        'رمز التحقق غير صحيح',
+      );
     }
     if (!isTotpFormat) {
       await this.writeAdminAudit(user.id, 'admin_login_2fa_backup_code_used', { ip });
@@ -246,25 +256,53 @@ export class AdminService {
     password: string,
     ip?: string,
   ): Promise<{
-    user: { id: string; email: string; fullName: string; passwordHash: string; twoFactorEnabled: boolean; twoFactorSecret: string | null };
+    user: { id: string; email: string; fullName: string; phone: string | null; passwordHash: string; twoFactorEnabled: boolean; twoFactorSecret: string | null };
     superAdminRole: { id: string };
     tenantUser: { tenantId: string };
   }> {
+    // V-43-parity — V-25 brute-force layers on the admin path. The static
+    // ADMIN_IP_ALLOWLIST gate (assertAdminIpAllowed) already fired; this adds
+    // the *dynamic* IP block + per-account lockout, sharing the same Redis
+    // keyspace as auth.service.login so an attacker can't dodge limits by
+    // switching between the user and admin login endpoints.
+    const ipKey = ip ?? 'unknown';
+    const blockSeconds = await this.cacheService.checkLoginIpBlock(ipKey);
+    if (blockSeconds > 0) {
+      throw new UnauthorizedException(
+        `تم تجاوز الحد المسموح من محاولات الدخول. حاول مرة أخرى بعد ${Math.ceil(blockSeconds / 60)} دقيقة`,
+      );
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
     });
 
     if (!user) {
       // V-41 parity: equalize timing with the wrong-password branch so
-      // response time can't enumerate super_admin emails.
+      // response time can't enumerate super_admin emails. The attempt still
+      // counts against the IP (V-43-parity) so spraying a blocked IP with
+      // unknown emails can't probe forever.
       await compare(password, ADMIN_DUMMY_BCRYPT_HASH);
+      await this.cacheService.incrementLoginFailIp(ipKey);
       throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
+
+    // V-43-parity — account-lock pre-check (before the password compare).
+    if (await this.cacheService.isAccountLocked(user.id)) {
+      throw new UnauthorizedException(
+        'تم قفل الحساب بسبب محاولات دخول فاشلة متعددة. تواصل مع الدعم الفني',
+      );
     }
 
     const isValid = await compare(password, user.passwordHash);
     if (!isValid) {
       await this.writeAdminAudit(user.id, 'admin_login_failed', { ip });
-      throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+      await this.registerAdminLoginFailure(
+        user,
+        ipKey,
+        ip,
+        'بيانات الدخول غير صحيحة',
+      );
     }
 
     const superAdminRole = await this.prisma.role.findUnique({
@@ -284,6 +322,48 @@ export class AdminService {
     return { user, superAdminRole, tenantUser };
   }
 
+  // V-43-parity — record a failed admin auth attempt against the V-25 IP +
+  // account counters, then throw the right 401. Mirrors auth.service's
+  // handle2FAFailure: SMS the super_admin on the lock TRANSITION only
+  // (incrementLoginFailAccount returns locked=true exactly once per cycle, so
+  // at most one SMS per 24h lockout even under sustained brute-force).
+  // Returns Promise<never> — it always throws.
+  private async registerAdminLoginFailure(
+    user: { id: string; phone: string | null },
+    ipKey: string,
+    ip: string | undefined,
+    genericMessage: string,
+  ): Promise<never> {
+    const ipResult = await this.cacheService.incrementLoginFailIp(ipKey);
+    const accResult = await this.cacheService.incrementLoginFailAccount(user.id);
+
+    if (ipResult.blockSeconds > 0) {
+      throw new UnauthorizedException(
+        `تم تجاوز الحد المسموح. حاول مرة أخرى بعد ${Math.ceil(ipResult.blockSeconds / 60)} دقيقة`,
+      );
+    }
+
+    if (accResult.locked) {
+      if (user.phone) {
+        await this.smsService
+          .send({
+            to: user.phone,
+            message:
+              'SERVIX: تم قفل حساب الإدارة بسبب محاولات دخول فاشلة متعددة. تواصل مع الدعم الفني',
+          })
+          .catch((e) =>
+            this.logger.warn(`[admin-lockout SMS] ${(e as Error).message}`),
+          );
+      }
+      await this.writeAdminAudit(user.id, 'admin_login_account_locked', { ip });
+      throw new UnauthorizedException(
+        'تم قفل الحساب بسبب محاولات دخول فاشلة متعددة. تواصل مع الدعم الفني',
+      );
+    }
+
+    throw new UnauthorizedException(genericMessage);
+  }
+
   // V-43 — issue admin tokens (the pre-V-43 token-signing block, now
   // shared between login + verify2FALogin) + audit admin_login_success.
   private async issueAdminTokens(
@@ -292,6 +372,13 @@ export class AdminService {
     tenantId: string,
     ip?: string,
   ): Promise<AdminLoginResult> {
+    // V-43-parity — clear the V-25 brute-force counters on TRUE success. This
+    // is the single funnel for both non-2FA login and post-2FA verify (the
+    // 2FA *challenge* return in login() does NOT pass through here, so a
+    // correct password alone never resets the 2FA-failure counter).
+    await this.cacheService.resetLoginFailIp(ip ?? 'unknown');
+    await this.cacheService.resetLoginFailAccount(user.id);
+
     const tokenPayload = {
       sub: user.id,
       email: user.email,

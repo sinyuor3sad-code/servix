@@ -14,6 +14,7 @@ import { CacheService } from '../src/shared/cache/cache.service';
 import { EventsGateway } from '../src/shared/events/events.gateway';
 import { TwoFactorService } from '../src/core/auth/two-factor.service';
 import { TwoFactorBackupCodeService } from '../src/core/auth/two-factor-backup-code.service';
+import { SmsService } from '../src/shared/sms/sms.service';
 
 /**
  * V-43 — Admin login hardening: 2FA enforcement + IP allowlist + audit.
@@ -48,6 +49,7 @@ async function adminUserRow(twoFactorEnabled: boolean): Promise<Record<string, u
     id: ADMIN_USER_ID,
     email: ADMIN_EMAIL,
     fullName: 'Platform Admin',
+    phone: '+966500000000',
     passwordHash,
     twoFactorEnabled,
     twoFactorSecret: twoFactorEnabled ? TOTP_SECRET : null,
@@ -66,6 +68,14 @@ describe('V-43 — admin login hardening', () => {
   const getNumber = jest.fn().mockResolvedValue(1440);
   const signAsync = jest.fn().mockResolvedValue('signed.jwt.token');
   const verifyToken = jest.fn();
+  // V-43-parity — V-25 lockout cache + SMS mocks.
+  const checkLoginIpBlock = jest.fn();
+  const isAccountLocked = jest.fn();
+  const incrementLoginFailIp = jest.fn();
+  const incrementLoginFailAccount = jest.fn();
+  const resetLoginFailIp = jest.fn();
+  const resetLoginFailAccount = jest.fn();
+  const smsSend = jest.fn();
 
   const mockPrisma = {
     user: { findUnique: userFindUnique, update: userUpdate },
@@ -78,6 +88,8 @@ describe('V-43 — admin login hardening', () => {
     [
       userFindUnique, userUpdate, roleFindUnique, tenantUserFindFirst,
       platformAuditLogCreate, configGet, getNumber, signAsync, verifyToken,
+      checkLoginIpBlock, isAccountLocked, incrementLoginFailIp,
+      incrementLoginFailAccount, resetLoginFailIp, resetLoginFailAccount, smsSend,
     ].forEach((fn) => fn.mockReset());
 
     userUpdate.mockResolvedValue({});
@@ -86,6 +98,15 @@ describe('V-43 — admin login hardening', () => {
     signAsync.mockResolvedValue('signed.jwt.token');
     roleFindUnique.mockResolvedValue({ id: SUPER_ADMIN_ROLE_ID });
     tenantUserFindFirst.mockResolvedValue({ tenantId: TENANT_ID });
+    // V-43-parity defaults: not blocked / not locked, increments stay below
+    // threshold, resets/SMS resolve void.
+    checkLoginIpBlock.mockResolvedValue(0);
+    isAccountLocked.mockResolvedValue(false);
+    incrementLoginFailIp.mockResolvedValue({ count: 1, blockSeconds: 0 });
+    incrementLoginFailAccount.mockResolvedValue({ count: 1, locked: false });
+    resetLoginFailIp.mockResolvedValue(undefined);
+    resetLoginFailAccount.mockResolvedValue(undefined);
+    smsSend.mockResolvedValue(undefined);
     // Default: ADMIN_IP_ALLOWLIST empty (disabled), jwt secrets present.
     configGet.mockImplementation((key: string, def?: string) => {
       if (key === 'ADMIN_IP_ALLOWLIST') return '';
@@ -101,8 +122,19 @@ describe('V-43 — admin login hardening', () => {
         { provide: JwtService, useValue: { signAsync } },
         { provide: ConfigService, useValue: { get: configGet } },
         { provide: PlatformSettingsService, useValue: { getNumber } },
-        { provide: CacheService, useValue: {} },
+        {
+          provide: CacheService,
+          useValue: {
+            checkLoginIpBlock,
+            isAccountLocked,
+            incrementLoginFailIp,
+            incrementLoginFailAccount,
+            resetLoginFailIp,
+            resetLoginFailAccount,
+          },
+        },
         { provide: EventsGateway, useValue: {} },
+        { provide: SmsService, useValue: { send: smsSend } },
         { provide: TwoFactorService, useValue: { verifyToken } },
         { provide: TwoFactorBackupCodeService, useValue: { store: jest.fn(), verifyAndConsume: jest.fn(), deleteAll: jest.fn(), countUnused: jest.fn() } },
       ],
@@ -239,5 +271,92 @@ describe('V-43 — admin login hardening', () => {
     await expect(
       service.verify2FALogin(ADMIN_EMAIL, CORRECT_PASSWORD, '123456', ALLOWED_IP),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  // ── V-43-parity — V-25 brute-force layers on the admin login path ──────
+
+  it('V-43-parity: IP currently blocked → 401 before any user lookup', async () => {
+    checkLoginIpBlock.mockResolvedValueOnce(120); // 2 min remaining
+
+    await expect(
+      service.login(ADMIN_EMAIL, CORRECT_PASSWORD, ALLOWED_IP),
+    ).rejects.toThrow(UnauthorizedException);
+
+    expect(userFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('V-43-parity: account currently locked → 401 before the password compare', async () => {
+    userFindUnique.mockResolvedValueOnce(await adminUserRow(false));
+    isAccountLocked.mockResolvedValueOnce(true);
+    const compareSpy = jest.spyOn(
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require('bcryptjs') as { compare: (a: string, b: string) => Promise<boolean> },
+      'compare',
+    );
+
+    await expect(
+      service.login(ADMIN_EMAIL, CORRECT_PASSWORD, ALLOWED_IP),
+    ).rejects.toThrow(UnauthorizedException);
+
+    // Locked out before spending a bcrypt compare on the supplied password.
+    expect(compareSpy).not.toHaveBeenCalled();
+    compareSpy.mockRestore();
+  });
+
+  it('V-43-parity: wrong password → increments both IP + account counters (no SMS yet)', async () => {
+    userFindUnique.mockResolvedValueOnce(await adminUserRow(false));
+
+    await expect(
+      service.login(ADMIN_EMAIL, WRONG_PASSWORD, ALLOWED_IP),
+    ).rejects.toThrow(UnauthorizedException);
+
+    expect(incrementLoginFailIp).toHaveBeenCalled();
+    expect(incrementLoginFailAccount).toHaveBeenCalledWith(ADMIN_USER_ID);
+    expect(smsSend).not.toHaveBeenCalled(); // not the lock transition
+  });
+
+  it('V-43-parity: wrong password crossing the lock threshold → SMS to super_admin + account-locked audit', async () => {
+    userFindUnique.mockResolvedValueOnce(await adminUserRow(false));
+    incrementLoginFailAccount.mockResolvedValueOnce({ count: 10, locked: true });
+
+    await expect(
+      service.login(ADMIN_EMAIL, WRONG_PASSWORD, ALLOWED_IP),
+    ).rejects.toThrow(UnauthorizedException);
+
+    expect(smsSend).toHaveBeenCalledTimes(1);
+    expect((smsSend.mock.calls[0][0] as { to: string }).to).toBe('+966500000000');
+    expect(auditActions()).toContain('admin_login_account_locked');
+  });
+
+  it('V-43-parity: unknown email still counts against the IP counter only', async () => {
+    userFindUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      service.login('nobody@servi-x.com', WRONG_PASSWORD, ALLOWED_IP),
+    ).rejects.toThrow(UnauthorizedException);
+
+    expect(incrementLoginFailIp).toHaveBeenCalled();
+    expect(incrementLoginFailAccount).not.toHaveBeenCalled(); // no userId
+  });
+
+  it('V-43-parity: successful login resets both fail counters', async () => {
+    userFindUnique.mockResolvedValueOnce(await adminUserRow(false));
+
+    await service.login(ADMIN_EMAIL, CORRECT_PASSWORD, ALLOWED_IP);
+
+    expect(resetLoginFailIp).toHaveBeenCalled();
+    expect(resetLoginFailAccount).toHaveBeenCalledWith(ADMIN_USER_ID);
+  });
+
+  it('V-43-parity: wrong 2FA code increments the lockout counters (2nd-factor brute-force protection)', async () => {
+    userFindUnique.mockResolvedValueOnce(await adminUserRow(true));
+    verifyToken.mockReturnValueOnce(false);
+
+    await expect(
+      service.verify2FALogin(ADMIN_EMAIL, CORRECT_PASSWORD, '000000', ALLOWED_IP),
+    ).rejects.toThrow(UnauthorizedException);
+
+    expect(incrementLoginFailAccount).toHaveBeenCalledWith(ADMIN_USER_ID);
+    expect(auditActions()).toContain('admin_login_2fa_failed');
   });
 });
