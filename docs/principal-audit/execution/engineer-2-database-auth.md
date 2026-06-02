@@ -1366,7 +1366,22 @@ V-24 left the column name as `token` even though post-V-24 it holds a sha256 hex
 
 ---
 
-### V-24-email — wire MailService into AdminModule
+### V-24-email — wire MailService into AdminModule — ✅ مدفوعة 2026-06-02 (`5c52f29`)
+
+**أُغلقت:** `sendPasswordResetLink` كان يكتفي بإرجاع الـ raw token في البودي للتسليم اليدوي (TODO الـ V-24-email). الآن الرابط يُرسَل بريديًا:
+1. حقن `MailService` (MailModule **عام @Global** → لا حاجة لتعديل AdminModule كما خمّنت البطاقة).
+2. بعد حفظ الـ hash، إرسال الرابط (نفس شكل `auth.service.forgotPassword`) إلى `user.email`.
+3. **best-effort:** الـ raw token **ما زال يُرجَع** كاحتياطي (انقطاع البريد → degradation أنيق، يسلّم الأدمن يدويًا، لا حظر). الرسالة تعكس المسار (نجاح/احتياطي).
+4. **`emailDispatched: boolean`** في صف `admin_password_reset_link_sent` (ops يرصدون "صف موجود لكن البريد فشل").
+5. الـ audit نُقل **خارج** الـ tx ثنائي-العمليات إلى **بعد** محاولة الإرسال (ليعكس `emailDispatched`). صف `passwordReset` يبقى الكتابة الحرجة الوحيدة؛ الـ audit best-effort (`.catch → warn`). عقد `tokenHashPrefix` بلا تغيير (لا hash كامل ولا raw token).
+
+**قرار التصميم (NAEB):** أُبقي إرجاع الـ raw token (مع تعليم النية أنه احتياطي يُحذف لاحقًا متى ثبتت موثوقية البريد) — كما اقترحت البطاقة (الخيار 4: keep but deprecate). تنظيف الحذف بطاقة مستقبلية.
+
+**التحقق:** `admin-reset-link.e2e` **7/7** (تحديث الحالة 1 لمسار الإرسال + التحقق أن رابط البريد يحمل الـ raw token؛ حالة جديدة لفشل الإرسال → `emailDispatched=false` + token يُرجَع). admin unit **11/11** (أُضيف provider لـ MailService). type-check + eslint نظيفان.
+
+---
+
+#### الوصف الأصلي (تاريخي)
 
 `admin.service.sendPasswordResetLink` returns the raw token in the API response body. The admin reads it and delivers manually (Slack, ticket, in-person). The original implementation had a `// TODO: Send email with reset link when MailService is available in AdminModule` comment + a `console.log` leak (the leak is fixed by V-24; the TODO remains).
 
