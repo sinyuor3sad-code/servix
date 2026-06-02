@@ -81,15 +81,15 @@ export class TenantGuard implements CanActivate {
     // binding to check against.
     if (!tenant) return true;
 
-    // Duplicate of TenantMiddleware's tenant.status check (V-14e-dry
-    // tracks the cleanup). Retained here for explicit defense-in-depth
-    // until that follow-up removes the duplication.
-    if (tenant.status === 'suspended') {
-      throw new ForbiddenException('حساب الصالون معلّق');
-    }
-
-    // V-01 refactor: extracted shared check so WsAuthGuard and the
-    // HTTP TenantGuard agree on what "active tenant link" means.
+    // V-14e-dry: the inline `if (tenant.status === 'suspended')` check was
+    // removed — assertActiveTenantUser below already rejects ANY non-active
+    // tenant status (suspended/cancelled/pending_deletion) with
+    // 'حساب الصالون غير مفعّل'. The old inline check was both redundant and
+    // narrower (only 'suspended'); delegating to the helper is broader and keeps
+    // a single source of truth shared with WsAuthGuard (V-01).
+    //
+    // V-01 refactor: extracted shared check so WsAuthGuard and the HTTP
+    // TenantGuard agree on what "active tenant link" means.
     await assertActiveTenantUser(this.platformPrisma, tenant.id, user.sub);
 
     return true;

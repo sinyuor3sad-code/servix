@@ -119,12 +119,20 @@ describe('V-38 — TenantGuard global APP_GUARD', () => {
     expect(tenantUserFindUnique).toHaveBeenCalledTimes(1);
   });
 
-  it('5. Suspended tenant → 403 (V-14b parity, before the membership check)', async () => {
+  it('5. Suspended tenant → 403 (V-14e-dry: now via assertActiveTenantUser, not an inline check)', async () => {
     stubReflector(false);
+    // V-14e-dry removed the inline `if (tenant.status === 'suspended')`.
+    // Rejection of a non-active tenant now happens inside the shared helper,
+    // which reads the AUTHORITATIVE tenant.status from the DB (the request
+    // .tenant snapshot may be stale). The membership row exists + is active,
+    // but the joined tenant is suspended → 403.
+    tenantUserFindUnique.mockResolvedValueOnce({
+      id: 'tu-uuid', tenantId: TENANT_ID, userId: USER_ID, status: 'active',
+      tenant: { status: 'suspended' },
+    });
     const ctx = makeContext({ tenant: { id: TENANT_ID, status: 'suspended' } });
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
-    // Short-circuit BEFORE the DB lookup.
-    expect(tenantUserFindUnique).not.toHaveBeenCalled();
+    expect(tenantUserFindUnique).toHaveBeenCalledTimes(1);
   });
 
   it('6. V-38-defense-in-depth: non-public route with NO user (+ no tenant) → 403, before the no-tenant bypass', async () => {
