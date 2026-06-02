@@ -1133,7 +1133,11 @@ Add Prometheus counter `servix_tenant_membership_rejected_total{path}` increment
 
 ---
 
-### V-38-defense-in-depth — re-check `request.user` independently of `request.tenant`
+### V-38-defense-in-depth — re-check `request.user` independently of `request.tenant` — ✅ مدفوعة 2026-06-01
+
+**أُغلقت:** في `TenantGuard`، نُقل فحص `if (!user) throw ForbiddenException` إلى **قبل** الـ short-circuit `if (!tenant) return true` (بعد فحص `@Public()` مباشرة). فلو فشل JwtAuthGuard العلوي بصمت يومًا (return true بلا ضبط `request.user`)، لن يتسرّب طلب غير مصادَق إلى مسار بلا-tenant (مثل `/admin/*`). e2e: حالة 6 جديدة (مسار غير-public بلا user + بلا tenant ⇒ 403، قبل الـ bypass). unit 730/730. (التفاصيل أدناه.)
+
+---
 
 Post-V-38 TenantGuard's `if (!tenant) return true` short-circuits BEFORE checking `request.user`. Designed correctly: TenantMiddleware deliberately skips tenant context for `/admin/*` etc., and admin routes don't need a tenant. But if a bug ever causes JwtAuthGuard to fail-silent (e.g., return true without setting `request.user`), TenantGuard would let an unauthenticated request through to those routes.
 
