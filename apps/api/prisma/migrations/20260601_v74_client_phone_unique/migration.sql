@@ -1,4 +1,3 @@
--- prisma+migrate:no-transaction
 -- ════════════════════════════════════════════════════════════════════
 -- SERVIX — V-74 — Client.phone @unique (tenant)
 -- Source: docs/principal-audit/synthesis-2026-05-14.md (V-74 / A1-011, P3)
@@ -17,28 +16,28 @@
 -- (the dedup step the card describes is a no-op now). The dedup-then-migrate
 -- sequence is only needed if this is ever re-applied to a populated tenant DB.
 --
--- CONCURRENTLY so prod index builds never lock writes; cannot run inside a
--- transaction — the directive on line 1 tells Prisma migrate to run outside a
--- tx. The tenant toolchain is broken (V-77+), so until E1 rebuilds it, apply on
--- each EXISTING tenant DB via the V-18 workaround (NO -1 / NO BEGIN —
--- CONCURRENTLY needs autocommit):
---   psql "$TENANT_DATABASE_URL" \
---     -f prisma/migrations/20260601_v74_client_phone_unique/migration.sql
---   npx prisma migrate resolve --schema=prisma/tenant.prisma \
---     --applied 20260601_v74_client_phone_unique
--- New tenants via create-tenant.ts (db push) pick up the unique index
--- automatically. If a populated tenant DB has duplicates, the CREATE UNIQUE
--- INDEX below will fail — dedup first (see card), then re-run.
+-- Index-build strategy (see V-77+): plain CREATE/DROP INDEX — instant on the
+-- empty tenant DBs that `prisma migrate deploy` targets. To apply to an
+-- EXISTING POPULATED tenant without locking writes, run OUT-OF-BAND FIRST (then
+-- migrate deploy is a no-op), each statement on its own psql -c call
+-- (CONCURRENTLY needs autocommit):
+--   psql "$TENANT_DATABASE_URL" -c 'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "clients_phone_key" ON "clients" ("phone");'
+--   psql "$TENANT_DATABASE_URL" -c 'DROP INDEX CONCURRENTLY IF EXISTS "clients_phone_idx";'
+-- These were CONCURRENTLY in-file until V-77+; removed because Prisma runs a
+-- no-transaction migration as one multi-statement implicit tx, where
+-- CONCURRENTLY is forbidden. If a populated tenant has duplicate phones, the
+-- CREATE UNIQUE INDEX fails — dedup first (see card), then re-run.
 -- ════════════════════════════════════════════════════════════════════
 
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "clients_phone_key"
+CREATE UNIQUE INDEX IF NOT EXISTS "clients_phone_key"
   ON "clients" ("phone");
 
-DROP INDEX CONCURRENTLY IF EXISTS "clients_phone_idx";
+DROP INDEX IF EXISTS "clients_phone_idx";
 
 -- ────────────────────────────────────────────────────────────────────
--- Rollback (manual). Run each statement on its OWN psql invocation —
--- CONCURRENTLY needs autocommit and fails if the two are sent in one tx block:
---   psql "$TENANT_DATABASE_URL" -c 'CREATE INDEX CONCURRENTLY IF NOT EXISTS "clients_phone_idx" ON "clients" ("phone");'
---   psql "$TENANT_DATABASE_URL" -c 'DROP INDEX CONCURRENTLY IF EXISTS "clients_phone_key";'
+-- Rollback (manual):
+--   CREATE INDEX IF NOT EXISTS "clients_phone_idx" ON "clients" ("phone");
+--   DROP INDEX IF EXISTS "clients_phone_key";
+-- (On a populated tenant, prefer the CONCURRENTLY forms via psql, each on its
+--  own psql -c call.)
 -- ════════════════════════════════════════════════════════════════════

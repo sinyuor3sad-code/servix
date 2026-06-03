@@ -1,17 +1,22 @@
--- prisma+migrate:no-transaction
 -- ════════════════════════════════════════════════════════════════════
 -- V-17 / A1-003 + V-73 / A1-010 (merged) — Cascade redesign + soft-delete
 -- Source: docs/principal-audit/synthesis-2026-05-14.md (HIGH P1)
 -- ────────────────────────────────────────────────────────────────────
--- Four sections:
+-- Four sections, applied atomically within the migration's transaction
+-- (Prisma wraps the whole migration in one tx — a partial failure rolls the
+-- entire migration back, so no FK is ever left in a torn state):
 --   §1  Convert ON DELETE CASCADE → ON DELETE RESTRICT on 5 FK relations
---       that protect financial/loyalty integrity. Wrapped in an explicit
---       transaction so a partial failure leaves no FK in a torn state.
+--       that protect financial/loyalty integrity.
 --   §2  Add `deleted_at` columns on invoices and payments (soft-delete).
 --       IF NOT EXISTS keeps re-runs idempotent.
 --   §3  Partial index on invoices(client_id) WHERE deleted_at IS NULL.
---       CONCURRENTLY — must run outside any transaction. Prisma's
---       'no-transaction' directive at the top enables this.
+--       Plain CREATE INDEX — instant on the empty tenant DBs migrate deploy
+--       targets. For an EXISTING POPULATED tenant, build it OUT-OF-BAND first
+--       to avoid locking writes (then this is a no-op via IF NOT EXISTS):
+--         psql "$TENANT_DATABASE_URL" -c 'CREATE INDEX CONCURRENTLY IF NOT EXISTS "invoices_client_id_active_idx" ON "invoices" ("client_id") WHERE "deleted_at" IS NULL;'
+--       (Was CONCURRENTLY in-file until V-77+; removed because Prisma runs a
+--       no-transaction migration as one multi-statement implicit tx, where
+--       CONCURRENTLY is forbidden.)
 --   §4  ZATCA-finalized invoice delete protection. Trigger function +
 --       trigger on invoices. CREATE OR REPLACE / DROP IF EXISTS make
 --       this idempotent. Function references zatca_invoices because
@@ -21,8 +26,6 @@
 -- ════════════════════════════════════════════════════════════════════
 
 -- ─────────── §1 — Convert 5 FKs from CASCADE to RESTRICT ─────────────
-BEGIN;
-
 ALTER TABLE "payments" DROP CONSTRAINT IF EXISTS "payments_invoice_id_fkey";
 ALTER TABLE "payments" ADD CONSTRAINT "payments_invoice_id_fkey"
   FOREIGN KEY ("invoice_id") REFERENCES "invoices"("id")
@@ -48,16 +51,15 @@ ALTER TABLE "employee_debts" ADD CONSTRAINT "employee_debts_employee_id_fkey"
   FOREIGN KEY ("employee_id") REFERENCES "employees"("id")
   ON UPDATE CASCADE ON DELETE RESTRICT;
 
-COMMIT;
-
 -- ─────────── §2 — Soft-delete columns (idempotent) ───────────────────
 ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMPTZ;
 ALTER TABLE "payments" ADD COLUMN IF NOT EXISTS "deleted_at" TIMESTAMPTZ;
 
 -- ─────────── §3 — Partial index on active invoices ───────────────────
--- Must be outside a transaction; runs in autocommit thanks to the
--- 'no-transaction' directive at the top of the file.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "invoices_client_id_active_idx"
+-- Plain CREATE INDEX (runs inside the migration's transaction). For an
+-- existing populated tenant, build out-of-band with CONCURRENTLY first
+-- (see the header note) so writes are never locked.
+CREATE INDEX IF NOT EXISTS "invoices_client_id_active_idx"
   ON "invoices" ("client_id") WHERE "deleted_at" IS NULL;
 
 -- ─────────── §4 — ZATCA-finalized invoice delete protection ──────────
@@ -93,8 +95,9 @@ CREATE TRIGGER "no_delete_finalized_zatca_invoices"
 --   DROP TRIGGER IF EXISTS "no_delete_finalized_zatca_invoices" ON "invoices";
 --   DROP FUNCTION IF EXISTS prevent_zatca_finalized_invoice_delete();
 --
---   -- §3 reverse (run as SEPARATE psql -c call — CONCURRENTLY)
---   DROP INDEX CONCURRENTLY IF EXISTS "invoices_client_id_active_idx";
+--   -- §3 reverse (plain; on a populated tenant prefer
+--   --  DROP INDEX CONCURRENTLY IF EXISTS … on its own psql -c call)
+--   DROP INDEX IF EXISTS "invoices_client_id_active_idx";
 --
 --   -- §2 reverse (data-loss warning: existing deleted_at timestamps
 --   -- are dropped; only run if no soft-deleted rows exist)
@@ -102,26 +105,24 @@ CREATE TRIGGER "no_delete_finalized_zatca_invoices"
 --   ALTER TABLE "invoices" DROP COLUMN IF EXISTS "deleted_at";
 --
 --   -- §1 reverse — restore CASCADE
---   BEGIN;
---     ALTER TABLE "employee_debts" DROP CONSTRAINT "employee_debts_employee_id_fkey";
---     ALTER TABLE "employee_debts" ADD CONSTRAINT "employee_debts_employee_id_fkey"
---       FOREIGN KEY ("employee_id") REFERENCES "employees"("id")
---       ON UPDATE CASCADE ON DELETE CASCADE;
---     ALTER TABLE "client_debts" DROP CONSTRAINT "client_debts_client_id_fkey";
---     ALTER TABLE "client_debts" ADD CONSTRAINT "client_debts_client_id_fkey"
---       FOREIGN KEY ("client_id") REFERENCES "clients"("id")
---       ON UPDATE CASCADE ON DELETE CASCADE;
---     ALTER TABLE "loyalty_transactions" DROP CONSTRAINT "loyalty_transactions_client_id_fkey";
---     ALTER TABLE "loyalty_transactions" ADD CONSTRAINT "loyalty_transactions_client_id_fkey"
---       FOREIGN KEY ("client_id") REFERENCES "clients"("id")
---       ON UPDATE CASCADE ON DELETE CASCADE;
---     ALTER TABLE "discounts" DROP CONSTRAINT "discounts_invoice_id_fkey";
---     ALTER TABLE "discounts" ADD CONSTRAINT "discounts_invoice_id_fkey"
---       FOREIGN KEY ("invoice_id") REFERENCES "invoices"("id")
---       ON UPDATE CASCADE ON DELETE CASCADE;
---     ALTER TABLE "payments" DROP CONSTRAINT "payments_invoice_id_fkey";
---     ALTER TABLE "payments" ADD CONSTRAINT "payments_invoice_id_fkey"
---       FOREIGN KEY ("invoice_id") REFERENCES "invoices"("id")
---       ON UPDATE CASCADE ON DELETE CASCADE;
---   COMMIT;
+--   ALTER TABLE "employee_debts" DROP CONSTRAINT "employee_debts_employee_id_fkey";
+--   ALTER TABLE "employee_debts" ADD CONSTRAINT "employee_debts_employee_id_fkey"
+--     FOREIGN KEY ("employee_id") REFERENCES "employees"("id")
+--     ON UPDATE CASCADE ON DELETE CASCADE;
+--   ALTER TABLE "client_debts" DROP CONSTRAINT "client_debts_client_id_fkey";
+--   ALTER TABLE "client_debts" ADD CONSTRAINT "client_debts_client_id_fkey"
+--     FOREIGN KEY ("client_id") REFERENCES "clients"("id")
+--     ON UPDATE CASCADE ON DELETE CASCADE;
+--   ALTER TABLE "loyalty_transactions" DROP CONSTRAINT "loyalty_transactions_client_id_fkey";
+--   ALTER TABLE "loyalty_transactions" ADD CONSTRAINT "loyalty_transactions_client_id_fkey"
+--     FOREIGN KEY ("client_id") REFERENCES "clients"("id")
+--     ON UPDATE CASCADE ON DELETE CASCADE;
+--   ALTER TABLE "discounts" DROP CONSTRAINT "discounts_invoice_id_fkey";
+--   ALTER TABLE "discounts" ADD CONSTRAINT "discounts_invoice_id_fkey"
+--     FOREIGN KEY ("invoice_id") REFERENCES "invoices"("id")
+--     ON UPDATE CASCADE ON DELETE CASCADE;
+--   ALTER TABLE "payments" DROP CONSTRAINT "payments_invoice_id_fkey";
+--   ALTER TABLE "payments" ADD CONSTRAINT "payments_invoice_id_fkey"
+--     FOREIGN KEY ("invoice_id") REFERENCES "invoices"("id")
+--     ON UPDATE CASCADE ON DELETE CASCADE;
 -- ════════════════════════════════════════════════════════════════════
