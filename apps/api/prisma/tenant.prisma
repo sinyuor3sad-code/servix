@@ -1351,15 +1351,35 @@ model SelfOrder {
 
 // ─────────────────── Invoice Feedback (Rating) ───────────────────
 
+// V-79: VARCHAR → enum (in-place, defensive USING in the migration). Values are
+// the code-observed write set + schema default; unknown legacy values coerce to
+// the default at migration time (see 20260604_v79_tenant_enums).
+enum FeedbackSource {
+  qr
+  self_order
+  cashier
+}
+
+enum FollowUpStatus {
+  new
+  reviewed
+  contacted
+}
+
+enum ReviewSource {
+  invoice
+  whatsapp
+}
+
 model InvoiceFeedback {
   id                String   @id @default(uuid()) @db.Uuid
   invoiceId         String   @unique @map("invoice_id") @db.Uuid
   rating            Int      @db.SmallInt
   comment           String?  @db.Text
-  source            String   @default("qr") @map("source") @db.VarChar(20)
+  source            FeedbackSource @default(qr) @map("source")
   googlePromptShown Boolean  @default(false) @map("google_prompt_shown")
   googleClicked     Boolean  @default(false) @map("google_clicked")
-  followUpStatus    String   @default("new") @map("follow_up_status") @db.VarChar(30)
+  followUpStatus    FollowUpStatus @default(new) @map("follow_up_status")
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
@@ -1376,7 +1396,7 @@ model ReviewRequest {
   customerName   String?   @map("customer_name") @db.VarChar(100)
   rating         Int?      @db.SmallInt
   feedbackText   String?   @map("feedback_text") @db.Text
-  source         String    @default("invoice") @db.VarChar(20)
+  source         ReviewSource @default(invoice)
   status         String    @default("pending") @db.VarChar(20)
   dueAt          DateTime  @map("due_at") @db.Timestamptz()
   expiresAt      DateTime  @map("expires_at") @db.Timestamptz()

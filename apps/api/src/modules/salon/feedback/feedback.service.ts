@@ -2,6 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaClient } from '../../../shared/types';
 import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
 
+/** V-79: follow-up status values — single source of truth for validation,
+ *  kept in sync with prisma `enum FollowUpStatus` (new | reviewed | contacted). */
+const FOLLOW_UP_STATUSES = ['new', 'reviewed', 'contacted'] as const;
+
 interface FeedbackQuery {
   page?: number;
   limit?: number;
@@ -33,8 +37,9 @@ export class FeedbackService {
       if (query.maxRating) (where.rating as Record<string, unknown>).lte = query.maxRating;
     }
 
-    // Follow-up status filter
-    if (query.followUpStatus) {
+    // Follow-up status filter — guard against out-of-set values: filtering an
+    // enum column by an invalid value errors at the DB, so silently ignore it.
+    if (query.followUpStatus && (FOLLOW_UP_STATUSES as readonly string[]).includes(query.followUpStatus)) {
       where.followUpStatus = query.followUpStatus;
     }
 
@@ -149,14 +154,13 @@ export class FeedbackService {
       throw new NotFoundException('التقييم غير موجود');
     }
 
-    const validStatuses = ['new', 'reviewed', 'contacted'];
-    if (!validStatuses.includes(status)) {
+    if (!(FOLLOW_UP_STATUSES as readonly string[]).includes(status)) {
       throw new NotFoundException('حالة غير صالحة');
     }
 
     const updated = await db.invoiceFeedback.update({
       where: { id: feedbackId },
-      data: { followUpStatus: status },
+      data: { followUpStatus: status as (typeof FOLLOW_UP_STATUSES)[number] },
     });
 
     return updated;
