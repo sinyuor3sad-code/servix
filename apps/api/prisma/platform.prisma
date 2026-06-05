@@ -371,6 +371,13 @@ model PlanFeature {
 
 // ─────────────────── Plan Add-ons ───────────────────
 
+// V-79: VARCHAR → enum (in-place, defensive USING in the platform migration).
+enum BillingMode {
+  recurring
+  one_time
+  usage
+}
+
 model PlanAddon {
   id              String   @id @default(uuid()) @db.Uuid
   name            String   @db.VarChar(100)
@@ -379,7 +386,7 @@ model PlanAddon {
   description     String?  @db.Text
   priceMonthly    Decimal  @default(0) @map("price_monthly") @db.Decimal(10, 2)
   priceYearly     Decimal  @default(0) @map("price_yearly") @db.Decimal(10, 2)
-  billingMode     String   @default("recurring") @map("billing_mode") @db.VarChar(20) // recurring | one_time | usage
+  billingMode     BillingMode @default(recurring) @map("billing_mode") // recurring | one_time | usage
   featureId       String?  @map("feature_id") @db.Uuid
   limitBoost      Int?     @map("limit_boost")
   applicablePlans Json?    @map("applicable_plans") @db.JsonB
@@ -523,13 +530,18 @@ enum BackupStatus {
   pending
 }
 
+enum BackupInitiator {
+  auto
+  manual
+}
+
 model PlatformBackup {
   id         String       @id @default(uuid()) @db.Uuid
   tenantId   String       @map("tenant_id") @db.Uuid
   status     BackupStatus @default(pending)
   sizeBytes  BigInt?      @map("size_bytes")
   filePath   String?      @map("file_path") @db.VarChar(500)
-  initiator  String       @db.VarChar(50) // 'auto' | 'manual'
+  initiator  BackupInitiator // 'auto' | 'manual'
   error      String?      @db.Text
   startedAt  DateTime     @default(now()) @map("started_at") @db.Timestamptz()
   finishedAt DateTime?    @map("finished_at") @db.Timestamptz()
@@ -550,12 +562,28 @@ enum PlatformNotifStatus {
   scheduled
 }
 
+enum NotifChannel {
+  email
+  sms
+  push
+  whatsapp
+}
+
+enum NotifTarget {
+  all
+  basic
+  pro
+  enterprise
+  expiring
+  trial
+}
+
 model PlatformNotification {
   id         String              @id @default(uuid()) @db.Uuid
   title      String              @db.VarChar(200)
   body       String              @db.Text
-  channel    String              @db.VarChar(20) // email | sms | push | whatsapp
-  target     String              @db.VarChar(50) // all | basic | pro | enterprise | expiring | trial
+  channel    NotifChannel        // email | sms | push | whatsapp
+  target     NotifTarget         // all | basic | pro | enterprise | expiring | trial
   status     PlatformNotifStatus @default(draft)
   recipients Int                 @default(0)
   delivered  Int                 @default(0)

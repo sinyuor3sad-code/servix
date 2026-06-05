@@ -13,6 +13,9 @@ import { SmsService } from '../../shared/sms/sms.service';
 import { MailService } from '../../shared/mail/mail.service';
 import { createHash, randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
+// V-79: notification channel/target are now platform enums. dto values are
+// validated by @IsIn in CreateNotificationDto, so the cast is sound at runtime.
+import type { NotifChannel, NotifTarget } from '../../../generated/platform';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
 import { CacheService } from '../../shared/cache/cache.service';
 import { EventsGateway } from '../../shared/events/events.gateway';
@@ -1693,8 +1696,8 @@ export class AdminService {
       data: {
         title: dto.title,
         body: dto.body,
-        channel: dto.channel,
-        target: dto.target,
+        channel: dto.channel as NotifChannel,
+        target: dto.target as NotifTarget,
         status,
         recipients,
         delivered: dto.saveAsDraft ? 0 : recipients,
