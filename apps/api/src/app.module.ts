@@ -15,7 +15,7 @@ import { AiModule } from './shared/ai';
 import { CalendarModule } from './shared/calendar';
 import { JobsModule } from './shared/jobs';
 // Sentry is optionally loaded via instrument.ts
-import { JwtAuthGuard, SubscriptionWriteGuard, RateLimitGuard, TenantGuard } from './shared/guards';
+import { JwtAuthGuard, SubscriptionWriteGuard, RateLimitGuard, TenantGuard, PermissionGuard } from './shared/guards';
 import { TenantMiddleware } from './shared/middleware/tenant.middleware';
 import { AuthModule } from './core/auth/auth.module';
 import { TenantsModule } from './core/tenants/tenants.module';
@@ -109,6 +109,15 @@ import { winstonConfig } from './shared/logger/winston.config';
     {
       provide: APP_GUARD,
       useClass: SubscriptionWriteGuard,
+    },
+    // V-123a — PermissionGuard registered globally so @RequirePermission is
+    // enforced on every request without per-controller @UseGuards (the inert-
+    // guard trap that left @Roles dead on RolesController). Runs after
+    // JwtAuthGuard so request.user.roleId is populated. Dormant until routes
+    // declare @RequirePermission (V-123b): no metadata → pass-through.
+    {
+      provide: APP_GUARD,
+      useClass: PermissionGuard,
     },
     {
       provide: APP_INTERCEPTOR,
