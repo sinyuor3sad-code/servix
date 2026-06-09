@@ -21,8 +21,10 @@ interface CachedRolePerms {
   codes: string[];
 }
 
-/** Redis key namespace for the per-role permission set. */
-const ROLE_PERMS_CACHE_PREFIX = 'servix:rbac:role_perms:';
+/** Redis key namespace for the per-role permission set. Exported so cache
+ *  invalidation (RolesService.setRolePermissions/remove, V-123b) reuses the
+ *  exact key — a mismatch would silently serve stale permissions. */
+export const ROLE_PERMS_CACHE_PREFIX = 'servix:rbac:role_perms:';
 /** TTL mirrors tenant/settings caches (5 min). Bounds staleness of system roles
  *  whose permissions only change on re-seed at deploy time. Custom roles are
  *  invalidated explicitly when their permissions change (V-123b). */

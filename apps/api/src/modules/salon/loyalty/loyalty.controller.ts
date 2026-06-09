@@ -23,6 +23,7 @@ import { AdjustVisitsDto, RedeemVisitsDto } from './dto/adjust-visits.dto';
 import { UpdateLoyaltySettingsDto } from './dto/update-settings.dto';
 import { QueryTransactionsDto } from './dto/query-transactions.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('الولاء - Loyalty')
@@ -33,6 +34,7 @@ export class LoyaltyController {
   constructor(private readonly loyaltyService: LoyaltyService) {}
 
   @Get('settings')
+  @RequirePermission('loyalty.view')
   @ApiOperation({ summary: 'إعدادات الولاء', description: 'عرض إعدادات نظام الولاء' })
   @ApiResponse({ status: 200, description: 'تم جلب إعدادات الولاء بنجاح' })
   async getSettings(
@@ -49,6 +51,7 @@ export class LoyaltyController {
   }
 
   @Put('settings')
+  @RequirePermission('loyalty.adjust')
   @ApiOperation({ summary: 'تحديث إعدادات الولاء', description: 'تعديل إعدادات نظام الولاء' })
   @ApiResponse({ status: 200, description: 'تم تحديث إعدادات الولاء بنجاح' })
   async updateSettings(
@@ -67,6 +70,7 @@ export class LoyaltyController {
   }
 
   @Get('clients/:id')
+  @RequirePermission('loyalty.view')
   @ApiOperation({ summary: 'نقاط ولاء العميل', description: 'عرض رصيد ومعاملات ولاء العميل' })
   @ApiParam({ name: 'id', description: 'معرّف العميل' })
   @ApiResponse({ status: 200, description: 'تم جلب نقاط الولاء بنجاح' })
@@ -87,6 +91,7 @@ export class LoyaltyController {
   }
 
   @Post('clients/:id/adjust')
+  @RequirePermission('loyalty.adjust')
   @ApiOperation({ summary: 'تعديل النقاط', description: 'تعديل يدوي لنقاط ولاء العميل' })
   @ApiParam({ name: 'id', description: 'معرّف العميل' })
   @ApiResponse({ status: 201, description: 'تم تعديل النقاط بنجاح' })
@@ -110,6 +115,7 @@ export class LoyaltyController {
   }
 
   @Get('transactions')
+  @RequirePermission('loyalty.view')
   @ApiOperation({ summary: 'سجل معاملات الولاء', description: 'عرض جميع معاملات الولاء مع التصفية' })
   @ApiResponse({ status: 200, description: 'تم جلب سجل المعاملات بنجاح' })
   async getTransactions(
@@ -128,6 +134,7 @@ export class LoyaltyController {
   }
 
   @Post('clients/:id/adjust-visits')
+  @RequirePermission('loyalty.adjust')
   @ApiOperation({ summary: 'تعديل الزيارات', description: 'تعديل يدوي لرصيد زيارات العميل' })
   @ApiParam({ name: 'id', description: 'معرّف العميل' })
   @ApiResponse({ status: 201, description: 'تم تعديل الزيارات بنجاح' })
@@ -147,6 +154,7 @@ export class LoyaltyController {
   }
 
   @Post('clients/:id/redeem-visits')
+  @RequirePermission('loyalty.adjust')
   @ApiOperation({ summary: 'استبدال زيارات', description: 'استبدال دورة زيارات مقابل خصم' })
   @ApiParam({ name: 'id', description: 'معرّف العميل' })
   @ApiResponse({ status: 200, description: 'تم استبدال الزيارات بنجاح' })

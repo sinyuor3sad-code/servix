@@ -26,6 +26,7 @@ import { QueryAppointmentsDto } from './dto/query-appointments.dto';
 import { AvailableSlotsDto } from './dto/available-slots.dto';
 import { CalendarQueryDto } from './dto/calendar-query.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('المواعيد - Appointments')
@@ -36,6 +37,7 @@ export class AppointmentsController {
   constructor(private readonly appointmentsService: AppointmentsService) {}
 
   @Get()
+  @RequirePermission('appointments.view')
   @ApiOperation({ summary: 'قائمة المواعيد', description: 'عرض جميع المواعيد مع التصفية والترحيل' })
   @ApiResponse({ status: 200, description: 'تم جلب قائمة المواعيد بنجاح' })
   async findAll(
@@ -54,6 +56,7 @@ export class AppointmentsController {
   }
 
   @Post()
+  @RequirePermission('appointments.create')
   @ApiOperation({ summary: 'إنشاء موعد', description: 'حجز موعد جديد مع خدمات' })
   @ApiResponse({ status: 201, description: 'تم إنشاء الموعد بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -74,6 +77,7 @@ export class AppointmentsController {
   }
 
   @Get('today')
+  @RequirePermission('appointments.view')
   @ApiOperation({ summary: 'مواعيد اليوم', description: 'عرض مواعيد اليوم الحالي' })
   @ApiResponse({ status: 200, description: 'تم جلب مواعيد اليوم بنجاح' })
   async getToday(
@@ -90,6 +94,7 @@ export class AppointmentsController {
   }
 
   @Get('upcoming')
+  @RequirePermission('appointments.view')
   @ApiOperation({ summary: 'المواعيد القادمة', description: 'عرض المواعيد خلال الأيام السبعة القادمة' })
   @ApiResponse({ status: 200, description: 'تم جلب المواعيد القادمة بنجاح' })
   async getUpcoming(
@@ -106,6 +111,7 @@ export class AppointmentsController {
   }
 
   @Get('available-slots')
+  @RequirePermission('appointments.view')
   @ApiOperation({
     summary: 'الفترات المتاحة',
     description: 'حساب الفترات الزمنية المتاحة لتاريخ وخدمات محددة',
@@ -127,6 +133,7 @@ export class AppointmentsController {
   }
 
   @Get('calendar')
+  @RequirePermission('appointments.view')
   @ApiOperation({ summary: 'عرض التقويم', description: 'عرض المواعيد مجمّعة حسب التاريخ' })
   @ApiResponse({ status: 200, description: 'تم جلب بيانات التقويم بنجاح' })
   async getCalendar(
@@ -145,6 +152,7 @@ export class AppointmentsController {
   }
 
   @Get(':id')
+  @RequirePermission('appointments.view')
   @ApiOperation({ summary: 'تفاصيل الموعد', description: 'عرض بيانات موعد محدد مع جميع العلاقات' })
   @ApiParam({ name: 'id', description: 'معرّف الموعد' })
   @ApiResponse({ status: 200, description: 'تم جلب بيانات الموعد بنجاح' })
@@ -165,6 +173,7 @@ export class AppointmentsController {
   }
 
   @Put(':id')
+  @RequirePermission('appointments.update')
   @ApiOperation({ summary: 'تحديث الموعد', description: 'تعديل بيانات موعد (معلّق أو مؤكد فقط)' })
   @ApiParam({ name: 'id', description: 'معرّف الموعد' })
   @ApiResponse({ status: 200, description: 'تم تحديث الموعد بنجاح' })
@@ -188,6 +197,7 @@ export class AppointmentsController {
   }
 
   @Put(':id/status')
+  @RequirePermission('appointments.status')
   @ApiOperation({
     summary: 'تغيير حالة الموعد',
     description: 'تغيير حالة الموعد (تأكيد، بدء، إكمال، إلغاء، لم يحضر)',
@@ -214,6 +224,7 @@ export class AppointmentsController {
   }
 
   @Delete(':id')
+  @RequirePermission('appointments.delete')
   @ApiOperation({ summary: 'إلغاء الموعد', description: 'إلغاء موعد محدد' })
   @ApiParam({ name: 'id', description: 'معرّف الموعد' })
   @ApiResponse({ status: 200, description: 'تم إلغاء الموعد بنجاح' })

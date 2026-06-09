@@ -23,6 +23,7 @@ import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
 import { ValidateCouponDto } from './dto/validate-coupon.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('الكوبونات - Coupons')
@@ -33,6 +34,7 @@ export class CouponsController {
   constructor(private readonly couponsService: CouponsService) {}
 
   @Get()
+  @RequirePermission('coupons.view')
   @ApiOperation({ summary: 'قائمة الكوبونات', description: 'عرض جميع الكوبونات' })
   @ApiResponse({ status: 200, description: 'تم جلب قائمة الكوبونات بنجاح' })
   async findAll(
@@ -52,6 +54,7 @@ export class CouponsController {
   }
 
   @Post()
+  @RequirePermission('coupons.create')
   @ApiOperation({ summary: 'إنشاء كوبون', description: 'إنشاء كوبون جديد' })
   @ApiResponse({ status: 201, description: 'تم إنشاء الكوبون بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -74,6 +77,7 @@ export class CouponsController {
   // ═══ Named POST routes MUST come BEFORE :id routes ═══
 
   @Post('validate')
+  @RequirePermission('coupons.view')
   @ApiOperation({ summary: 'التحقق من كوبون', description: 'التحقق من صلاحية كود كوبون' })
   @ApiResponse({ status: 200, description: 'تم التحقق من الكوبون' })
   async validate(
@@ -92,6 +96,7 @@ export class CouponsController {
   }
 
   @Post('redeem')
+  @RequirePermission('coupons.view')
   @ApiOperation({ summary: 'استخدام كوبون', description: 'التحقق من الكوبون وتسجيل استخدامه' })
   @ApiResponse({ status: 200, description: 'تم استخدام الكوبون' })
   async redeem(
@@ -110,6 +115,7 @@ export class CouponsController {
   }
 
   @Post('cleanup')
+  @RequirePermission('coupons.delete')
   @ApiOperation({ summary: 'تنظيف الكوبونات', description: 'حذف الكوبونات المنتهية تلقائياً (بعد 24 ساعة)' })
   @ApiResponse({ status: 200, description: 'تم التنظيف' })
   async cleanup(
@@ -126,6 +132,7 @@ export class CouponsController {
   // ═══ Parameterized :id routes AFTER named routes ═══
 
   @Get(':id')
+  @RequirePermission('coupons.view')
   @ApiOperation({ summary: 'تفاصيل الكوبون', description: 'عرض بيانات كوبون محدد' })
   @ApiParam({ name: 'id', description: 'معرّف الكوبون' })
   @ApiResponse({ status: 200, description: 'تم جلب بيانات الكوبون بنجاح' })
@@ -146,6 +153,7 @@ export class CouponsController {
   }
 
   @Put(':id')
+  @RequirePermission('coupons.update')
   @ApiOperation({ summary: 'تحديث الكوبون', description: 'تعديل بيانات كوبون محدد' })
   @ApiParam({ name: 'id', description: 'معرّف الكوبون' })
   @ApiResponse({ status: 200, description: 'تم تحديث الكوبون بنجاح' })
@@ -169,6 +177,7 @@ export class CouponsController {
   }
 
   @Delete(':id')
+  @RequirePermission('coupons.delete')
   @ApiOperation({ summary: 'حذف الكوبون', description: 'حذف كوبون محدد' })
   @ApiParam({ name: 'id', description: 'معرّف الكوبون' })
   @ApiResponse({ status: 200, description: 'تم حذف الكوبون بنجاح' })

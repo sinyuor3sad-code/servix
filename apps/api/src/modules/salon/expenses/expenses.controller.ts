@@ -22,6 +22,7 @@ import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { QueryExpensesDto } from './dto/query-expenses.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('Expenses')
@@ -32,6 +33,7 @@ export class ExpensesController {
   constructor(private readonly expensesService: ExpensesService) {}
 
   @Get()
+  @RequirePermission('expenses.view')
   @ApiOperation({ summary: 'عرض جميع المصروفات' })
   @ApiResponse({ status: 200, description: 'تم جلب المصروفات بنجاح' })
   async findAll(
@@ -45,6 +47,7 @@ export class ExpensesController {
   }
 
   @Post()
+  @RequirePermission('expenses.create')
   @ApiOperation({ summary: 'إنشاء مصروف جديد' })
   @ApiResponse({ status: 201, description: 'تم إنشاء المصروف بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -60,6 +63,7 @@ export class ExpensesController {
   }
 
   @Get(':id')
+  @RequirePermission('expenses.view')
   @ApiOperation({ summary: 'عرض تفاصيل مصروف' })
   @ApiResponse({ status: 200, description: 'تم جلب تفاصيل المصروف بنجاح' })
   @ApiResponse({ status: 404, description: 'المصروف غير موجود' })
@@ -74,6 +78,7 @@ export class ExpensesController {
   }
 
   @Put(':id')
+  @RequirePermission('expenses.update')
   @ApiOperation({ summary: 'تحديث مصروف' })
   @ApiResponse({ status: 200, description: 'تم تحديث المصروف بنجاح' })
   @ApiResponse({ status: 404, description: 'المصروف غير موجود' })
@@ -90,6 +95,7 @@ export class ExpensesController {
   }
 
   @Delete(':id')
+  @RequirePermission('expenses.delete')
   @ApiOperation({ summary: 'حذف مصروف' })
   @ApiResponse({ status: 200, description: 'تم حذف المصروف بنجاح' })
   @ApiResponse({ status: 404, description: 'المصروف غير موجود' })

@@ -11,6 +11,7 @@ import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { SalonInfoService } from './salon-info.service';
 import { UpdateSalonDto } from './dto/update-salon.dto';
 import { UpdateBrandingDto } from './dto/update-branding.dto';
@@ -40,6 +41,7 @@ export class SalonInfoController {
   }
 
   @Put()
+  @RequirePermission('settings.update')
   @ApiOperation({ summary: 'تحديث معلومات الصالون' })
   @ApiResponse({ status: 200, description: 'تم تحديث معلومات الصالون بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -64,6 +66,7 @@ export class SalonInfoController {
   }
 
   @Put('branding')
+  @RequirePermission('settings.branding')
   @ApiOperation({ summary: 'تحديث الهوية البصرية' })
   @ApiResponse({ status: 200, description: 'تم تحديث الهوية البصرية بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -94,6 +97,7 @@ export class SalonInfoController {
   }
 
   @Put('working-hours')
+  @RequirePermission('settings.update')
   @ApiOperation({ summary: 'تحديث ساعات العمل' })
   @ApiResponse({ status: 200, description: 'تم تحديث ساعات العمل بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -108,6 +112,7 @@ export class SalonInfoController {
   }
 
   @Post('logo')
+  @RequirePermission('settings.branding')
   @ApiOperation({ summary: 'رفع شعار الصالون' })
   @ApiConsumes('multipart/form-data')
   @ApiResponse({ status: 201, description: 'تم رفع الشعار بنجاح' })
@@ -143,6 +148,7 @@ export class SalonInfoController {
   }
 
   @Put('theme')
+  @RequirePermission('settings.branding')
   @ApiOperation({ summary: 'تحديث إعدادات ثيم المنيو الذكي' })
   @ApiResponse({ status: 200, description: 'تم تحديث الثيم بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -157,6 +163,7 @@ export class SalonInfoController {
   }
 
   @Post('cover')
+  @RequirePermission('settings.branding')
   @ApiOperation({ summary: 'رفع صورة غلاف الصالون' })
   @ApiConsumes('multipart/form-data')
   @ApiResponse({ status: 201, description: 'تم رفع صورة الغلاف بنجاح' })

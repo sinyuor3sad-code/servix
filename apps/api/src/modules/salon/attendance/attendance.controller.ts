@@ -20,6 +20,7 @@ import { AttendanceService } from './attendance.service';
 import { CheckInDto } from './dto/check-in.dto';
 import { QueryAttendanceDto } from './dto/query-attendance.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('Attendance')
@@ -30,6 +31,7 @@ export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 
   @Get('today')
+  @RequirePermission('attendance.view')
   @ApiOperation({ summary: 'عرض حضور اليوم' })
   @ApiResponse({ status: 200, description: 'تم جلب حضور اليوم بنجاح' })
   async getToday(
@@ -41,6 +43,7 @@ export class AttendanceController {
   }
 
   @Post('check-in')
+  @RequirePermission('attendance.manage')
   @ApiOperation({ summary: 'تسجيل حضور موظف' })
   @ApiResponse({ status: 201, description: 'تم تسجيل الحضور بنجاح' })
   @ApiResponse({ status: 400, description: 'الموظف سجّل حضوره مسبقاً' })
@@ -57,6 +60,7 @@ export class AttendanceController {
   }
 
   @Put('check-out')
+  @RequirePermission('attendance.manage')
   @ApiOperation({ summary: 'تسجيل انصراف موظف' })
   @ApiResponse({ status: 200, description: 'تم تسجيل الانصراف بنجاح' })
   @ApiResponse({ status: 400, description: 'الموظف لم يسجّل حضوره' })
@@ -72,6 +76,7 @@ export class AttendanceController {
   }
 
   @Put('toggle-break')
+  @RequirePermission('attendance.manage')
   @ApiOperation({ summary: 'تبديل حالة الاستراحة' })
   @ApiResponse({ status: 200, description: 'تم تحديث حالة الاستراحة' })
   @ApiResponse({ status: 400, description: 'الموظف لم يسجّل حضوره أو أنهى دوامه' })
@@ -87,6 +92,7 @@ export class AttendanceController {
   }
 
   @Get('employee/:id')
+  @RequirePermission('attendance.view')
   @ApiOperation({ summary: 'عرض سجل حضور موظف' })
   @ApiResponse({ status: 200, description: 'تم جلب سجل الحضور بنجاح' })
   @ApiResponse({ status: 404, description: 'الموظف غير موجود' })
@@ -103,6 +109,7 @@ export class AttendanceController {
   }
 
   @Get()
+  @RequirePermission('attendance.view')
   @ApiOperation({ summary: 'عرض جميع سجلات الحضور' })
   @ApiResponse({ status: 200, description: 'تم جلب سجلات الحضور بنجاح' })
   async findAll(

@@ -9,6 +9,8 @@ import type { Role, Permission, RolePermission } from '../../shared/database';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { SetPermissionsDto } from './dto/set-permissions.dto';
+import { CacheService } from '../../shared/cache/cache.service';
+import { ROLE_PERMS_CACHE_PREFIX } from '../../shared/guards/permission.guard';
 
 export type RoleWithPermissions = Role & {
   rolePermissions: (RolePermission & { permission: Permission })[];
@@ -21,7 +23,10 @@ export interface GroupedPermissions {
 
 @Injectable()
 export class RolesService {
-  constructor(private readonly prisma: PlatformPrismaClient) {}
+  constructor(
+    private readonly prisma: PlatformPrismaClient,
+    private readonly cache: CacheService,
+  ) {}
 
   async findAll(): Promise<Role[]> {
     return this.prisma.role.findMany({
@@ -115,9 +120,14 @@ export class RolesService {
       );
     }
 
-    return this.prisma.role.delete({
+    const deleted = await this.prisma.role.delete({
       where: { id },
     });
+
+    // V-123b — bust the PermissionGuard cache for the removed role.
+    await this.cache.deleteKey(`${ROLE_PERMS_CACHE_PREFIX}${id}`);
+
+    return deleted;
   }
 
   async getPermissions(): Promise<GroupedPermissions[]> {
@@ -195,6 +205,11 @@ export class RolesService {
         })),
       });
     });
+
+    // V-123b — bust the PermissionGuard cache so the updated permission set
+    // takes effect immediately (system roles are blocked above; this path is
+    // for custom roles).
+    await this.cache.deleteKey(`${ROLE_PERMS_CACHE_PREFIX}${roleId}`);
 
     return this.getRolePermissions(roleId);
   }

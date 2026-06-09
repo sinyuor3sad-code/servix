@@ -25,6 +25,7 @@ import { SetServicesDto } from './dto/set-services.dto';
 import { QueryEmployeesDto } from './dto/query-employees.dto';
 import { CreateEmployeeAccountDto } from './dto/create-employee-account.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('Employees')
@@ -35,6 +36,7 @@ export class EmployeesController {
   constructor(private readonly employeesService: EmployeesService) {}
 
   @Get()
+  @RequirePermission('employees.view')
   @ApiOperation({ summary: 'عرض جميع الموظفين' })
   @ApiResponse({ status: 200, description: 'تم جلب الموظفين بنجاح' })
   async findAll(
@@ -48,6 +50,7 @@ export class EmployeesController {
   }
 
   @Post()
+  @RequirePermission('employees.create')
   @ApiOperation({ summary: 'إضافة موظف جديد' })
   @ApiResponse({ status: 201, description: 'تم إضافة الموظف بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -63,6 +66,7 @@ export class EmployeesController {
   }
 
   @Get(':id')
+  @RequirePermission('employees.view')
   @ApiOperation({ summary: 'عرض تفاصيل موظف' })
   @ApiResponse({ status: 200, description: 'تم جلب تفاصيل الموظف بنجاح' })
   @ApiResponse({ status: 404, description: 'الموظف غير موجود' })
@@ -77,6 +81,7 @@ export class EmployeesController {
   }
 
   @Put(':id')
+  @RequirePermission('employees.update')
   @ApiOperation({ summary: 'تحديث بيانات موظف' })
   @ApiResponse({ status: 200, description: 'تم تحديث بيانات الموظف بنجاح' })
   @ApiResponse({ status: 404, description: 'الموظف غير موجود' })
@@ -94,6 +99,7 @@ export class EmployeesController {
   }
 
   @Delete(':id')
+  @RequirePermission('employees.delete')
   @ApiOperation({ summary: 'حذف موظف نهائياً' })
   @ApiResponse({ status: 200, description: 'تم حذف الموظف بنجاح' })
   @ApiResponse({ status: 404, description: 'الموظف غير موجود' })
@@ -109,6 +115,7 @@ export class EmployeesController {
   }
 
   @Get(':id/schedule')
+  @RequirePermission('employees.view')
   @ApiOperation({ summary: 'عرض جدول عمل موظف' })
   @ApiResponse({ status: 200, description: 'تم جلب جدول العمل بنجاح' })
   @ApiResponse({ status: 404, description: 'الموظف غير موجود' })
@@ -123,6 +130,7 @@ export class EmployeesController {
   }
 
   @Put(':id/schedule')
+  @RequirePermission('employees.schedule')
   @ApiOperation({ summary: 'تعيين جدول عمل موظف' })
   @ApiResponse({ status: 200, description: 'تم تحديث جدول العمل بنجاح' })
   @ApiResponse({ status: 404, description: 'الموظف غير موجود' })
@@ -139,6 +147,7 @@ export class EmployeesController {
   }
 
   @Get(':id/services')
+  @RequirePermission('employees.view')
   @ApiOperation({ summary: 'عرض الخدمات المخصصة للموظف' })
   @ApiResponse({
     status: 200,
@@ -156,6 +165,7 @@ export class EmployeesController {
   }
 
   @Put(':id/services')
+  @RequirePermission('employees.update')
   @ApiOperation({ summary: 'تعيين الخدمات للموظف' })
   @ApiResponse({
     status: 200,
@@ -175,6 +185,7 @@ export class EmployeesController {
   }
 
   @Post(':id/account')
+  @RequirePermission('settings.users')
   @ApiOperation({ summary: 'إنشاء حساب دخول لموظف (كاشير/مديرة/إلخ)' })
   @ApiResponse({ status: 201, description: 'تم إنشاء حساب الدخول بنجاح' })
   @ApiResponse({ status: 404, description: 'الموظف غير موجود' })

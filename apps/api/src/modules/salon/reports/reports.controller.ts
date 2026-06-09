@@ -17,6 +17,7 @@ import { ReportsService } from './reports.service';
 import { ReportExportService } from './report-export.service';
 import { ReportQueryDto } from './dto/report-query.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('Reports')
@@ -30,6 +31,7 @@ export class ReportsController {
   ) {}
 
   @Get('dashboard')
+  @RequirePermission('reports.view')
   @ApiOperation({ summary: 'ملخص لوحة التحكم' })
   @ApiResponse({ status: 200, description: 'تم جلب ملخص لوحة التحكم بنجاح' })
   async getDashboard(
@@ -41,6 +43,7 @@ export class ReportsController {
   }
 
   @Get('revenue')
+  @RequirePermission('reports.view')
   @ApiOperation({ summary: 'تقرير الإيرادات' })
   @ApiResponse({ status: 200, description: 'تم جلب تقرير الإيرادات بنجاح' })
   async getRevenue(
@@ -54,6 +57,7 @@ export class ReportsController {
   }
 
   @Get('appointments')
+  @RequirePermission('reports.view')
   @ApiOperation({ summary: 'تقرير المواعيد' })
   @ApiResponse({ status: 200, description: 'تم جلب تقرير المواعيد بنجاح' })
   async getAppointments(
@@ -67,6 +71,7 @@ export class ReportsController {
   }
 
   @Get('clients')
+  @RequirePermission('reports.view')
   @ApiOperation({ summary: 'تقرير العملاء' })
   @ApiResponse({ status: 200, description: 'تم جلب تقرير العملاء بنجاح' })
   async getClients(
@@ -80,6 +85,7 @@ export class ReportsController {
   }
 
   @Get('employees')
+  @RequirePermission('reports.view')
   @ApiOperation({ summary: 'تقرير الموظفين' })
   @ApiResponse({ status: 200, description: 'تم جلب تقرير الموظفين بنجاح' })
   async getEmployees(
@@ -93,6 +99,7 @@ export class ReportsController {
   }
 
   @Get('services')
+  @RequirePermission('reports.view')
   @ApiOperation({ summary: 'تقرير الخدمات' })
   @ApiResponse({ status: 200, description: 'تم جلب تقرير الخدمات بنجاح' })
   async getServices(
@@ -106,6 +113,7 @@ export class ReportsController {
   }
 
   @Get('expenses')
+  @RequirePermission('reports.view')
   @ApiOperation({ summary: 'تقرير المصروفات' })
   @ApiResponse({ status: 200, description: 'تم جلب تقرير المصروفات بنجاح' })
   async getExpenses(
@@ -123,6 +131,7 @@ export class ReportsController {
      ════════════════════════════════════════ */
 
   @Get('revenue/export/pdf')
+  @RequirePermission('reports.export')
   @ApiOperation({ summary: 'تصدير تقرير الإيرادات PDF' })
   async exportRevenuePdf(
     @Req() req: AuthenticatedRequest,
@@ -143,6 +152,7 @@ export class ReportsController {
   }
 
   @Get('revenue/export/csv')
+  @RequirePermission('reports.export')
   @ApiOperation({ summary: 'تصدير تقرير الإيرادات Excel/CSV' })
   async exportRevenueCsv(
     @Req() req: AuthenticatedRequest,
@@ -158,6 +168,7 @@ export class ReportsController {
   }
 
   @Get('employees/export/pdf')
+  @RequirePermission('reports.export')
   @ApiOperation({ summary: 'تصدير تقرير الموظفين PDF' })
   async exportEmployeesPdf(
     @Req() req: AuthenticatedRequest,
@@ -178,6 +189,7 @@ export class ReportsController {
   }
 
   @Get('employees/export/csv')
+  @RequirePermission('reports.export')
   @ApiOperation({ summary: 'تصدير تقرير الموظفين Excel/CSV' })
   async exportEmployeesCsv(
     @Req() req: AuthenticatedRequest,
@@ -193,6 +205,7 @@ export class ReportsController {
   }
 
   @Get('services/export/csv')
+  @RequirePermission('reports.export')
   @ApiOperation({ summary: 'تصدير تقرير الخدمات Excel/CSV' })
   async exportServicesCsv(
     @Req() req: AuthenticatedRequest,
@@ -208,6 +221,7 @@ export class ReportsController {
   }
 
   @Get('expenses/export/csv')
+  @RequirePermission('reports.export')
   @ApiOperation({ summary: 'تصدير تقرير المصروفات Excel/CSV' })
   async exportExpensesCsv(
     @Req() req: AuthenticatedRequest,
@@ -223,6 +237,7 @@ export class ReportsController {
   }
 
   @Get('clients/export/csv')
+  @RequirePermission('reports.export')
   @ApiOperation({ summary: 'تصدير تقرير العملاء Excel/CSV' })
   async exportClientsCsv(
     @Req() req: AuthenticatedRequest,
