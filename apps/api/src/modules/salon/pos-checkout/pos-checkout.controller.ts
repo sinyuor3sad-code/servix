@@ -1,6 +1,7 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 import { PosCheckoutDto } from './dto/pos-checkout.dto';
 import { ManagerOverrideRequestDto } from './dto/manager-override.dto';
@@ -18,6 +19,7 @@ export class PosCheckoutController {
   ) {}
 
   @Post('manager-override')
+  @RequirePermission('invoices.discount')
   @ApiOperation({
     summary: 'Manager approval for cashier discount override',
     description: 'Verifies a manager/owner password and returns a 5-minute JWT bound to the requested discount %. The token is then submitted with /pos/checkout to authorise discounts above the cashier role limit.',
@@ -38,6 +40,7 @@ export class PosCheckoutController {
   }
 
   @Post('checkout')
+  @RequirePermission('invoices.create')
   @ApiOperation({
     summary: 'Atomic POS checkout',
     description: 'Creates a paid POS invoice, payments, discounts, coupon redemption, and receipt snapshot atomically.',

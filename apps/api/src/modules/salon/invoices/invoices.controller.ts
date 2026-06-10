@@ -32,6 +32,7 @@ import { SendInvoiceDto } from './dto/send-invoice.dto';
 import { RefundInvoiceDto } from './dto/refund-invoice.dto';
 import { UpdateInvoiceClientNameDto } from './dto/update-client-name.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('الفواتير - Invoices')
@@ -42,6 +43,7 @@ export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
 
   @Get()
+  @RequirePermission('invoices.view')
   @ApiOperation({ summary: 'قائمة الفواتير', description: 'عرض جميع الفواتير مع التصفية والترحيل' })
   @ApiResponse({ status: 200, description: 'تم جلب قائمة الفواتير بنجاح' })
   async findAll(
@@ -60,6 +62,7 @@ export class InvoicesController {
   }
 
   @Post()
+  @RequirePermission('invoices.create')
   @ApiOperation({ summary: 'إنشاء فاتورة', description: 'إنشاء فاتورة جديدة' })
   @ApiResponse({ status: 201, description: 'تم إنشاء الفاتورة بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -80,6 +83,7 @@ export class InvoicesController {
   }
 
   @Get(':id')
+  @RequirePermission('invoices.view')
   @ApiOperation({ summary: 'تفاصيل الفاتورة', description: 'عرض بيانات فاتورة محددة' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 200, description: 'تم جلب بيانات الفاتورة بنجاح' })
@@ -100,6 +104,7 @@ export class InvoicesController {
   }
 
   @Put(':id')
+  @RequirePermission('invoices.update')
   @ApiOperation({ summary: 'تحديث الفاتورة', description: 'تعديل فاتورة مسودة فقط' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 200, description: 'تم تحديث الفاتورة بنجاح' })
@@ -123,6 +128,7 @@ export class InvoicesController {
   }
 
   @Post(':id/pay')
+  @RequirePermission('payments.create')
   @ApiOperation({ summary: 'تسجيل دفعة', description: 'تسجيل دفعة على الفاتورة' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 201, description: 'تم تسجيل الدفعة بنجاح' })
@@ -147,6 +153,7 @@ export class InvoicesController {
   }
 
   @Put(':id/void')
+  @RequirePermission('invoices.void')
   @ApiOperation({ summary: 'إلغاء الفاتورة', description: 'إلغاء فاتورة' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 200, description: 'تم إلغاء الفاتورة بنجاح' })
@@ -168,6 +175,7 @@ export class InvoicesController {
   }
 
   @Post(':id/refund')
+  @RequirePermission('payments.refund')
   @ApiOperation({ summary: 'استرداد فاتورة', description: 'استرداد فاتورة مدفوعة بالكامل مع عكس إحصائيات العميل' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 201, description: 'تم استرداد الفاتورة بنجاح' })
@@ -192,6 +200,7 @@ export class InvoicesController {
   }
 
   @Post(':id/discount')
+  @RequirePermission('invoices.discount')
   @ApiOperation({ summary: 'إضافة خصم', description: 'إضافة خصم على الفاتورة' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 201, description: 'تم إضافة الخصم بنجاح' })
@@ -215,6 +224,7 @@ export class InvoicesController {
   }
 
   @Post(':id/coupon')
+  @RequirePermission('invoices.discount')
   @ApiOperation({ summary: 'تطبيق كوبون', description: 'تطبيق كود كوبون على الفاتورة' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 201, description: 'تم تطبيق الكوبون بنجاح' })
@@ -238,6 +248,7 @@ export class InvoicesController {
   }
 
   @Get(':id/pdf')
+  @RequirePermission('invoices.view')
   @ApiOperation({ summary: 'تحميل الفاتورة PDF', description: 'إنشاء وتحميل الفاتورة بصيغة PDF' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 200, description: 'ملف PDF' })
@@ -263,6 +274,7 @@ export class InvoicesController {
   }
 
   @Post(':id/send')
+  @RequirePermission('invoices.view')
   @ApiOperation({ summary: 'إرسال الفاتورة', description: 'إرسال الفاتورة عبر واتساب أو البريد أو الرسائل النصية' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 200, description: 'تم الإرسال بنجاح' })
@@ -297,6 +309,7 @@ export class InvoicesController {
      ════════════════════════════════════════ */
 
   @Post(':id/generate-token')
+  @RequirePermission('invoices.view')
   @ApiOperation({ summary: 'توليد رابط عام', description: 'توليد أو إرجاع رابط عام للفاتورة' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 200, description: 'تم توليد الرابط' })
@@ -313,6 +326,7 @@ export class InvoicesController {
   }
 
   @Delete(':id/revoke-token')
+  @RequirePermission('invoices.view')
   @ApiOperation({ summary: 'تعطيل الرابط العام', description: 'تعطيل الرابط العام للفاتورة' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 200, description: 'تم تعطيل الرابط' })
@@ -329,6 +343,7 @@ export class InvoicesController {
   }
 
   @Patch(':id/client-name')
+  @RequirePermission('invoices.update')
   @ApiOperation({ summary: 'تحديث اسم العميل', description: 'تحديث اسم عميل walk-in/مجهول مرتبط بفاتورة كاشير' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 200, description: 'تم تحديث الاسم بنجاح' })
@@ -348,6 +363,7 @@ export class InvoicesController {
   }
 
   @Post(':id/regenerate-token')
+  @RequirePermission('invoices.view')
   @ApiOperation({ summary: 'إعادة توليد الرابط', description: 'إعادة توليد رابط عام جديد (القديم يبطل)' })
   @ApiParam({ name: 'id', description: 'معرّف الفاتورة' })
   @ApiResponse({ status: 200, description: 'تم إعادة التوليد' })

@@ -24,6 +24,7 @@ import { OpenShiftDto } from './dto/open-shift.dto';
 import { CloseShiftDto } from './dto/close-shift.dto';
 import { CreateHeldBillDto } from './dto/create-held-bill.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('POS Shifts')
@@ -39,6 +40,7 @@ export class PosShiftsController {
   // ─── Held bills (must come before :id route) ───
 
   @Get('held-bills')
+  @RequirePermission('invoices.view')
   @ApiOperation({ summary: 'الفواتير المعلّقة للوردية الحالية' })
   @ApiResponse({ status: 200, description: 'قائمة الفواتير المعلّقة' })
   async listHeldBills(@Req() req: AuthenticatedRequest) {
@@ -47,6 +49,7 @@ export class PosShiftsController {
 
   @Post('held-bills')
   @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('invoices.create')
   @ApiOperation({ summary: 'تعليق فاتورة' })
   @ApiResponse({ status: 201, description: 'تم تعليق الفاتورة' })
   @ApiResponse({ status: 400, description: 'وردية مغلقة أو سلة فارغة' })
@@ -59,6 +62,7 @@ export class PosShiftsController {
 
   @Delete('held-bills/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission('invoices.update')
   @ApiOperation({ summary: 'حذف فاتورة معلّقة' })
   @ApiResponse({ status: 204, description: 'تم الحذف' })
   @ApiResponse({ status: 404, description: 'الفاتورة المعلّقة غير موجودة' })
@@ -70,6 +74,7 @@ export class PosShiftsController {
   }
 
   @Get('current')
+  @RequirePermission('payments.view')
   @ApiOperation({ summary: 'جلب الوردية المفتوحة الحالية' })
   @ApiResponse({ status: 200, description: 'الوردية المفتوحة' })
   @ApiResponse({ status: 404, description: 'لا توجد وردية مفتوحة' })
@@ -83,6 +88,7 @@ export class PosShiftsController {
 
   @Post('open')
   @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('payments.create')
   @ApiOperation({ summary: 'فتح وردية جديدة' })
   @ApiResponse({ status: 201, description: 'تم فتح الوردية بنجاح' })
   @ApiResponse({ status: 409, description: 'يوجد وردية مفتوحة بالفعل' })
@@ -95,6 +101,7 @@ export class PosShiftsController {
 
   @Post('close')
   @HttpCode(HttpStatus.OK)
+  @RequirePermission('payments.create')
   @ApiOperation({ summary: 'إغلاق الوردية الحالية' })
   @ApiResponse({ status: 200, description: 'تم إغلاق الوردية بنجاح' })
   @ApiResponse({ status: 404, description: 'لا توجد وردية مفتوحة' })
@@ -106,6 +113,7 @@ export class PosShiftsController {
   }
 
   @Get(':id/report')
+  @RequirePermission('payments.view')
   @ApiOperation({ summary: 'تقرير وردية مفصل (Z-Report)' })
   @ApiResponse({ status: 200, description: 'تقرير الوردية' })
   @ApiResponse({ status: 404, description: 'الوردية غير موجودة' })

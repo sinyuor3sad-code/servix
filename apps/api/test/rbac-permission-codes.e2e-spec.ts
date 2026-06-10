@@ -11,6 +11,10 @@ import { LoyaltyController } from '../src/modules/salon/loyalty/loyalty.controll
 import { AttendanceController } from '../src/modules/salon/attendance/attendance.controller';
 import { SettingsController } from '../src/modules/salon/settings/settings.controller';
 import { SalonInfoController } from '../src/modules/salon/salon-info/salon-info.controller';
+import { InvoicesController } from '../src/modules/salon/invoices/invoices.controller';
+import { PosCheckoutController } from '../src/modules/salon/pos-checkout/pos-checkout.controller';
+import { PosShiftsController } from '../src/modules/salon/pos-shifts/pos-shifts.controller';
+import { DebtsController } from '../src/modules/salon/debts/debts.controller';
 
 /**
  * V-123b — per-route guard: every @RequirePermission code applied to a wired
@@ -41,6 +45,8 @@ const WIRED_CONTROLLERS = [
   EmployeesController, ServicesController, ClientsController, AppointmentsController,
   ReportsController, CouponsController, ExpensesController, LoyaltyController,
   AttendanceController, SettingsController, SalonInfoController,
+  // V-123c — money controllers (invoices/pos/pos-shifts/debts)
+  InvoicesController, PosCheckoutController, PosShiftsController, DebtsController,
 ];
 
 function gatedRoutes(
@@ -64,7 +70,7 @@ describe('V-123b — @RequirePermission codes are all seeded', () => {
   );
 
   it('wires a meaningful number of routes (decorators did not silently vanish)', () => {
-    expect(all.length).toBeGreaterThanOrEqual(60);
+    expect(all.length).toBeGreaterThanOrEqual(110);
   });
 
   it.each(all)('$controller.$method requires seeded code "$code"', ({ code }) => {
@@ -80,5 +86,21 @@ describe('V-123b — @RequirePermission codes are all seeded', () => {
     expect(codeOf(AppointmentsController, 'changeStatus')).toBe('appointments.status');
     expect(codeOf(CouponsController, 'remove')).toBe('coupons.delete');
     expect(codeOf(ExpensesController, 'remove')).toBe('expenses.delete');
+  });
+
+  it('V-123c — the money mutations carry the expected codes', () => {
+    const codeOf = (c: new (...args: never[]) => object, m: string) =>
+      new Reflector().get<string>(PERMISSION_KEY, (c.prototype as Record<string, unknown>)[m] as (...a: never[]) => unknown);
+    expect(codeOf(InvoicesController, 'voidInvoice')).toBe('invoices.void');
+    expect(codeOf(InvoicesController, 'refundInvoice')).toBe('payments.refund');
+    expect(codeOf(InvoicesController, 'recordPayment')).toBe('payments.create');
+    expect(codeOf(InvoicesController, 'addDiscount')).toBe('invoices.discount');
+    expect(codeOf(PosCheckoutController, 'checkout')).toBe('invoices.create');
+    expect(codeOf(PosCheckoutController, 'requestManagerOverride')).toBe('invoices.discount');
+    expect(codeOf(PosShiftsController, 'open')).toBe('payments.create');
+    expect(codeOf(PosShiftsController, 'close')).toBe('payments.create');
+    // debt deletion = write-off → strongest money code (owner/manager only)
+    expect(codeOf(DebtsController, 'deleteEmployeeDebt')).toBe('invoices.void');
+    expect(codeOf(DebtsController, 'deleteClientDebt')).toBe('invoices.void');
   });
 });
