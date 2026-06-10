@@ -1242,6 +1242,8 @@ Fragile — rename `EmployeesController` → `StaffController` and quota silentl
 
 ### V-37d-quota-fail-policy — re-evaluate fail-open on DB errors — ⏸️ DEFERRED 2026-06-02 (انظر V-37-unwired أعلاه)
 
+> **ملحق V-37-wire (2026-06-10):** التوصيل تم (انظر بطاقة V-37-wire). يُضاف لنطاق V-37d عند إعادة التقييم: (1) سياسة fail-open الآن في ثلاثة مواضع (platform-DB أثناء حلّ الخطة، Redis، tenant-DB أثناء العدّ) — quota.guard.ts موثَّق بها؛ (2) سباق TOCTOU: العدّ-ثم-السماح غير ذرّي، رشقة متوازية تتجاوز الحد بمقدار الرشقة ثم يغلق الحارس (مرشَّح security-review بثقة 2 = هَمّ فوترة لا ثغرة؛ الحل إن لزم: فحص داخل معاملة الإنشاء أو عدّاد Redis ذرّي)؛ (3) مسارات إنشاء server-side خارج الحصص: public booking وai-reception (بلا JWT tenant) وPOS walk-in client creation — الأخير هو الموثَّق المصادَق عليه كمرشّح بطاقة متابعة.
+
 `quota.guard.ts:96-99` returns `0` on DB-count failure (`return 0; // fail-open on DB errors`). Allows resource creation to proceed when the count query throws — opposite of V-13c's fail-CLOSED stance for security-critical counts.
 
 For quota specifically, fail-open is defensible:
