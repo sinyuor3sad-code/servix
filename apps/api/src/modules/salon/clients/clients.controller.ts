@@ -24,7 +24,7 @@ import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { QueryClientsDto } from './dto/query-clients.dto';
 import { TenantGuard } from '../../../shared/guards';
-import { RequirePermission } from '../../../shared/decorators';
+import { RequirePermission, QuotaResource } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('العملاء - Clients')
@@ -55,6 +55,7 @@ export class ClientsController {
 
   @Post()
   @RequirePermission('clients.create')
+  @QuotaResource('clients')
   @ApiOperation({ summary: 'إضافة عميل', description: 'إنشاء عميل جديد' })
   @ApiResponse({ status: 201, description: 'تم إنشاء العميل بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })

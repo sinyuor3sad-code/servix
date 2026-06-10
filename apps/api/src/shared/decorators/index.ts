@@ -7,3 +7,8 @@ export {
   RequirePermission,
   PERMISSION_KEY,
 } from './require-permission.decorator';
+export {
+  QuotaResource,
+  QUOTA_RESOURCE_KEY,
+} from './quota-resource.decorator';
+export type { QuotaResourceName } from './quota-resource.decorator';

@@ -25,7 +25,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { ReorderServicesDto } from './dto/reorder.dto';
 import { QueryServicesDto } from './dto/query-services.dto';
 import { TenantGuard } from '../../../shared/guards';
-import { RequirePermission } from '../../../shared/decorators';
+import { RequirePermission, QuotaResource } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('Services')
@@ -128,6 +128,7 @@ export class ServicesController {
 
   @Post()
   @RequirePermission('services.create')
+  @QuotaResource('services')
   @ApiOperation({ summary: 'إنشاء خدمة جديدة' })
   @ApiResponse({ status: 201, description: 'تم إنشاء الخدمة بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })

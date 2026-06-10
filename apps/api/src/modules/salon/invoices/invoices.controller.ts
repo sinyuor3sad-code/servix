@@ -32,7 +32,7 @@ import { SendInvoiceDto } from './dto/send-invoice.dto';
 import { RefundInvoiceDto } from './dto/refund-invoice.dto';
 import { UpdateInvoiceClientNameDto } from './dto/update-client-name.dto';
 import { TenantGuard } from '../../../shared/guards';
-import { RequirePermission } from '../../../shared/decorators';
+import { RequirePermission, QuotaResource } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('الفواتير - Invoices')
@@ -63,6 +63,7 @@ export class InvoicesController {
 
   @Post()
   @RequirePermission('invoices.create')
+  @QuotaResource('invoices')
   @ApiOperation({ summary: 'إنشاء فاتورة', description: 'إنشاء فاتورة جديدة' })
   @ApiResponse({ status: 201, description: 'تم إنشاء الفاتورة بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })

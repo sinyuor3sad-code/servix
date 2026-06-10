@@ -25,7 +25,7 @@ import { SetServicesDto } from './dto/set-services.dto';
 import { QueryEmployeesDto } from './dto/query-employees.dto';
 import { CreateEmployeeAccountDto } from './dto/create-employee-account.dto';
 import { TenantGuard } from '../../../shared/guards';
-import { RequirePermission } from '../../../shared/decorators';
+import { RequirePermission, QuotaResource } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('Employees')
@@ -51,6 +51,7 @@ export class EmployeesController {
 
   @Post()
   @RequirePermission('employees.create')
+  @QuotaResource('employees')
   @ApiOperation({ summary: 'إضافة موظف جديد' })
   @ApiResponse({ status: 201, description: 'تم إضافة الموظف بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })

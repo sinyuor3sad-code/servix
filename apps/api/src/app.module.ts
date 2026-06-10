@@ -15,7 +15,7 @@ import { AiModule } from './shared/ai';
 import { CalendarModule } from './shared/calendar';
 import { JobsModule } from './shared/jobs';
 // Sentry is optionally loaded via instrument.ts
-import { JwtAuthGuard, SubscriptionWriteGuard, RateLimitGuard, TenantGuard, PermissionGuard } from './shared/guards';
+import { JwtAuthGuard, SubscriptionWriteGuard, RateLimitGuard, TenantGuard, PermissionGuard, QuotaGuard } from './shared/guards';
 import { TenantMiddleware } from './shared/middleware/tenant.middleware';
 import { AuthModule } from './core/auth/auth.module';
 import { TenantsModule } from './core/tenants/tenants.module';
@@ -118,6 +118,16 @@ import { winstonConfig } from './shared/logger/winston.config';
     {
       provide: APP_GUARD,
       useClass: PermissionGuard,
+    },
+    // V-37-wire — QuotaGuard registered globally so @QuotaResource creation
+    // routes enforce plan limits. Was registered NOWHERE before (V-37-unwired):
+    // quotas were never enforced at runtime. Runs after TenantMiddleware/
+    // TenantGuard (request.tenantDb populated) and after PermissionGuard
+    // (authorization decided before quota). Routes without @QuotaResource
+    // metadata pass through (V-37c).
+    {
+      provide: APP_GUARD,
+      useClass: QuotaGuard,
     },
     {
       provide: APP_INTERCEPTOR,

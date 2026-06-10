@@ -26,7 +26,7 @@ import { QueryAppointmentsDto } from './dto/query-appointments.dto';
 import { AvailableSlotsDto } from './dto/available-slots.dto';
 import { CalendarQueryDto } from './dto/calendar-query.dto';
 import { TenantGuard } from '../../../shared/guards';
-import { RequirePermission } from '../../../shared/decorators';
+import { RequirePermission, QuotaResource } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('المواعيد - Appointments')
@@ -57,6 +57,7 @@ export class AppointmentsController {
 
   @Post()
   @RequirePermission('appointments.create')
+  @QuotaResource('appointments')
   @ApiOperation({ summary: 'إنشاء موعد', description: 'حجز موعد جديد مع خدمات' })
   @ApiResponse({ status: 201, description: 'تم إنشاء الموعد بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
