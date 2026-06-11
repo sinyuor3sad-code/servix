@@ -27,17 +27,18 @@ function processQueue(error: Error | null, token: string | null) {
 }
 
 /**
- * Try to refresh the access token using the stored refresh token.
- * Returns the new access token or null if refresh fails.
- * 
+ * Try to refresh the access token via the V-39 cookie flow: the refresh
+ * token rides the httpOnly `servix_rt` cookie, authenticated by the CSRF
+ * double-submit header (V-68). Returns the new access token or null.
+ *
  * CRITICAL: Updates BOTH localStorage AND zustand in-memory store.
  * Without updating the in-memory store, zustand would overwrite the
- * new token in localStorage with the old one on the next state change.
- * 
+ * new csrfToken in localStorage with the old one on the next state change.
+ *
  * Uses a queue pattern: only one refresh request runs at a time.
  * Other callers wait for the result via the failedQueue.
  */
-async function tryRefreshToken(): Promise<string | null> {
+export async function tryRefreshToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
 
   // If already refreshing, queue this request
@@ -53,14 +54,18 @@ async function tryRefreshToken(): Promise<string | null> {
     const raw = localStorage.getItem('servix-auth');
     if (!raw) return null;
     const stored = JSON.parse(raw);
-    const refreshToken = stored?.state?.refreshToken;
+    const csrfToken = stored?.state?.csrfToken;
     const currentUserId = stored?.state?.user?.id;
-    if (!refreshToken) return null;
+    if (!csrfToken) return null;
 
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
+      credentials: 'include', // sends the httpOnly servix_rt cookie
+      headers: {
+        'Content-Type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({}),
     });
 
     if (!res.ok) {
@@ -70,7 +75,7 @@ async function tryRefreshToken(): Promise<string | null> {
 
     const json = await res.json();
     const newAccessToken = json?.data?.accessToken ?? json?.accessToken;
-    const newRefreshToken = json?.data?.refreshToken ?? json?.refreshToken ?? refreshToken;
+    const newCsrfToken = json?.data?.csrfToken ?? json?.csrfToken ?? csrfToken;
 
     if (!newAccessToken) {
       processQueue(new Error('No access token in response'), null);
@@ -100,14 +105,15 @@ async function tryRefreshToken(): Promise<string | null> {
       }
     }
 
-    // 1. Update localStorage directly (for next page load)
-    stored.state.accessToken = newAccessToken;
-    stored.state.refreshToken = newRefreshToken;
+    // 1. Update localStorage directly (for next page load).
+    // V-39: only the rotated csrfToken persists — the access token stays
+    // in memory and the refresh token never reaches JS at all.
+    stored.state.csrfToken = newCsrfToken;
     localStorage.setItem('servix-auth', JSON.stringify(stored));
 
     // 2. Notify zustand store via window event (avoids circular import issues)
     window.dispatchEvent(new CustomEvent('servix:token-refresh', {
-      detail: { accessToken: newAccessToken, refreshToken: newRefreshToken },
+      detail: { accessToken: newAccessToken, csrfToken: newCsrfToken },
     }));
 
     // 3. Process queued requests with the new token
@@ -210,6 +216,18 @@ async function ensureFreshToken(token: string | undefined): Promise<string | und
   return token;
 }
 
+/** Read the persisted CSRF token (double-submit copy) from localStorage. */
+function readCsrfToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('servix-auth');
+    if (!raw) return null;
+    return JSON.parse(raw)?.state?.csrfToken ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
   const { method = 'GET', body, headers = {} } = options;
 
@@ -225,10 +243,22 @@ async function apiClient<T>(endpoint: string, options: ApiOptions = {}): Promise
     requestHeaders['Authorization'] = `Bearer ${activeToken}`;
   }
 
+  // V-39/V-68: auth endpoints carry the httpOnly cookie session — send
+  // credentials so the browser stores/attaches the servix_rt cookie
+  // (path-scoped to /api/v1/auth), and echo the CSRF double-submit header.
+  const isAuthEndpoint = endpoint.startsWith('/auth');
+  if (isAuthEndpoint) {
+    const csrf = readCsrfToken();
+    if (csrf && !requestHeaders['x-csrf-token']) {
+      requestHeaders['x-csrf-token'] = csrf;
+    }
+  }
+
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method,
     headers: requestHeaders,
     body: body ? JSON.stringify(body) : undefined,
+    credentials: isAuthEndpoint ? 'include' : 'same-origin',
   });
 
   if (!response.ok) {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore, type UserRole } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
+import { tryRefreshToken } from '@/lib/api';
 import type { LoginCredentials, RegisterData, TenantUser } from '@/types';
 
 /**
@@ -23,19 +24,29 @@ function extractRole(tenants: TenantUser[]): { role: UserRole; isOwner: boolean 
 }
 
 /**
- * Read auth token directly from localStorage (synchronous).
+ * Read persisted auth state directly from localStorage (synchronous).
  * This is the ONLY reliable way to check auth on first render
  * because zustand persist hydrates asynchronously.
+ *
+ * V-39: accessToken is only present for dev mock logins — real access
+ * tokens live in memory and are re-acquired via the cookie refresh flow
+ * (csrfToken signals a resumable cookie session).
  */
-function readTokenFromStorage(): string | null {
-  if (typeof window === 'undefined') return null;
+function readAuthFromStorage(): {
+  accessToken: string | null;
+  csrfToken: string | null;
+} {
+  if (typeof window === 'undefined') return { accessToken: null, csrfToken: null };
   try {
     const raw = localStorage.getItem('servix-auth');
-    if (!raw) return null;
+    if (!raw) return { accessToken: null, csrfToken: null };
     const parsed = JSON.parse(raw);
-    return parsed?.state?.accessToken || null;
+    return {
+      accessToken: parsed?.state?.accessToken || null,
+      csrfToken: parsed?.state?.csrfToken || null,
+    };
   } catch {
-    return null;
+    return { accessToken: null, csrfToken: null };
   }
 }
 
@@ -63,37 +74,66 @@ export function useAuth() {
   const [storedToken, setStoredToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = readTokenFromStorage();
-    setStoredToken(token);
+    const { accessToken: storedAccess, csrfToken } = readAuthFromStorage();
 
-    // If zustand hasn't hydrated yet but localStorage has a token,
-    // force-sync it into the zustand store immediately.
-    if (token && !accessToken) {
-      try {
-        const raw = localStorage.getItem('servix-auth');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          const state = parsed?.state;
-          if (state?.accessToken) {
-            setTokens(state.accessToken, state.refreshToken || '');
-            if (state.user) setUser(state.user);
-            if (state.userRole) setUserRole(state.userRole, state.isOwner ?? false);
-            if (state.currentTenant) setCurrentTenant(state.currentTenant);
-          }
+    // Force-sync persisted user/role/tenant into zustand immediately
+    // (zustand persist hydrates asynchronously).
+    try {
+      const raw = localStorage.getItem('servix-auth');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const state = parsed?.state;
+        if (state) {
+          if (state.user && !useAuthStore.getState().user) setUser(state.user);
+          if (state.userRole) setUserRole(state.userRole, state.isOwner ?? false);
+          if (state.currentTenant) setCurrentTenant(state.currentTenant);
         }
-      } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+
+    if (storedAccess) {
+      // Dev mock session — the only accessToken that persists (V-39).
+      setStoredToken(storedAccess);
+      if (!accessToken) setTokens(storedAccess);
+      setHydrated(true);
+      return;
     }
 
-    setHydrated(true);
+    if (useAuthStore.getState().accessToken || !csrfToken) {
+      // Already authenticated in memory, or no cookie session to resume.
+      setHydrated(true);
+      return;
+    }
+
+    // V-39 bootstrap: re-acquire an in-memory access token through the
+    // httpOnly refresh cookie. Stay in isLoading until it settles so
+    // route guards don't bounce a valid session to /login.
+    let cancelled = false;
+    void tryRefreshToken()
+      .then((newToken) => {
+        if (cancelled) return;
+        if (newToken) {
+          // tryRefreshToken already dispatched servix:token-refresh, but
+          // set directly too — this effect can run before the listener.
+          useAuthStore.getState().setTokens(newToken);
+          setStoredToken(newToken);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setHydrated(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Token Refresh Sync ──
   // Listen for token refresh events from api.ts
   useEffect(() => {
     const handler = (e: Event) => {
-      const { accessToken: newAT, refreshToken: newRT } = (e as CustomEvent).detail;
+      const { accessToken: newAT, csrfToken: newCsrf } = (e as CustomEvent).detail;
       if (newAT) {
-        useAuthStore.getState().setTokens(newAT, newRT);
+        useAuthStore.getState().setTokens(newAT, newCsrf);
       }
     };
     window.addEventListener('servix:token-refresh', handler);
@@ -183,7 +223,9 @@ export function useAuth() {
   const login = useCallback(
     async (credentials: LoginCredentials) => {
       const result = await authService.login(credentials);
-      storeLogin(result.user, result.tokens.accessToken, result.tokens.refreshToken);
+      // V-39: the refresh token stays in the httpOnly cookie — the SPA
+      // only keeps the access token (memory) and the CSRF token.
+      storeLogin(result.user, result.tokens.accessToken, result.csrfToken);
       const { role, isOwner: owner } = extractRole(result.tenants);
       setUserRole(role, owner);
       if (result.tenants.length > 0) {
@@ -205,9 +247,11 @@ export function useAuth() {
   );
 
   const logout = useCallback(async () => {
-    const rt = useAuthStore.getState().refreshToken;
+    const at = useAuthStore.getState().accessToken;
     try {
-      await authService.logout(rt);
+      // V-39: server reads the refresh token from the httpOnly cookie
+      // and clears it; the access token is only passed to detect dev mode.
+      await authService.logout(at);
     } catch {
       // ignore
     }

@@ -8,8 +8,11 @@ import {
   Post,
   Put,
   Req,
+  Res,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -22,6 +25,12 @@ import { RateLimit } from '../../shared/guards/rate-limit.guard';
 import { AuthService } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import { GoogleAuthService } from './google-auth.service';
+import {
+  clearAuthCookies,
+  refreshTokenFromRequest,
+  setAuthCookies,
+} from './auth-cookie.helper';
+import { CsrfGuard } from './csrf.guard';
 import {
   RegisterDto,
   LoginDto,
@@ -79,6 +88,7 @@ export class AuthController {
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{
     user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tenants: Array<{
@@ -91,10 +101,18 @@ export class AuthController {
     }>;
     tokens: JwtTokens | null;
     requires2FA: boolean;
+    csrfToken?: string;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
-    return this.authService.login(dto, ip, userAgent);
+    const result = await this.authService.login(dto, ip, userAgent);
+    // V-39: refresh token rides an httpOnly cookie; body keeps it for
+    // non-browser clients. No tokens on the requires2FA half-login.
+    if (result.tokens) {
+      const csrfToken = setAuthCookies(res, result.tokens.refreshToken);
+      return { ...result, csrfToken };
+    }
+    return result;
   }
 
   @Post('2fa/verify-login')
@@ -105,42 +123,73 @@ export class AuthController {
   async verify2FALogin(
     @Body() dto: Verify2FALoginDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{
     user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tokens: JwtTokens;
+    csrfToken: string;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
-    return this.authService.verify2FALogin(dto.emailOrPhone, dto.password, dto.code, ip, userAgent);
+    const result = await this.authService.verify2FALogin(dto.emailOrPhone, dto.password, dto.code, ip, userAgent);
+    const csrfToken = setAuthCookies(res, result.tokens.refreshToken); // V-39
+    return { ...result, csrfToken };
   }
 
   @Post('refresh')
   @Public()
+  @UseGuards(CsrfGuard) // V-68: required when authenticating via cookie
   @RateLimit(20, 60)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'تحديث رمز الوصول باستخدام رمز التحديث' })
+  @ApiOperation({ summary: 'تحديث رمز الوصول باستخدام رمز التحديث (كوكي أو body)' })
   @ApiResponse({ status: 200, description: 'تم تحديث الرمز بنجاح' })
   @ApiResponse({ status: 401, description: 'رمز التحديث غير صالح أو منتهي الصلاحية' })
+  @ApiResponse({ status: 403, description: 'رمز CSRF غير صالح' })
   @ApiResponse({ status: 503, description: 'تعذّر التحقق من رمز التحديث — حاول مرة أخرى' })
-  async refresh(@Body() dto: RefreshTokenDto, @Req() req: Request): Promise<JwtTokens> {
+  async refresh(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<JwtTokens & { csrfToken: string }> {
+    // V-39: cookie-first, body fallback (non-browser clients).
+    const rawToken = refreshTokenFromRequest(req, dto?.refreshToken);
+    if (!rawToken) {
+      throw new UnauthorizedException('رمز التحديث مطلوب');
+    }
     const ip =
       (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
       req.socket?.remoteAddress ||
       undefined;
     const ua = req.headers['user-agent']?.slice(0, 500);
-    return this.authService.refreshTokens(dto.refreshToken, {
-      ipAddress: ip,
-      userAgent: ua,
-    });
+    try {
+      const tokens = await this.authService.refreshTokens(rawToken, {
+        ipAddress: ip,
+        userAgent: ua,
+      });
+      const csrfToken = setAuthCookies(res, tokens.refreshToken); // rotation
+      return { ...tokens, csrfToken };
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        clearAuthCookies(res); // dead family — drop the cookie session
+      }
+      throw err;
+    }
   }
 
   @Post('logout')
   @Public()
+  @UseGuards(CsrfGuard) // V-68: required when authenticating via cookie
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'تسجيل الخروج' })
   @ApiResponse({ status: 200, description: 'تم تسجيل الخروج بنجاح' })
-  async logout(@Body() dto: RefreshTokenDto): Promise<{ message: string }> {
-    return this.authService.logout(dto.refreshToken);
+  async logout(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ message: string }> {
+    const rawToken = refreshTokenFromRequest(req, dto?.refreshToken);
+    clearAuthCookies(res); // V-39: always drop the cookie session
+    return this.authService.logout(rawToken ?? '');
   }
 
   @Post('forgot-password')
@@ -215,6 +264,7 @@ export class AuthController {
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{
     user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tenants: Array<{
@@ -226,10 +276,13 @@ export class AuthController {
       role: { id: string; name: string; nameAr: string };
     }>;
     tokens: JwtTokens;
+    csrfToken: string;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
-    return this.authService.verifyEmailOtp(dto.email, dto.code, ip, userAgent);
+    const result = await this.authService.verifyEmailOtp(dto.email, dto.code, ip, userAgent);
+    const csrfToken = setAuthCookies(res, result.tokens.refreshToken); // V-39
+    return { ...result, csrfToken };
   }
 
   @Post('resend-otp')
@@ -368,10 +421,16 @@ export class AuthController {
   async googleLogin(
     @Body() dto: GoogleLoginDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
-    return this.authService.googleLogin(dto.idToken, ip, userAgent);
+    const result = await this.authService.googleLogin(dto.idToken, ip, userAgent);
+    if (result?.tokens) {
+      const csrfToken = setAuthCookies(res, result.tokens.refreshToken); // V-39
+      return { ...result, csrfToken };
+    }
+    return result;
   }
 
   @Post('google/link')

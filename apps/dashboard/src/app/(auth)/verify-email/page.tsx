@@ -55,7 +55,8 @@ export default function VerifyEmailPage(): React.ReactElement {
     setLoading(true);
     try {
       const r = await authService.verifyOtp(email, code);
-      storeLogin(r.user, r.tokens.accessToken, r.tokens.refreshToken);
+      // V-39: refresh token lives in the httpOnly cookie set by the server
+      storeLogin(r.user, r.tokens.accessToken, r.csrfToken);
       if (r.tenants?.length > 0) {
         const tu = r.tenants[0];
         setUserRole((tu.role?.name || 'owner') as 'owner'|'manager'|'cashier'|'staff', tu.isOwner);
