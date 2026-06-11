@@ -7,7 +7,7 @@ import { EventsGateway } from '../../../shared/events';
 import { SETTINGS_DEFAULTS } from './settings.constants';
 import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { TenantClientFactory } from '../../../shared/database/tenant-client.factory';
-import { validateSettingsBatch } from './settings.schema';
+import { validateSetting, validateSettingsBatch } from './settings.schema';
 
 @Injectable()
 export class SettingsService {
@@ -138,6 +138,11 @@ export class SettingsService {
     userId: string,
     tenantId?: string,
   ): Promise<Record<string, unknown>> {
+    const error = validateSetting(key, value);
+    if (error) {
+      throw new BadRequestException(`قيمة إعداد غير صحيحة — ${key}: ${error}`);
+    }
+
     const result = await db.setting.upsert({
       where: { key },
       update: { value, updatedBy: userId },

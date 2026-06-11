@@ -8,6 +8,12 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
+import { CacheService } from '../../shared/cache/cache.service';
+import { SmsService } from '../../shared/sms/sms.service';
+import { MailService } from '../../shared/mail/mail.service';
+import { EventsGateway } from '../../shared/events/events.gateway';
+import { TwoFactorService } from '../auth/two-factor.service';
+import { TwoFactorBackupCodeService } from '../auth/two-factor-backup-code.service';
 
 const mockPrisma = {
   tenant: {
@@ -37,6 +43,9 @@ const mockPrisma = {
     findMany: jest.fn(),
     count: jest.fn(),
   },
+  tenantUser: {
+    findMany: jest.fn().mockResolvedValue([]),
+  },
   $transaction: jest.fn(),
 };
 
@@ -54,6 +63,32 @@ const mockPlatformSettingsService = {
   invalidateCache: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockCacheService = {
+  // V-14a-perf-counter: real setPasswordChangedAt returns boolean (Redis-write
+  // success). Default to true (Redis up); tests override per-call for outages.
+  setPasswordChangedAt: jest.fn().mockResolvedValue(true),
+  invalidateTenant: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockEventsGateway = {
+  disconnectTenantClients: jest.fn(),
+  disconnectUserClients: jest.fn(),
+};
+
+const mockTwoFactorService = {
+  verifyToken: jest.fn(),
+};
+
+const mockBackupCodeService = {
+  store: jest.fn(),
+  verifyAndConsume: jest.fn(),
+  deleteAll: jest.fn(),
+  countUnused: jest.fn(),
+};
+
+const mockSmsService = { send: jest.fn().mockResolvedValue(undefined) };
+const mockMailService = { send: jest.fn().mockResolvedValue(undefined) };
+
 describe('AdminService', () => {
   let service: AdminService;
 
@@ -65,6 +100,12 @@ describe('AdminService', () => {
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: PlatformSettingsService, useValue: mockPlatformSettingsService },
+        { provide: CacheService, useValue: mockCacheService },
+        { provide: EventsGateway, useValue: mockEventsGateway },
+        { provide: TwoFactorService, useValue: mockTwoFactorService },
+        { provide: TwoFactorBackupCodeService, useValue: mockBackupCodeService },
+        { provide: SmsService, useValue: mockSmsService },
+        { provide: MailService, useValue: mockMailService },
       ],
     }).compile();
 
@@ -259,6 +300,43 @@ describe('AdminService', () => {
       await expect(
         service.updateTenantStatus('nonexistent', 'suspended', 'admin-id'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('forceLogoutTenant — V-14a-perf-counter', () => {
+    it('يسجّل affectedUserCount = عدد الكتابات الناجحة فقط (لا members.length) عند فشل Redis جزئي', async () => {
+      mockPrisma.tenant.findUnique.mockResolvedValue({ id: 'tid', status: 'active' });
+      mockPrisma.tenantUser.findMany.mockResolvedValue([
+        { userId: 'u1' },
+        { userId: 'u2' },
+        { userId: 'u3' },
+      ]);
+      // u2's Redis write fails (returns false); u1/u3 succeed.
+      mockCacheService.setPasswordChangedAt
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
+      mockPrisma.platformAuditLog.create.mockResolvedValue({ id: 'a' });
+
+      const result = await service.forceLogoutTenant('tid', 'admin-id');
+
+      expect(result.affectedUserCount).toBe(2); // not 3
+      expect(result.attemptedUserCount).toBe(3);
+      const auditArg = mockPrisma.platformAuditLog.create.mock.calls.at(-1)![0];
+      expect(auditArg.data.newValues.affectedUserCount).toBe(2);
+      expect(auditArg.data.newValues.attemptedUserCount).toBe(3);
+    });
+
+    it('affectedUserCount يساوي العدد الكامل عندما تنجح كل الكتابات', async () => {
+      mockPrisma.tenant.findUnique.mockResolvedValue({ id: 'tid', status: 'active' });
+      mockPrisma.tenantUser.findMany.mockResolvedValue([{ userId: 'u1' }, { userId: 'u2' }]);
+      mockCacheService.setPasswordChangedAt.mockResolvedValue(true);
+      mockPrisma.platformAuditLog.create.mockResolvedValue({ id: 'a' });
+
+      const result = await service.forceLogoutTenant('tid', 'admin-id');
+
+      expect(result.affectedUserCount).toBe(2);
+      expect(result.attemptedUserCount).toBe(2);
     });
   });
 });

@@ -1,7 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TenantsService } from './tenants.service';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
+import { CacheService } from '../../shared/cache/cache.service';
+import { EventsGateway } from '../../shared/events/events.gateway';
 
 const mockPrisma = {
   tenant: {
@@ -10,6 +16,10 @@ const mockPrisma = {
     update: jest.fn(),
   },
   tenantUser: {
+    create: jest.fn(),
+    findMany: jest.fn(),
+  },
+  platformAuditLog: {
     create: jest.fn(),
   },
   role: {
@@ -21,6 +31,15 @@ const mockPrisma = {
   $transaction: jest.fn(),
 };
 
+const mockCacheService = {
+  setPasswordChangedAt: jest.fn().mockResolvedValue(undefined),
+  invalidateTenant: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockEventsGateway = {
+  disconnectTenantClients: jest.fn(),
+};
+
 describe('TenantsService', () => {
   let service: TenantsService;
 
@@ -29,6 +48,8 @@ describe('TenantsService', () => {
       providers: [
         TenantsService,
         { provide: PlatformPrismaClient, useValue: mockPrisma },
+        { provide: CacheService, useValue: mockCacheService },
+        { provide: EventsGateway, useValue: mockEventsGateway },
       ],
     }).compile();
 
@@ -169,28 +190,52 @@ describe('TenantsService', () => {
   });
 
   describe('suspend', () => {
-    it('يجب تعليق المنشأة بنجاح', async () => {
+    const ACTOR = 'super-admin-id';
+
+    it('يجب تعليق المنشأة + كتابة audit + تنفيذ V-14b cascade', async () => {
       const tenant = { id: 'tenant-id', status: 'active' };
       const suspended = { ...tenant, status: 'suspended' };
 
       mockPrisma.tenant.findUnique.mockResolvedValue(tenant);
-      mockPrisma.tenant.update.mockResolvedValue(suspended);
+      mockPrisma.tenantUser.findMany.mockResolvedValue([
+        { userId: 'u1' },
+        { userId: 'u2' },
+      ]);
+      // $transaction([updateTenant, auditCreate]) → returns the array; first
+      // element is the updated tenant.
+      mockPrisma.$transaction.mockResolvedValue([suspended, { id: 'audit-1' }]);
 
-      const result = await service.suspend('tenant-id');
+      const result = await service.suspend('tenant-id', ACTOR);
 
       expect(result.status).toBe('suspended');
-      expect(mockPrisma.tenant.update).toHaveBeenCalledWith({
-        where: { id: 'tenant-id' },
-        data: { status: 'suspended' },
-      });
+      // V-14b cascade ran for every member.
+      expect(mockCacheService.setPasswordChangedAt).toHaveBeenCalledWith('u1');
+      expect(mockCacheService.setPasswordChangedAt).toHaveBeenCalledWith('u2');
+      expect(mockEventsGateway.disconnectTenantClients).toHaveBeenCalledWith('tenant-id');
+      expect(mockCacheService.invalidateTenant).toHaveBeenCalledWith('tenant-id');
+      // status flip + audit row issued atomically in one tx.
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
     });
 
     it('يجب إرجاع 404 إذا لم يتم العثور على المنشأة للتعليق', async () => {
       mockPrisma.tenant.findUnique.mockResolvedValue(null);
 
-      await expect(service.suspend('nonexistent')).rejects.toThrow(
+      await expect(service.suspend('nonexistent', ACTOR)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('يجب رفض التعليق إذا كانت المنشأة معلّقة بالفعل (لا cascade مكرّر)', async () => {
+      mockPrisma.tenant.findUnique.mockResolvedValue({
+        id: 'tenant-id',
+        status: 'suspended',
+      });
+
+      await expect(service.suspend('tenant-id', ACTOR)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockCacheService.setPasswordChangedAt).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
   });
 });

@@ -4,7 +4,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PlatformPrismaClient } from '../src/shared/database/platform.client';
 import { TenantClientFactory } from '../src/shared/database/tenant-client.factory';

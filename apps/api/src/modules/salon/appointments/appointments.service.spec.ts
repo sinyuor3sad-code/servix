@@ -26,6 +26,7 @@ const mockDb = {
   commitment: { findFirst: jest.fn() },
   $transaction: jest.fn(),
   $queryRaw: jest.fn().mockResolvedValue([]),
+  $executeRaw: jest.fn().mockResolvedValue(0),
 };
 
 const mockCommitmentsService = {
@@ -68,6 +69,59 @@ describe('AppointmentsService', () => {
   });
 
   describe('create - conflict prevention', () => {
+    it('uses a transaction-level advisory lock per employee and date before creating', async () => {
+      mockDb.client.findFirst.mockResolvedValue({ id: 'client-1' });
+      mockDb.service.findMany.mockResolvedValue([
+        { id: 'svc-1', price: 50, duration: 30 },
+      ]);
+      mockDb.appointment.create.mockResolvedValue({
+        id: 'new-app',
+        clientId: 'client-1',
+        employeeId: 'emp-1',
+        date: new Date('2026-04-15'),
+        startTime: '15:00',
+        endTime: '15:30',
+        totalPrice: 50,
+        totalDuration: 30,
+      });
+      mockDb.appointment.findUnique.mockResolvedValue({
+        id: 'new-app',
+        client: {},
+        employee: {},
+        appointmentServices: [],
+      });
+      const queryRaw = jest.fn().mockResolvedValue([]);
+      const executeRaw = jest.fn().mockResolvedValue(0);
+      mockDb.$transaction.mockImplementation((fn: (tx: unknown) => unknown) =>
+        fn({
+          ...mockDb,
+          $queryRaw: queryRaw,
+          $executeRaw: executeRaw,
+          appointment: {
+            ...mockDb.appointment,
+            create: mockDb.appointment.create,
+            findUnique: mockDb.appointment.findUnique,
+          },
+          appointmentService: mockDb.appointmentService,
+        }),
+      );
+
+      await service.create(mockDb as unknown as TenantPrismaClient, {
+        clientId: 'client-1',
+        services: [{ serviceId: 'svc-1', employeeId: 'emp-1' }],
+        date: '2026-04-15',
+        startTime: '15:00',
+      } as never);
+
+      // The advisory lock is issued via tx.$executeRaw (pg_advisory_xact_lock
+      // returns void; $queryRaw can't deserialize it); the conflict check uses
+      // tx.$queryRaw.
+      expect(String(executeRaw.mock.calls[0][0][0])).toContain('pg_advisory_xact_lock');
+      expect(executeRaw.mock.calls[0][1]).toBe('servix:appointments:emp-1:2026-04-15');
+      expect(String(queryRaw.mock.calls[0][0][0])).toContain('SELECT id FROM "appointments"');
+      expect(mockDb.appointment.create).toHaveBeenCalledTimes(1);
+    });
+
     it('يجب أن يرمي ConflictException عند وجود موعد متعارض للموظف', async () => {
       mockDb.client.findFirst.mockResolvedValue({
         id: 'client-1',

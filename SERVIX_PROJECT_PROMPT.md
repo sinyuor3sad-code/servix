@@ -32,7 +32,8 @@ servix/
 │   ├── dashboard/      → Next.js 15 salon management panel (Port 3000)
 │   ├── admin/          → Next.js 15 platform admin panel (Port 3002)
 │   ├── booking/        → Next.js 15 public booking widget (Port 3001)
-│   └── landing/        → Next.js 15 marketing landing page (Port 3002)
+│   ├── landing/        → Next.js 15 marketing landing page
+│   └── mobile/         → React Native skeleton (مرحلة مستقبلية)
 │
 ├── packages/
 │   ├── database/       → Shared DB-related code
@@ -43,12 +44,18 @@ servix/
 │   ├── email-templates/→ Email HTML templates
 │   ├── ui/             → Shared React components
 │   ├── eslint-config/  → ESLint configuration
-│   └── tsconfig/       → Shared TypeScript configs (base.json, nestjs.json, nextjs.json)
+│   └── tsconfig/       → Shared TypeScript configs
 │
 └── tooling/
     ├── docker/         → docker-compose.yml, docker-compose.prod.yml, .env.example
-    ├── scripts/        → create-tenant.ts, setup-db.ts, migrate-tenants.ts, backup, restore
-    └── nginx/          → nginx.conf for production reverse proxy
+    ├── nginx/          → nginx.conf for production reverse proxy
+    ├── prometheus/     → prometheus.yml + alert rules (3 ملفات) + metrics middleware
+    ├── grafana/        → 5 dashboards + alertmanager + provisioning ✅
+    ├── alertmanager/   → alertmanager.yml (P1/P2/P3 routing)
+    ├── terraform/      → 9 ملفات .tf (Hetzner Cloud IaC) ✅
+    ├── k8s/            → 11 ملف manifests (Deployment/Service/Ingress/HPA) ✅
+    ├── k6/             → 12 ملف load tests (ramp, soak, spike, stress)
+    └── chaos/          → 3 ملفات chaos scenarios
 ```
 
 ---
@@ -181,56 +188,125 @@ apps/api/src/
 │       ├── services/                → Service categories & services CRUD
 │       ├── employees/               → Employee CRUD, schedules, breaks, service skills
 │       ├── clients/                 → Client CRUD, search, history
-│       ├── appointments/            → Appointment CRUD, calendar, available slots, status changes
+│       ├── appointments/            → Appointment CRUD, calendar, available slots (SELECT FOR UPDATE)
 │       ├── booking/                 → Public booking flow (no auth required)
 │       ├── invoices/                → Invoice generation, payments, discounts, coupons, PDF, send
 │       ├── coupons/                 → Coupon CRUD, validation
 │       ├── loyalty/                 → Points system, transactions, settings
 │       ├── expenses/                → Expense tracking CRUD
 │       ├── attendance/              → Check-in/out, attendance records
-│       ├── reports/                 → Revenue, appointments, clients, employees reports
+│       ├── reports/                 → Revenue, appointments, clients, employees + PDF/CSV export ✅
 │       ├── settings/                → Tenant settings (key-value)
-│       └── account/                 → Account deletion (PDPL compliance)
+│       ├── account/                 → Account deletion (PDPL compliance)
+│       ├── inventory/               → Stock tracking with auto-deduct
+│       ├── packages/                → Service bundles
+│       ├── dynamic-pricing/         → Rule-based pricing (peak/off-peak/custom)
+│       ├── marketing/               → Campaign management
+│       ├── shifts/                  → Daily employee shift instances
+│       ├── commitments/             → Commitment state machine (pledged→fulfilled/broken/healed)
+│       ├── healing/                 → Auto-recovery: reassign→time_shift→compensate→escalate
+│       ├── client-dna/              → Customer behavior profiling
+│       ├── feedback/                → Dashboard feedback management
+│       ├── debts/                   → Client debt tracking
+│       ├── review-requests/         → Automated review request dispatch
+│       ├── self-orders/             → QR-based self-ordering (Smart Menu)
+│       ├── payments/                → ⚠️ فارغ — فقط mock (Moyasar/Tap قيد التنفيذ)
+│       ├── zatca/                   → ZATCA XML + QR TLV + crypto (كود جاهز، يحتاج تسجيل رسمي)
+│       ├── ai-reception/            → ★ AI Reception V2 (22 ملف — انظر القسم 5F)
+│       ├── whatsapp-evolution/      → ★ WhatsApp Evolution integration (13 ملف)
+│       └── account/                 → Account deletion
+│
+├── modules/
+│   └── public/                      → Smart Menu + Invoice + Orders + Feedback (no auth)
 │
 └── shared/                          → Cross-cutting concerns
     ├── config/                      → Env validation (Joi), JWT config
     ├── database/                    → DatabaseModule, PlatformClient, TenantClientFactory
     ├── cache/                       → CacheModule + CacheService (ioredis, tenant-aware)
-    ├── events/                      → EventsModule + EventsGateway (Socket.io WebSocket, namespace /ws)
-    ├── jobs/                        → JobsModule + NotificationProcessor (BullMQ queues: notifications, emails, sms)
+    ├── events/                      → EventsModule + EventsGateway (Socket.io, /ws)
+    ├── jobs/                        → JobsModule + NotificationProcessor (BullMQ)
     ├── mail/                        → MailModule + MailService
-    ├── sms/                         → SmsModule + SmsService
-    ├── whatsapp/                    → WhatsAppModule + WhatsAppService
+    ├── sms/                         → SmsModule + SmsService (Unifonic + Circuit Breaker)
+    ├── whatsapp/                    → WhatsAppService (legacy — لا تعدّل، استخدم whatsapp-evolution)
+    ├── ai/                          → AIProviderService (GPT-5 router) + GeminiService (fallback)
     ├── pdf/                         → PdfModule + PdfService (PDFKit)
-    ├── security/                    → SecurityModule + RateLimitGuard (@nestjs/throttler)
-    ├── guards/
-    │   ├── jwt-auth.guard.ts        → Global JWT authentication (APP_GUARD)
-    │   ├── tenant.guard.ts          → Tenant resolution guard
-    │   ├── roles.guard.ts           → Role-based access control
-    │   ├── feature.guard.ts         → Feature flag check
-    │   └── subscription-write.guard.ts → Block writes on expired subscriptions (APP_GUARD)
-    ├── middleware/
-    │   └── tenant.middleware.ts     → Resolves tenant from request, provides tenant DB client (APP_GUARD)
-    ├── decorators/
-    │   ├── current-user.decorator.ts   → @CurrentUser() parameter decorator
-    │   ├── current-tenant.decorator.ts → @CurrentTenant() parameter decorator
-    │   ├── public.decorator.ts         → @Public() to skip auth
-    │   ├── roles.decorator.ts          → @Roles('owner', 'manager') decorator
-    │   └── require-feature.decorator.ts→ @RequireFeature('feature_code') decorator
-    ├── filters/
-    │   └── http-exception.filter.ts → Global exception filter
-    ├── interceptors/
-    │   └── response-transform.interceptor.ts → Standard API response wrapper
-    ├── pipes/
-    │   └── validation.pipe.ts       → Global validation pipe
-    ├── dto/
-    │   └── pagination.dto.ts        → Shared pagination DTO (page, limit, search, sortBy, sortOrder)
-    └── types/
-        ├── jwt-payload.interface.ts → JWT token payload shape
-        ├── request.interface.ts     → Extended Express Request with user + tenant
-        ├── tenant-context.interface.ts → Tenant context shape
-        └── tenant-db.type.ts        → Tenant Prisma client type
+    ├── security/                    → SecurityModule + RateLimitGuard
+    ├── encryption/                  → AES-256-GCM encryption service
+    ├── locks/                       → Distributed locks (Redis SET NX PX + Lua)
+    ├── resilience/                  → Circuit Breaker (opossum + Prometheus)
+    ├── metrics/                     → Prometheus metrics middleware + custom gauges
+    ├── telemetry/                   → OpenTelemetry tracing
+    ├── feature-flags/               → Feature flags (4 strategies: ALL/PERCENTAGE/TENANT_LIST/USER_LIST)
+    ├── ab-testing/                  → A/B testing (deterministic variant assignment)
+    ├── push/                        → Firebase Push Notifications
+    ├── logger/                      → Winston structured logging
+    └── guards/                      → 9 guards: jwt-auth, tenant, roles, feature, subscription-write, quota, tenant-status, ...
 ```
+
+---
+
+## 5F. ★ AI RECEPTION V2 — الاستقبال الذكي (قلب النظام)
+
+> **تحذير:** هذا الموديول هو الأهم في النظام. اقرأ `CLAUDE.md` و `docs/features/AI_RECEPTION_V2_PLAN.md` قبل أي تعديل.
+
+**الموقع:** `apps/api/src/modules/salon/ai-reception/` (22 ملف)
+**الحجم:** ~170KB من الكود
+
+| الملف | الدور |
+|-------|-------|
+| `ai-reception.service.ts` | المحرك الرئيسي: Smart Router + AI pipeline |
+| `ai-reception.controller.ts` | `/salon/ai-reception/stats` endpoint |
+| `ai-reception-booking.service.ts` | إدارة حجوزات الـ AI |
+| `ai-reception-settings.service.ts` | إعدادات (mode/tier/feature toggles) |
+| `ai-reception.expirer.ts` | تنظيف الطلبات المنتهية (Cron) |
+| `ai-context.builder.ts` | بناء سياق الصالون للـ AI |
+| `manager-reply.handler.ts` | معالجة ردود المديرة |
+| `ai-safety-net.service.ts` | 6 فلاتر ردود (أسعار، تأكيد وهمي، هوية، إلخ) |
+| `ai-client-memory.service.ts` | ذاكرة العميل في Redis (90 يوم TTL) |
+| `ai-semantic-cache.service.ts` | كاش الأسئلة الشائعة (Jaccard، 24س TTL) |
+| `ai-analytics.service.ts` | تتبع + تقرير أسبوعي (Cron الأحد 9ص) |
+| `ai-proactive.service.ts` | Follow-up + Re-engagement (Cron) |
+| `n8n.client.ts` | **⛔ قديم — غير مستخدم — لا تعيد ربطه** |
+
+**AI Provider المعتمد:** `apps/api/src/shared/ai/ai-provider.service.ts`
+
+| النموذج | الاستخدام |
+|---------|----------|
+| GPT-5-nano | 80% من المحادثات (بسيطة، رخيصة) |
+| GPT-5-mini | 20% المعقد (شكاوى، تردد، Premium) |
+| Gemini Flash | fallback فقط عند انقطاع OpenAI |
+| Whisper / Groq | تحويل الرسائل الصوتية |
+
+---
+
+## 5G. ★ WHATSAPP EVOLUTION — التكامل الرئيسي
+
+**الموقع:** `apps/api/src/modules/salon/whatsapp-evolution/` (13 ملف)
+
+| الملف | الدور |
+|-------|-------|
+| `whatsapp-evolution-webhook.controller.ts` | استقبال رسائل واتساب (نص + صوت) |
+| `whatsapp-evolution.service.ts` | إرسال نص/media |
+| `whatsapp-rich-media.service.ts` | أزرار/قوائم/صور + تنزيل media وارد |
+| `whatsapp-anti-ban.service.ts` | حماية من الحظر + rate limiting |
+
+> **ملاحظة:** `apps/api/src/shared/whatsapp/whatsapp-bot.service.ts` هو النظام القديم — للحذف لاحقاً، لا تعدّله.
+
+---
+
+## 5H. ★ POS V2 — نقطة البيع المتكاملة
+
+**Dashboard:** `apps/dashboard/src/app/(dashboard)/pos/` (13 صفحة)
+
+| الصفحة | الوظيفة |
+|--------|--------|
+| `page.tsx` | الصفحة الرئيسية للـ POS |
+| `shifts/` | فتح/إغلاق الوردية + درج نقدي |
+| `invoices/` | قائمة الفواتير |
+| `quick-sale/` | بيع سريع |
+| `orders/` | طلبات Smart Menu |
+
+**المرجع:** `docs/features/POS_V2_APPROVED_PLAN.md`
 
 ### 5B. Global Guards (Applied to ALL routes via APP_GUARD)
 
@@ -411,14 +487,22 @@ Storage:
 
 Communication (active integrations):
   MAIL_API_KEY, MAIL_FROM
-  SMS credentials stored in platform_settings table (sms_provider, sms_app_id, sms_sender_id)
+  UNIFONIC_API_KEY, UNIFONIC_SENDER_ID (SMS — كود جاهز، ينتظر credentials)
   WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID (per-tenant, stored in salon settings)
+  EVOLUTION_API_URL, EVOLUTION_API_KEY (WhatsApp Evolution — رئيسي)
+
+AI Reception V2:
+  OPENAI_API_KEY (مطلوب — GPT-5-nano/mini)
+  GROQ_API_KEY (مطلوب — Whisper للصوتيات)
+  GEMINI_API_KEY (اختياري — fallback فقط)
 
 Encryption:
   ENCRYPTION_KEY (min 32 chars — encrypts phone/email in DB)
 
 Observability:
   SENTRY_DSN, OTEL_EXPORTER_OTLP_ENDPOINT
+  GRAFANA_PASSWORD (للوحات Grafana)
+  ALERT_SLACK_WEBHOOK_URL, ALERT_PAGERDUTY_ROUTING_KEY
 
 Frontend:
   NEXT_PUBLIC_API_URL (http://localhost:4000/api/v1)
@@ -483,11 +567,20 @@ Frontend:
 
 1. **Payment Gateway (Moyasar/Tap)** — `payments/` module is empty (only a mock spec file). No online payment processing.
 2. **ZATCA Portal Registration** — Code is ready but not registered with the government portal. Requires official registration process.
-3. **Report Export (PDF/Excel)** — Dashboard shows reports but cannot export them.
-4. **Predictive Analytics** — No forecasting or cancellation probability models.
-5. **Cross-branch Intelligence** — Schema supports multi-branch but no load balancing between locations.
-6. **React Native App** — `apps/mobile/` is a skeleton only. PWA booking app is fully functional as alternative.
-7. **Grafana Dashboards** — Prometheus metrics endpoint exists but no pre-configured Grafana dashboards.
+3. **Predictive Analytics** — No forecasting or cancellation probability models.
+4. **Cross-branch Intelligence** — Schema supports multi-branch but no load balancing between locations.
+5. **React Native App** — `apps/mobile/` is a skeleton only. PWA booking app is fully functional as alternative.
+6. **Partial Refunds Frontend** — DTO exists in API, frontend UI not yet complete.
+
+### ✅ Previously listed as gaps — NOW ALSO IMPLEMENTED (April 2026):
+
+- ~~Report Export (PDF/Excel)~~ → ✅ `report-export.service.ts` (9.3KB) + 11 export endpoints
+- ~~Grafana Dashboards~~ → ✅ `tooling/grafana/` — 5 pre-configured dashboards
+- ~~AI WhatsApp Integration~~ → ✅ **AI Reception V2** — 22 ملف، GPT-5 native, no n8n
+- ~~WhatsApp Rich Media~~ → ✅ `whatsapp-rich-media.service.ts` — buttons/lists/images/location
+- ~~Smart Menu~~ → ✅ 5 cinematic themes (Luxe, Bloom, Glamour, Golden, Banan)
+- ~~POS V2~~ → ✅ 13 pages — shifts/drawers/split-payment/self-orders
+- ~~Terraform IaC~~ → ✅ `tooling/terraform/` — 9 .tf files (Hetzner Cloud)
 
 ---
 
@@ -546,3 +639,7 @@ pnpm dev
 8. Follow existing DTO validation patterns (class-validator)
 9. Add Swagger decorators to all new endpoints
 10. WebSocket events should target tenant rooms (`tenant:{id}`)
+11. **AI Reception V2:** use `AIProviderService` — never call `OpenAI` directly. Never re-wire `n8n.client.ts`
+12. **External APIs:** wrap with `CircuitBreakerService` (available as @Global module)
+13. **Sensitive data:** use `EncryptionService` for phone/email at rest
+14. **TypeScript check:** run `pnpm --filter api exec tsc --noEmit` before committing

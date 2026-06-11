@@ -67,7 +67,8 @@ export class DataRightsService {
     const profile = {
       ...user,
       email: this.encryptionService.decrypt(user.email),
-      phone: this.encryptionService.decrypt(user.phone),
+      // V-13a-phone-placeholder: phone is nullable (Google-only accounts).
+      phone: user.phone ? this.encryptionService.decrypt(user.phone) : null,
     };
 
     // 2. Tenant-level data (if tenant context is available)
@@ -78,12 +79,16 @@ export class DataRightsService {
 
     if (tenantDb) {
       // Find the client record matching this user's phone
-      const client = await tenantDb.client.findFirst({
-        where: {
-          phone: { contains: user.phone.slice(-9) },
-          isActive: true,
-        },
-      });
+      // V-13a-phone-placeholder: a phone-less (Google-only) user has no
+      // phone-matched client record — skip the lookup.
+      const client = user.phone
+        ? await tenantDb.client.findFirst({
+            where: {
+              phone: { contains: user.phone.slice(-9) },
+              isActive: true,
+            },
+          })
+        : null;
 
       if (client) {
         // Appointments with services
@@ -187,7 +192,7 @@ export class DataRightsService {
         select: { phone: true },
       });
 
-      if (user) {
+      if (user?.phone) {
         const decryptedPhone = this.encryptionService.decrypt(user.phone);
         const client = await tenantDb.client.findFirst({
           where: {
@@ -343,7 +348,7 @@ export class DataRightsService {
       select: { phone: true },
     });
 
-    if (user) {
+    if (user?.phone) {
       const decryptedPhone = this.encryptionService.decrypt(user.phone);
       const client = await tenantDb.client.findFirst({
         where: {

@@ -27,6 +27,9 @@ import { SelfOrdersModule } from './self-orders/self-orders.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { AiConsultantModule } from './ai-consultant/ai-consultant.module';
 import { WhatsAppEvolutionModule } from './whatsapp-evolution/whatsapp-evolution.module';
+import { AIReceptionModule } from './ai-reception/ai-reception.module';
+import { PosShiftsModule } from './pos-shifts/pos-shifts.module';
+import { PosCheckoutModule } from './pos-checkout/pos-checkout.module';
 
 @Module({
   imports: [
@@ -58,6 +61,9 @@ import { WhatsAppEvolutionModule } from './whatsapp-evolution/whatsapp-evolution
     FeedbackModule,
     AiConsultantModule,
     WhatsAppEvolutionModule,
+    AIReceptionModule,
+    PosShiftsModule,
+    PosCheckoutModule,
   ],
 })
 export class SalonModule {}

@@ -12,6 +12,8 @@ interface AuthResponse {
   user: User;
   tokens: AuthTokens;
   tenants: TenantUser[];
+  /** V-39: CSRF double-submit token issued alongside the httpOnly refresh cookie */
+  csrfToken?: string;
 }
 
 /* ── Dev-mode mock logins (localhost only, credentials from env) ── */
@@ -106,6 +108,7 @@ interface VerifyOtpResponse {
   user: User;
   tokens: AuthTokens;
   tenants: TenantUser[];
+  csrfToken?: string;
 }
 
 export const authService = {
@@ -124,14 +127,16 @@ export const authService = {
     return api.post<AuthResponse>('/auth/login', credentials);
   },
 
-  refreshTokens: (refreshToken: string) =>
-    api.post<AuthTokens>('/auth/refresh', { refreshToken }),
+  // V-39: refresh/logout ride the httpOnly servix_rt cookie + CSRF header
+  // (both attached automatically by the api client for /auth endpoints).
+  refreshTokens: () =>
+    api.post<AuthTokens & { csrfToken: string }>('/auth/refresh', {}),
 
-  logout: (refreshToken: string | null) => {
-    if (refreshToken?.startsWith('dev-refresh-token-')) {
+  logout: (accessToken?: string | null) => {
+    if (accessToken?.startsWith('dev-access-token-')) {
       return Promise.resolve({ message: 'ok' });
     }
-    return api.post<{ message: string }>('/auth/logout', { refreshToken: refreshToken ?? '' });
+    return api.post<{ message: string }>('/auth/logout', {});
   },
 
   getMe: (token: string) => {

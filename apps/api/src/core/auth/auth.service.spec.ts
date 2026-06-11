@@ -13,11 +13,13 @@ import { CacheService } from '../../shared/cache/cache.service';
 import { MailService } from '../../shared/mail/mail.service';
 import { SmsService } from '../../shared/sms/sms.service';
 import { TwoFactorService } from './two-factor.service';
+import { TwoFactorBackupCodeService } from './two-factor-backup-code.service';
 import { GoogleAuthService } from './google-auth.service';
 import { TenantDatabaseService } from '../../shared/database/tenant-database.service';
 
 jest.mock('bcryptjs', () => ({
   hash: jest.fn().mockResolvedValue('hashed_password'),
+  hashSync: jest.fn(() => 'hashed_dummy'),
   compare: jest.fn(),
 }));
 
@@ -59,6 +61,12 @@ const mockPrisma = {
   },
   tenantFeature: {
     createMany: jest.fn(),
+  },
+  refreshToken: {
+    findUnique: jest.fn(),
+    create: jest.fn().mockResolvedValue({}),
+    update: jest.fn().mockResolvedValue({}),
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
   },
   $transaction: jest.fn(),
 };
@@ -104,10 +112,13 @@ const mockMailService = { send: jest.fn().mockResolvedValue(undefined) };
 const mockSmsService = { send: jest.fn().mockResolvedValue(undefined) };
 const mockTenantDatabaseService = { createTenantDatabase: jest.fn().mockResolvedValue(undefined) };
 const mockTwoFactorService = { generateSecret: jest.fn(), generateOtpAuthUrl: jest.fn(), verifyToken: jest.fn(), generateBackupCodes: jest.fn() };
+const mockBackupCodeService = { store: jest.fn(), verifyAndConsume: jest.fn(), deleteAll: jest.fn(), countUnused: jest.fn() };
 const mockGoogleAuthService = { verifyIdToken: jest.fn(), isEnabled: jest.fn().mockReturnValue(false) };
 const mockAuditService = { log: jest.fn().mockResolvedValue(undefined) };
+const mockSentryService = { captureMessage: jest.fn() };
 
 import { AuditService } from '../audit/audit.service';
+import { SentryService } from '../../shared/sentry/sentry.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -124,8 +135,10 @@ describe('AuthService', () => {
         { provide: SmsService, useValue: mockSmsService },
         { provide: TenantDatabaseService, useValue: mockTenantDatabaseService },
         { provide: TwoFactorService, useValue: mockTwoFactorService },
+        { provide: TwoFactorBackupCodeService, useValue: mockBackupCodeService },
         { provide: GoogleAuthService, useValue: mockGoogleAuthService },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: SentryService, useValue: mockSentryService },
       ],
     }).compile();
 
@@ -291,6 +304,47 @@ describe('AuthService', () => {
       expect(result.tenants[0].isOwner).toBe(true);
     });
 
+    it('V-14b-login: يستبعد المنشآت المعلّقة من قائمة الدخول (tenant.status=active في where)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      (compare as jest.Mock).mockResolvedValue(true);
+      mockPrisma.tenantUser.findMany.mockResolvedValue([
+        {
+          id: 'tu-id',
+          tenantId: 'tenant-id',
+          roleId: 'role-id',
+          isOwner: true,
+          tenant: { id: 'tenant-id', nameAr: 'صالون', nameEn: 'Salon', slug: 'salon' },
+          role: { id: 'role-id', name: 'owner', nameAr: 'مالك' },
+        },
+      ]);
+      mockPrisma.user.update.mockResolvedValue(mockUser);
+
+      await service.login(loginDto, '127.0.0.1');
+
+      // The query must require BOTH an active membership AND an active tenant,
+      // so a suspended tenant never pins the issued JWT.
+      expect(mockPrisma.tenantUser.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId: 'user-id',
+            status: 'active',
+            tenant: { status: 'active' },
+          }),
+        }),
+      );
+    });
+
+    it('V-14b-login: مستخدم كل منشآته معلّقة → خطأ "لا صالون مرتبط" (لا توكن)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      (compare as jest.Mock).mockResolvedValue(true);
+      // DB filters out the suspended tenant ⇒ empty list.
+      mockPrisma.tenantUser.findMany.mockResolvedValue([]);
+
+      await expect(service.login(loginDto, '127.0.0.1')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
     it('يجب رفض الدخول لكلمة مرور خاطئة', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(mockUser);
       (compare as jest.Mock).mockResolvedValue(false);
@@ -377,56 +431,144 @@ describe('AuthService', () => {
   });
 
   describe('refreshTokens', () => {
-    it('يجب إرجاع توكنات جديدة لرمز تحديث صالح', async () => {
-      const payload = {
-        sub: 'user-id',
+    // V-13c: refresh is an opaque 32-byte token. The service SHA-256-hashes the
+    // presented value and looks up the row; rotation issues a successor in the
+    // same family and revokes the predecessor. Reuse of an already-revoked row
+    // triggers a family-wide cascade revoke + pwChangedAt bump. (Pre-V-13c this
+    // verified a signed JWT against a cache blacklist — that contract is gone.)
+    const validRow = {
+      id: 'rt-1',
+      userId: 'user-id',
+      familyId: 'fam-1',
+      issuedAt: new Date('2026-01-01T00:00:00Z'),
+      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      revokedAt: null,
+      revokedReason: null,
+    };
+
+    it('يجب إرجاع توكنات جديدة لرمز تحديث صالح ويُدوّر السلف', async () => {
+      // findUnique fires twice: presented-token lookup, then successor lookup.
+      mockPrisma.refreshToken.findUnique
+        .mockResolvedValueOnce(validRow)
+        .mockResolvedValueOnce({ id: 'rt-2' });
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-id',
         email: 'test@example.com',
-        tenantId: 'tenant-id',
-        roleId: 'role-id',
-      };
-      mockJwtService.verify.mockReturnValue(payload);
+        tenantUsers: [{ tenantId: 'tenant-id', roleId: 'role-id' }],
+      });
 
       const result = await service.refreshTokens('valid-refresh-token');
 
       expect(result.accessToken).toBe('mock-token');
-      expect(result.refreshToken).toBe('mock-token');
-      expect(mockJwtService.verify).toHaveBeenCalledWith(
-        'valid-refresh-token',
-        { secret: 'test-refresh-secret' },
+      expect(result.refreshToken).toMatch(/^[a-f0-9]{64}$/);
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'rt-1', revokedAt: null },
+          data: expect.objectContaining({ revokedReason: 'rotated' }),
+        }),
       );
     });
 
-    it('يجب رفض رمز التحديث المنتهي أو غير الصالح', async () => {
-      mockJwtService.verify.mockImplementation(() => {
-        throw new Error('invalid token');
+    it('V-13c-race-tuning: lost the rotation CAS but predecessor is rotated → returns the minted successor (benign)', async () => {
+      mockPrisma.refreshToken.findUnique
+        .mockResolvedValueOnce(validRow) // presented token
+        .mockResolvedValueOnce({ id: 'rt-2' }) // successor lookup
+        .mockResolvedValueOnce({
+          ...validRow,
+          revokedAt: new Date(),
+          revokedReason: 'rotated',
+        }); // re-read after the lost CAS
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 0 }); // lost
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-id',
+        email: 'test@example.com',
+        tenantUsers: [{ tenantId: 'tenant-id', roleId: 'role-id' }],
+      });
+
+      const result = await service.refreshTokens('raced-refresh-token');
+
+      // Benign concurrent rotation: returns the successor we minted, no cascade.
+      expect(result.refreshToken).toMatch(/^[a-f0-9]{64}$/);
+      expect(mockCacheService.setPasswordChangedAt).not.toHaveBeenCalled();
+    });
+
+    it('V-13c-race-tuning: lost the CAS to a reuse-revoke → 401 + orphan successor revoked', async () => {
+      mockPrisma.refreshToken.findUnique
+        .mockResolvedValueOnce(validRow) // presented token
+        .mockResolvedValueOnce({ id: 'rt-2' }) // successor lookup
+        .mockResolvedValueOnce({
+          ...validRow,
+          revokedAt: new Date(),
+          revokedReason: 'reuse_detected',
+        }); // re-read: predecessor was reuse-revoked, not rotated
+      mockPrisma.refreshToken.updateMany.mockResolvedValueOnce({ count: 0 }); // lost
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-id',
+        email: 'test@example.com',
+        tenantUsers: [{ tenantId: 'tenant-id', roleId: 'role-id' }],
       });
 
       await expect(
-        service.refreshTokens('invalid-refresh-token'),
+        service.refreshTokens('raced-into-reuse'),
+      ).rejects.toThrow(UnauthorizedException);
+
+      // The orphan successor (rt-2) we minted is revoked so it can't be used.
+      expect(mockPrisma.refreshToken.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'rt-2' } }),
+      );
+    });
+
+    it('يجب رفض رمز تحديث غير موجود', async () => {
+      mockPrisma.refreshToken.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.refreshTokens('unknown-refresh-token'),
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    describe('refreshTokens - token blacklist (SEC-2)', () => {
-      it('يجب رفض الرمز الموجود في القائمة السوداء', async () => {
-        mockCacheService.isRefreshTokenBlacklisted.mockResolvedValue(true);
+    it('يجب رفض رمز تحديث منتهي الصلاحية', async () => {
+      mockPrisma.refreshToken.findUnique.mockResolvedValue({
+        ...validRow,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+      await expect(
+        service.refreshTokens('expired-refresh-token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    describe('refreshTokens - reuse detection (SEC-2)', () => {
+      it('يجب رفض رمز مُلغى ويُنفّذ cascade revoke على العائلة', async () => {
+        mockPrisma.refreshToken.findUnique.mockResolvedValue({
+          ...validRow,
+          revokedAt: new Date(),
+          revokedReason: 'rotated',
+        });
 
         await expect(
-          service.refreshTokens('blacklisted-refresh-token'),
+          service.refreshTokens('reused-refresh-token'),
         ).rejects.toThrow(UnauthorizedException);
+
+        expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { familyId: 'fam-1', revokedAt: null },
+            data: expect.objectContaining({ revokedReason: 'reuse_detected' }),
+          }),
+        );
+        expect(mockCacheService.setPasswordChangedAt).toHaveBeenCalledWith(
+          'user-id',
+        );
       });
 
       it('يجب رفض التحديث عند تغيير كلمة المرور بعد إصدار التوكن', async () => {
-        mockJwtService.verify.mockReturnValue({
-          sub: 'user-id',
-          email: 'test@example.com',
-          tenantId: 'tenant-id',
-          roleId: 'role-id',
-          iat: 1000000,
+        mockPrisma.refreshToken.findUnique.mockResolvedValue({
+          ...validRow,
+          issuedAt: new Date(1_000_000),
         });
-        mockCacheService.getPasswordChangedAt.mockResolvedValue(1000000001);
+        mockCacheService.getPasswordChangedAt.mockResolvedValueOnce(2_000_000);
 
         await expect(
-          service.refreshTokens('valid-refresh-token'),
+          service.refreshTokens('pwd-changed-refresh-token'),
         ).rejects.toThrow(UnauthorizedException);
       });
     });
@@ -509,6 +651,75 @@ describe('AuthService', () => {
       await expect(
         service.forgotPassword('ahmed@example.com'),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('resendEmailOtp (V-41b — uniform response)', () => {
+    const GENERIC = 'إذا كان البريد مسجلاً وغير مُؤكد، فسيصلك رمز تحقق جديد';
+    const unverified = {
+      id: 'u1',
+      fullName: 'سارة',
+      email: 'sara@example.com',
+      phone: '+966500000000',
+      isEmailVerified: false,
+    };
+
+    it('مستخدم موجود غير مؤكَّد خارج فترة الانتظار: يرسل الرمز ويعيد الرسالة العامة', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(unverified);
+      // canSendEmailOtp default mock = true → actionable path (no jitter).
+      const result = await service.resendEmailOtp('SARA@example.com');
+
+      expect(result.message).toBe(GENERIC);
+      expect(mockMailService.send).toHaveBeenCalled();
+    });
+
+    it('بريد غير معروف: نفس الرسالة العامة بلا إرسال (لا يكشف الوجود)', async () => {
+      jest.useFakeTimers();
+      try {
+        mockPrisma.user.findUnique.mockResolvedValue(null);
+        const p = service.resendEmailOtp('nobody@example.com');
+        await jest.advanceTimersByTimeAsync(2000); // flush the jitter setTimeout
+        const result = await p;
+
+        expect(result.message).toBe(GENERIC);
+        expect(mockMailService.send).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('بريد مؤكَّد بالفعل: نفس الرسالة العامة بلا إرسال (لا يكشف الحالة)', async () => {
+      jest.useFakeTimers();
+      try {
+        mockPrisma.user.findUnique.mockResolvedValue({
+          ...unverified,
+          isEmailVerified: true,
+        });
+        const p = service.resendEmailOtp('sara@example.com');
+        await jest.advanceTimersByTimeAsync(2000);
+        const result = await p;
+
+        expect(result.message).toBe(GENERIC);
+        expect(mockMailService.send).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('ضمن فترة الانتظار: لا يرمي 400 — نفس الرسالة العامة بلا إرسال (regression)', async () => {
+      jest.useFakeTimers();
+      try {
+        mockPrisma.user.findUnique.mockResolvedValue(unverified);
+        mockCacheService.canSendEmailOtp.mockResolvedValueOnce(false);
+        const p = service.resendEmailOtp('sara@example.com');
+        await jest.advanceTimersByTimeAsync(2000);
+        const result = await p;
+
+        expect(result.message).toBe(GENERIC);
+        expect(mockMailService.send).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 });

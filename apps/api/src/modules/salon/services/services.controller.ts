@@ -25,6 +25,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { ReorderServicesDto } from './dto/reorder.dto';
 import { QueryServicesDto } from './dto/query-services.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission, QuotaResource } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('Services')
@@ -37,6 +38,7 @@ export class ServicesController {
   // ─── Static routes first (before :id) ───
 
   @Get('categories')
+  @RequirePermission('services.view')
   @ApiOperation({ summary: 'عرض جميع التصنيفات' })
   @ApiResponse({ status: 200, description: 'تم جلب التصنيفات بنجاح' })
   async findAllCategories(
@@ -48,6 +50,7 @@ export class ServicesController {
   }
 
   @Post('categories')
+  @RequirePermission('services.create')
   @ApiOperation({ summary: 'إنشاء تصنيف جديد' })
   @ApiResponse({ status: 201, description: 'تم إنشاء التصنيف بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -62,6 +65,7 @@ export class ServicesController {
   }
 
   @Put('categories/:id')
+  @RequirePermission('services.update')
   @ApiOperation({ summary: 'تحديث تصنيف' })
   @ApiResponse({ status: 200, description: 'تم تحديث التصنيف بنجاح' })
   @ApiResponse({ status: 404, description: 'التصنيف غير موجود' })
@@ -78,6 +82,7 @@ export class ServicesController {
   }
 
   @Delete('categories/:id')
+  @RequirePermission('services.delete')
   @ApiOperation({ summary: 'حذف تصنيف' })
   @ApiResponse({ status: 200, description: 'تم حذف التصنيف بنجاح' })
   @ApiResponse({ status: 404, description: 'التصنيف غير موجود' })
@@ -92,6 +97,7 @@ export class ServicesController {
   }
 
   @Put('reorder')
+  @RequirePermission('services.update')
   @ApiOperation({ summary: 'إعادة ترتيب الخدمات' })
   @ApiResponse({ status: 200, description: 'تم إعادة ترتيب الخدمات بنجاح' })
   async reorder(
@@ -107,6 +113,7 @@ export class ServicesController {
   // ─── Parameterized routes ───
 
   @Get()
+  @RequirePermission('services.view')
   @ApiOperation({ summary: 'عرض جميع الخدمات' })
   @ApiResponse({ status: 200, description: 'تم جلب الخدمات بنجاح' })
   async findAll(
@@ -120,6 +127,8 @@ export class ServicesController {
   }
 
   @Post()
+  @RequirePermission('services.create')
+  @QuotaResource('services')
   @ApiOperation({ summary: 'إنشاء خدمة جديدة' })
   @ApiResponse({ status: 201, description: 'تم إنشاء الخدمة بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -135,6 +144,7 @@ export class ServicesController {
   }
 
   @Get(':id')
+  @RequirePermission('services.view')
   @ApiOperation({ summary: 'عرض تفاصيل خدمة' })
   @ApiResponse({ status: 200, description: 'تم جلب تفاصيل الخدمة بنجاح' })
   @ApiResponse({ status: 404, description: 'الخدمة غير موجودة' })
@@ -149,6 +159,7 @@ export class ServicesController {
   }
 
   @Put(':id')
+  @RequirePermission('services.update')
   @ApiOperation({ summary: 'تحديث خدمة' })
   @ApiResponse({ status: 200, description: 'تم تحديث الخدمة بنجاح' })
   @ApiResponse({ status: 404, description: 'الخدمة غير موجودة' })
@@ -165,6 +176,7 @@ export class ServicesController {
   }
 
   @Delete(':id')
+  @RequirePermission('services.delete')
   @ApiOperation({ summary: 'حذف خدمة' })
   @ApiResponse({ status: 200, description: 'تم حذف الخدمة بنجاح' })
   @ApiResponse({ status: 404, description: 'الخدمة غير موجودة' })

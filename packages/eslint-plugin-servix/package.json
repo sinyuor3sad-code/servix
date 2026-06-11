@@ -1,0 +1,14 @@
+{
+  "name": "@servix/eslint-plugin-servix",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "./index.js",
+  "files": [
+    "index.js",
+    "rules/"
+  ],
+  "peerDependencies": {
+    "eslint": "^8.0.0"
+  }
+}

@@ -42,6 +42,17 @@ export default function AppointmentsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
 
+  const tabFilters = (() => {
+    if (activeTab === 'all') return {};
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (activeTab === 'today') return { date: todayStr };
+    const weekLater = new Date(today);
+    weekLater.setDate(weekLater.getDate() + 7);
+    const weekLaterStr = `${weekLater.getFullYear()}-${String(weekLater.getMonth() + 1).padStart(2, '0')}-${String(weekLater.getDate()).padStart(2, '0')}`;
+    return { dateFrom: todayStr, dateTo: weekLaterStr };
+  })();
+
   const { data, isLoading } = useQuery({
     queryKey: ['appointments', activeTab, page, search],
     queryFn: () =>
@@ -50,7 +61,7 @@ export default function AppointmentsPage() {
           page,
           limit: 10,
           search,
-          status: activeTab === 'all' ? undefined : activeTab,
+          ...tabFilters,
         },
         accessToken!,
       ),

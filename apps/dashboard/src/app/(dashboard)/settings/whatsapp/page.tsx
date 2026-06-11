@@ -15,12 +15,25 @@ import {
   Gauge,
   ShieldAlert,
   Plus,
+  Bot,
+  Star,
+  Sparkles,
+  Mic,
+  MousePointerClick,
+  Brain,
+  BarChart3,
+  TrendingUp,
+  Coins,
+  Zap,
+  CalendarOff,
+  PhoneCall,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Spinner, Switch, Input, Button } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { settingsService } from '@/services/settings.service';
+import { aiReceptionService } from '@/services/ai-reception.service';
 import {
   whatsappEvolutionService,
   type WhatsAppInstanceStatus,
@@ -45,6 +58,30 @@ function parseBool(v: string | undefined): boolean {
 function parseNum(v: string | undefined, fallback: number): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function StatCell({
+  icon: Icon,
+  iconColor,
+  iconBg,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  iconColor: string;
+  iconBg: string;
+  label: string;
+  value: string;
+}): React.ReactElement {
+  return (
+    <div className="rounded-xl border border-[var(--border)] p-3 text-center">
+      <div className={cn('mx-auto w-8 h-8 rounded-xl flex items-center justify-center mb-2', iconBg)}>
+        <Icon className={cn('h-4 w-4', iconColor)} />
+      </div>
+      <p className="text-lg font-black tabular-nums">{value}</p>
+      <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">{label}</p>
+    </div>
+  );
 }
 
 export default function WhatsAppSettingsPage(): React.ReactElement {
@@ -74,10 +111,21 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
     enabled: !!accessToken,
   });
 
+  const aiStatsQuery = useQuery({
+    queryKey: ['ai-reception', 'stats'],
+    queryFn: () => aiReceptionService.getStats(accessToken!),
+    enabled: !!accessToken,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
   const connectMutation = useMutation({
     mutationFn: () => whatsappEvolutionService.getOrCreateInstance(accessToken!),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['whatsapp-evolution', 'status'] });
+    onSuccess: (data) => {
+      if (data?.qrCode) {
+        qc.setQueryData(['whatsapp-evolution', 'status'], data);
+      } else {
+        qc.invalidateQueries({ queryKey: ['whatsapp-evolution', 'status'] });
+      }
       toast.success('✅ تم إنشاء المثيل — امسحي رمز QR من تطبيق واتساب');
     },
     onError: () => toast.error('فشل إنشاء المثيل'),
@@ -94,7 +142,9 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
           qrCode: data.qrCode,
         }));
       }
-      qc.invalidateQueries({ queryKey: ['whatsapp-evolution', 'status'] });
+      if (!data?.qrCode) {
+        qc.invalidateQueries({ queryKey: ['whatsapp-evolution', 'status'] });
+      }
       toast.success('تم طلب QR جديد');
     },
     onError: () => toast.error('فشل إعادة الاتصال'),
@@ -164,13 +214,15 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
   const statusKey = (instance?.status ?? 'disconnected') as WhatsAppInstanceStatus;
   const statusStyle = STATUS_STYLES[statusKey];
   const isConnected = statusKey === 'connected';
-  const showQr = (statusKey === 'qr_pending' || statusKey === 'disconnected') && instance?.qrCode;
+  const showQr =
+    (statusKey === 'qr_pending' || statusKey === 'disconnected' || statusKey === 'connecting') &&
+    instance?.qrCode;
 
   const toggleBool = (key: string, checked: boolean) =>
     settingsMutation.mutate([{ key, value: checked ? 'true' : 'false' }]);
 
   const updateStr = (key: string, value: string) =>
-    settingsMutation.mutate([{ key, value }]);
+    settingsMutation.mutate([{ key, value: value.trim() }]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
@@ -335,6 +387,544 @@ export default function WhatsAppSettingsPage(): React.ReactElement {
               />
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Review and reputation controls */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-yellow-500/10 flex items-center justify-center">
+              <Star className="h-4 w-4 text-yellow-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">تقييم ما بعد الزيارة</h3>
+              <p className="text-[10px] text-[var(--muted-foreground)]">طلب تقييم خاص، ورابط Google يظهر فقط للتقييمات العالية</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="flex items-center justify-between gap-4 sm:col-span-2">
+            <div>
+              <p className="text-sm font-bold">تفعيل طلب التقييم</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">الافتراضي متوقف حتى يفعّله المالك صراحة</p>
+            </div>
+            <Switch
+              checked={parseBool(settings.review_request_enabled)}
+              onCheckedChange={(c) => toggleBool('review_request_enabled', c)}
+              disabled={settingsMutation.isPending}
+            />
+          </div>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">تأخير الإرسال بالدقائق</span>
+            <Input
+              type="number"
+              min={0}
+              max={1440}
+              defaultValue={parseNum(settings.review_request_delay_minutes, 60)}
+              onBlur={(e) => updateStr('review_request_delay_minutes', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">رابط تقييم Google</span>
+            <Input
+              placeholder="https://maps.google.com/..."
+              defaultValue={settings.google_review_url || ''}
+              onBlur={(e) => updateStr('google_review_url', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">حد التقييم المنخفض</span>
+            <Input
+              type="number"
+              min={1}
+              max={4}
+              defaultValue={parseNum(settings.low_rating_threshold, 3)}
+              onBlur={(e) => updateStr('low_rating_threshold', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">حد التقييم العالي</span>
+            <Input
+              type="number"
+              min={2}
+              max={5}
+              defaultValue={parseNum(settings.high_rating_threshold, 4)}
+              onBlur={(e) => updateStr('high_rating_threshold', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">رسالة طلب التقييم</span>
+            <Input
+              defaultValue={settings.review_request_message || 'نسعد بمعرفة تقييمك لتجربتك من 1 إلى 5.'}
+              onBlur={(e) => updateStr('review_request_message', e.target.value)}
+            />
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">رد التقييم المنخفض</span>
+            <Input
+              defaultValue={settings.low_rating_response_message || 'نعتذر عن تجربتك. تم رفع ملاحظتك للإدارة لتحسين الخدمة.'}
+              onBlur={(e) => updateStr('low_rating_response_message', e.target.value)}
+            />
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">رد التقييم العالي</span>
+            <Input
+              defaultValue={settings.high_rating_response_message || 'شكرًا لتقييمك. يسعدنا دعمك بتقييمنا على Google: [googleReviewUrl]'}
+              onBlur={(e) => updateStr('high_rating_response_message', e.target.value)}
+            />
+            <span className="text-[10px] text-[var(--muted-foreground)]">استخدم [googleReviewUrl] لوضع الرابط داخل الرسالة</span>
+          </label>
+        </div>
+      </div>
+
+      {/* AI reception controls */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+              <Bot className="h-4 w-4 text-cyan-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">الاستقبال الذكي</h3>
+              <p className="text-[10px] text-[var(--muted-foreground)]">سياسات الرد، التصعيد، ومهلة موافقة الصالون</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="flex items-center justify-between gap-4 sm:col-span-2">
+            <div>
+              <p className="text-sm font-bold">تفعيل الاستقبال الذكي</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">إذا توقف، يرد برسالة توضح أن الاستقبال غير مفعل</p>
+            </div>
+            <Switch
+              checked={settings.ai_reception_enabled !== 'false'}
+              onCheckedChange={(c) => toggleBool('ai_reception_enabled', c)}
+              disabled={settingsMutation.isPending}
+            />
+          </div>
+
+          {/* ── وضع التشغيل ── */}
+          <div className="sm:col-span-2 space-y-3 rounded-xl border border-[var(--border)] bg-[var(--muted)]/30 p-4">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-cyan-600" />
+              <p className="text-sm font-bold">وضع التشغيل</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {[
+                { value: 'full', label: '📅 حجز + رد', hint: 'يحجز ويأكد مع المديرة' },
+                { value: 'reply_only', label: '💬 رد فقط', hint: 'يرد بس ما يحجز' },
+                { value: 'vacation', label: '🌙 إجازة مؤقتة', hint: 'يخبر العميل إن الصالون مغلق' },
+                { value: 'custom', label: '✏️ رسالة مخصصة', hint: 'رسالة ثابتة لكل العملاء' },
+              ].map((opt) => {
+                const active = (settings.ai_reception_mode || 'full') === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => updateStr('ai_reception_mode', opt.value)}
+                    className={cn(
+                      'text-right rounded-xl border p-3 transition',
+                      active
+                        ? 'border-cyan-500 bg-cyan-500/10'
+                        : 'border-[var(--border)] hover:bg-[var(--muted)]/40',
+                    )}
+                  >
+                    <p className="text-sm font-bold">{opt.label}</p>
+                    <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5">{opt.hint}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {settings.ai_reception_mode === 'reply_only' && (
+              <label className="block space-y-1.5">
+                <span className="text-[11px] font-bold">رسالة &quot;زورينا مباشرة&quot;</span>
+                <textarea
+                  defaultValue={settings.ai_walk_in_message || 'ما نحجز حالياً عن طريق الواتساب. تقدرين تزورينا مباشرة.'}
+                  onBlur={(e) => updateStr('ai_walk_in_message', e.target.value)}
+                  rows={2}
+                  className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+                <span className="text-[10px] text-[var(--muted-foreground)]">
+                  يستخدمها الـ AI لما يسأل العميل عن الحجز
+                </span>
+              </label>
+            )}
+
+            {settings.ai_reception_mode === 'vacation' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="space-y-1.5">
+                  <span className="text-[11px] font-bold flex items-center gap-1.5">
+                    <CalendarOff className="h-3 w-3" /> بداية الإجازة
+                  </span>
+                  <Input
+                    type="date"
+                    defaultValue={settings.vacation_start_date || ''}
+                    onBlur={(e) => updateStr('vacation_start_date', e.target.value)}
+                    dir="ltr"
+                  />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="text-[11px] font-bold flex items-center gap-1.5">
+                    <CalendarOff className="h-3 w-3" /> نهاية الإجازة
+                  </span>
+                  <Input
+                    type="date"
+                    defaultValue={settings.vacation_end_date || ''}
+                    onBlur={(e) => updateStr('vacation_end_date', e.target.value)}
+                    dir="ltr"
+                  />
+                </label>
+                <label className="space-y-1.5 sm:col-span-2">
+                  <span className="text-[11px] font-bold">رسالة الإجازة</span>
+                  <textarea
+                    defaultValue={settings.vacation_message_ar || ''}
+                    onBlur={(e) => updateStr('vacation_message_ar', e.target.value)}
+                    rows={2}
+                    placeholder="الصالون مغلق للإجازة، نرحّب بكم بعد العودة."
+                    className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+            )}
+
+            {settings.ai_reception_mode === 'custom' && (
+              <label className="block space-y-1.5">
+                <span className="text-[11px] font-bold">الرسالة المخصصة</span>
+                <textarea
+                  defaultValue={settings.ai_custom_redirect_message || ''}
+                  onBlur={(e) => updateStr('ai_custom_redirect_message', e.target.value)}
+                  rows={3}
+                  placeholder="مثال: تواصلي معنا على الرقم 050... أو زوري الموقع example.com"
+                  className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+                />
+                <span className="text-[10px] text-[var(--muted-foreground)]">
+                  ترسل لكل العملاء بدون استدعاء الـ AI
+                </span>
+              </label>
+            )}
+          </div>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold flex items-center gap-1.5">
+              <Bot className="h-3 w-3" /> اسم المساعد
+            </span>
+            <Input
+              placeholder="مساعد الصالون"
+              defaultValue={settings.ai_assistant_name || 'مساعد الصالون'}
+              onBlur={(e) => updateStr('ai_assistant_name', e.target.value)}
+            />
+            <span className="text-[10px] text-[var(--muted-foreground)]">الاسم اللي يظهر للعميل</span>
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">رقم المدير</span>
+            <Input
+              placeholder="9665..."
+              defaultValue={settings.ai_manager_phone || ''}
+              onBlur={(e) => updateStr('ai_manager_phone', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">نبرة الرد</span>
+            <select
+              defaultValue={settings.ai_tone || 'light_gulf'}
+              onChange={(e) => updateStr('ai_tone', e.target.value)}
+              className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm"
+            >
+              <option value="light_gulf">خليجية خفيفة</option>
+              <option value="formal">رسمية</option>
+              <option value="friendly">ودودة</option>
+              <option value="luxury">فاخرة</option>
+            </select>
+          </label>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">رسالة الترحيب</span>
+            <Input
+              defaultValue={settings.ai_welcome_message || 'حياك الله، كيف أقدر أساعدك؟ للحجز أو الأسعار أو تعديل موعد.'}
+              onBlur={(e) => updateStr('ai_welcome_message', e.target.value)}
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">مهلة موافقة الصالون بالدقائق</span>
+            <Input
+              type="number"
+              min={1}
+              max={120}
+              defaultValue={parseNum(settings.ai_approval_timeout_minutes, 15)}
+              onBlur={(e) => updateStr('ai_approval_timeout_minutes', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">محاولات الفهم قبل التصعيد</span>
+            <Input
+              type="number"
+              min={1}
+              max={5}
+              defaultValue={parseNum(settings.ai_max_understanding_failures, 2)}
+              onBlur={(e) => updateStr('ai_max_understanding_failures', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">تهدئة التصعيد بالدقائق</span>
+            <Input
+              type="number"
+              min={1}
+              max={120}
+              defaultValue={parseNum(settings.ai_escalation_cooldown_minutes, 10)}
+              onBlur={(e) => updateStr('ai_escalation_cooldown_minutes', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">عدد الأوقات المعروضة</span>
+            <Input
+              type="number"
+              min={1}
+              max={5}
+              defaultValue={parseNum(settings.ai_available_slots_limit, 3)}
+              onBlur={(e) => updateStr('ai_available_slots_limit', e.target.value)}
+              dir="ltr"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">وضع تأكيد الحجز</span>
+            <select
+              defaultValue={settings.ai_booking_confirmation_mode || 'manual'}
+              onChange={(e) => updateStr('ai_booking_confirmation_mode', e.target.value)}
+              className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 text-sm"
+            >
+              <option value="manual">يدوي عبر موافقة المدير</option>
+              <option value="auto_if_available">تلقائي إذا متاح</option>
+            </select>
+            <span className="text-[10px] text-[var(--muted-foreground)]">التثبيت التلقائي لا يفعّل إلا عند دعم المسار بأمان</span>
+          </label>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold">إظهار أسماء الموظفات</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">افتراضيًا لا تظهر للعميل</p>
+            </div>
+            <Switch
+              checked={parseBool(settings.ai_show_employee_names_to_customers)}
+              onCheckedChange={(c) => toggleBool('ai_show_employee_names_to_customers', c)}
+              disabled={settingsMutation.isPending}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 sm:col-span-2">
+            <div>
+              <p className="text-sm font-bold">رسالة الخصوصية</p>
+              <p className="text-[11px] text-[var(--muted-foreground)]">ترسل مرة واحدة عند أول طلب حجز فقط</p>
+            </div>
+            <Switch
+              checked={parseBool(settings.ai_privacy_message_enabled)}
+              onCheckedChange={(c) => toggleBool('ai_privacy_message_enabled', c)}
+              disabled={settingsMutation.isPending}
+            />
+          </div>
+
+          <label className="space-y-1.5 sm:col-span-2">
+            <span className="text-[11px] font-bold">نص رسالة الخصوصية</span>
+            <textarea
+              defaultValue={settings.ai_privacy_message || 'سيتم استخدام بياناتك فقط لإدارة الحجز والتواصل بخصوص الموعد.'}
+              onBlur={(e) => updateStr('ai_privacy_message', e.target.value)}
+              rows={2}
+              className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">كلمات غير مرغوبة</span>
+            <textarea
+              defaultValue={settings.ai_avoided_phrases || 'حبيبتي\nالغالية'}
+              onBlur={(e) => updateStr('ai_avoided_phrases', e.target.value)}
+              rows={3}
+              className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1.5">
+            <span className="text-[11px] font-bold">كلمات تصعيد إضافية</span>
+            <textarea
+              defaultValue={settings.ai_custom_escalation_keywords || ''}
+              onBlur={(e) => updateStr('ai_custom_escalation_keywords', e.target.value)}
+              rows={3}
+              className="w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+      </div>
+
+      {/* Intelligence features (toggles) */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-purple-500/10 flex items-center justify-center">
+              <Sparkles className="h-4 w-4 text-purple-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">ميزات الذكاء</h3>
+              <p className="text-[10px] text-[var(--muted-foreground)]">قدرات إضافية للاستقبال — تشتغل لما تكون مفعّلة</p>
+            </div>
+          </div>
+        </div>
+        <div className="divide-y divide-[var(--border)]">
+          {[
+            { key: 'ai_voice_enabled', icon: Mic, color: 'text-rose-600', label: 'فهم الصوتيات', hint: 'يفرّغ الرسائل الصوتية ويرد عليها (Whisper)' },
+            { key: 'ai_rich_media_enabled', icon: MousePointerClick, color: 'text-blue-600', label: 'أزرار وقوائم تفاعلية', hint: 'يستخدم أزرار سريعة لما يكون مناسب' },
+            { key: 'ai_client_memory_enabled', icon: Brain, color: 'text-emerald-600', label: 'ذاكرة العملاء', hint: 'يتذكر تفضيلات العميل بين المحادثات (90 يوم)' },
+            { key: 'ai_weekly_report_enabled', icon: BarChart3, color: 'text-amber-600', label: 'تقرير أسبوعي', hint: 'يرسل ملخص الأسبوع للمديرة كل أحد' },
+          ].map((item) => (
+            <div key={item.key} className="flex items-center justify-between gap-4 px-5 py-3.5">
+              <div className="flex items-center gap-3">
+                <item.icon className={cn('h-4 w-4', item.color)} />
+                <div>
+                  <p className="text-sm font-bold">{item.label}</p>
+                  <p className="text-[11px] text-[var(--muted-foreground)]">{item.hint}</p>
+                </div>
+              </div>
+              <Switch
+                checked={settings[item.key] !== 'false'}
+                onCheckedChange={(c) => toggleBool(item.key, c)}
+                disabled={settingsMutation.isPending}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats panel */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4 text-indigo-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold">إحصائيات الاستقبال</h3>
+              <p className="text-[10px] text-[var(--muted-foreground)]">آخر 7 أيام — تحدّث كل 5 دقائق</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-5">
+          {aiStatsQuery.isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner size="sm" />
+            </div>
+          ) : aiStatsQuery.data && aiStatsQuery.data.totalConversations > 0 ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <StatCell
+                  icon={MessageCircle}
+                  iconColor="text-cyan-600"
+                  iconBg="bg-cyan-500/10"
+                  label="محادثات"
+                  value={String(aiStatsQuery.data.totalConversations)}
+                />
+                <StatCell
+                  icon={Bot}
+                  iconColor="text-emerald-600"
+                  iconBg="bg-emerald-500/10"
+                  label="حجوزات"
+                  value={String(aiStatsQuery.data.totalBookings)}
+                />
+                <StatCell
+                  icon={TrendingUp}
+                  iconColor="text-violet-600"
+                  iconBg="bg-violet-500/10"
+                  label="نسبة التحويل"
+                  value={`${(aiStatsQuery.data.conversionRate * 100).toFixed(0)}%`}
+                />
+                <StatCell
+                  icon={Clock}
+                  iconColor="text-blue-600"
+                  iconBg="bg-blue-500/10"
+                  label="متوسط الرد"
+                  value={`${(aiStatsQuery.data.avgResponseTimeMs / 1000).toFixed(1)}ث`}
+                />
+                <StatCell
+                  icon={Mic}
+                  iconColor="text-rose-600"
+                  iconBg="bg-rose-500/10"
+                  label="صوتيات"
+                  value={String(aiStatsQuery.data.voiceMessages)}
+                />
+                <StatCell
+                  icon={PhoneCall}
+                  iconColor="text-amber-600"
+                  iconBg="bg-amber-500/10"
+                  label="تصعيدات"
+                  value={String(aiStatsQuery.data.escalations)}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {aiStatsQuery.data.topService && (
+                  <div className="rounded-xl border border-[var(--border)] p-3">
+                    <p className="text-[10px] text-[var(--muted-foreground)]">🔝 أكثر خدمة</p>
+                    <p className="font-bold mt-1">
+                      {aiStatsQuery.data.topService.name}
+                      <span className="text-[10px] text-[var(--muted-foreground)] font-normal ms-1">
+                        ({aiStatsQuery.data.topService.count} مرة)
+                      </span>
+                    </p>
+                  </div>
+                )}
+                {aiStatsQuery.data.topTimeWindow && (
+                  <div className="rounded-xl border border-[var(--border)] p-3">
+                    <p className="text-[10px] text-[var(--muted-foreground)]">⏰ أكثر وقت</p>
+                    <p className="font-bold mt-1">{aiStatsQuery.data.topTimeWindow.label}</p>
+                  </div>
+                )}
+                <div className="rounded-xl border border-[var(--border)] p-3 flex items-center gap-3">
+                  <Coins className="h-4 w-4 text-amber-600" />
+                  <div>
+                    <p className="text-[10px] text-[var(--muted-foreground)]">تكلفة AI تقديرية</p>
+                    <p className="font-bold mt-0.5">~{aiStatsQuery.data.estimatedCostSar.toFixed(2)} ريال</p>
+                  </div>
+                </div>
+                {aiStatsQuery.data.cachedHits > 0 && (
+                  <div className="rounded-xl border border-[var(--border)] p-3 flex items-center gap-3">
+                    <Zap className="h-4 w-4 text-yellow-600" />
+                    <div>
+                      <p className="text-[10px] text-[var(--muted-foreground)]">ردود من الكاش</p>
+                      <p className="font-bold mt-0.5">{aiStatsQuery.data.cachedHits} (وفّرت تكلفة)</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <BarChart3 className="h-8 w-8 text-[var(--muted-foreground)] mx-auto mb-2" />
+              <p className="text-xs text-[var(--muted-foreground)]">
+                لم تكن هناك محادثات هذا الأسبوع بعد.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

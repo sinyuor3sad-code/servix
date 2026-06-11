@@ -4,9 +4,11 @@ import { useDeviceMode, usePOSEngine } from './pos-engine';
 import { DesktopPOS } from './components/DesktopPOS';
 import { TouchPOS } from './components/TouchPOS';
 import { LoadingShell } from './components/LoadingShell';
+import { ShiftGate } from './components/ShiftGate';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    MAIN PAGE — Auto-detects device, renders appropriate layout
+   ShiftGate enforces open shift before showing POS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 export default function POSPage() {
@@ -14,5 +16,14 @@ export default function POSPage() {
   const engine = usePOSEngine();
 
   if (!mode) return <LoadingShell />;
-  return mode === 'desktop' ? <DesktopPOS e={engine} /> : <TouchPOS e={engine} />;
+
+  return (
+    <ShiftGate>
+      {(shift) =>
+        mode === 'desktop'
+          ? <DesktopPOS e={engine} shift={shift} />
+          : <TouchPOS e={engine} />
+      }
+    </ShiftGate>
+  );
 }

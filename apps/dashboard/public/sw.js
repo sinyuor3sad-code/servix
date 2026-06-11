@@ -1,9 +1,9 @@
 /// <reference lib="webworker" />
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = 'servix-dashboard-' + CACHE_VERSION;
 const STATIC_CACHE = 'servix-static-' + CACHE_VERSION;
-const API_CACHE = 'servix-api-' + CACHE_VERSION;
+const LEGACY_API_CACHE = 'servix-api-v1';
 
 // Critical pages to precache
 const PRECACHE_URLS = [
@@ -24,13 +24,13 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// ── Activate — clean old caches ──
+// ── Activate — clean old caches (including legacy API cache) ──
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys
-          .filter((key) => !key.includes(CACHE_VERSION))
+          .filter((key) => !key.includes(CACHE_VERSION) || key === LEGACY_API_CACHE)
           .map((key) => caches.delete(key))
       );
     })
@@ -46,19 +46,9 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (!url.protocol.startsWith('http')) return;
 
-  // API calls — Network first, cache fallback
+  // API calls — never cached. Authenticated responses are per-user/per-role
+  // and Cache API ignores the Authorization header, which would cause cross-session leaks.
   if (url.pathname.startsWith('/api/') || url.hostname.includes('api.')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response.ok && response.status === 200) {
-            const clone = response.clone();
-            caches.open(API_CACHE).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-    );
     return;
   }
 

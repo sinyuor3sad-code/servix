@@ -90,7 +90,10 @@ export class EncryptionService {
 
       const iv = Buffer.from(ivHex, 'hex');
       const authTag = Buffer.from(authTagHex, 'hex');
-      const decipher = createDecipheriv(this.algorithm, this.key, iv);
+      // A8-IV-029: explicit authTagLength rejects short-tag forgery attempts.
+      // encrypt() emits 16-byte tags via getAuthTag() (Node default), so the
+      // decrypt side must require the same length to make GCM verification sound.
+      const decipher = createDecipheriv(this.algorithm, this.key, iv, { authTagLength: 16 });
       decipher.setAuthTag(authTag);
 
       let decrypted = decipher.update(encrypted, 'hex', 'utf8');

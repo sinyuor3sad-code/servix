@@ -17,6 +17,7 @@ import { SettingsService } from './settings.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { UpdateSettingDto } from './dto/update-setting.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('Settings')
@@ -27,6 +28,7 @@ export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Get()
+  @RequirePermission('settings.view')
   @ApiOperation({ summary: 'عرض جميع الإعدادات' })
   @ApiResponse({ status: 200, description: 'تم جلب الإعدادات بنجاح' })
   async getAll(
@@ -39,6 +41,7 @@ export class SettingsController {
   }
 
   @Put()
+  @RequirePermission('settings.update')
   @ApiOperation({ summary: 'تحديث مجموعة إعدادات' })
   @ApiResponse({ status: 200, description: 'تم تحديث الإعدادات بنجاح' })
   async updateBatch(
@@ -54,6 +57,7 @@ export class SettingsController {
   }
 
   @Get(':key')
+  @RequirePermission('settings.view')
   @ApiOperation({ summary: 'عرض إعداد محدد' })
   @ApiResponse({ status: 200, description: 'تم جلب الإعداد بنجاح' })
   @ApiResponse({ status: 404, description: 'الإعداد غير موجود' })
@@ -68,6 +72,7 @@ export class SettingsController {
   }
 
   @Put(':key')
+  @RequirePermission('settings.update')
   @ApiOperation({ summary: 'تحديث إعداد محدد' })
   @ApiResponse({ status: 200, description: 'تم تحديث الإعداد بنجاح' })
   async updateByKey(

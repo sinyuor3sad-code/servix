@@ -8,6 +8,7 @@ import {
   ArrayMinSize,
   ValidateNested,
   Matches,
+  IsIn,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -52,6 +53,11 @@ export class CreateAppointmentDto {
   @IsOptional()
   @IsString({ message: 'الملاحظات يجب أن تكون نصاً' })
   notes?: string;
+
+  @ApiPropertyOptional({ description: 'Appointment source', enum: ['online', 'phone', 'walk_in', 'dashboard', 'whatsapp'] })
+  @IsOptional()
+  @IsIn(['online', 'phone', 'walk_in', 'dashboard', 'whatsapp'])
+  source?: 'online' | 'phone' | 'walk_in' | 'dashboard' | 'whatsapp';
 
   @ApiProperty({
     description: 'الخدمات المطلوبة',

@@ -21,10 +21,14 @@ WORK_DIR="/tmp/base-${TIMESTAMP}"
 MINIO_BUCKET="servix-base-backups"
 MINIO_ALIAS="servix"
 
+# A8-IV-049: use a dedicated REPLICATION-only role instead of the postgres
+# superuser. servix_basebackup has LOGIN + REPLICATION attributes only —
+# no SELECT on tenant data, no DDL. pg_hba.conf carries a matching
+# `host replication servix_basebackup 172.18.0.0/16 scram-sha-256` line.
 PGHOST="${PGHOST:-postgres}"
 PGPORT="${PGPORT:-5432}"
-PGUSER="${POSTGRES_USER:-servix}"
-export PGPASSWORD="${POSTGRES_PASSWORD:-}"
+PGUSER="${SERVIX_BASEBACKUP_USER:-servix_basebackup}"
+export PGPASSWORD="${SERVIX_BASEBACKUP_PASSWORD:-}"
 
 MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://minio:9000}"
 MINIO_ACCESS_KEY="${MINIO_ROOT_USER:-}"
@@ -35,7 +39,7 @@ PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 
 [ -z "$PASSPHRASE" ]  && { log "FATAL: BACKUP_ENCRYPTION_PASSPHRASE unset"; exit 1; }
-[ -z "$PGPASSWORD" ] && { log "FATAL: POSTGRES_PASSWORD unset"; exit 1; }
+[ -z "$PGPASSWORD" ] && { log "FATAL: SERVIX_BASEBACKUP_PASSWORD unset"; exit 1; }
 
 log "════════════════════════════════════════"
 log "Starting base backup ${TIMESTAMP}"

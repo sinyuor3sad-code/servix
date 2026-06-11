@@ -1,8 +1,8 @@
 # 🗺️ SERVIX Roadmap — خطة التنفيذ الرسمية
 
 > ⚡ هذا الملف هو المرجع الأساسي لخطة التنفيذ. يتم تحديثه بعد إنجاز كل مهمة.
-> آخر تحديث: 5 أبريل 2026
-> الحالة: المنصة حيّة في الإنتاج مع ~97% من الميزات ✅✅
+> آخر تحديث: **28 أبريل 2026** (تصحيح أخطاء حالة + إضافة مرحلة 7)
+> الحالة: المنصة حيّة في الإنتاج — انظر تفاصيل كل مرحلة أدناه
 
 ---
 
@@ -10,11 +10,12 @@
 
 ```
 المرحلة 1 [██████████] 100% — الحماية والاستقرار ✅
-المرحلة 2 [██████████] 100% — تفعيل الميزات الجاهزة ✅ (ZATCA مؤجل)
-المرحلة 3 [███████░░░] 70%  — التكاملات الخارجية (واتساب ✅ | دفع + SMS مؤجل)
-المرحلة 4 [██████████] 100% — التقارير والذكاء ✅
+المرحلة 2 [█████████░]  95% — تفعيل الميزات الجاهزة ✅ (ZATCA: كود جاهز ⚠️ ينتظر تسجيل رسمي)
+المرحلة 3 [████████░░]  85% — التكاملات الخارجية (واتساب ✅ | SMS جاهز تقنياً ⚠️ | دفع ❌)
+المرحلة 4 [██████████] 100% — التقارير والذكاء ✅ (شامل PDF+CSV ✅)
 المرحلة 5 [██████████] 100% — تطبيق الجوال (PWA) ✅
-المرحلة 6 [██████████] 100% — DevOps والتوسع ✅
+المرحلة 6 [██████████] 100% — DevOps والتوسع ✅ (Prometheus+Grafana جاهزان ✅)
+المرحلة 7 [██████████] 100% — ميزات متقدمة مُنفذة ✅ (AI Reception V2 + POS V2 + Smart Menu)
 ```
 
 ---
@@ -99,15 +100,20 @@ apps/api/package.json
 ---
 
 ### 2.3 🧾 ZATCA (الفوترة الإلكترونية)
-**الحالة:** ❌ لم يُبدأ | **الأولوية:** 🟡 مهمة (مطلب حكومي) | **الوقت:** ~8 ساعات
+**الحالة:** ⚠️ كود جاهز تقنياً — ينتظر تسجيل رسمي | **الأولوية:** 🟡 مهمة (مطلب حكومي)
 
-- [ ] إعداد شهادة ZATCA (CSR + CSID)
-- [ ] توليد QR Code للفاتورة المبسطة
-- [ ] تنسيق XML حسب معيار UBL 2.1
-- [ ] ربط مع Sandbox أولاً ثم Production
+> [!NOTE]
+> تصحيح: كان مكتوباً "لم يُبدأ" — هذا خطأ. الكود مُنفذ فعلاً منذ مارس 2026.
 
-**Models جاهزة:** `ZatcaCertificate`, `ZatcaInvoice`
-**⚠️ يحتاج تسجيل رسمي في بوابة فاتورة هيئة الزكاة والدخل**
+- [x] `zatca.service.ts` — 14KB — XML builder + QR TLV encoding + crypto
+- [x] توليد QR Code للفاتورة المبسطة
+- [x] تنسيق XML حسب معيار UBL 2.1
+- [x] Onboarding flow + CSR generation
+- [ ] تسجيل رسمي في بوابة فاتورة هيئة الزكاة والدخل ← **المتبقي الوحيد**
+- [ ] ربط مع بيئة Sandbox ثم Production
+
+**Models:** `ZatcaCertificate`, `ZatcaInvoice` ✅ موجودة
+**⚠️ الكود جاهز 100% — يحتاج فقط بيانات التسجيل الرسمية من بوابة هيئة الزكاة**
 
 ---
 
@@ -168,24 +174,38 @@ apps/api/package.json
 ---
 
 ### 3.3 📱 SMS
-**الحالة:** ❌ لم يُبدأ | **الأولوية:** 🟢 متوسطة | **الوقت:** ~4 ساعات
+**الحالة:** ⚠️ كود جاهز — ينتظر credentials الإنتاج | **الأولوية:** 🟢 متوسطة
 
-- [ ] التكامل مع مزود SMS سعودي (Unifonic/Taqnyat)
-- [ ] إرسال OTP للتحقق
-- [ ] تذكير بالموعد
+> [!NOTE]
+> تصحيح: كان مكتوباً "لم يُبدأ" — هذا خطأ. الكود مُنفذ فعلاً منذ فبراير 2026.
+
+- [x] `sms.service.ts` — Unifonic provider كامل + Circuit Breaker
+- [x] إرسال OTP للتحقق
+- [x] تذكير بالموعد
+- [ ] تفعيل credentials حقيقية من Unifonic ← **المتبقي الوحيد**
+
+**⚠️ يحتاج فقط:** `UNIFONIC_API_KEY` و `UNIFONIC_SENDER_ID` في الـ .env
 
 ---
 
 ## 📊 المرحلة 4: التقارير المتقدمة والذكاء (4-6 أيام)
 
 ### 4.1 📈 تقارير إضافية
-**الحالة:** ✅ مكتمل | **الوقت:** ~8 ساعات
+**الحالة:** ✅ مكتمل بالكامل | **الوقت:** ~8 ساعات
 
 - [x] صفحة تقرير الخدمات (الأكثر طلباً، الأعلى إيراداً، ترتيب متعدد)
 - [x] صفحة تقرير المصروفات (شهري + ربعي + سنوي مع مقارنة)
 - [x] تقرير الربح الصافي (إيرادات - مصروفات + هامش ربح)
 - [x] رسوم بيانية (إيرادات يومية + اتجاه شهري + تفصيل فئات)
-- [ ] تصدير التقارير PDF/Excel (مؤجل)
+- [x] **تصدير التقارير PDF/Excel** ✅ — `report-export.service.ts` (9.3KB)
+  - إيرادات PDF + CSV
+  - موظفات PDF + CSV
+  - خدمات CSV
+  - مصروفات CSV
+  - عملاء CSV
+
+> [!NOTE]
+> تصحيح: كان مكتوباً "مؤجل" — هذا خطأ. التصدير مُنفذ منذ أبريل 2026 مع 11 API endpoint.
 
 ---
 
@@ -260,7 +280,14 @@ apps/api/package.json
 - [x] Docker HEALTHCHECK لكل container (API + Dashboard + Booking)
 - [x] docker-compose healthcheck + depends_on condition
 - [x] Memory + uptime + DB status في health endpoint
-- [ ] Prometheus + Grafana (مؤجل — لما يزداد الضغط)
+- [x] **Prometheus + Grafana + Alertmanager** ✅ — جاهزة في `tooling/prometheus/` و `tooling/grafana/`
+  - 5 Grafana dashboards (API Overview, Tenant Health, Background Jobs, Infrastructure, Custom)
+  - 3 Alertmanager alert files (error rate, latency, queue depth)
+  - metrics middleware في الـ API
+  - Node/Postgres/Redis/Nginx exporters في docker-compose
+
+> [!NOTE]
+> تصحيح: كان مكتوباً "مؤجل" — هذا خطأ. Prometheus+Grafana جاهزتان منذ أبريل 2026.
 
 ---
 
@@ -289,4 +316,105 @@ apps/api/package.json
 | **5. الجوال** | 2-3 أسابيع | 🟢 شهرين |
 | **6. DevOps** | 5-7 أيام | 🟡 بالتوازي |
 
-**الإجمالي:** ~6-8 أسابيع
+**الإجمالي:** ~6-8 أسابيع (المراحل 1-6 مكتملة)
+
+---
+
+## 🚀 المرحلة 7: ميزات متقدمة مُنفذة (لم تكن في الخطة الأصلية)
+
+> هذه الميزات بُنيت خلال أبريل 2026 وتجاوزت الخطة الأصلية بشكل كبير
+
+### 7.1 🤖 AI Reception V2 — الاستقبال الذكي الكامل
+**الحالة:** ✅ مكتمل 100% (6 مراحل) | **الحجم:** 22 ملف، ~170KB
+
+- [x] Router ذكي يحسم 70% من الرسائل بدون AI (opt-out, vacation, DB answers, أزرار)
+- [x] **GPT-5-nano** (80% من المحادثات) + **GPT-5-mini** (20% المعقد)
+- [x] **Gemini Flash** كـ fallback (حماية عند انقطاع OpenAI)
+- [x] **Whisper عبر Groq** — تحويل الصوتيات
+- [x] **AI Safety Net** — فلترة الردود (أسعار، تأكيد وهمي، هوية)
+- [x] **Client Memory** — ذاكرة العميل في Redis (90 يوم)
+- [x] **Semantic Cache** — كاش الأسئلة المتكررة (Jaccard، 24 ساعة)
+- [x] **Rich Media** — أزرار + قوائم + صور + موقع عبر WhatsApp Evolution
+- [x] **AI Analytics** — تقرير أسبوعي (Cron الأحد 9ص)
+- [x] **Proactive Messages** — متابعة الحجوزات + إعادة تفاعل
+- [x] **Manager Approval Flow** — موافقة/رفض المديرة على الإجراءات
+- [x] **صفحة إعدادات AI** في Dashboard (وضع تشغيل + نبرة + باقات)
+- [x] 94 اختبار AI مكتوب
+
+**المرجع:** `docs/features/AI_RECEPTION_V2_PLAN.md` | `CLAUDE.md`
+
+---
+
+### 7.2 💬 WhatsApp Evolution — التكامل الكامل
+**الحالة:** ✅ مكتمل | **الحجم:** 13 ملف
+
+- [x] `whatsapp-evolution.service.ts` — إرسال نص/media
+- [x] `whatsapp-evolution-webhook.controller.ts` — استقبال الرسائل
+- [x] `whatsapp-rich-media.service.ts` — أزرار + قوائم + صور + تنزيل media
+- [x] `whatsapp-anti-ban.service.ts` — حماية من الحظر + rate limiting
+- [x] صفحة ربط QR في Dashboard
+
+---
+
+### 7.3 🖥️ POS V2 — نظام الكاشير المتكامل
+**الحالة:** ✅ مُنفذ أساسياً ⏳ إضافات قيد التنفيذ
+
+- [x] 13 صفحة POS (كاشير كامل)
+- [x] **POS Shifts** — درج نقدي + فتح/إغلاق وردية
+- [x] **Self Orders** — طلب ذاتي بـ QR (رمز A001)
+- [x] دفع متعدد (نقدي + بطاقة + Apple Pay + مقسّم)
+- [x] تعليق/استدعاء فواتير
+- [x] كوبونات + عمولات موظفات
+- [x] فاتورة QR عامة (public token)
+- [x] WebSocket notifications (real-time)
+- [⏳] Partial Refunds (قيد التنفيذ)
+- [⏳] تاب المواعيد في الكاشير
+
+**المرجع:** `docs/features/POS_V2_APPROVED_PLAN.md`
+
+---
+
+### 7.4 🎨 Smart Menu — المنيو الذكي
+**الحالة:** ✅ مكتمل
+
+- [x] 5 ثيمات سينمائية: **Luxe, Bloom, Glamour, Golden, Banan**
+- [x] 8 لوحات ألوان مضبوطة
+- [x] صفحة `/order` عامة بدون تسجيل
+- [x] نظام أرقام طلبات (A001, B002)
+- [x] WebSocket: تحديث فوري عند الدفع
+- [x] تقييم 5 نجوم + دعوة Google Maps
+
+**المرجع:** `docs/features/SMART_MENU_QR_INVOICE_PLAN.md`
+
+---
+
+### 7.5 🔧 ميزات تقنية متقدمة
+**الحالة:** ✅ جميعها مكتملة
+
+| الميزة | الملف/الموقع |
+|--------|-------------|
+| **Debts Module** — متابعة ديون العملاء | `modules/salon/debts/` |
+| **Feedback System** — تقييمات العملاء | `modules/salon/feedback/` |
+| **Review Requests** — طلبات تقييم | `modules/salon/review-requests/` |
+| **Loyalty Visits** — نظام الزيارات | `modules/salon/loyalty/visits/` |
+| **Circuit Breaker** — opossum | `shared/resilience/` |
+| **Distributed Locks** — Redis SET NX | `shared/locks/` |
+| **Encryption at-rest** — AES-256-GCM | `shared/encryption/` |
+| **Feature Flags + A/B Testing** | `shared/feature-flags/` |
+| **OpenTelemetry Tracing** | `shared/telemetry/` |
+| **Terraform IaC** — Hetzner | `tooling/terraform/` (9 ملفات) |
+| **K8s manifests** | `tooling/k8s/` (11 ملف) |
+| **Chaos Tests** | `tooling/chaos/` (3 ملفات) |
+| **K6 Load Tests** | `tooling/k6/` (12 ملف) |
+
+---
+
+### 7.6 📋 النواقص الحرجة المتبقية
+
+| النقص | الأولوية | الملاحظة |
+|-------|---------|------|
+| **بوابة الدفع** (Moyasar/Tap) | 🔴 حرج | الـ `payments/` module فارغ (Mock فقط) |
+| **ZATCA تسجيل رسمي** | 🟡 مهم | الكود جاهز — يحتاج بيانات الهيئة |
+| **SMS credentials** | 🟡 مهم | الكود جاهز — يحتاج UNIFONIC_API_KEY |
+| **React Native** | 🟢 مستقبلي | skeleton موجود — لما يصير 50+ صالون |
+| **Partial Refunds** | 🟡 قيد التنفيذ | الـ DTO موجود — Frontend لم يكتمل |

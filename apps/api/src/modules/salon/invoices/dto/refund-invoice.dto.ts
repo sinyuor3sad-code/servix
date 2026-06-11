@@ -2,6 +2,8 @@ import {
   IsString,
   IsOptional,
   MaxLength,
+  IsArray,
+  IsUUID,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -11,4 +13,10 @@ export class RefundInvoiceDto {
   @IsString({ message: 'سبب الإرجاع يجب أن يكون نصاً' })
   @MaxLength(500, { message: 'سبب الإرجاع يجب ألا يتجاوز 500 حرف' })
   reason?: string;
+
+  @ApiPropertyOptional({ description: 'IDs العناصر المراد إرجاعها (إرجاع جزئي). لو فارغ = إرجاع كامل' })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  itemIds?: string[];
 }

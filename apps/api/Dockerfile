@@ -2,6 +2,11 @@ FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
+# Skip downloading bundled Chromium during pnpm install — we use system Chromium
+# from Alpine packages (smaller image, security patches via OS).
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/api/package.json apps/api/
@@ -21,6 +26,26 @@ RUN pnpm --filter @servix/api deploy /app/deployed --prod --legacy
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+
+# Chromium for Puppeteer (HTML→PDF rendering with Arabic support).
+# `font-noto-arabic` ships proper Naskh glyphs so RTL invoices render natively.
+# A8-IV-023: `tzdata` so libc's localtime() honors TZ=Asia/Riyadh (set on the
+# compose service by A8-009). Without it `date`/CLI tooling reports UTC even
+# though Node's V8 ICU resolves the TZ correctly.
+RUN apk add --no-cache \
+      chromium \
+      nss \
+      freetype \
+      harfbuzz \
+      ca-certificates \
+      ttf-freefont \
+      font-noto \
+      font-noto-arabic \
+      tzdata
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nestjs
 RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
 COPY --from=builder /app/deployed/node_modules ./node_modules

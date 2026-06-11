@@ -4,10 +4,10 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
   Search, Minus, Plus, Trash2,
-  ShoppingCart, Receipt,
-  Printer, MessageCircle,
+  ShoppingCart, Receipt, Banknote,
+  Printer,
   X, User, Phone, Users, UserPlus,
-  Pause, Play, RotateCcw, Split, Percent, Heart, Package, Ticket,
+  Pause, Play, RotateCcw, Split, Percent, Heart, Ticket,
   CircleDollarSign, Wifi, WifiOff,
   Check, ArrowLeft, ClipboardCheck,
 } from 'lucide-react';
@@ -19,8 +19,7 @@ import {
   accentBg, accentColor, accentMix, primaryBg,
   fmt, PAY,
 } from '../pos-constants';
-import { ClientSection } from './ClientSection';
-import { EmployeePicker } from './EmployeePicker';
+import { EmployeePopover } from './EmployeePopover';
 import { CategoryBar } from './CategoryBar';
 import { ServiceGrid } from './ServiceGrid';
 import { PanelModals } from './PanelModals';
@@ -70,8 +69,6 @@ export function TouchPOS({ e }: { e: E }) {
 
         {/* CART SIDEBAR (tablet) */}
         <aside className={`hidden w-[420px] shrink-0 flex-col border-s ${brd(4)} md:flex ${G1}`}>
-          <ClientSection e={e} lg />
-          <EmployeePicker e={e} lg />
           <div className="flex-1 overflow-y-auto p-4 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2"><ShoppingCart size={14} style={accentColor} /><span className="text-[13px] font-bold text-[var(--foreground)]">السلة</span>{e.cartCount > 0 && <span className="flex h-6 min-w-6 items-center justify-center rounded-lg px-1.5 text-[11px] font-black text-black" style={{ ...TN, ...accentBg }}>{e.cartCount}</span>}</div>
@@ -84,7 +81,7 @@ export function TouchPOS({ e }: { e: E }) {
               return (
                 <div key={item.id} className={`flex items-center gap-3 rounded-2xl border ${brd(4)} ${bg(2)} p-3.5 ${T}`}>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-bold text-[var(--foreground)]">{item.service.nameAr}{item.bundleId && <Package size={10} className="inline ms-1 text-[var(--muted-foreground)]" />}</p>
+                    <p className="truncate text-[13px] font-bold text-[var(--foreground)]">{item.service.nameAr}</p>
                     <div className="flex items-center gap-2 text-[10px] text-[var(--muted-foreground)]" style={{ opacity: 0.6 }}><span><Users size={9} className="inline" /> {item.employeeName}</span><span style={TN}>{fmt(info?.net ?? 0)}</span></div>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -120,10 +117,16 @@ export function TouchPOS({ e }: { e: E }) {
                 <div className="flex justify-between text-[12px]"><span className="text-[var(--muted-foreground)]">ضريبة 15%</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.tax)}</span></div>
                 <div className={`flex items-baseline justify-between border-t ${brd(4)} pt-2`}><span className="text-[13px] font-bold text-[var(--foreground)]">الإجمالي</span><span className="text-[22px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)} <span className="text-[10px] font-semibold opacity-40">ر.س</span></span></div>
               </div>
-              <label className={`flex items-center gap-2.5 rounded-xl px-3 py-2 cursor-pointer ${T} hover:${bg(3)}`}><div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${e.sendWA ? 'border-transparent' : brd(10)}`} style={e.sendWA ? accentBg : undefined}>{e.sendWA && <Check size={11} className="text-black" />}</div><input type="checkbox" checked={e.sendWA} onChange={ev => e.setSendWA(ev.target.checked)} className="sr-only" /><MessageCircle size={14} className="text-emerald-400" /><span className="text-[12px] text-[var(--muted-foreground)]">إرسال واتساب</span></label>
               <div className="grid grid-cols-4 gap-2">{PAY.map(pm => (<button key={pm.id} onClick={() => e.setSelectedPayMethod(pm.id)} disabled={e.payMut.isPending || !e.canPay} className={`${BS} flex flex-col items-center gap-1.5 rounded-2xl border ${brd(4)} py-3.5 disabled:opacity-15 disabled:pointer-events-none transition-all duration-150 ${e.selectedPayMethod === pm.id ? 'text-black ring-2 ring-[var(--brand-accent)]/40' : `${bg(2)} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}`} style={e.selectedPayMethod === pm.id ? { ...accentBg, borderColor: 'var(--brand-accent)' } : undefined}><pm.icon size={20} strokeWidth={1.5} /><span className="text-[10px] font-bold">{pm.label}</span></button>))}</div>
-              <button onClick={() => e.setPanel('split')} disabled={!e.canPay} className={`${B} flex w-full items-center justify-center gap-2 rounded-2xl border ${brd(4)} py-3 text-[12px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-15`}><Split size={14} /> دفع مقسّم</button>
-              <button onClick={() => e.pay(e.selectedPayMethod)} disabled={e.payMut.isPending || !e.canPay} className={`${B} relative flex h-16 w-full items-center justify-center gap-3 rounded-2xl text-[16px] font-black text-black shadow-xl disabled:opacity-15 disabled:pointer-events-none overflow-hidden`} style={e.canPay ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{e.payMut.isPending ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Receipt size={18} /> إصدار فاتورة — {fmt(e.total)}</>}</button>
+              {e.selectedPayMethod === 'cash' && (
+                <div className={`flex items-center gap-2 rounded-xl ${bg(2)} px-3 py-2`}>
+                  <Banknote size={14} className="text-emerald-400" />
+                  <input type="number" value={e.cashReceived} onChange={ev => e.setCashReceived(ev.target.value)} placeholder="المبلغ المستلم" dir="ltr" className={`min-w-0 flex-1 rounded-lg border ${brd(6)} ${bg(3)} px-3 py-2 text-center text-[14px] font-black text-[var(--foreground)] focus:outline-none ${T}`} style={TN} />
+                  <button onClick={() => e.setCashReceived(String(Math.ceil(e.total)))} className={`${BS} rounded-lg px-3 py-2 text-[10px] font-bold text-black`} style={accentBg}>الإجمالي</button>
+                </div>
+              )}
+              <button onClick={() => e.setPanel('split')} disabled={!e.canPayWithDiscount || e.couponMut.isPending || (!!e.couponCode && !e.couponApplied)} className={`${B} flex w-full items-center justify-center gap-2 rounded-2xl border ${brd(4)} py-3 text-[12px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-15`}><Split size={14} /> دفع مقسّم</button>
+              <button onClick={() => e.pay(e.selectedPayMethod)} disabled={e.payMut.isPending || !e.canSubmitPayment} className={`${B} relative flex h-16 w-full items-center justify-center gap-3 rounded-2xl text-[16px] font-black text-black shadow-xl disabled:opacity-15 disabled:pointer-events-none overflow-hidden`} style={e.canSubmitPayment ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{e.payMut.isPending ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Receipt size={18} /> إصدار فاتورة — {fmt(e.total)}</>}</button>
             </div>
           )}
         </aside>
@@ -278,12 +281,20 @@ export function TouchPOS({ e }: { e: E }) {
                 ))}
               </div>
 
+              {e.selectedPayMethod === 'cash' && (
+                <div className={`flex items-center gap-2 rounded-xl ${bg(2)} px-3 py-2`}>
+                  <Banknote size={14} className="text-emerald-400" />
+                  <input type="number" value={e.cashReceived} onChange={ev => e.setCashReceived(ev.target.value)} placeholder="المبلغ المستلم" dir="ltr" className={`min-w-0 flex-1 rounded-lg border ${brd(6)} ${bg(3)} px-3 py-2 text-center text-[14px] font-black text-[var(--foreground)] focus:outline-none ${T}`} style={TN} />
+                  <button onClick={() => e.setCashReceived(String(Math.ceil(e.total)))} className={`${BS} rounded-lg px-3 py-2 text-[10px] font-bold text-black`} style={accentBg}>الإجمالي</button>
+                </div>
+              )}
+
               {/* Main pay button */}
               <button
                 onClick={() => { setShowCart(false); e.pay(e.selectedPayMethod); }}
-                disabled={!e.canPay || e.payMut.isPending}
+                disabled={!e.canSubmitPayment || e.payMut.isPending}
                 className={`${B} relative w-full rounded-xl py-4 text-[15px] font-black text-black shadow-lg disabled:opacity-20 overflow-hidden`}
-                style={e.canPay ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}
+                style={e.canSubmitPayment ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}
               >
                 {e.payMut.isPending ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-black/30 border-t-black mx-auto block" /> : <>إصدار فاتورة — {fmt(e.total)} ر.س</>}
               </button>
@@ -299,7 +310,19 @@ export function TouchPOS({ e }: { e: E }) {
         invoiceTotal={e.lastPaidTotal}
         publicToken={e.publicToken}
         tenantSlug={currentTenant?.slug || ''}
+        invoiceId={e.lastInvoiceId}
+        clientPhone={e.client?.phone}
+        initialClientName={e.lastPaidSnapshot?.clientName ?? e.client?.fullName ?? null}
       />
+      {/* Employee selection popover */}
+      {e.pendingService && (
+        <EmployeePopover
+          service={e.pendingService}
+          employees={e.emps}
+          onSelect={(emp) => e.confirmAdd(e.pendingService!, emp)}
+          onCancel={() => e.setPendingService(null)}
+        />
+      )}
     </div>
   );
 }

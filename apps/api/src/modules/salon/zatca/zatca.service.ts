@@ -8,6 +8,7 @@ import { TenantPrismaClient } from '@shared/types';
 import { ZatcaOnboardDto } from './dto/onboard.dto';
 import { ZatcaCryptoService } from '../../zatca/zatca-crypto.service';
 import { ZatcaXmlBuilder } from '../../zatca/zatca-xml.builder';
+import { ZatcaService as PlatformZatcaService } from '../../zatca/zatca.service';
 import { EncryptionService } from '../../../shared/encryption/encryption.service';
 import {
   ZatcaInvoiceData,
@@ -23,57 +24,88 @@ import {
  * from modules/zatca/ to ensure consistency and avoid duplication.
  *
  * Responsibilities:
- *   - Onboarding (CSR generation, key storage)
+ *   - Onboarding (CSR generation → ZATCA API → Production CSID)
  *   - Invoice submission (builds data → XML → sign → QR → store)
  *   - Status queries
  */
 @Injectable()
-export class ZatcaService {
-  private readonly logger = new Logger(ZatcaService.name);
+export class SalonZatcaService {
+  private readonly logger = new Logger(SalonZatcaService.name);
 
   constructor(
     private readonly cryptoService: ZatcaCryptoService,
     private readonly xmlBuilder: ZatcaXmlBuilder,
     private readonly encryptionService: EncryptionService,
+    private readonly platformZatca: PlatformZatcaService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Onboarding
+  // Onboarding — Full ZATCA API Flow
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Onboard a tenant with ZATCA: generate ECDSA key pair and CSR.
-   * Actual ZATCA API calls happen through the platform-level ZatcaService.
+   * Onboard a tenant with ZATCA using the full 3-step flow:
+   *   1. Generate CSR + send to Compliance CSID API with OTP
+   *   2. Run compliance checks (3 test invoices)
+   *   3. Request Production CSID
+   *   4. Store encrypted credentials locally
    */
   async onboard(db: TenantPrismaClient, dto: ZatcaOnboardDto): Promise<ZatcaCertificate> {
     const salon = await db.salonInfo.findFirst();
     const salonName = salon?.nameAr ?? 'SERVIX Salon';
-    const taxNumber = salon?.taxNumber ?? '';
+    const salonId = salon?.id ?? 'unknown';
 
-    // Generate CSR using shared crypto service (secp256k1)
-    const { privateKey, publicKey, csr } = this.cryptoService.generateCSR({
-      commonName: `SERVIX-EGS-${salon?.id ?? 'unknown'}`,
-      organizationName: salonName,
-      countryCode: 'SA',
-      serialNumber: `1-SERVIX|2-${salon?.id ?? 'unknown'}|3-${Date.now()}`,
+    // Deactivate any existing certificates
+    await db.zatcaCertificate.updateMany({
+      where: { isActive: true },
+      data: { isActive: false },
     });
 
-    // Encrypt the private key before storage (Security requirement)
+    // Call platform-level ZATCA service for full onboarding
+    const result = await this.platformZatca.onboardDevice(
+      salonId,
+      salonName,
+      dto.otp,
+      {
+        vatNumber: salon?.taxNumber || undefined,
+        commercialRegistration: salon?.commercialRegistration || undefined,
+        street: salon?.street || undefined,
+        buildingNumber: salon?.buildingNumber || undefined,
+        city: salon?.city || undefined,
+        district: salon?.district || undefined,
+        postalCode: salon?.postalCode || undefined,
+      },
+    );
+
+    // Generate local CSR for record-keeping
+    const { privateKey, publicKey, csr } = this.cryptoService.generateCSR({
+      commonName: `SERVIX-EGS-${salonId}`,
+      organizationName: salonName,
+      countryCode: 'SA',
+      serialNumber: `1-SERVIX|2-${salonId}|3-${Date.now()}`,
+      organizationIdentifier: salon?.taxNumber || undefined,
+      organizationUnit: dto.organizationUnitName || undefined,
+    });
+
+    // Encrypt the private key before storage
     const encryptedPrivateKey = this.encryptionService.encrypt(privateKey);
 
     const certificate = await db.zatcaCertificate.create({
       data: {
         csrContent: csr,
         privateKey: encryptedPrivateKey,
-        publicKey,  // Stored for QR Tag 8 extraction
+        publicKey,
         isProduction: dto.isProduction ?? false,
         isActive: true,
       },
     });
 
-    this.logger.log(`ZATCA onboarded: certificate ${certificate.id}, production=${dto.isProduction}`);
+    this.logger.log(
+      `ZATCA onboarded: certificate ${certificate.id}, production=${dto.isProduction}, requestId=${result.requestId}`,
+    );
     return certificate;
   }
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Invoice Submission

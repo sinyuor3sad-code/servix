@@ -107,19 +107,21 @@ enum WhatsAppInstanceStatus {
 }
 
 model WhatsAppInstance {
-  id                 String                 @id @default(uuid()) @db.Uuid
-  tenantId           String                 @unique @map("tenant_id") @db.Uuid
-  instanceName       String                 @unique @map("instance_name") @db.VarChar(100)
-  instanceToken      String                 @map("instance_token") @db.VarChar(255)
-  status             WhatsAppInstanceStatus @default(disconnected)
-  phoneNumber        String?                @map("phone_number") @db.VarChar(20)
-  profileName        String?                @map("profile_name") @db.VarChar(100)
-  profilePicUrl      String?                @map("profile_pic_url") @db.VarChar(500)
-  qrCode             String?                @map("qr_code") @db.Text
-  lastConnectedAt    DateTime?              @map("last_connected_at") @db.Timestamptz()
-  lastDisconnectedAt DateTime?              @map("last_disconnected_at") @db.Timestamptz()
-  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz()
+  id                     String                 @id @default(uuid()) @db.Uuid
+  tenantId               String                 @unique @map("tenant_id") @db.Uuid
+  instanceName           String                 @unique @map("instance_name") @db.VarChar(100)
+  instanceToken          String                 @map("instance_token") @db.VarChar(255)
+  // V-23 phase-1: encrypted variant. See twoFactorSecretEncrypted note above.
+  instanceTokenEncrypted Bytes?                 @map("instance_token_encrypted")
+  status                 WhatsAppInstanceStatus @default(disconnected)
+  phoneNumber            String?                @map("phone_number") @db.VarChar(20)
+  profileName            String?                @map("profile_name") @db.VarChar(100)
+  profilePicUrl          String?                @map("profile_pic_url") @db.VarChar(500)
+  qrCode                 String?                @map("qr_code") @db.Text
+  lastConnectedAt        DateTime?              @map("last_connected_at") @db.Timestamptz()
+  lastDisconnectedAt     DateTime?              @map("last_disconnected_at") @db.Timestamptz()
+  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz()
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -130,30 +132,76 @@ model WhatsAppInstance {
 // ─────────────────── Users ───────────────────
 
 model User {
-  id               String    @id @default(uuid()) @db.Uuid
-  fullName         String    @map("full_name") @db.VarChar(100)
-  email            String    @unique @db.VarChar(100)
-  phone            String    @unique @db.VarChar(15)
-  passwordHash     String    @map("password_hash") @db.VarChar(255)
-  avatarUrl        String?   @map("avatar_url") @db.VarChar(500)
-  isEmailVerified  Boolean   @default(false) @map("is_email_verified")
-  isPhoneVerified  Boolean   @default(false) @map("is_phone_verified")
+  id                       String    @id @default(uuid()) @db.Uuid
+  fullName                 String    @map("full_name") @db.VarChar(100)
+  email                    String    @unique @db.VarChar(100)
+  // V-13a-phone-placeholder (Option A): nullable so Google-first accounts carry
+  // NO synthetic phone (the old `g-<sub[0:10]>` placeholder risked collisions +
+  // leaked into the profile). Postgres UNIQUE treats NULLs as distinct, so the
+  // standard @unique index already permits many phone-less accounts — no partial
+  // index needed (a partial index would also drift vs Prisma's @unique).
+  phone                    String?   @unique @db.VarChar(15)
+  passwordHash             String    @map("password_hash") @db.VarChar(255)
+  avatarUrl                String?   @map("avatar_url") @db.VarChar(500)
+  isEmailVerified          Boolean   @default(false) @map("is_email_verified")
+  isPhoneVerified          Boolean   @default(false) @map("is_phone_verified")
   // 2FA
-  twoFactorEnabled Boolean   @default(false) @map("two_factor_enabled")
-  twoFactorSecret  String?   @map("two_factor_secret") @db.VarChar(255)
+  twoFactorEnabled         Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret          String?   @map("two_factor_secret") @db.VarChar(255)
+  // V-23 phase-1: encrypted variant. Phase 2 (Engineer 4) backfills via
+  // dual-read/single-write. Phase 3 drops the plaintext column once
+  // staging is clean for 30 days. See docs/migrations/v23-encryption-rollout.md.
+  twoFactorSecretEncrypted Bytes?    @map("two_factor_secret_encrypted")
   // OAuth
-  googleId         String?   @unique @map("google_id") @db.VarChar(255)
-  authProvider     String    @default("local") @map("auth_provider") @db.VarChar(20)
-  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamptz()
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  googleId                 String?   @unique @map("google_id") @db.VarChar(255)
+  authProvider             String    @default("local") @map("auth_provider") @db.VarChar(20)
+  lastLoginAt              DateTime? @map("last_login_at") @db.Timestamptz()
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
   tenantUsers           TenantUser[]
   auditLogs             PlatformAuditLog[]
   passwordResets        PasswordReset[]
   platformNotifications PlatformNotification[]
+  refreshTokens         RefreshToken[]
+  backupCodes           TwoFactorBackupCode[]
+  accountUnlocks        AccountUnlock[]
 
   @@map("users")
+}
+
+// ─────────────────── 2FA Backup Codes (V-42) ───────────────────
+
+model TwoFactorBackupCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  // bcrypt hash (cost 12, same as passwords). Single-use: used_at is set on
+  // consumption via an atomic guarded UPDATE (… WHERE used_at IS NULL).
+  codeHash  String    @map("code_hash") @db.VarChar(255)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("two_factor_backup_codes")
+}
+
+// ─────────────────── Account Unlock Tokens (V-40a) ───────────────────
+
+model AccountUnlock {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  // sha256 of the raw token (V-24 parity — the raw value is never stored).
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz()
+  usedAt    DateTime? @map("used_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account_unlocks")
 }
 
 // ─────────────────── Password Reset Tokens ───────────────────
@@ -161,14 +209,22 @@ model User {
 model PasswordReset {
   id        String    @id @default(uuid()) @db.Uuid
   userId    String    @map("user_id") @db.Uuid
-  token     String    @unique @db.VarChar(64)
+  // V-24-rename: holds a sha256 hex exclusively (the raw token is never stored).
+  // Named tokenHash to make the raw-vs-hash contract explicit at the schema
+  // level and prevent any future code from re-introducing a plaintext token.
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
   expiresAt DateTime  @map("expires_at") @db.Timestamptz()
   usedAt    DateTime? @map("used_at") @db.Timestamptz()
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  // V-24-audit-completion: which flow created this reset — 'self_serve'
+  // (user via /auth/forgot-password) or 'admin' (super_admin via the panel).
+  // Lets auth.service.resetPassword emit the correct completion/failure audit
+  // action without having to guess the initiator.
+  initiatedBy String  @default("self_serve") @map("initiated_by") @db.VarChar(20)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([token])
+  @@index([tokenHash])
   @@index([userId])
   @@index([expiresAt])
   @@map("password_resets")
@@ -315,6 +371,13 @@ model PlanFeature {
 
 // ─────────────────── Plan Add-ons ───────────────────
 
+// V-79: VARCHAR → enum (in-place, defensive USING in the platform migration).
+enum BillingMode {
+  recurring
+  one_time
+  usage
+}
+
 model PlanAddon {
   id              String   @id @default(uuid()) @db.Uuid
   name            String   @db.VarChar(100)
@@ -323,7 +386,7 @@ model PlanAddon {
   description     String?  @db.Text
   priceMonthly    Decimal  @default(0) @map("price_monthly") @db.Decimal(10, 2)
   priceYearly     Decimal  @default(0) @map("price_yearly") @db.Decimal(10, 2)
-  billingMode     String   @default("recurring") @map("billing_mode") @db.VarChar(20) // recurring | one_time | usage
+  billingMode     BillingMode @default(recurring) @map("billing_mode") // recurring | one_time | usage
   featureId       String?  @map("feature_id") @db.Uuid
   limitBoost      Int?     @map("limit_boost")
   applicablePlans Json?    @map("applicable_plans") @db.JsonB
@@ -360,6 +423,7 @@ model Subscription {
 
   @@index([tenantId])
   @@index([status])
+  @@index([planId])
   @@map("subscriptions")
 }
 
@@ -401,6 +465,7 @@ model PlatformInvoice {
 
   @@index([tenantId])
   @@index([status])
+  @@index([subscriptionId])
   @@map("platform_invoices")
 }
 
@@ -417,6 +482,7 @@ model Referral {
   isRedeemed       Boolean   @default(false) @map("is_redeemed")
   redeemedAt       DateTime? @map("redeemed_at") @db.Timestamptz()
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
   referrerTenant Tenant  @relation("referrer", fields: [referrerTenantId], references: [id])
   referredTenant Tenant? @relation("referred", fields: [referredTenantId], references: [id])
@@ -433,7 +499,7 @@ model TenantUsageLog {
   tenantId            String   @map("tenant_id") @db.Uuid
   month               DateTime @db.Date
   appointmentCount    Int      @default(0) @map("appointment_count")
-  totalRevenue        Decimal  @default(0) @map("total_revenue") @db.Decimal(12, 2)
+  totalRevenue        Decimal  @default(0) @map("total_revenue") @db.Decimal(14, 2)
   usageFeeCharged     Decimal  @default(0) @map("usage_fee_charged") @db.Decimal(10, 2)
   revenueShareCharged Decimal  @default(0) @map("revenue_share_charged") @db.Decimal(10, 2)
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
@@ -464,13 +530,18 @@ enum BackupStatus {
   pending
 }
 
+enum BackupInitiator {
+  auto
+  manual
+}
+
 model PlatformBackup {
   id         String       @id @default(uuid()) @db.Uuid
   tenantId   String       @map("tenant_id") @db.Uuid
   status     BackupStatus @default(pending)
   sizeBytes  BigInt?      @map("size_bytes")
   filePath   String?      @map("file_path") @db.VarChar(500)
-  initiator  String       @db.VarChar(50) // 'auto' | 'manual'
+  initiator  BackupInitiator // 'auto' | 'manual'
   error      String?      @db.Text
   startedAt  DateTime     @default(now()) @map("started_at") @db.Timestamptz()
   finishedAt DateTime?    @map("finished_at") @db.Timestamptz()
@@ -491,12 +562,28 @@ enum PlatformNotifStatus {
   scheduled
 }
 
+enum NotifChannel {
+  email
+  sms
+  push
+  whatsapp
+}
+
+enum NotifTarget {
+  all
+  basic
+  pro
+  enterprise
+  expiring
+  trial
+}
+
 model PlatformNotification {
   id         String              @id @default(uuid()) @db.Uuid
   title      String              @db.VarChar(200)
   body       String              @db.Text
-  channel    String              @db.VarChar(20) // email | sms | push | whatsapp
-  target     String              @db.VarChar(50) // all | basic | pro | enterprise | expiring | trial
+  channel    NotifChannel        // email | sms | push | whatsapp
+  target     NotifTarget         // all | basic | pro | enterprise | expiring | trial
   status     PlatformNotifStatus @default(draft)
   recipients Int                 @default(0)
   delivered  Int                 @default(0)
@@ -554,7 +641,13 @@ model PlatformAuditLog {
   userAgent  String?  @map("user_agent") @db.Text
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  // V-78 / A1-008: Restrict (not SetNull) — preserves PDPL m.12 + SOC2
+  // audit trail. tenant_id stays nullable for genuine system-level
+  // events (login attempts, platform admin actions); the FK now refuses
+  // any hard-delete of a tenant that has audit rows. Soft-delete via
+  // tenant.status='cancelled'/'pending_deletion' is the supported path.
+  // See docs/migrations/v78-apply.md and V-78b follow-up note.
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   user   User    @relation(fields: [userId], references: [id])
 
   @@index([tenantId])
@@ -562,6 +655,49 @@ model PlatformAuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("platform_audit_logs")
+}
+
+// ─────────────────── Audit Outbox (V-35) ───────────────────
+// Transactional-outbox staging so an audit event is never silently lost.
+// Writers persist a row here (optionally inside their business tx via the
+// V-35b log(data, tx?) overload); AuditOutboxProcessor (V-35b, BullMQ)
+// drains pending rows into platform_audit_logs with at-least-once delivery
+// + retry, and a sweeper re-enqueues rows orphaned by a crash.
+//
+// No FKs by design: the outbox is a lightweight, always-writable buffer —
+// referential integrity (user_id, tenant_id) is enforced on the terminal
+// platform_audit_logs insert during drain, so a transient/invalid FK never
+// blocks (or rolls back) the writer's business transaction.
+//
+// Lifecycle: pending → processing → delivered | failed (terminal after the
+// worker exhausts retries; surfaced via servix_audit_outbox_lag_seconds).
+model AuditOutbox {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Audit payload — mirrors PlatformAuditLog (no FK; validated on drain)
+  tenantId   String? @map("tenant_id") @db.Uuid
+  userId     String  @map("user_id") @db.Uuid
+  action     String  @db.VarChar(50)
+  entityType String  @map("entity_type") @db.VarChar(50)
+  entityId   String  @map("entity_id") @db.Uuid
+  oldValues  Json?   @map("old_values") @db.JsonB
+  newValues  Json?   @map("new_values") @db.JsonB
+  ipAddress  String? @map("ip_address") @db.VarChar(45)
+  userAgent  String? @map("user_agent") @db.Text
+
+  // Outbox state machine (drained by AuditOutboxProcessor — V-35b)
+  status      String    @default("pending") @db.VarChar(20) // pending | processing | delivered | failed
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error") @db.Text
+  auditLogId  String?   @map("audit_log_id") @db.Uuid // delivered platform_audit_logs id (idempotency/trace)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  processedAt DateTime? @map("processed_at") @db.Timestamptz()
+
+  // Serves the drain query (status='pending' ORDER BY created_at) and the
+  // lag gauge: now() - min(created_at) WHERE status='pending'.
+  @@index([status, createdAt])
+  @@map("platform_audit_outbox")
 }
 
 // ─────────────────── Token Blacklist (Redis fallback) ───────────────────
@@ -577,4 +713,73 @@ model TokenBlacklist {
   @@index([expiresAt])
   @@index([userId])
   @@map("token_blacklist")
+}
+
+// ─────────────────── Refresh Token Rotation (V-13c / A2-05) ───────────────────
+// Opaque refresh tokens (32-byte hex), persisted by SHA-256 hash. Each login
+// starts a new "family" (familyId UUID); every /auth/refresh rotates the
+// active token within that family. Presenting a token whose row already
+// carries a non-null revokedAt is treated as a replay attack and triggers
+// family-wide revocation + pwChangedAt cascade (kills outstanding access
+// JWTs) + audit + Sentry warning.
+//
+// See docs/migrations/v13c-apply.md for the runbook and
+// engineer-2-database-auth.md for follow-ups (V-13c-cleanup, V-13c-alert,
+// V-13c-race-tuning).
+
+model RefreshToken {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash") @db.VarChar(64)
+  familyId          String    @map("family_id") @db.Uuid
+  issuedAt          DateTime  @default(now()) @map("issued_at") @db.Timestamptz()
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz()
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz()
+  revokedReason     String?   @map("revoked_reason") @db.VarChar(30)
+  replacedByTokenId String?   @map("replaced_by_token_id") @db.Uuid
+  ipAddress         String?   @map("ip_address") @db.Inet
+  userAgent         String?   @map("user_agent") @db.VarChar(500)
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy     RefreshToken?  @relation("RefreshTokenReplacement", fields: [replacedByTokenId], references: [id], onDelete: SetNull)
+  replacedTokens RefreshToken[] @relation("RefreshTokenReplacement")
+
+  @@index([userId])
+  @@index([familyId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────── Platform Complaints (MoC compliance) ───────────────────
+// Stores customer complaints submitted via the public /complaints page.
+// Required by Saudi Ministry of Commerce e-commerce trust criteria — every
+// complaint must produce a tracked reference and be auditable by the operator.
+
+enum ComplaintStatus {
+  new
+  in_review
+  resolved
+  closed
+}
+
+model PlatformComplaint {
+  id                   String          @id @default(uuid()) @db.Uuid
+  referenceNumber      String          @unique @map("reference_number") @db.VarChar(32)
+  name                 String          @db.VarChar(150)
+  phone                String          @db.VarChar(30)
+  email                String?         @db.VarChar(150)
+  complaintType        String          @map("complaint_type") @db.VarChar(80)
+  orderOrInvoiceNumber String?         @map("order_or_invoice_number") @db.VarChar(80)
+  message              String          @db.Text
+  status               ComplaintStatus @default(new)
+  ipAddress            String?         @map("ip_address") @db.VarChar(45)
+  userAgent            String?         @map("user_agent") @db.Text
+  internalNotes        String?         @map("internal_notes") @db.Text
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([phone])
+  @@map("platform_complaints")
 }

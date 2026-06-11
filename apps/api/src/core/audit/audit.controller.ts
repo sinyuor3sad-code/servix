@@ -16,11 +16,19 @@ import {
 import { AuditService } from './audit.service';
 import type { AuditLogWithUser } from './audit.service';
 import { QueryAuditLogDto } from './dto/query-audit-log.dto';
-import { JwtAuthGuard } from '../../shared/guards';
+import { JwtAuthGuard, RolesGuard } from '../../shared/guards';
+import { Roles } from '../../shared/decorators';
 
+// V-idor-sweep (MEDIUM / cross-tenant info disclosure): platform_audit_logs spans
+// ALL tenants. Pre-fix the class carried only JwtAuthGuard with no @Roles, so any
+// authenticated user could read every tenant's audit trail (findAll/findOne) —
+// who logged in, when, from which IP, what changed. Locked to super_admin
+// (fail-closed, class scope), matching AdminController. Role resolved server-side
+// from the verified JWT roleId.
 @ApiTags('سجل المراجعة - Audit Logs')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('super_admin')
 @Controller({ path: 'audit-logs', version: '1' })
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}

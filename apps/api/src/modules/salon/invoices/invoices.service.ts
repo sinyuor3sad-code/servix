@@ -3,18 +3,23 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { TenantPrismaClient } from '../../../shared/types';
 import { PdfService } from '../../../shared/pdf/pdf.service';
 import { MailService } from '../../../shared/mail/mail.service';
 import { WhatsAppService } from '../../../shared/whatsapp/whatsapp.service';
+import { WhatsAppEvolutionService } from '../whatsapp-evolution/whatsapp-evolution.service';
+import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { SmsService } from '../../../shared/sms/sms.service';
 import { SettingsService } from '../settings/settings.service';
 import { AuditService } from '../../../core/audit/audit.service';
 import { EventsGateway } from '../../../shared/events/events.gateway';
+import { SalonZatcaService } from '../zatca/zatca.service';
 import { SETTINGS_KEYS } from '../settings/settings.constants';
-import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { ReviewRequestsService } from '../whatsapp-evolution/review-requests.service';
+import { CreateInvoiceDto, InvoiceItemDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { AddDiscountDto } from './dto/add-discount.dto';
@@ -22,6 +27,17 @@ import { ApplyCouponDto } from './dto/apply-coupon.dto';
 import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { InvoiceSendChannel } from './dto/send-invoice.dto';
 import { paginate, effectiveLimit } from '../../../shared/helpers/paginate.helper';
+
+type NormalizedInvoiceItem = {
+  serviceId?: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  employeeId: string;
+};
+
+type InvoiceNumberClient = Pick<TenantPrismaClient, '$executeRawUnsafe' | '$queryRawUnsafe'>;
 
 
 @Injectable()
@@ -36,13 +52,72 @@ export class InvoicesService {
     private readonly settingsService: SettingsService,
     private readonly auditService: AuditService,
     private readonly eventsGateway: EventsGateway,
+    private readonly reviewRequests: ReviewRequestsService,
+    private readonly salonZatcaService: SalonZatcaService,
+    private readonly evolutionService: WhatsAppEvolutionService,
+    private readonly platformPrisma: PlatformPrismaClient,
   ) {}
+
+  private async normalizeInvoiceItems(
+    db: TenantPrismaClient,
+    items: InvoiceItemDto[],
+  ): Promise<NormalizedInvoiceItem[]> {
+    const serviceIds = Array.from(
+      new Set(
+        items
+          .map((item) => item.serviceId)
+          .filter((serviceId): serviceId is string => Boolean(serviceId)),
+      ),
+    );
+
+    const services = serviceIds.length
+      ? await db.service.findMany({
+          where: { id: { in: serviceIds }, isActive: true },
+          select: { id: true, nameAr: true, nameEn: true, price: true },
+        })
+      : [];
+
+    if (services.length !== serviceIds.length) {
+      throw new BadRequestException('Invalid invoice service');
+    }
+
+    const serviceById = new Map(services.map((service) => [service.id, service]));
+
+    return items.map((item) => {
+      if (!item.serviceId) {
+        const unitPrice = Number(item.unitPrice);
+        return {
+          serviceId: undefined,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice,
+          totalPrice: item.quantity * unitPrice,
+          employeeId: item.employeeId,
+        };
+      }
+
+      const service = serviceById.get(item.serviceId);
+      if (!service) {
+        throw new BadRequestException('Invalid invoice service');
+      }
+
+      const unitPrice = Number(service.price);
+      return {
+        serviceId: service.id,
+        description: service.nameAr || service.nameEn || item.description,
+        quantity: item.quantity,
+        unitPrice,
+        totalPrice: item.quantity * unitPrice,
+        employeeId: item.employeeId,
+      };
+    });
+  }
 
   async findAll(
     db: TenantPrismaClient,
     query: QueryInvoicesDto,
   ) {
-    const { page, sort, order, status, clientId, dateFrom, dateTo } = query;
+    const { page, sort, order, status, clientId, dateFrom, dateTo, terminalId } = query;
     const limit = effectiveLimit(query);
     const skip = (page - 1) * limit;
 
@@ -54,6 +129,10 @@ export class InvoicesService {
 
     if (clientId) {
       where.clientId = clientId;
+    }
+
+    if (terminalId) {
+      where.terminalId = terminalId;
     }
 
     if (dateFrom || dateTo) {
@@ -104,47 +183,64 @@ export class InvoicesService {
       }
     }
 
-    const invoiceNumber = await this.generateInvoiceNumber(db);
-
     const salonInfo = await db.salonInfo.findFirst();
     const taxPercentage = salonInfo ? Number(salonInfo.taxPercentage) : 15;
+    const items = await this.normalizeInvoiceItems(db, dto.items);
 
-    const subtotal = dto.items.reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
-      0,
-    );
+    const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0);
     const taxAmount = (subtotal * taxPercentage) / 100;
     const total = subtotal + taxAmount;
 
-    const invoice = await db.invoice.create({
-      data: {
-        clientId: dto.clientId,
-        appointmentId: dto.appointmentId,
-        selfOrderId: dto.selfOrderId,
-        invoiceNumber,
-        subtotal,
-        taxAmount,
-        total,
-        notes: dto.notes,
-        createdBy,
-        invoiceItems: {
-          create: dto.items.map((item) => ({
-            serviceId: item.serviceId,
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            totalPrice: item.quantity * item.unitPrice,
-            employeeId: item.employeeId,
-          })),
-        },
-      },
-      include: {
-        invoiceItems: true,
-        client: {
-          select: { id: true, fullName: true, phone: true },
-        },
-      },
-    });
+    let invoice: Awaited<ReturnType<TenantPrismaClient['invoice']['create']>> | null = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        invoice = await db.$transaction(async (tx) => {
+          const invoiceNumber = await this.generateInvoiceNumber(tx);
+          return tx.invoice.create({
+            data: {
+              clientId: dto.clientId,
+              appointmentId: dto.appointmentId,
+              selfOrderId: dto.selfOrderId,
+              terminalId: dto.terminalId || null,
+              invoiceNumber,
+              subtotal,
+              taxAmount,
+              total,
+              notes: dto.notes,
+              createdBy,
+              invoiceItems: {
+                create: items.map((item) => ({
+                  serviceId: item.serviceId,
+                  description: item.description,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  totalPrice: item.totalPrice,
+                  employeeId: item.employeeId,
+                })),
+              },
+            },
+            include: {
+              invoiceItems: true,
+              client: {
+                select: { id: true, fullName: true, phone: true },
+              },
+            },
+          });
+        }, {
+          isolationLevel: 'Serializable',
+        });
+        break;
+      } catch (error) {
+        if (this.isInvoiceNumberConflict(error) && attempt < 2) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    if (!invoice) {
+      throw new ConflictException('Unable to allocate a unique invoice number');
+    }
 
     // Audit log (fire-and-forget)
     this.auditService.log({
@@ -204,27 +300,27 @@ export class InvoicesService {
 
     const salonInfo = await db.salonInfo.findFirst();
     const taxPercentage = salonInfo ? Number(salonInfo.taxPercentage) : 15;
+    const normalizedItems = dto.items
+      ? await this.normalizeInvoiceItems(db, dto.items)
+      : null;
 
     const invoice = await db.$transaction(async (tx) => {
-      if (dto.items) {
+      if (normalizedItems) {
         await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
 
         await tx.invoiceItem.createMany({
-          data: dto.items.map((item) => ({
+          data: normalizedItems.map((item) => ({
             invoiceId: id,
             serviceId: item.serviceId,
             description: item.description,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            totalPrice: item.quantity * item.unitPrice,
+            totalPrice: item.totalPrice,
             employeeId: item.employeeId,
           })),
         });
 
-        const subtotal = dto.items.reduce(
-          (sum, item) => sum + item.quantity * item.unitPrice,
-          0,
-        );
+        const subtotal = normalizedItems.reduce((sum, item) => sum + item.totalPrice, 0);
         const currentDiscount = Number(existing.discountAmount);
         const taxableAmount = subtotal - currentDiscount;
         const taxAmount = (taxableAmount * taxPercentage) / 100;
@@ -277,6 +373,18 @@ export class InvoicesService {
       0,
     );
     const remaining = Number(invoice.total) - totalPaid;
+
+    if (dto.method === 'cash') {
+      const isModernPosInvoice = Boolean(invoice.terminalId);
+      // Legacy non-terminal invoice payments predate cashReceived. Modern POS invoices
+      // carry terminalId and must send cashReceived explicitly until atomic checkout owns this fully.
+      if (isModernPosInvoice && dto.cashReceived === undefined) {
+        throw new BadRequestException('Cash received is required for POS cash payments');
+      }
+      if (dto.cashReceived !== undefined && dto.cashReceived < dto.amount) {
+        throw new BadRequestException('Cash received is less than the cash payment amount');
+      }
+    }
 
     if (dto.amount > remaining) {
       throw new BadRequestException(
@@ -376,6 +484,20 @@ export class InvoicesService {
       }
     }
 
+    if (res.invoice.status === 'paid') {
+      this.reviewRequests.scheduleForPaidInvoice(db, id).catch((err: unknown) => {
+        this.logger.error(`Failed to schedule review request for invoice ${id}: ${(err as Error).message}`);
+      });
+
+      // ZATCA auto-submit: fire-and-forget (don't block POS)
+      this.salonZatcaService.submitInvoice(db, id).then(() => {
+        this.logger.log(`ZATCA invoice submitted for ${id}`);
+      }).catch((err: unknown) => {
+        // Non-fatal: invoice is still valid, ZATCA submission can be retried
+        this.logger.warn(`ZATCA auto-submit skipped for ${id}: ${(err as Error).message}`);
+      });
+    }
+
     return result as unknown as Record<string, unknown>;
   }
 
@@ -425,10 +547,11 @@ export class InvoicesService {
     db: TenantPrismaClient,
     id: string,
     reason?: string,
+    itemIds?: string[],
   ): Promise<Record<string, unknown>> {
     const invoice = await db.invoice.findUnique({
       where: { id },
-      include: { payments: true },
+      include: { payments: true, invoiceItems: true },
     });
 
     if (!invoice) {
@@ -444,66 +567,87 @@ export class InvoicesService {
       throw new BadRequestException('يمكن استرداد الفواتير المدفوعة بالكامل فقط');
     }
 
-    const invoiceTotal = Number(invoice.total);
+    const isPartial = itemIds && itemIds.length > 0 && itemIds.length < invoice.invoiceItems.length;
+    let refundAmount: number;
+
+    if (isPartial) {
+      const selectedItems = invoice.invoiceItems.filter(item => itemIds.includes(item.id));
+      if (selectedItems.length === 0) {
+        throw new BadRequestException('العناصر المحددة غير موجودة في الفاتورة');
+      }
+      refundAmount = selectedItems.reduce((sum, item) => sum + Number(item.totalPrice), 0);
+    } else {
+      refundAmount = Number(invoice.total);
+    }
 
     const updated = await db.$transaction(async (tx) => {
-      // 1. Create refund payment record (negative amount for accounting)
+      // 1. Create refund payment record (negative amount)
       await tx.payment.create({
         data: {
           invoiceId: id,
-          amount: -invoiceTotal,
-          method: 'cash', // refunds default to cash
+          amount: -refundAmount,
+          method: 'cash',
           reference: reason || 'refund',
           status: 'refunded',
         },
       });
 
-      // 2. Mark all existing payments as refunded
-      await tx.payment.updateMany({
-        where: { invoiceId: id, status: 'completed' },
-        data: { status: 'refunded' },
-      });
-
-      // 3. Update invoice status
-      const updatedInvoice = await tx.invoice.update({
-        where: { id },
-        data: {
-          status: 'refunded',
-          refundedAt: new Date(),
-          refundReason: reason || null,
-          // Revoke public token on refund
-          ...(invoice.publicToken && {
-            publicTokenStatus: 'revoked',
-          }),
-        },
-        include: { invoiceItems: true, payments: true },
-      });
-
-      // 4. Reverse client stats (undo what recordPayment did)
-      if (invoice.clientId) {
-        await tx.client.update({
-          where: { id: invoice.clientId },
+      if (isPartial) {
+        // Partial refund — keep invoice status as paid
+        const updatedInvoice = await tx.invoice.update({
+          where: { id },
           data: {
-            totalSpent: { decrement: invoiceTotal },
-            totalVisits: { decrement: 1 },
+            refundReason: `[جزئي] ${reason || 'إرجاع جزئي'} — ${itemIds!.length} عنصر — ${refundAmount} ر.س`,
           },
+          include: { invoiceItems: true, payments: true },
         });
+        if (invoice.clientId) {
+          await tx.client.update({
+            where: { id: invoice.clientId },
+            data: { totalSpent: { decrement: refundAmount } },
+          }).catch(() => {});
+        }
+        return updatedInvoice;
+      } else {
+        // Full refund — original logic
+        await tx.payment.updateMany({
+          where: { invoiceId: id, status: 'completed' },
+          data: { status: 'refunded' },
+        });
+        const updatedInvoice = await tx.invoice.update({
+          where: { id },
+          data: {
+            status: 'refunded',
+            refundedAt: new Date(),
+            refundReason: reason || null,
+            ...(invoice.publicToken && { publicTokenStatus: 'revoked' }),
+          },
+          include: { invoiceItems: true, payments: true },
+        });
+        if (invoice.clientId) {
+          await tx.client.update({
+            where: { id: invoice.clientId },
+            data: {
+              totalSpent: { decrement: refundAmount },
+              totalVisits: { decrement: 1 },
+            },
+          }).catch(() => {});
+        }
+        return updatedInvoice;
       }
-
-      return updatedInvoice;
     });
 
     // Audit log (fire-and-forget)
     this.auditService.log({
       userId: id,
-      action: 'invoice.refund',
+      action: isPartial ? 'invoice.partial_refund' : 'invoice.refund',
       entityType: 'Invoice',
       entityId: id,
       oldValues: { status: 'paid' },
-      newValues: { status: 'refunded', reason },
+      newValues: { status: isPartial ? 'paid' : 'refunded', reason, refundAmount, itemIds },
     }).catch(() => {});
 
-    this.logger.log(`Invoice ${invoice.invoiceNumber} refunded (${invoiceTotal} SAR). Reason: ${reason || 'N/A'}`);
+    this.logger.log(`Invoice ${invoice.invoiceNumber} ${isPartial ? 'partially ' : ''}refunded (${refundAmount} SAR). Reason: ${reason || 'N/A'}`);
 
     return updated as unknown as Record<string, unknown>;
   }
@@ -673,16 +817,30 @@ export class InvoicesService {
     channel: InvoiceSendChannel,
     tenantBranding: { nameAr: string; primaryColor: string; logoUrl: string | null },
     tenantId?: string,
+    overridePhone?: string,
   ): Promise<{ message: string }> {
     const invoice = await db.invoice.findUnique({
       where: { id: invoiceId },
       include: {
         client: { select: { fullName: true, phone: true, email: true } },
+        invoiceItems: {
+          select: {
+            description: true,
+            quantity: true,
+            unitPrice: true,
+            totalPrice: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
     if (!invoice) {
       throw new NotFoundException('الفاتورة غير موجودة');
+    }
+
+    if (!invoice.invoiceItems.length) {
+      throw new BadRequestException('لا يمكن إرسال فاتورة بدون أصناف');
     }
 
     const pdfBuffer = await this.pdfService.generateInvoicePdf(
@@ -692,32 +850,77 @@ export class InvoicesService {
     );
     const filename = `فاتورة-${invoice.invoiceNumber}.pdf`;
 
-    const clientPhone = invoice.client.phone.replace(/\D/g, '');
-    const whatsappPhone = clientPhone.startsWith('966') ? clientPhone : `966${clientPhone.replace(/^0/, '')}`;
+    // ── Resolve target phone: explicit override > client phone ──
+    const rawPhone = (overridePhone ?? invoice.client.phone ?? '').replace(/\D/g, '');
+    if (!rawPhone || rawPhone.length < 8) {
+      throw new BadRequestException(
+        'رقم جوال العميل غير متوفر. أدخل رقماً صحيحاً قبل الإرسال',
+      );
+    }
+    const whatsappPhone = this.normalizeGulfPhone(rawPhone);
 
     switch (channel) {
       case InvoiceSendChannel.whatsapp: {
-        const settings = tenantId ? await this.settingsService.getAll(db, tenantId) : {};
+        // ── Unified: send via Evolution API (Baileys) ──
+        if (!tenantId) {
+          throw new BadRequestException('لا يمكن تحديد الصالون لإرسال واتساب');
+        }
+
+        // Check settings
+        const settings = await this.settingsService.getAll(db, tenantId);
         if (settings[SETTINGS_KEYS.whatsapp_enabled] !== 'true') {
           throw new BadRequestException('إرسال واتساب غير مفعّل في إعدادات الصالون');
         }
         if (settings[SETTINGS_KEYS.whatsapp_invoice_send] !== 'true') {
           throw new BadRequestException('إرسال الفواتير عبر واتساب غير مفعّل');
         }
-        const waCredentials = settings[SETTINGS_KEYS.whatsapp_token] && settings[SETTINGS_KEYS.whatsapp_phone_number_id]
-          ? { token: settings[SETTINGS_KEYS.whatsapp_token], phoneNumberId: settings[SETTINGS_KEYS.whatsapp_phone_number_id] }
-          : null;
-        if (!waCredentials) {
-          throw new BadRequestException('لم يتم ربط حساب واتساب للصالون. أضف التوكن ورقم الهاتف في الإعدادات');
+
+        // Look up the Evolution instance for this tenant
+        const waInstance = await this.platformPrisma.whatsAppInstance.findUnique({
+          where: { tenantId },
+        });
+        if (!waInstance || waInstance.status !== 'connected') {
+          throw new BadRequestException(
+            'واتساب غير متصل. افتح إعدادات واتساب وأعد المسح بالـ QR',
+          );
         }
-        await this.whatsAppService.sendDocument(
-          {
+
+        const salonInfo = await db.salonInfo.findFirst({
+          select: { taxNumber: true },
+        });
+        const caption = this.buildInvoiceWhatsAppCaption(
+          invoice,
+          tenantBranding.nameAr,
+          salonInfo?.taxNumber ?? null,
+        );
+
+        // Convert PDF buffer → base64 (no data: prefix; Evolution v2 expects raw base64)
+        const base64Pdf = pdfBuffer.toString('base64');
+
+        try {
+          await this.evolutionService.sendMedia({
+            instanceName: waInstance.instanceName,
+            instanceToken: waInstance.instanceToken,
             to: whatsappPhone,
-            document: pdfBuffer,
+            message: caption,
+            mediaUrl: base64Pdf,
+            mediaType: 'document',
+            mimetype: 'application/pdf',
             filename,
-            caption: `فاتورة ${invoice.invoiceNumber} من ${tenantBranding.nameAr}\nالإجمالي: ${Number(invoice.total).toFixed(2)} ر.س`,
-          },
-          waCredentials,
+            caption,
+          });
+        } catch (err) {
+          const reason = (err as Error)?.message ?? 'unknown';
+          this.logger.error(
+            `Invoice ${invoice.invoiceNumber} WA send failed → ${whatsappPhone} (instance=${waInstance.instanceName}): ${reason}`,
+          );
+          throw new BadRequestException(
+            `تعذّر إرسال الفاتورة عبر واتساب: ${reason}`,
+          );
+        }
+
+        this.logger.log(
+          `Invoice ${invoice.invoiceNumber} sent via Evolution WhatsApp to ${whatsappPhone} (instance=${waInstance.instanceName})`,
         );
         return { message: 'تم إرسال الفاتورة عبر واتساب بنجاح' };
       }
@@ -745,30 +948,95 @@ export class InvoicesService {
     }
   }
 
-  private async generateInvoiceNumber(db: TenantPrismaClient): Promise<string> {
-    // Use a serializable transaction to prevent race conditions.
-    // Two concurrent invoice creates could otherwise get the same number.
-    const result = await db.$transaction(async (tx) => {
-      // Lock the latest invoice row to prevent concurrent reads
-      const lastInvoices = await tx.$queryRawUnsafe<{ invoice_number: string }[]>(
-        `SELECT invoice_number FROM invoices ORDER BY created_at DESC LIMIT 1 FOR UPDATE SKIP LOCKED`,
-      );
+  // ── Gulf country-code-aware phone normalization (E.164 without +). ──
+  // Accepts: bare local digits, leading 0, or already-prefixed international.
+  // Default fallback for plain local numbers is +966 (KSA).
+  private normalizeGulfPhone(rawDigits: string): string {
+    const GULF_CODES = ['966', '971', '965', '973', '974', '968'];
+    const digits = rawDigits.replace(/^00/, '');
+    if (GULF_CODES.some((c) => digits.startsWith(c))) return digits;
+    return `966${digits.replace(/^0/, '')}`;
+  }
 
-      let nextNumber = 1;
-      if (lastInvoices.length > 0) {
-        const parts = lastInvoices[0].invoice_number.split('-');
-        const lastNum = parseInt(parts[1], 10);
-        if (!isNaN(lastNum)) {
-          nextNumber = lastNum + 1;
-        }
+  private buildInvoiceWhatsAppCaption(
+    invoice: {
+      invoiceNumber: string;
+      createdAt: Date;
+      subtotal: unknown;
+      discountAmount: unknown;
+      taxAmount: unknown;
+      total: unknown;
+      client: { fullName: string };
+      invoiceItems: { description: string; quantity: number; unitPrice: unknown; totalPrice: unknown }[];
+    },
+    salonName: string,
+    taxNumber: string | null,
+  ): string {
+    const fmt = (v: unknown) => Number(v ?? 0).toFixed(2);
+    const dateStr = new Intl.DateTimeFormat('ar-SA', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(invoice.createdAt);
+
+    const lines: string[] = [];
+    // ZATCA-required header for B2C simplified invoices.
+    lines.push('فاتورة ضريبية مبسطة');
+    lines.push(`*${salonName}*`);
+    if (taxNumber) lines.push(`الرقم الضريبي: ${taxNumber}`);
+    lines.push('──────────────');
+    lines.push(`فاتورة رقم: ${invoice.invoiceNumber}`);
+    if (invoice.client.fullName) lines.push(`العميل: ${invoice.client.fullName}`);
+    lines.push(`التاريخ: ${dateStr}`);
+    lines.push('');
+    lines.push('*الأصناف:*');
+    for (const it of invoice.invoiceItems) {
+      lines.push(`• ${it.description} × ${it.quantity} = ${fmt(it.totalPrice)} ر.س`);
+    }
+    lines.push('');
+    lines.push(`المجموع الفرعي: ${fmt(invoice.subtotal)} ر.س`);
+    if (Number(invoice.discountAmount ?? 0) > 0) {
+      lines.push(`الخصم: ${fmt(invoice.discountAmount)} ر.س`);
+    }
+    if (Number(invoice.taxAmount ?? 0) > 0) {
+      lines.push(`الضريبة: ${fmt(invoice.taxAmount)} ر.س`);
+    }
+    lines.push(`*الإجمالي: ${fmt(invoice.total)} ر.س*`);
+    lines.push('');
+    lines.push('شكراً لزيارتكم 🌸');
+    return lines.join('\n');
+  }
+
+  private async generateInvoiceNumber(db: InvoiceNumberClient): Promise<string> {
+    await db.$executeRawUnsafe('SELECT pg_advisory_xact_lock(91827364, 51020264)');
+
+    const lastInvoices = await db.$queryRawUnsafe<{ invoice_number: string }[]>(
+      `SELECT invoice_number
+       FROM invoices
+       WHERE invoice_number ~ '^INV-[0-9]+$'
+       ORDER BY CAST(SPLIT_PART(invoice_number, '-', 2) AS INTEGER) DESC
+       LIMIT 1`,
+    );
+
+    let nextNumber = 1;
+    if (lastInvoices.length > 0) {
+      const parts = lastInvoices[0].invoice_number.split('-');
+      const lastNum = parseInt(parts[1], 10);
+      if (!Number.isNaN(lastNum)) {
+        nextNumber = lastNum + 1;
       }
+    }
 
-      return `INV-${nextNumber.toString().padStart(4, '0')}`;
-    }, {
-      isolationLevel: 'Serializable',
-    });
+    return `INV-${nextNumber.toString().padStart(4, '0')}`;
+  }
 
-    return result;
+  private isInvoiceNumberConflict(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false;
+    const candidate = error as { code?: string; meta?: { target?: unknown } };
+    if (candidate.code !== 'P2002') return false;
+    return JSON.stringify(candidate.meta?.target ?? '').includes('invoice_number');
   }
 
   /* ════════════════════════════════════════════════
@@ -841,5 +1109,64 @@ export class InvoicesService {
 
     this.logger.log(`Public token regenerated for invoice ${invoiceId}`);
     return { publicToken: token };
+  }
+
+  /**
+   * Update the client name on a POS invoice's client record.
+   * Allowed only when the linked client is anonymous or walk-in
+   * (registered clients are managed via the clients module).
+   * Also patches receipt_snapshot.client.fullName for consistency.
+   */
+  async updateClientName(
+    db: TenantPrismaClient,
+    invoiceId: string,
+    fullName: string,
+    userId: string,
+  ): Promise<Record<string, unknown>> {
+    const trimmed = fullName.trim();
+    if (!trimmed) throw new BadRequestException('الاسم مطلوب');
+
+    const invoice = await db.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { client: { select: { id: true, fullName: true, phone: true, source: true } } },
+    });
+    if (!invoice) throw new NotFoundException('الفاتورة غير موجودة');
+    if (!invoice.client) throw new BadRequestException('لا يوجد عميل مرتبط بالفاتورة');
+
+    const isAnonymous =
+      invoice.client.fullName === 'Anonymous Customer' && invoice.client.phone === '0000000000';
+    const isWalkIn = invoice.client.source === 'walk_in';
+
+    if (!isAnonymous && !isWalkIn) {
+      throw new BadRequestException('لا يمكن تعديل اسم عميل مسجّل من شاشة الكاشير');
+    }
+
+    await db.client.update({
+      where: { id: invoice.client.id },
+      data: { fullName: trimmed, ...(isAnonymous ? { source: 'walk_in' as const } : {}) },
+    });
+
+    const snapshot = invoice.receiptSnapshot as Record<string, unknown> | null;
+    if (snapshot && typeof snapshot === 'object') {
+      const snapshotClient = (snapshot.client as Record<string, unknown> | undefined) ?? {};
+      const updatedSnapshot = {
+        ...snapshot,
+        client: { ...snapshotClient, fullName: trimmed },
+      };
+      await db.invoice.update({
+        where: { id: invoiceId },
+        data: { receiptSnapshot: updatedSnapshot as unknown as object },
+      });
+    }
+
+    this.auditService.log({
+      userId,
+      action: 'invoice.client_name.updated',
+      entityType: 'Invoice',
+      entityId: invoiceId,
+      newValues: { clientId: invoice.client.id, fullName: trimmed },
+    }).catch(() => {});
+
+    return { id: invoice.client.id, fullName: trimmed };
   }
 }

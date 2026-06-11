@@ -61,6 +61,117 @@ export interface FeedbackSummary {
   googleClickRate: number;
 }
 
+export type PosCheckoutPaymentMethod =
+  | 'cash'
+  | 'card'
+  | 'bank_transfer'
+  | 'wallet'
+  | 'stc_pay'
+  | 'apple_pay';
+
+export interface PosCheckoutRequest {
+  idempotencyKey: string;
+  terminalId: string;
+  shiftId: string;
+  clientId?: string;
+  walkIn?: {
+    fullName: string;
+    phone: string;
+  };
+  anonymous?: boolean;
+  source?: {
+    type: 'appointment' | 'self_order';
+    id: string;
+  };
+  items: Array<{
+    serviceId: string;
+    employeeId: string;
+    quantity: number;
+    note?: string;
+  }>;
+  manualDiscount?: {
+    type: 'percentage' | 'fixed';
+    value: number;
+    reason: string;
+  };
+  couponCode?: string;
+  loyaltyRedemption?: {
+    type: 'points' | 'visits';
+    value: number;
+  };
+  payments: Array<{
+    method: PosCheckoutPaymentMethod;
+    amount: number;
+    cashReceived?: number;
+    reference?: string;
+  }>;
+  notes?: string;
+  managerApprovalToken?: string;
+}
+
+export interface PosReceiptSnapshot {
+  version?: number;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  publicToken?: string;
+  issuedAt?: string;
+  terminalId?: string;
+  shiftId?: string;
+  client?: {
+    id?: string | null;
+    fullName?: string;
+    phone?: string | null;
+    source?: string;
+  };
+  items?: Array<{
+    serviceId?: string;
+    description?: string;
+    employeeId?: string;
+    employeeName?: string;
+    quantity?: number;
+    unitPrice?: number;
+    total?: number;
+  }>;
+  discounts?: Array<{
+    kind?: string;
+    type?: string;
+    value?: number;
+    amount?: number;
+    reason?: string;
+    code?: string;
+  }>;
+  subtotal?: number;
+  discountTotal?: number;
+  taxableSubtotal?: number;
+  taxRatePercent?: number;
+  taxAmount?: number;
+  total?: number;
+  payments?: Array<{
+    method?: PosCheckoutPaymentMethod | string;
+    amount?: number;
+    cashReceived?: number | null;
+    changeAmount?: number | null;
+    reference?: string;
+  }>;
+}
+
+export interface PosCheckoutResponse {
+  checkoutId: string;
+  idempotencyKey: string;
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    status: string;
+    total: number;
+    publicToken?: string | null;
+  };
+  receiptSnapshot: PosReceiptSnapshot;
+  nextActions?: {
+    canSendInvoice?: boolean;
+    canSubmitZatca?: boolean;
+  };
+}
+
 
 function buildQuery(params: ListParams): string {
   const query = new URLSearchParams();
@@ -175,12 +286,44 @@ export const dashboardService = {
 
   recordInvoicePayment: (
     invoiceId: string,
-    data: { amount: number; method: 'cash' | 'card' | 'bank_transfer' | 'wallet'; reference?: string },
+    data: { amount: number; method: 'cash' | 'card' | 'bank_transfer' | 'wallet'; reference?: string; cashReceived?: number },
     token: string,
   ) => api.post(`/invoices/${invoiceId}/pay`, data, token),
 
-  sendInvoice: (invoiceId: string, channel: 'whatsapp' | 'email' | 'sms', token: string) =>
-    api.post(`/invoices/${invoiceId}/send`, { channel }, token),
+  posCheckout: (data: PosCheckoutRequest, token: string) =>
+    api.post<PosCheckoutResponse>('/pos/checkout', data, token),
+
+  requestManagerOverride: (
+    payload: { password: string; discountPercent: number; reason: string },
+    token: string,
+  ) => api.post<{
+    success: boolean;
+    data: {
+      token: string;
+      expiresAt: string;
+      approvedBy: { id: string; fullName: string };
+    };
+    message?: string;
+  }>('/pos/manager-override', payload, token),
+
+  sendInvoice: (
+    invoiceId: string,
+    channel: 'whatsapp' | 'email' | 'sms',
+    token: string,
+    to?: string,
+  ) =>
+    api.post(
+      `/invoices/${invoiceId}/send`,
+      to ? { channel, to } : { channel },
+      token,
+    ),
+
+  updateInvoiceClientName: (invoiceId: string, fullName: string, token: string) =>
+    api.patch<{ success: boolean; data: { id: string; fullName: string } }>(
+      `/invoices/${invoiceId}/client-name`,
+      { fullName },
+      token,
+    ),
 
   // ─── Inventory ───
   getProducts: (token: string) =>
@@ -273,7 +416,7 @@ export const dashboardService = {
   getZatcaCertificates: (token: string) =>
     api.get<ZatcaCertificate[]>('/zatca/certificates', token),
 
-  onboardZatca: (data: { organizationUnitName?: string; isProduction?: boolean }, token: string) =>
+  onboardZatca: (data: { otp: string; organizationUnitName?: string; isProduction?: boolean }, token: string) =>
     api.post<ZatcaCertificate>('/zatca/onboard', data, token),
 
   submitZatcaInvoice: (invoiceId: string, token: string) =>

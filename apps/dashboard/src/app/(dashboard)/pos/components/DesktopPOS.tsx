@@ -5,13 +5,15 @@ import Link from 'next/link';
 import {
   Search, Minus, Plus, Trash2,
   ShoppingCart, Receipt,
-  Printer, MessageCircle, Mail,
-  QrCode, X, Users, ChevronDown, ChevronUp,
+  Printer,
+  X, Users, ChevronDown, ChevronUp,
   Pause, Play, RotateCcw, Split, Percent, Heart,
-  CircleDollarSign, Wifi, WifiOff, Package,
-  Check, ArrowLeft, ClipboardCheck, Ticket,
+  CircleDollarSign, Wifi, WifiOff,
+  Check, ArrowLeft, ClipboardCheck, Ticket, Banknote,
+  Lock, FileText, AlertTriangle,
 } from 'lucide-react';
 import type { E } from '../pos-engine';
+import type { PosShiftData } from '../pos-types';
 import {
   B, BS, T, TN,
   G1, G2, G3,
@@ -20,20 +22,30 @@ import {
   accentBg, accentColor, accentMix, primaryBg,
   fmt, PAY,
 } from '../pos-constants';
-import { ClientSection } from './ClientSection';
-import { EmployeePicker } from './EmployeePicker';
+import { EmployeePopover } from './EmployeePopover';
 import { CategoryBar } from './CategoryBar';
 import { ServiceGrid } from './ServiceGrid';
+import { AppointmentGrid } from './AppointmentGrid';
 import { PanelModals } from './PanelModals';
 import { OrderInput } from './OrderInput';
 import { QRSuccessModal } from './QRSuccessModal';
+import { ShiftReport } from './ShiftReport';
+import { ReceiptPrint } from './ReceiptPrint';
+import { NfcInvoiceBar } from './NfcInvoiceBar';
+import { ClientSection } from './ClientSection';
+import { usePosSocket } from '../usePosSocket';
 import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
+import { Bell } from 'lucide-react';
 
-export function DesktopPOS({ e }: { e: E }) {
+export function DesktopPOS({ e, shift }: { e: E; shift?: PosShiftData }) {
   const { currentTenant, userRole, isOwner } = useAuth();
   const isCashierOnly = userRole === 'cashier' && !isOwner;
   const searchRef = useRef<HTMLInputElement>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [showReport, setShowReport] = useState(false);
+  const [closedShiftData, setClosedShiftData] = useState<PosShiftData | null>(null);
+  const socket = usePosSocket();
 
   useEffect(() => {
     const h = (ev: KeyboardEvent) => { if (ev.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName ?? '')) { ev.preventDefault(); searchRef.current?.focus(); } };
@@ -42,7 +54,13 @@ export function DesktopPOS({ e }: { e: E }) {
   }, []);
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--background)]" dir="rtl">
+    <div
+      className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--background)]"
+      dir="rtl"
+      data-checkout-status={e.lastCheckoutDiagnostic?.status}
+      data-last-receipt-source={e.lastPaidSnapshot?.source}
+      data-checkout-diagnostics-count={e.checkoutDiagnostics.length}
+    >
       {/* HEADER */}
       <header className={`flex shrink-0 items-center justify-between gap-3 px-4 py-2 ${G2} ${brd(4)} border-b`}>
         <div className="flex items-center gap-3">
@@ -50,12 +68,23 @@ export function DesktopPOS({ e }: { e: E }) {
           <div><span className="text-[13px] font-black tracking-tight text-[var(--foreground)]">SERVIX</span><span className="ms-1.5 text-[9px] font-bold" style={accentColor}>POS</span></div>
           <div className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[8px] font-bold ${e.online ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/15 text-red-400 animate-pulse'}`}>{e.online ? <Wifi size={9} /> : <WifiOff size={9} />}{e.online ? 'متصل' : 'غير متصل'}</div>
         </div>
+        {/* Performance bar */}
+        <div className="hidden items-center gap-3 xl:flex">
+          <span className="text-[9px] text-[var(--muted-foreground)]">مبيعات: <span style={{...TN, ...accentColor}} className="font-bold">{fmt(e.todaySales)}</span></span>
+          <span className="h-3 w-px bg-[var(--muted-foreground)]" style={{opacity:0.15}} />
+          <span className="text-[9px] text-[var(--muted-foreground)]">فواتير: <span style={TN} className="font-bold text-[var(--foreground)]">{e.todayInvoices}</span></span>
+          <span className="h-3 w-px bg-[var(--muted-foreground)]" style={{opacity:0.15}} />
+          <span className="text-[9px] text-[var(--muted-foreground)]">متوسط: <span style={TN} className="font-bold text-[var(--foreground)]">{e.todayInvoices > 0 ? fmt(e.todaySales / e.todayInvoices) : '0'}</span></span>
+        </div>
         <div className="flex items-center gap-1">
           <button onClick={e.holdBill} className={`${B} group relative flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Pause size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] sm:inline">تعليق</span>{e.held.length > 0 && <span className="absolute -end-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-[7px] font-black text-black" style={accentBg}>{e.held.length}</span>}</button>
           <button onClick={() => e.setPanel('hold-list')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Play size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] sm:inline">استدعاء</span></button>
           <button onClick={() => e.setPanel('refund')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><RotateCcw size={12} className="text-[var(--muted-foreground)] group-hover:text-red-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-red-400 sm:inline">إرجاع</span></button>
           <button onClick={() => e.setPanel('receipt')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Printer size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" /></button>
           <button onClick={() => e.setPanel('attendance')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><ClipboardCheck size={12} className="text-[var(--muted-foreground)] group-hover:text-emerald-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-emerald-400 sm:inline">تحضير</span></button>
+          <button onClick={() => e.setPanel('expense')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><CircleDollarSign size={12} className="text-[var(--muted-foreground)] group-hover:text-orange-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-orange-400 sm:inline">مصروف</span></button>
+          <button onClick={() => e.setPanel('close-shift')} className={`${B} group flex h-8 items-center gap-1.5 rounded-xl px-3 ${G3}`}><Lock size={12} className="text-[var(--muted-foreground)] group-hover:text-red-400" /><span className="hidden text-[9px] font-semibold text-[var(--muted-foreground)] group-hover:text-red-400 sm:inline">إغلاق</span></button>
+          <button onClick={() => { socket.clearNotifications(); e.setPanel('notifications'); }} className={`${B} group relative flex h-8 w-8 items-center justify-center rounded-xl ${G3}`}><Bell size={12} className="text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" />{socket.unreadCount > 0 && <span className="absolute -end-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[7px] font-black text-white animate-pulse">{socket.unreadCount}</span>}</button>
           {!isCashierOnly && <>
             <div className={`mx-0.5 h-4 w-px ${bg(6)}`} />
             <Link href="/" className={`${B} flex h-8 w-8 items-center justify-center rounded-xl ${G3} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><ArrowLeft size={13} /></Link>
@@ -63,32 +92,12 @@ export function DesktopPOS({ e }: { e: E }) {
         </div>
       </header>
 
-      {/* 3-COLUMN BODY */}
-      <div className="flex flex-1 min-h-0">
-        {/* COL 1: CLIENT */}
-        <aside className={`hidden w-[270px] shrink-0 flex-col ${brd(4)} border-e lg:flex ${G1}`}>
-          <ClientSection e={e} />
-          <EmployeePicker e={e} />
-          {e.comms.length > 0 && (
-            <div className={`shrink-0 ${brd(4)} border-b p-3 space-y-1.5`}>
-              <div className="flex items-center justify-between"><div className="flex items-center gap-1.5"><CircleDollarSign size={10} className="text-emerald-400" /><span className="text-[10px] font-bold text-[var(--foreground)]">العمولات</span></div><span className="rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-bold text-emerald-400" style={TN}>{fmt(e.totalComm)}</span></div>
-              {e.comms.map((c, i) => (<div key={i} className={`flex justify-between rounded-lg ${bg(2)} px-2 py-1`}><span className="text-[9px] text-[var(--muted-foreground)]">{c.name} <span className="opacity-40">({c.type === 'percentage' ? `${c.rate}%` : `${c.rate}ر.س`})</span></span><span className="text-[9px] font-bold text-emerald-400" style={TN}>{fmt(c.amount)}</span></div>))}
-            </div>
-          )}
-          <div className="flex-1" />
-          <div className="shrink-0 p-3 space-y-0.5">
-            <p className="mb-1 text-[7px] font-bold uppercase tracking-widest text-[var(--muted-foreground)]" style={{ opacity: 0.4 }}>إرسال الإيصال</p>
-            {[{ ck: e.sendWA, set: e.setSendWA, icon: MessageCircle, label: 'واتساب', clr: 'text-emerald-400' }, { ck: e.sendMail, set: e.setSendMail, icon: Mail, label: 'إيميل', clr: 'text-sky-400' }].map(o => (
-              <label key={o.label} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer ${T} hover:${bg(3)}`}>
-                <div className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${o.ck ? 'border-transparent' : brd(10)} ${T}`} style={o.ck ? accentBg : undefined}>{o.ck && <Check size={8} className="text-black" />}</div>
-                <input type="checkbox" checked={o.ck} onChange={ev => o.set(ev.target.checked)} className="sr-only" />
-                <o.icon size={10} className={o.clr} /><span className="text-[9px] text-[var(--muted-foreground)]">{o.label}</span>
-              </label>
-            ))}
-          </div>
-        </aside>
+      {/* NFC Invoice Bar */}
+      <NfcInvoiceBar e={e} salonSlug={currentTenant?.slug} />
 
-        {/* COL 2: SERVICES */}
+      {/* 2-COLUMN BODY */}
+      <div className="flex flex-1 min-h-0">
+        {/* COL 1: SERVICES (wider now) */}
         <main className="flex flex-1 flex-col min-w-0">
           <OrderInput e={e} />
           <div className="shrink-0 p-3 pb-1.5">
@@ -99,11 +108,14 @@ export function DesktopPOS({ e }: { e: E }) {
             </div>
           </div>
           <CategoryBar e={e} />
-          <div className="flex-1 overflow-y-auto p-3 pt-1"><ServiceGrid e={e} /></div>
+          <div className="flex-1 overflow-y-auto p-3 pt-1">
+            {e.showAppointments ? <AppointmentGrid e={e} /> : <ServiceGrid e={e} />}
+          </div>
         </main>
 
-        {/* COL 3: CART */}
+        {/* COL 2: CART */}
         <aside className={`hidden w-[340px] shrink-0 flex-col ${brd(4)} border-s lg:flex ${G1}`}>
+          <ClientSection e={e} />
           <div className={`flex shrink-0 items-center justify-between px-3.5 py-2.5 ${brd(4)} border-b`}>
             <div className="flex items-center gap-2"><ShoppingCart size={12} style={accentColor} /><span className="text-[11px] font-bold text-[var(--foreground)]">السلة</span>{e.cartCount > 0 && <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-md px-1 text-[8px] font-black text-black" style={{ ...TN, ...accentBg }}>{e.cartCount}</span>}</div>
             {e.cart.length > 0 && <button onClick={e.clearAll} className={`${BS} rounded-md px-2 py-0.5 text-[8px] font-semibold text-red-400 hover:bg-red-500/10`}>مسح</button>}
@@ -120,8 +132,8 @@ export function DesktopPOS({ e }: { e: E }) {
                     <div className="flex items-center gap-1 p-2">
                       <button onClick={() => setExpanded(isExp ? null : item.id)} className={`${BS} flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:${bg(4)} hover:text-[var(--foreground)]`} style={{ opacity: 0.3 }}>{isExp ? <ChevronUp size={10} /> : <ChevronDown size={10} />}</button>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[10px] font-semibold text-[var(--foreground)]">{item.service.nameAr}{item.bundleId && <Package size={7} className="inline ms-1 text-[var(--muted-foreground)]" />}</p>
-                        <div className="flex items-center gap-1 text-[7px] text-[var(--muted-foreground)]" style={{ opacity: 0.6 }}><Users size={6} /> {item.employeeName}{item.discount > 0 && <span className="text-emerald-400">-{item.discountType === 'percentage' ? `${item.discount}%` : fmt(item.discount)}</span>}</div>
+                        <p className="truncate text-[10px] font-semibold text-[var(--foreground)]">{item.service.nameAr}</p>
+                        <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]" style={{ opacity: 0.6 }}><Users size={7} /> {item.employeeName}{item.discount > 0 && <span className="text-emerald-400">-{item.discountType === 'percentage' ? `${item.discount}%` : fmt(item.discount)}</span>}</div>
                       </div>
                       <div className="flex items-center gap-0.5">
                         <button onClick={() => e.updateQty(item.id, -1)} className={`${BS} flex h-6 w-6 items-center justify-center rounded-md ${brd(5)} border text-[var(--muted-foreground)]`}><Minus size={9} /></button>
@@ -150,10 +162,33 @@ export function DesktopPOS({ e }: { e: E }) {
                 <input type="number" value={e.globalDisc} onChange={ev => e.setGlobalDisc(ev.target.value)} placeholder="خصم" className={`w-16 rounded-lg ${brd(5)} border ${bg(3)} px-2 py-1.5 text-[9px] text-center text-[var(--foreground)] focus:outline-none ${T}`} style={TN} />
                 <div className={`flex overflow-hidden rounded-lg ${brd(5)} border`}><button onClick={() => e.setGlobalDiscType('fixed')} className={`${BS} px-1.5 py-1.5 text-[7px] font-bold ${e.globalDiscType === 'fixed' ? 'text-black' : 'text-[var(--muted-foreground)]'}`} style={e.globalDiscType === 'fixed' ? accentBg : undefined}>ر.س</button><button onClick={() => e.setGlobalDiscType('percentage')} className={`${BS} px-1.5 py-1.5 text-[7px] font-bold ${e.globalDiscType === 'percentage' ? 'text-black' : 'text-[var(--muted-foreground)]'}`} style={e.globalDiscType === 'percentage' ? accentBg : undefined}>%</button></div>
               </div>
+              {/* Discount reason (mandatory when discount > 0) */}
+              {e.gDiscVal > 0 && (
+                <div className="flex items-center gap-1">
+                  <FileText size={9} className="shrink-0 text-amber-400" style={{ opacity: 0.5 }} />
+                  <input value={e.discountReason} onChange={ev => e.setDiscountReason(ev.target.value)} placeholder="سبب الخصم (إلزامي)" className={`flex-1 rounded-lg ${brd(5)} border ${e.discountNeedsReason ? 'border-amber-500/40 bg-amber-500/5' : bg(3)} px-2 py-1.5 text-[9px] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none ${T}`} />
+                </div>
+              )}
+              {/* Discount limit warning */}
+              {e.discountExceedsLimit && (
+                <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-2">
+                  <AlertTriangle size={12} className="shrink-0 text-amber-400" />
+                  <span className="flex-1 text-[9px] text-amber-300">الخصم يتجاوز الحد المسموح ({e.maxDiscountPercent}%)</span>
+                  <button onClick={() => e.setPanel('pin-override')} className={`${BS} rounded-lg px-2.5 py-1 text-[8px] font-bold text-black`} style={accentBg}>اعتماد مدير</button>
+                </div>
+              )}
+              {/* Manager approval badge — shown after override is granted */}
+              {e.managerApproval && (
+                <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2">
+                  <Check size={12} className="shrink-0 text-emerald-400" />
+                  <span className="flex-1 text-[9px] text-emerald-300">معتمَد من {e.managerApproval.approverName.split(' ')[0]}</span>
+                  <button onClick={() => e.setManagerApproval(null)} className={`${BS} rounded-lg px-2 py-1 text-[8px] text-emerald-300 hover:bg-emerald-500/15`}>إلغاء</button>
+                </div>
+              )}
               {/* Coupon */}
               <div className="flex items-center gap-1">
                 <Ticket size={9} className="shrink-0 text-[var(--brand-primary)]" style={{ opacity: 0.5 }} />
-                <input value={e.couponCode} onChange={ev => e.setCouponCode(ev.target.value.toUpperCase())} disabled={e.couponApplied} placeholder="كود كوبون" dir="ltr" className={`flex-1 rounded-lg ${brd(5)} border ${bg(3)} px-2 py-1.5 text-[9px] font-mono font-bold tracking-wider text-center text-[var(--foreground)] placeholder:font-normal placeholder:tracking-normal focus:outline-none ${T} ${e.couponApplied ? 'border-emerald-500/30 bg-emerald-500/5' : ''}`} />
+                <input data-testid="pos-coupon-code" value={e.couponCode} onChange={ev => e.setCouponCode(ev.target.value.toUpperCase())} disabled={e.couponApplied} placeholder="كود كوبون" dir="ltr" className={`flex-1 rounded-lg ${brd(5)} border ${bg(3)} px-2 py-1.5 text-[9px] font-mono font-bold tracking-wider text-center text-[var(--foreground)] placeholder:font-normal placeholder:tracking-normal focus:outline-none ${T} ${e.couponApplied ? 'border-emerald-500/30 bg-emerald-500/5' : ''}`} />
                 {e.couponMut.isPending && <span className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--brand-accent)]/30 border-t-[var(--brand-accent)]" />}
                 {e.couponApplied && <button onClick={e.removeCoupon} className={`${BS} rounded-lg px-2 py-1.5 text-[8px] font-bold text-red-400 hover:bg-red-500/10`}><X size={10} /></button>}
               </div>
@@ -161,13 +196,42 @@ export function DesktopPOS({ e }: { e: E }) {
                 <div className="flex justify-between text-[9px]"><span className="text-[var(--muted-foreground)]">المجموع الفرعي</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.subtotal)}</span></div>
                 {e.gDiscVal > 0 && <div className="flex justify-between text-[9px]"><span className="text-emerald-400">الخصم</span><span className="font-semibold text-emerald-400" style={TN}>-{fmt(e.gDiscVal)}</span></div>}
                 {e.couponDiscount > 0 && <div className="flex justify-between text-[9px]"><span className="text-[var(--brand-primary)]"><Ticket size={8} className="inline me-0.5" />كوبون</span><span className="font-semibold text-[var(--brand-primary)]" style={TN}>-{fmt(e.couponDiscount)}</span></div>}
-                <div className="flex justify-between text-[9px]"><span className="text-[var(--muted-foreground)]">ضريبة 15%</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.tax)}</span></div>
-                <div className={`flex items-baseline justify-between ${brd(4)} border-t pt-1.5`}><span className="text-[10px] font-bold text-[var(--foreground)]">الإجمالي</span><span className="text-[17px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)} <span className="text-[8px] font-semibold opacity-40">ر.س</span></span></div>
+                <div className="flex justify-between text-[9px]"><span className="text-[var(--muted-foreground)]">ضريبة {Math.round(e.taxRate * 100)}%</span><span className="font-semibold text-[var(--foreground)]" style={TN}>{fmt(e.tax)}</span></div>
+                <div className={`flex items-baseline justify-between ${brd(4)} border-t pt-1.5`}><span className="text-[10px] font-bold text-[var(--foreground)]">الإجمالي</span><span className="text-[24px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)} <span className="text-[10px] font-semibold opacity-40">ر.س</span></span></div>
               </div>
-              <div className="grid grid-cols-4 gap-1">{PAY.map(pm => (<button key={pm.id} onClick={() => e.setSelectedPayMethod(pm.id)} disabled={e.payMut.isPending || !e.canPay} className={`${BS} flex flex-col items-center gap-1 rounded-xl ${brd(4)} border py-2.5 disabled:opacity-15 disabled:pointer-events-none transition-all duration-150 ${e.selectedPayMethod === pm.id ? 'text-black ring-2 ring-[var(--brand-accent)]/40' : `${bg(2)} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}`} style={e.selectedPayMethod === pm.id ? { ...accentBg, borderColor: 'var(--brand-accent)' } : undefined}><pm.icon size={15} strokeWidth={1.5} /><span className="text-[7px] font-bold">{pm.label}</span></button>))}</div>
-              <button onClick={() => e.setPanel('split')} disabled={!e.canPay} className={`${B} flex w-full items-center justify-center gap-1 rounded-xl ${brd(4)} border py-2 text-[9px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-15`}><Split size={11} /> دفع مقسّم</button>
-              <button onClick={() => e.pay(e.selectedPayMethod)} disabled={e.payMut.isPending || !e.canPay} className={`${B} relative flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[13px] font-black shadow-xl disabled:opacity-15 disabled:pointer-events-none overflow-hidden`} style={e.canPay ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))', color: '#000' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{e.payMut.isPending ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Receipt size={14} /> إصدار فاتورة — {fmt(e.total)}</>}</button>
-              <div className="flex gap-1"><button className={`${B} flex flex-1 items-center justify-center gap-1 rounded-xl ${brd(4)} border py-1.5 text-[8px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><Printer size={10} /> طباعة</button><button className={`${B} flex flex-1 items-center justify-center gap-1 rounded-xl ${brd(4)} border py-1.5 text-[8px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}><QrCode size={10} /> ZATCA</button></div>
+              <div className="grid grid-cols-4 gap-1">{PAY.map(pm => (<button key={pm.id} data-testid={`pos-payment-${pm.id}`} onClick={() => e.setSelectedPayMethod(pm.id)} disabled={e.payMut.isPending || !e.canPay} className={`${BS} flex flex-col items-center gap-1.5 rounded-xl ${brd(4)} border py-3.5 disabled:opacity-15 disabled:pointer-events-none transition-all duration-150 ${e.selectedPayMethod === pm.id ? 'text-black ring-2 ring-[var(--brand-accent)]/40' : `${bg(2)} text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}`} style={e.selectedPayMethod === pm.id ? { ...accentBg, borderColor: 'var(--brand-accent)' } : undefined}><pm.icon size={19} strokeWidth={1.5} /><span className="text-[9px] font-bold">{pm.label}</span></button>))}</div>
+              <button data-testid="pos-split-open" onClick={() => e.setPanel('split')} disabled={!e.canPayWithDiscount || e.couponMut.isPending || (!!e.couponCode && !e.couponApplied)} className={`${B} flex w-full items-center justify-center gap-1 rounded-xl ${brd(4)} border py-2 text-[9px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-15`}><Split size={11} /> دفع مقسّم</button>
+              {/* Cash Change Calculator */}
+              {e.selectedPayMethod === 'cash' && e.cart.length > 0 && (
+                <div className={`space-y-2 rounded-xl ${bg(2)} p-2.5`}>
+                  <div className="flex items-center gap-1.5">
+                    <Banknote size={11} className="text-emerald-400" style={{ opacity: 0.6 }} />
+                    <span className="text-[9px] font-bold text-[var(--muted-foreground)]">المبلغ المستلم</span>
+                  </div>
+                  <input data-testid="pos-cash-received" type="number" value={e.cashReceived} onChange={ev => e.setCashReceived(ev.target.value)} placeholder="0.00" dir="ltr" className={`w-full rounded-lg ${brd(5)} border ${bg(3)} px-3 py-2.5 text-center text-[16px] font-black text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--brand-accent)]/30 ${T}`} style={TN} />
+                  <div className="flex gap-1">
+                    {[50, 100, 200, 500].map(v => (
+                      <button key={v} onClick={() => e.setCashReceived(String(v))} className={`${BS} flex-1 rounded-lg ${brd(4)} border py-1.5 text-[10px] font-bold text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:${bg(4)}`} style={TN}>{v}</button>
+                    ))}
+                    <button onClick={() => e.setCashReceived(String(Math.ceil(e.total)))} className={`${BS} flex-1 rounded-lg py-1.5 text-[9px] font-bold text-black`} style={accentBg}>المبلغ</button>
+                  </div>
+                  {e.cashReceived && (
+                    <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${e.changeAmount >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                      <span className="text-[10px] font-bold text-[var(--muted-foreground)]">الباقي</span>
+                      <span className={`text-[18px] font-black ${e.changeAmount >= 0 ? 'text-emerald-400' : 'text-red-400'}`} style={TN}>{fmt(Math.abs(e.changeAmount))} <span className="text-[9px] font-semibold opacity-50">ر.س</span></span>
+                    </div>
+                  )}
+                </div>
+              )}
+              <button data-testid="pos-checkout-button" onClick={() => e.pay(e.selectedPayMethod)} disabled={e.payMut.isPending || !e.canSubmitPayment} className={`${B} relative flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[13px] font-black shadow-xl disabled:opacity-15 disabled:pointer-events-none overflow-hidden`} style={e.canSubmitPayment ? { background: 'linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 80%, #000))', color: '#000' } : { background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{e.payMut.isPending ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" /> : <><Receipt size={14} /> إصدار فاتورة — {fmt(e.total)}</>}</button>
+              <div className="flex gap-1"><button data-testid="pos-print-last-receipt" onClick={() => { if (e.lastPaidTotal > 0) window.print(); }} disabled={e.lastPaidTotal <= 0} className={`${B} flex flex-1 items-center justify-center gap-1 rounded-xl ${brd(4)} border py-1.5 text-[8px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-20`}><Printer size={10} /> طباعة</button></div>
+            </div>
+          )}
+          {e.cart.length === 0 && e.lastPaidTotal > 0 && (
+            <div className={`shrink-0 ${brd(4)} border-t px-3.5 py-2.5`}>
+              <button data-testid="pos-print-last-receipt" onClick={() => window.print()} className={`${B} flex w-full items-center justify-center gap-1 rounded-xl ${brd(4)} border py-2 text-[9px] font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)]`}>
+                <Printer size={11} /> طباعة آخر إيصال
+              </button>
             </div>
           )}
         </aside>
@@ -176,17 +240,31 @@ export function DesktopPOS({ e }: { e: E }) {
       {/* MOBILE BOTTOM */}
       <div className={`flex shrink-0 items-center justify-between ${brd(4)} border-t px-4 py-3 lg:hidden ${G2}`}>
         <div><p className="text-[7px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]" style={{ opacity: 0.4 }}>الإجمالي</p><p className="text-[17px] font-black" style={{ ...TN, ...accentColor }}>{fmt(e.total)}</p></div>
-        <div className="flex items-center gap-2">{e.cartCount > 0 && <span className="flex h-6 min-w-6 items-center justify-center rounded-lg px-1.5 text-[10px] font-black text-black" style={{ ...TN, ...accentBg }}>{e.cartCount}</span>}<button onClick={() => e.pay('cash')} disabled={e.payMut.isPending || !e.canPay} className={`${B} rounded-2xl px-6 py-2.5 text-[12px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>{e.payMut.isPending ? '...' : 'ادفع'}</button></div>
+        <div className="flex items-center gap-2">{e.cartCount > 0 && <span className="flex h-6 min-w-6 items-center justify-center rounded-lg px-1.5 text-[10px] font-black text-black" style={{ ...TN, ...accentBg }}>{e.cartCount}</span>}<button onClick={() => e.pay('cash')} disabled={e.payMut.isPending || !e.cashPaymentReady} className={`${B} rounded-2xl px-6 py-2.5 text-[12px] font-bold text-black shadow-lg disabled:opacity-20`} style={accentBg}>{e.payMut.isPending ? '...' : 'ادفع'}</button></div>
       </div>
 
-      <PanelModals e={e} />
+      <PanelModals e={e} onShiftClosed={(data) => { setClosedShiftData(data); setShowReport(true); }} notifications={socket.notifications} onDismissNotif={socket.dismissNotification} onClearNotifs={() => { socket.clearNotifications(); }} />
+      <ShiftReport shift={closedShiftData} isOpen={showReport} onClose={() => { setShowReport(false); setClosedShiftData(null); window.location.reload(); }} />
+      <ReceiptPrint e={e} tenantName={currentTenant?.nameAr || 'SERVIX'} />
       <QRSuccessModal
         isOpen={e.showQRModal}
         onClose={() => { e.setShowQRModal(false); e.clearAll(); }}
         invoiceTotal={e.lastPaidTotal}
         publicToken={e.publicToken}
         tenantSlug={currentTenant?.slug || ''}
+        invoiceId={e.lastInvoiceId}
+        clientPhone={e.client?.phone}
+        initialClientName={e.lastPaidSnapshot?.clientName ?? e.client?.fullName ?? null}
       />
+      {/* Employee selection popover */}
+      {e.pendingService && (
+        <EmployeePopover
+          service={e.pendingService}
+          employees={e.emps}
+          onSelect={(emp) => e.confirmAdd(e.pendingService!, emp)}
+          onCancel={() => e.setPendingService(null)}
+        />
+      )}
     </div>
   );
 }

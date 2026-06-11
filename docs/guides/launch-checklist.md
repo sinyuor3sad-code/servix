@@ -1,6 +1,6 @@
 # قائمة التحقق قبل الإطلاق — Launch Checklist
 
-> **SERVIX** — مارس 2026
+> **SERVIX** — مارس 2026 | آخر تحديث: 28 أبريل 2026
 >
 > تأكد من إكمال كل بند قبل الإطلاق الرسمي. ✅ = موجود بالفعل في المشروع.
 
@@ -36,9 +36,10 @@
 - [ ] حذف Swagger في الإنتاج أو حمايته بكلمة مرور
 
 ## 4. التكاملات (Integrations)
-- [ ] ربط مزود SMS (Unifonic أو Twilio)
+- [x] **واتساب Evolution API** ✅ — `whatsapp-evolution.service.ts` موجود وفاعل
+- [x] **AI Reception V2** ✅ — GPT-5 nano/mini + Groq Whisper (22 ملف، مفعّل)
+- [ ] ربط مزود SMS (Unifonic) — الكود جاهز، يحتاج UNIFONIC_API_KEY + UNIFONIC_SENDER_ID
 - [ ] ربط مزود البريد الإلكتروني (SendGrid أو Resend)
-- [ ] ربط WhatsApp Business API (Meta Cloud API)
 - [ ] إعداد MinIO/S3 للتخزين (أو CloudFlare R2)
 - [ ] إعداد Sentry لتتبع الأخطاء
 - [ ] إعداد Uptime Kuma للمراقبة
@@ -70,13 +71,23 @@
 ## 8. التوثيق (Documentation)
 - [x] README.md
 - [x] CLAUDE.md
-- [x] master-plan.md
+- [x] DEPLOYMENT.md
+- [x] ROADMAP.md (محدّث)
+- [x] CHANGELOG.md (محدّث)
+- [x] SERVIX_PROJECT_PROMPT.md (محدّث — يشمل AI Reception V2 و POS V2)
+- [x] docs/features/AI_RECEPTION_V2_PLAN.md ✅
+- [x] docs/features/POS_V2_APPROVED_PLAN.md ✅
+- [x] docs/features/SMART_MENU_QR_INVOICE_PLAN.md ✅
+- [x] 12 ADR + 6 Runbooks + SLA ✅
 - [x] Launch checklist
-- [ ] API documentation (Swagger) ✅
+- [x] API documentation (Swagger) ✅
 - [ ] دليل المستخدم (User Guide) — يكتب لاحقاً
 
 ## 9. المراقبة (Monitoring)
-- [ ] إعداد alerts في Sentry (errors > threshold)
+- [x] **Prometheus + Grafana + Alertmanager** ✅ — `tooling/prometheus/` + `tooling/grafana/` (5 dashboards)
+- [x] **Uptime Kuma** ✅ — في docker-compose.prod.yml
+- [x] **Sentry Integration** ✅ — `shared/sentry/`
+- [ ] تفعيل alerts في Alertmanager (إعداد ALERT_SLACK_WEBHOOK_URL + ALERT_PAGERDUTY_ROUTING_KEY)
 - [ ] إعداد Uptime Kuma checks:
   - [ ] api.servi-x.com/api/v1/health
   - [ ] app.servi-x.com

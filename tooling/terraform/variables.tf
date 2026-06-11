@@ -25,7 +25,11 @@ variable "ssh_public_key" {
 }
 
 variable "deploy_ip" {
-  description = "IP address of deploy machine (for SSH and monitoring access)"
+  description = "CIDR of deploy machine for SSH and monitoring access (e.g. 1.2.3.4/32). Required — supply via TF_VAR_deploy_ip or tfvars. V-27: open-world ranges are rejected."
   type        = string
-  default     = "0.0.0.0/0" # Override in tfvars for production
+
+  validation {
+    condition     = can(cidrhost(var.deploy_ip, 0)) && var.deploy_ip != "0.0.0.0/0" && var.deploy_ip != "::/0"
+    error_message = "deploy_ip must be a specific CIDR like 1.2.3.4/32. Open ranges (0.0.0.0/0, ::/0) are forbidden — they would expose SSH/Grafana/Jaeger to the public internet."
+  }
 }

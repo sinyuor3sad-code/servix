@@ -36,4 +36,11 @@ export class RecordPaymentDto {
   @IsString({ message: 'رقم المرجع يجب أن يكون نصاً' })
   @MaxLength(100, { message: 'رقم المرجع يجب ألا يتجاوز 100 حرف' })
   reference?: string;
+
+  @ApiPropertyOptional({ description: 'Cash received for cash payments', example: 200.0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({}, { message: 'Cash received must be a number' })
+  @Min(0, { message: 'Cash received cannot be negative' })
+  cashReceived?: number;
 }

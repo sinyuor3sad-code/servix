@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowRight, Building2, Phone, Mail, MapPin } from 'lucide-react';
+import { ArrowRight, Building2, Phone, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button, Spinner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
@@ -24,7 +24,17 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-interface SalonInfo { salonNameAr?: string; salonNameEn?: string; nameAr?: string; nameEn?: string; phone: string; email?: string; address?: string; city?: string; description?: string; }
+interface SalonInfo {
+  salonNameAr?: string;
+  salonNameEn?: string;
+  nameAr?: string;
+  nameEn?: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  description?: string;
+}
 
 const inputClass = "w-full px-4 py-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] text-sm focus:border-[var(--brand-primary)] focus:ring-2 focus:ring-[var(--brand-primary)]/20 outline-none transition-all";
 
@@ -43,13 +53,26 @@ export default function SalonSettingsPage() {
 
   useEffect(() => {
     if (info) reset({
-      salonNameAr: info.salonNameAr ?? info.nameAr ?? '', salonNameEn: info.salonNameEn ?? info.nameEn ?? '',
-      phone: info.phone ?? '', email: info.email ?? '', address: info.address ?? '', city: info.city ?? '', description: info.description ?? '',
+      salonNameAr: info.salonNameAr ?? info.nameAr ?? '',
+      salonNameEn: info.salonNameEn ?? info.nameEn ?? '',
+      phone: info.phone ?? '',
+      email: info.email ?? '',
+      address: info.address ?? '',
+      city: info.city ?? '',
+      description: info.description ?? '',
     });
   }, [info, reset]);
 
   const mut = useMutation({
-    mutationFn: (d: FormData) => api.put('/salon', { nameAr: d.salonNameAr, nameEn: d.salonNameEn || undefined, phone: d.phone, email: d.email || undefined, address: d.address || undefined, city: d.city || undefined, description: d.description || undefined }, accessToken!),
+    mutationFn: (d: FormData) => api.put('/salon', {
+      nameAr: d.salonNameAr,
+      nameEn: d.salonNameEn || undefined,
+      phone: d.phone,
+      email: d.email || undefined,
+      address: d.address || undefined,
+      city: d.city || undefined,
+      description: d.description || undefined,
+    }, accessToken!),
     onSuccess: () => { toast.success('✅ تم حفظ البيانات'); qc.invalidateQueries({ queryKey: ['settings', 'salon'] }); },
     onError: () => toast.error('خطأ في الحفظ'),
   });

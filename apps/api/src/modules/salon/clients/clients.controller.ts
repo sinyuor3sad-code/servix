@@ -24,6 +24,7 @@ import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { QueryClientsDto } from './dto/query-clients.dto';
 import { TenantGuard } from '../../../shared/guards';
+import { RequirePermission, QuotaResource } from '../../../shared/decorators';
 import { AuthenticatedRequest } from '../../../shared/types';
 
 @ApiTags('العملاء - Clients')
@@ -34,6 +35,7 @@ export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
   @Get()
+  @RequirePermission('clients.view')
   @ApiOperation({ summary: 'قائمة العملاء', description: 'عرض جميع العملاء مع التصفية والترحيل' })
   @ApiResponse({ status: 200, description: 'تم جلب قائمة العملاء بنجاح' })
   async findAll(
@@ -52,6 +54,8 @@ export class ClientsController {
   }
 
   @Post()
+  @RequirePermission('clients.create')
+  @QuotaResource('clients')
   @ApiOperation({ summary: 'إضافة عميل', description: 'إنشاء عميل جديد' })
   @ApiResponse({ status: 201, description: 'تم إنشاء العميل بنجاح' })
   @ApiResponse({ status: 400, description: 'بيانات غير صالحة' })
@@ -71,6 +75,7 @@ export class ClientsController {
   }
 
   @Get('search')
+  @RequirePermission('clients.view')
   @ApiOperation({ summary: 'بحث سريع', description: 'بحث سريع عن العملاء بالاسم أو رقم الجوال' })
   @ApiQuery({ name: 'q', description: 'نص البحث', required: true })
   @ApiResponse({ status: 200, description: 'تم البحث بنجاح' })
@@ -90,6 +95,7 @@ export class ClientsController {
   }
 
   @Get('stats')
+  @RequirePermission('clients.view')
   @ApiOperation({ summary: 'إحصائيات العملاء', description: 'عرض إحصائيات عامة عن العملاء' })
   @ApiResponse({ status: 200, description: 'تم جلب الإحصائيات بنجاح' })
   async getStats(
@@ -106,6 +112,7 @@ export class ClientsController {
   }
 
   @Get(':id')
+  @RequirePermission('clients.view')
   @ApiOperation({ summary: 'تفاصيل العميل', description: 'عرض بيانات عميل محدد' })
   @ApiParam({ name: 'id', description: 'معرّف العميل' })
   @ApiResponse({ status: 200, description: 'تم جلب بيانات العميل بنجاح' })
@@ -126,6 +133,7 @@ export class ClientsController {
   }
 
   @Put(':id')
+  @RequirePermission('clients.update')
   @ApiOperation({ summary: 'تحديث العميل', description: 'تعديل بيانات عميل محدد' })
   @ApiParam({ name: 'id', description: 'معرّف العميل' })
   @ApiResponse({ status: 200, description: 'تم تحديث بيانات العميل بنجاح' })
@@ -148,6 +156,7 @@ export class ClientsController {
   }
 
   @Delete(':id')
+  @RequirePermission('clients.delete')
   @ApiOperation({ summary: 'حذف العميل', description: 'حذف ناعم للعميل (تعيين تاريخ الحذف)' })
   @ApiParam({ name: 'id', description: 'معرّف العميل' })
   @ApiResponse({ status: 200, description: 'تم حذف العميل بنجاح' })
@@ -168,6 +177,7 @@ export class ClientsController {
   }
 
   @Get(':id/history')
+  @RequirePermission('clients.view')
   @ApiOperation({ summary: 'سجل الزيارات', description: 'عرض سجل مواعيد العميل' })
   @ApiParam({ name: 'id', description: 'معرّف العميل' })
   @ApiResponse({ status: 200, description: 'تم جلب سجل الزيارات بنجاح' })
@@ -188,6 +198,7 @@ export class ClientsController {
   }
 
   @Get(':id/loyalty')
+  @RequirePermission('clients.view')
   @ApiOperation({ summary: 'نقاط الولاء', description: 'عرض نقاط ولاء العميل وآخر المعاملات' })
   @ApiParam({ name: 'id', description: 'معرّف العميل' })
   @ApiResponse({ status: 200, description: 'تم جلب نقاط الولاء بنجاح' })

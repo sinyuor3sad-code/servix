@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { Building2, Palette, Clock, Users, Bell, CreditCard, SlidersHorizontal, UserCog, ChevronLeft, QrCode, TrendingUp, ArrowUpRight, MessageCircle, Heart } from 'lucide-react';
+import { Building2, Palette, Clock, Users, Bell, CreditCard, SlidersHorizontal, UserCog, ChevronLeft, QrCode, TrendingUp, ArrowUpRight, MessageCircle, Heart, Receipt } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const CARDS = [
   { title: 'لوحة التحكم',   desc: 'الحجز، الإجازة، الووك إن', href: '/settings/toggles',       icon: SlidersHorizontal, iconColor: 'bg-violet-500/10 text-violet-600' },
   { title: 'بيانات الصالون', desc: 'الاسم، العنوان، التواصل',     href: '/settings/salon',         icon: Building2,         iconColor: 'bg-blue-500/10 text-blue-600' },
+  { title: 'الفوترة والضرائب', desc: 'الرقم الضريبي والفوترة الإلكترونية', href: '/settings/billing', icon: Receipt, iconColor: 'bg-violet-500/10 text-violet-600' },
   { title: 'الشعار والثيم',  desc: 'المظهر، الألوان، الشعار',    href: '/settings/branding',      icon: Palette,           iconColor: 'bg-rose-500/10 text-rose-600' },
   { title: 'المنيو والعرض العام', desc: 'ثيم المنيو الذكي والغلاف',   href: '/settings/smart-menu',    icon: QrCode,            iconColor: 'bg-cyan-500/10 text-cyan-600' },
   { title: 'ساعات العمل',    desc: 'الفتح والإغلاق لكل يوم',    href: '/settings/working-hours', icon: Clock,             iconColor: 'bg-amber-500/10 text-amber-600' },

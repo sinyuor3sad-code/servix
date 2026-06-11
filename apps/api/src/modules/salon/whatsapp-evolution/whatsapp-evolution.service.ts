@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../../shared/database/platform.client';
 import { CircuitBreakerService } from '../../../shared/resilience/circuit-breaker.service';
 import type { WhatsAppInstance, WhatsAppInstanceStatus } from '../../../../generated/platform';
+import { EVOLUTION_WEBHOOK_FULL_PATH } from './webhook-path.constant';
 
 export interface EvolutionInstanceDetails {
   status: WhatsAppInstanceStatus;
@@ -34,6 +35,7 @@ export interface SendMediaArgs extends SendTextArgs {
   mediaType: 'image' | 'document' | 'audio' | 'video';
   filename?: string;
   caption?: string;
+  mimetype?: string;
 }
 
 @Injectable()
@@ -78,26 +80,99 @@ export class WhatsAppEvolutionService implements OnModuleInit {
     });
     if (existing) return existing;
 
-    const instanceName = `salon-${tenantSlug.toLowerCase()}`;
-    const instanceToken = randomBytes(24).toString('hex');
+    const baseName = `salon-${tenantSlug.toLowerCase()}`;
 
-    // Create on Evolution API
-    const created = await this.adminRequest<Record<string, unknown>>('POST', '/instance/create', {
+    // If Evolution still has an instance under the canonical name (e.g. platform
+    // record was wiped while Evolution kept its row), adopt it back instead of
+    // creating a new one. Keeps phone/profile metadata intact.
+    const orphanedEvolutionInstance = await this.fetchRawInstance(baseName);
+    if (orphanedEvolutionInstance) {
+      this.logger.warn(
+        `Recovering platform WhatsApp record from existing Evolution instance: ${baseName}`,
+      );
+      return this.upsertPlatformInstanceFromEvolution(
+        tenantId,
+        baseName,
+        orphanedEvolutionInstance,
+        randomBytes(24).toString('hex'),
+      );
+    }
+
+    // Fresh create. Evolution v2.x can refuse a name as "already in use" because
+    // of stale Redis/in-memory cache even when Postgres + fetchInstances both
+    // show no row. Retry with a random suffix so the user is never blocked by
+    // upstream cache state we cannot clear from here.
+    return this.createFreshInstance(tenantId, baseName);
+  }
+
+  private async createFreshInstance(
+    tenantId: string,
+    baseName: string,
+  ): Promise<WhatsAppInstance> {
+    const MAX_ATTEMPTS = 4;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const instanceName =
+        attempt === 0 ? baseName : `${baseName}-${randomBytes(3).toString('hex')}`;
+      const instanceToken = randomBytes(24).toString('hex');
+
+      try {
+        await this.createOnEvolution(instanceName, instanceToken);
+        this.logger.log(
+          `Evolution instance created: ${instanceName} (tenant=${tenantId}, attempt=${attempt + 1})`,
+        );
+        return this.platformPrisma.whatsAppInstance.create({
+          data: { tenantId, instanceName, instanceToken, status: 'qr_pending' },
+        });
+      } catch (err) {
+        lastError = err;
+
+        if (this.isNameTakenError(err)) {
+          this.logger.warn(
+            `Evolution rejected "${instanceName}" as already in use (likely stale cache); retrying with suffix`,
+          );
+          continue;
+        }
+
+        // Non-conflict error: try recovery if Evolution actually does have the
+        // row now (race), otherwise propagate.
+        const recovered = await this.fetchRawInstance(instanceName);
+        if (recovered) {
+          this.logger.warn(
+            `Evolution create failed, recovered existing instance instead: ${instanceName}`,
+          );
+          return this.upsertPlatformInstanceFromEvolution(
+            tenantId,
+            instanceName,
+            recovered,
+            instanceToken,
+          );
+        }
+        throw err;
+      }
+    }
+
+    throw lastError ?? new BadGatewayException('Evolution refused all instance name candidates');
+  }
+
+  private async createOnEvolution(instanceName: string, instanceToken: string): Promise<void> {
+    const apiBaseUrl = this.configService.get<string>(
+      'API_BASE_URL',
+      'https://api.servi-x.com',
+    );
+    const webhookUrl = `${apiBaseUrl}${EVOLUTION_WEBHOOK_FULL_PATH}/${instanceName}`;
+    await this.adminRequest('POST', '/instance/create', {
       instanceName,
       token: instanceToken,
       qrcode: true,
       integration: 'WHATSAPP-BAILEYS',
-    });
-
-    this.logger.log(`Evolution instance created: ${instanceName} (tenant=${tenantId})`);
-    void created; // creation response ignored — we'll poll for status/QR
-
-    return this.platformPrisma.whatsAppInstance.create({
-      data: {
-        tenantId,
-        instanceName,
-        instanceToken,
-        status: 'qr_pending',
+      webhook: {
+        url: webhookUrl,
+        byEvents: false,
+        base64: true,
+        headers: { apikey: this.configService.get<string>('EVOLUTION_API_KEY', '') },
+        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
       },
     });
   }
@@ -152,19 +227,23 @@ export class WhatsAppEvolutionService implements OnModuleInit {
     }
   }
 
-  async logoutInstance(instanceName: string): Promise<void> {
+  async logoutInstance(instanceName: string): Promise<boolean> {
     try {
       await this.adminRequest('DELETE', `/instance/logout/${encodeURIComponent(instanceName)}`);
+      return true;
     } catch (err) {
       this.logger.warn(`Logout failed for ${instanceName}: ${(err as Error).message}`);
+      return this.isNotFoundError(err);
     }
   }
 
-  async deleteInstance(instanceName: string): Promise<void> {
+  async deleteInstance(instanceName: string): Promise<boolean> {
     try {
       await this.adminRequest('DELETE', `/instance/delete/${encodeURIComponent(instanceName)}`);
+      return true;
     } catch (err) {
       this.logger.warn(`Delete failed for ${instanceName}: ${(err as Error).message}`);
+      return this.isNotFoundError(err);
     }
   }
 
@@ -189,6 +268,7 @@ export class WhatsAppEvolutionService implements OnModuleInit {
     };
     if (args.filename) body.fileName = args.filename;
     if (args.caption) body.caption = args.caption;
+    if (args.mimetype) body.mimetype = args.mimetype;
     await this.sendMediaBreaker.fire(url, body, args.instanceToken);
     this.logger.log(`Evolution media sent via ${args.instanceName} → ${args.to}`);
   }
@@ -219,6 +299,84 @@ export class WhatsAppEvolutionService implements OnModuleInit {
 
   // ───────── Helpers ─────────
 
+  private async fetchRawInstance(instanceName: string): Promise<Record<string, unknown> | null> {
+    try {
+      const list = await this.adminRequest<Array<Record<string, unknown>>>(
+        'GET',
+        `/instance/fetchInstances?instanceName=${encodeURIComponent(instanceName)}`,
+      );
+      if (!Array.isArray(list)) return null;
+      return list.find((record) => String(record['name'] ?? record['instanceName']) === instanceName) ?? null;
+    } catch (err) {
+      if (this.isNotFoundError(err)) return null;
+      throw err;
+    }
+  }
+
+  private async upsertPlatformInstanceFromEvolution(
+    tenantId: string,
+    instanceName: string,
+    record: Record<string, unknown>,
+    fallbackToken: string,
+  ): Promise<WhatsAppInstance> {
+    const connectionStatus = String(record['connectionStatus'] ?? record['status'] ?? 'close');
+    const status = this.mapConnectionStatus(connectionStatus);
+    const ownerJid = record['ownerJid'] as string | null | undefined;
+    const profileName = (record['profileName'] as string) || null;
+    const profilePicUrl = (record['profilePicUrl'] as string) || null;
+    const token = (record['token'] as string | null | undefined) || fallbackToken;
+    const now = new Date();
+
+    return this.platformPrisma.whatsAppInstance.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        instanceName,
+        instanceToken: token,
+        status,
+        phoneNumber: ownerJid ? ownerJid.split('@')[0] : null,
+        profileName,
+        profilePicUrl,
+        qrCode: null,
+        lastConnectedAt: status === 'connected' ? now : null,
+        lastDisconnectedAt: status === 'disconnected' ? now : null,
+      },
+      update: {
+        instanceName,
+        instanceToken: token,
+        status,
+        phoneNumber: ownerJid ? ownerJid.split('@')[0] : null,
+        profileName,
+        profilePicUrl,
+        qrCode: null,
+        lastConnectedAt: status === 'connected' ? now : undefined,
+        lastDisconnectedAt: status === 'disconnected' ? now : undefined,
+      },
+    });
+  }
+
+  private isNameTakenError(err: unknown): boolean {
+    const message = (err as Error)?.message?.toLowerCase() ?? '';
+    return (
+      message.includes('evolution api 403') &&
+      (message.includes('already in use') || message.includes('in use'))
+    );
+  }
+
+  private isNotFoundError(err: unknown): boolean {
+    const message = (err as Error)?.message?.toLowerCase() ?? '';
+    if (message.includes('evolution api 404') || message.includes('not found')) {
+      return true;
+    }
+    // Evolution v2.x: when Baileys session is desynced from DB state, logout
+    // returns 500 "Connection Closed" and a follow-up delete returns 400 with
+    // an opaque "[object Object]" payload. The instance is unusable in both
+    // cases — treat as cleanable so disconnect/reconnect don't deadlock.
+    if (message.includes('connection closed')) return true;
+    if (message.includes('evolution api 400')) return true;
+    return false;
+  }
+
   private mapConnectionStatus(raw: string): WhatsAppInstanceStatus {
     const s = raw.toLowerCase();
     if (s === 'open' || s === 'connected') return 'connected';
@@ -228,8 +386,10 @@ export class WhatsAppEvolutionService implements OnModuleInit {
   }
 
   private normalizePhone(phone: string): string {
-    const digits = phone.replace(/\D/g, '');
-    if (digits.startsWith('966')) return digits;
+    const digits = phone.replace(/\D/g, '').replace(/^00/, '');
+    // Gulf country codes — leave intact if already prefixed
+    const GULF_CODES = ['966', '971', '965', '973', '974', '968'];
+    if (GULF_CODES.some((c) => digits.startsWith(c))) return digits;
     if (digits.startsWith('0')) return '966' + digits.slice(1);
     return '966' + digits;
   }

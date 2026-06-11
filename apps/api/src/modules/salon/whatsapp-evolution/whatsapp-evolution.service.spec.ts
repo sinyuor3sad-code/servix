@@ -21,6 +21,7 @@ function makePlatformDb(): {
   whatsAppInstance: {
     findUnique: Mock;
     create: Mock;
+    upsert: Mock;
     update: Mock;
     delete: Mock;
   };
@@ -29,6 +30,7 @@ function makePlatformDb(): {
     whatsAppInstance: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      upsert: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     },
@@ -101,6 +103,7 @@ describe('WhatsAppEvolutionService', () => {
 
     it('ينشئ مثيلاً جديداً على Evolution ثم على قاعدة البيانات بحالة qr_pending', async () => {
       platformDb.whatsAppInstance.findUnique.mockResolvedValue(null);
+      mockFetchOnce(200, []);
       mockFetchOnce(200, { instance: { instanceName: 'salon-acme' } });
       const created = { tenantId: 't1', instanceName: 'salon-acme', status: 'qr_pending' };
       platformDb.whatsAppInstance.create.mockResolvedValue(created);
@@ -108,8 +111,8 @@ describe('WhatsAppEvolutionService', () => {
       const r = await service.getOrCreateInstance('t1', 'Acme');
 
       expect(r).toBe(created);
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-      const call = (global.fetch as Mock).mock.calls[0];
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      const call = (global.fetch as Mock).mock.calls[1];
       expect(call[0]).toBe('http://evolution-api:8080/instance/create');
       expect((call[1] as RequestInit).headers).toEqual(
         expect.objectContaining({ apikey: 'master-key' }),
@@ -123,13 +126,108 @@ describe('WhatsAppEvolutionService', () => {
       expect(dbCall.data.instanceToken).toMatch(/^[0-9a-f]{48}$/);
     });
 
+    it('recovers the platform row when Evolution already has the instance', async () => {
+      platformDb.whatsAppInstance.findUnique.mockResolvedValue(null);
+      mockFetchOnce(200, [
+        {
+          name: 'salon-acme',
+          connectionStatus: 'open',
+          ownerJid: '966501234567@s.whatsapp.net',
+          profileName: 'Acme',
+          profilePicUrl: 'https://cdn/pic.jpg',
+          token: 'existing-instance-token',
+        },
+      ]);
+      const recovered = {
+        tenantId: 't1',
+        instanceName: 'salon-acme',
+        status: 'connected',
+        instanceToken: 'existing-instance-token',
+      };
+      platformDb.whatsAppInstance.upsert.mockResolvedValue(recovered);
+
+      const r = await service.getOrCreateInstance('t1', 'Acme');
+
+      expect(r).toBe(recovered);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(platformDb.whatsAppInstance.create).not.toHaveBeenCalled();
+      expect(platformDb.whatsAppInstance.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tenantId: 't1' },
+          create: expect.objectContaining({
+            instanceName: 'salon-acme',
+            instanceToken: 'existing-instance-token',
+            status: 'connected',
+            phoneNumber: '966501234567',
+          }),
+        }),
+      );
+    });
+
     it('يرمي BadGatewayException عندما Evolution يُرجع خطأ', async () => {
       platformDb.whatsAppInstance.findUnique.mockResolvedValue(null);
+      mockFetchOnce(200, []);
       mockFetchOnce(500, 'Internal error', 'text/plain');
+      mockFetchOnce(200, []);
 
       await expect(service.getOrCreateInstance('t1', 'acme')).rejects.toBeInstanceOf(
         BadGatewayException,
       );
+      expect(platformDb.whatsAppInstance.create).not.toHaveBeenCalled();
+    });
+
+    it('retries with a random suffix when Evolution claims the name is in use (stale cache)', async () => {
+      platformDb.whatsAppInstance.findUnique.mockResolvedValue(null);
+      // Probe for orphaned instance under base name → not found
+      mockFetchOnce(200, []);
+      // Attempt 1: base name → 403 "already in use"
+      mockFetchOnce(403, {
+        status: 403,
+        error: 'Forbidden',
+        response: { message: ['This name "salon-acme" is already in use.'] },
+      });
+      // Attempt 2: with suffix → success
+      mockFetchOnce(200, { instance: { instanceName: 'salon-acme-XXXXXX' } });
+      const created = { tenantId: 't1', instanceName: 'salon-acme-XXXXXX', status: 'qr_pending' };
+      platformDb.whatsAppInstance.create.mockResolvedValue(created);
+
+      const r = await service.getOrCreateInstance('t1', 'Acme');
+
+      expect(r).toBe(created);
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(platformDb.whatsAppInstance.create).toHaveBeenCalledTimes(1);
+      const dbCall = platformDb.whatsAppInstance.create.mock.calls[0][0] as {
+        data: { instanceName: string };
+      };
+      // Suffix is `${baseName}-${6 hex chars}`
+      expect(dbCall.data.instanceName).toMatch(/^salon-acme-[0-9a-f]{6}$/);
+      // Second create call (attempt 2) used the suffixed name
+      const secondCallBody = JSON.parse(
+        ((global.fetch as Mock).mock.calls[2][1] as RequestInit).body as string,
+      );
+      expect(secondCallBody.instanceName).toBe(dbCall.data.instanceName);
+    });
+
+    it('throws after exhausting all retries when Evolution keeps refusing the name', async () => {
+      platformDb.whatsAppInstance.findUnique.mockResolvedValue(null);
+      // Probe for orphan
+      mockFetchOnce(200, []);
+      // 4 attempts, all 403
+      const conflictBody = {
+        status: 403,
+        error: 'Forbidden',
+        response: { message: ['This name "salon-acme" is already in use.'] },
+      };
+      mockFetchOnce(403, conflictBody);
+      mockFetchOnce(403, conflictBody);
+      mockFetchOnce(403, conflictBody);
+      mockFetchOnce(403, conflictBody);
+
+      await expect(service.getOrCreateInstance('t1', 'Acme')).rejects.toBeInstanceOf(
+        BadGatewayException,
+      );
+      // 1 probe + 4 create attempts = 5 fetch calls, no DB write
+      expect(global.fetch).toHaveBeenCalledTimes(5);
       expect(platformDb.whatsAppInstance.create).not.toHaveBeenCalled();
     });
   });
@@ -325,6 +423,29 @@ describe('WhatsAppEvolutionService', () => {
       const r = await service.syncInstanceStatus('absent');
       expect(r).toBeNull();
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('logoutInstance / deleteInstance error tolerance', () => {
+    it('treats Evolution 500 "Connection Closed" on logout as cleanable', async () => {
+      mockFetchOnce(
+        500,
+        { status: 500, error: 'Internal Server Error', response: { message: ['Error: Connection Closed'] } },
+      );
+      await expect(service.logoutInstance('salon-x')).resolves.toBe(true);
+    });
+
+    it('treats Evolution 400 on delete as cleanable', async () => {
+      mockFetchOnce(
+        400,
+        { status: 400, error: 'Bad Request', response: { message: ['[object Object]'] } },
+      );
+      await expect(service.deleteInstance('salon-x')).resolves.toBe(true);
+    });
+
+    it('still surfaces unexpected errors as false from logout', async () => {
+      mockFetchOnce(503, 'service unavailable', 'text/plain');
+      await expect(service.logoutInstance('salon-x')).resolves.toBe(false);
     });
   });
 

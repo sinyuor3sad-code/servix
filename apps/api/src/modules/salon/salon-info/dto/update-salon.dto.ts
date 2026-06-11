@@ -71,4 +71,34 @@ export class UpdateSalonDto {
   @IsString({ message: 'الرقم الضريبي يجب أن يكون نصاً' })
   @MaxLength(20, { message: 'الرقم الضريبي يجب ألا يتجاوز 20 حرفاً' })
   taxNumber?: string;
+
+  @ApiPropertyOptional({ description: 'السجل التجاري', maxLength: 20 })
+  @IsOptional()
+  @IsString({ message: 'السجل التجاري يجب أن يكون نصاً' })
+  @MaxLength(20, { message: 'السجل التجاري يجب ألا يتجاوز 20 حرفاً' })
+  commercialRegistration?: string;
+
+  @ApiPropertyOptional({ description: 'الشارع', maxLength: 200 })
+  @IsOptional()
+  @IsString({ message: 'الشارع يجب أن يكون نصاً' })
+  @MaxLength(200)
+  street?: string;
+
+  @ApiPropertyOptional({ description: 'الحي', maxLength: 100 })
+  @IsOptional()
+  @IsString({ message: 'الحي يجب أن يكون نصاً' })
+  @MaxLength(100)
+  district?: string;
+
+  @ApiPropertyOptional({ description: 'رقم المبنى', maxLength: 10 })
+  @IsOptional()
+  @IsString({ message: 'رقم المبنى يجب أن يكون نصاً' })
+  @MaxLength(10)
+  buildingNumber?: string;
+
+  @ApiPropertyOptional({ description: 'الرمز البريدي', maxLength: 10 })
+  @IsOptional()
+  @IsString({ message: 'الرمز البريدي يجب أن يكون نصاً' })
+  @MaxLength(10)
+  postalCode?: string;
 }

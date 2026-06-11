@@ -1,15 +1,27 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { compare, hash } from 'bcryptjs';
-import { randomBytes } from 'crypto';
+import { compare, hash, hashSync } from 'bcryptjs';
+import { SmsService } from '../../shared/sms/sms.service';
+import { MailService } from '../../shared/mail/mail.service';
+import { createHash, randomBytes } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
+// V-79: notification channel/target are now platform enums. dto values are
+// validated by @IsIn in CreateNotificationDto, so the cast is sound at runtime.
+import type { NotifChannel, NotifTarget } from '../../../generated/platform';
 import { PlatformSettingsService } from '../../shared/database/platform-settings.service';
+import { CacheService } from '../../shared/cache/cache.service';
+import { EventsGateway } from '../../shared/events/events.gateway';
+import { TwoFactorService } from '../auth/two-factor.service';
+import { TwoFactorBackupCodeService } from '../auth/two-factor-backup-code.service';
+import { isIpAllowed } from '../../shared/security/ip-allowlist.helper';
 import type {
   Tenant,
   Subscription,
@@ -101,55 +113,282 @@ interface AdminLoginResult {
   refreshToken: string;
 }
 
+// V-43: when the super_admin has 2FA enabled, the first step returns this
+// shape instead of tokens — the caller must then POST email+password+code
+// to /admin/auth/2fa/verify to complete the login.
+interface AdminLogin2FAChallenge {
+  requires2FA: true;
+}
+
+// V-43 / A2-15 parity (decision 7): dummy hash to equalize bcrypt timing
+// on the admin user-not-found branch, preventing super_admin email
+// enumeration via response time. Same rationale as auth.service's
+// DUMMY_BCRYPT_HASH (V-41) — kept as a local const here rather than
+// importing auth.service's module-scoped one, to avoid coupling admin
+// internals to auth internals. hashSync runs once at module init.
+const ADMIN_DUMMY_BCRYPT_HASH = hashSync(
+  'v43-admin-timing-equalization-placeholder-not-a-real-password',
+  12,
+);
+
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private readonly prisma: PlatformPrismaClient,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly platformSettings: PlatformSettingsService,
+    private readonly cacheService: CacheService,
+    private readonly eventsGateway: EventsGateway,
+    private readonly twoFactorService: TwoFactorService,
+    private readonly backupCodeService: TwoFactorBackupCodeService,
+    private readonly smsService: SmsService,
+    private readonly mailService: MailService,
   ) {}
 
-  async login(email: string, password: string): Promise<AdminLoginResult> {
+  // V-43 / A2-17 — admin login step 1.
+  //
+  // Pre-V-43 this issued tokens after a bare password check — no IP
+  // allowlist, no 2FA enforcement even for a 2FA-enabled super_admin,
+  // and zero audit. super_admin is the highest-privilege principal
+  // (cross-tenant control), so a leaked password meant full admin
+  // access with no second factor.
+  //
+  // After V-43:
+  //   1. Optional IP allowlist (ADMIN_IP_ALLOWLIST env, CSV of IPv4/CIDR).
+  //      Blocked IPs are logged + counted (V-43-audit-counter) — NOT
+  //      audit-rowed, because PlatformAuditLog.userId is NOT NULL (V-78)
+  //      and the block fires before user resolution.
+  //   2. Credential + super_admin-role verification (with V-41-parity
+  //      bcrypt timing equalization on user-not-found).
+  //   3. If the super_admin has 2FA enabled → return { requires2FA }
+  //      (no tokens). Caller completes via POST /admin/auth/2fa/verify.
+  //      Enforce-if-enabled (decision 1) — un-enrolled super_admins are
+  //      NOT locked out; V-43-mandatory-2fa follow-up tightens later.
+  //   4. Otherwise → issue tokens (audited admin_login_success).
+  async login(
+    email: string,
+    password: string,
+    ip?: string,
+  ): Promise<AdminLoginResult | AdminLogin2FAChallenge> {
+    this.assertAdminIpAllowed(ip);
+
+    const { user, superAdminRole, tenantUser } =
+      await this.assertAdminCredentials(email, password, ip);
+
+    if (user.twoFactorEnabled && user.twoFactorSecret) {
+      await this.writeAdminAudit(user.id, 'admin_login_2fa_required', { ip });
+      return { requires2FA: true };
+    }
+
+    return this.issueAdminTokens(user, superAdminRole.id, tenantUser.tenantId, ip);
+  }
+
+  // V-43 — admin login step 2: 2FA verification. Re-checks the password
+  // (the temp-token-less design re-authenticates fully, mirroring the
+  // user-facing verify2FALogin contract) + the TOTP code, then issues
+  // admin tokens. Cannot reuse auth.service.verify2FALogin: that builds
+  // a non-admin payload from tenantUsers[0]; admin needs roleId =
+  // superAdminRole.id.
+  async verify2FALogin(
+    email: string,
+    password: string,
+    code: string,
+    ip?: string,
+  ): Promise<AdminLoginResult> {
+    this.assertAdminIpAllowed(ip);
+
+    const { user, superAdminRole, tenantUser } =
+      await this.assertAdminCredentials(email, password, ip);
+
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+      // Not a 2FA account — this endpoint shouldn't have been called.
+      throw new BadRequestException('التحقق الثنائي غير مفعّل لهذا الحساب');
+    }
+
+    // V-42: route by format — 6 digits → TOTP, otherwise → backup code.
+    // V-43-parity: both TOTP and backup-code failures now feed the V-25 IP +
+    // account lockout counters (see registerAdminLoginFailure below), on top of
+    // @RateLimit(5,300) — so the second factor can't be brute-forced even with
+    // a known password.
+    const isTotpFormat = /^\d{6}$/.test(code);
+    const codeValid = isTotpFormat
+      ? this.twoFactorService.verifyToken(user.twoFactorSecret, code)
+      : await this.backupCodeService.verifyAndConsume(user.id, code);
+    if (!codeValid) {
+      await this.writeAdminAudit(user.id, 'admin_login_2fa_failed', {
+        ip,
+        method: isTotpFormat ? 'totp' : 'backup_code',
+      });
+      // V-43-parity: count the 2FA-code failure against the same lockout
+      // counters as a password failure. Throws block / lock / generic, and
+      // SMSes the super_admin on the lock transition.
+      await this.registerAdminLoginFailure(
+        user,
+        ip ?? 'unknown',
+        ip,
+        'رمز التحقق غير صحيح',
+      );
+    }
+    if (!isTotpFormat) {
+      await this.writeAdminAudit(user.id, 'admin_login_2fa_backup_code_used', { ip });
+    }
+
+    return this.issueAdminTokens(user, superAdminRole.id, tenantUser.tenantId, ip);
+  }
+
+  // V-43 — IP allowlist gate. ADMIN_IP_ALLOWLIST empty = disabled (all
+  // IPs allowed). Blocked attempts are logged + (via follow-up) counted,
+  // NOT audit-rowed (no userId at this pre-lookup stage).
+  private assertAdminIpAllowed(ip?: string): void {
+    const allowlist = this.configService.get<string>('ADMIN_IP_ALLOWLIST', '');
+    if (isIpAllowed(ip, allowlist)) return;
+
+    // V-43-audit-counter: blocked-IP → Prometheus counter (Engineer 1).
+    // audit row impossible here (PlatformAuditLog.userId NOT NULL, V-78).
+    this.logger.warn(
+      `[admin-login] blocked by IP allowlist: ip=${ip ?? 'unknown'}`,
+    );
+    throw new ForbiddenException('الوصول غير مسموح من هذا العنوان');
+  }
+
+  // V-43 — shared credential + super_admin-role check for both login
+  // steps. Includes V-41-parity bcrypt timing equalization.
+  private async assertAdminCredentials(
+    email: string,
+    password: string,
+    ip?: string,
+  ): Promise<{
+    user: { id: string; email: string; fullName: string; phone: string | null; passwordHash: string; twoFactorEnabled: boolean; twoFactorSecret: string | null };
+    superAdminRole: { id: string };
+    tenantUser: { tenantId: string };
+  }> {
+    // V-43-parity — V-25 brute-force layers on the admin path. The static
+    // ADMIN_IP_ALLOWLIST gate (assertAdminIpAllowed) already fired; this adds
+    // the *dynamic* IP block + per-account lockout, sharing the same Redis
+    // keyspace as auth.service.login so an attacker can't dodge limits by
+    // switching between the user and admin login endpoints.
+    const ipKey = ip ?? 'unknown';
+    const blockSeconds = await this.cacheService.checkLoginIpBlock(ipKey);
+    if (blockSeconds > 0) {
+      throw new UnauthorizedException(
+        `تم تجاوز الحد المسموح من محاولات الدخول. حاول مرة أخرى بعد ${Math.ceil(blockSeconds / 60)} دقيقة`,
+      );
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
     });
 
     if (!user) {
+      // V-41 parity: equalize timing with the wrong-password branch so
+      // response time can't enumerate super_admin emails. The attempt still
+      // counts against the IP (V-43-parity) so spraying a blocked IP with
+      // unknown emails can't probe forever.
+      await compare(password, ADMIN_DUMMY_BCRYPT_HASH);
+      await this.cacheService.incrementLoginFailIp(ipKey);
       throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+    }
+
+    // V-43-parity — account-lock pre-check (before the password compare).
+    if (await this.cacheService.isAccountLocked(user.id)) {
+      throw new UnauthorizedException(
+        'تم قفل الحساب بسبب محاولات دخول فاشلة متعددة. تواصل مع الدعم الفني',
+      );
     }
 
     const isValid = await compare(password, user.passwordHash);
     if (!isValid) {
-      throw new UnauthorizedException('بيانات الدخول غير صحيحة');
+      await this.writeAdminAudit(user.id, 'admin_login_failed', { ip });
+      await this.registerAdminLoginFailure(
+        user,
+        ipKey,
+        ip,
+        'بيانات الدخول غير صحيحة',
+      );
     }
 
-    // Check that this user has super_admin role
     const superAdminRole = await this.prisma.role.findUnique({
       where: { name: 'super_admin' },
     });
-
     if (!superAdminRole) {
       throw new UnauthorizedException('ليس لديك صلاحية الدخول لوحة الإدارة');
     }
 
     const tenantUser = await this.prisma.tenantUser.findFirst({
-      where: {
-        userId: user.id,
-        roleId: superAdminRole.id,
-        status: 'active',
-      },
+      where: { userId: user.id, roleId: superAdminRole.id, status: 'active' },
     });
-
     if (!tenantUser) {
       throw new UnauthorizedException('ليس لديك صلاحية الدخول لوحة الإدارة');
     }
 
+    return { user, superAdminRole, tenantUser };
+  }
+
+  // V-43-parity — record a failed admin auth attempt against the V-25 IP +
+  // account counters, then throw the right 401. Mirrors auth.service's
+  // handle2FAFailure: SMS the super_admin on the lock TRANSITION only
+  // (incrementLoginFailAccount returns locked=true exactly once per cycle, so
+  // at most one SMS per 24h lockout even under sustained brute-force).
+  // Returns Promise<never> — it always throws.
+  private async registerAdminLoginFailure(
+    user: { id: string; phone: string | null },
+    ipKey: string,
+    ip: string | undefined,
+    genericMessage: string,
+  ): Promise<never> {
+    const ipResult = await this.cacheService.incrementLoginFailIp(ipKey);
+    const accResult = await this.cacheService.incrementLoginFailAccount(user.id);
+
+    if (ipResult.blockSeconds > 0) {
+      throw new UnauthorizedException(
+        `تم تجاوز الحد المسموح. حاول مرة أخرى بعد ${Math.ceil(ipResult.blockSeconds / 60)} دقيقة`,
+      );
+    }
+
+    if (accResult.locked) {
+      if (user.phone) {
+        await this.smsService
+          .send({
+            to: user.phone,
+            message:
+              'SERVIX: تم قفل حساب الإدارة بسبب محاولات دخول فاشلة متعددة. تواصل مع الدعم الفني',
+          })
+          .catch((e) =>
+            this.logger.warn(`[admin-lockout SMS] ${(e as Error).message}`),
+          );
+      }
+      await this.writeAdminAudit(user.id, 'admin_login_account_locked', { ip });
+      throw new UnauthorizedException(
+        'تم قفل الحساب بسبب محاولات دخول فاشلة متعددة. تواصل مع الدعم الفني',
+      );
+    }
+
+    throw new UnauthorizedException(genericMessage);
+  }
+
+  // V-43 — issue admin tokens (the pre-V-43 token-signing block, now
+  // shared between login + verify2FALogin) + audit admin_login_success.
+  private async issueAdminTokens(
+    user: { id: string; email: string; fullName: string },
+    superAdminRoleId: string,
+    tenantId: string,
+    ip?: string,
+  ): Promise<AdminLoginResult> {
+    // V-43-parity — clear the V-25 brute-force counters on TRUE success. This
+    // is the single funnel for both non-2FA login and post-2FA verify (the
+    // 2FA *challenge* return in login() does NOT pass through here, so a
+    // correct password alone never resets the 2FA-failure counter).
+    await this.cacheService.resetLoginFailIp(ip ?? 'unknown');
+    await this.cacheService.resetLoginFailAccount(user.id);
+
     const tokenPayload = {
       sub: user.id,
       email: user.email,
-      tenantId: tenantUser.tenantId,
-      roleId: superAdminRole.id,
+      tenantId,
+      roleId: superAdminRoleId,
     };
 
     const accessSecret = this.configService.get<string>('jwt.accessSecret', '');
@@ -175,6 +414,8 @@ export class AdminService {
       data: { lastLoginAt: new Date() },
     });
 
+    await this.writeAdminAudit(user.id, 'admin_login_success', { ip });
+
     return {
       user: {
         id: user.id,
@@ -185,6 +426,31 @@ export class AdminService {
       accessToken,
       refreshToken,
     };
+  }
+
+  // V-43 — fire-and-forget admin-login audit row. Uses the admin.service
+  // house pattern (direct platformAuditLog.create, not AuditService).
+  // userId is always a resolved super_admin id here (blocked-IP path
+  // never reaches this — it has no userId and uses logger.warn instead).
+  private async writeAdminAudit(
+    userId: string,
+    action: string,
+    newValues: Record<string, unknown>,
+  ): Promise<void> {
+    await this.prisma.platformAuditLog
+      .create({
+        data: {
+          userId,
+          action,
+          entityType: 'User',
+          entityId: userId,
+          newValues: newValues as never,
+          ipAddress: (newValues.ip as string) ?? null,
+        },
+      })
+      .catch((e) =>
+        this.logger.warn(`[admin-login audit ${action}] ${(e as Error).message}`),
+      );
   }
 
   async getStats(): Promise<AdminStats & { pendingTenants: number; recentTenants: Tenant[] }> {
@@ -460,37 +726,107 @@ export class AdminService {
       }),
     ]);
 
+    // V-14a: admin reset must also invalidate active sessions.
+    // Otherwise an attacker who already stole an access token keeps
+    // using it for up to 15 min after support resets the password.
+    await this.cacheService.setPasswordChangedAt(id);
+
     return { message: 'تم تعيين كلمة مرور جديدة بنجاح' };
   }
 
-  async sendPasswordResetLink(id: string, adminId: string) {
+  // V-24 / A2-08 — Admin reset link is now hash-at-rest.
+  //
+  // Pre-V-24, this method stored the raw 32-byte token directly in
+  // password_resets.token_hash (then named `token`) and console.log'd the
+  // raw value to stdout.
+  // Two distinct gaps in one method: anyone with DB read access (or a
+  // backup) had every active admin-reset token, and anyone with log
+  // access (SSH, journald, Loki forwarders) saw them too.
+  //
+  // Incidental fix: pre-V-24 the admin link was also un-redeemable —
+  // auth.service.resetPassword hashes the submitted token and looks
+  // up by hash, while admin stored raw, so the lookup always missed.
+  // V-24 unifies storage (both flows now write the hash); the existing
+  // self-serve verifier serves the admin flow without changes.
+  //
+  // V-24-email — the reset link is now EMAILED to the user (MailService is
+  // injectable via the @Global MailModule; no AdminModule edit needed). The raw
+  // token is STILL returned in the response body as a deliberate fallback: if
+  // the dispatch fails the admin can deliver the link manually, and
+  // emailDispatched is audited so ops can spot "row present but mail failed".
+  // (Dropping the raw-token return is a future cleanup once email reliability
+  // is proven — kept for now, defense-in-depth.)
+  async sendPasswordResetLink(
+    id: string,
+    adminId: string,
+  ): Promise<{ message: string; token: string; expiresAt: Date; emailDispatched: boolean }> {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('المستخدم غير موجود');
 
-    const token = randomBytes(32).toString('hex');
+    // Generate raw, hash, persist only the hash. The raw value never crosses
+    // the await boundary into Prisma (V-24).
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    await this.prisma.$transaction([
-      this.prisma.passwordReset.create({
-        data: { userId: id, token, expiresAt },
-      }),
-      this.prisma.platformAuditLog.create({
+    await this.prisma.passwordReset.create({
+      // V-24-audit-completion: tag the admin flow so auth.service.resetPassword
+      // emits admin_password_reset_* (not auth_*) when this token is redeemed.
+      data: { userId: id, tokenHash, expiresAt, initiatedBy: 'admin' },
+    });
+
+    // V-24-email: dispatch the link (same shape as auth.service.forgotPassword).
+    // Best-effort — the raw token is still returned as a manual-delivery
+    // fallback, so a mail outage degrades gracefully instead of blocking the
+    // admin.
+    const resetUrl = `${this.configService.get('APP_URL', 'http://localhost:3000')}/reset-password?token=${rawToken}`;
+    let emailDispatched = false;
+    try {
+      await this.mailService.send({
+        to: user.email,
+        subject: 'إعادة تعيين كلمة المرور - SERVIX',
+        body: `مرحباً ${user.fullName}،\n\nطلب مسؤول النظام إعادة تعيين كلمة المرور لحسابك. استخدم الرابط التالي خلال ساعة:\n${resetUrl}\n\nإذا لم تتوقع ذلك، تواصل مع الدعم الفني.`,
+        html: `<p>مرحباً ${user.fullName}،</p><p>طلب مسؤول النظام إعادة تعيين كلمة المرور لحسابك. <a href="${resetUrl}">اضغط هنا</a> خلال ساعة.</p><p>إذا لم تتوقع ذلك، تواصل مع الدعم الفني.</p>`,
+      });
+      emailDispatched = true;
+    } catch (e) {
+      this.logger.warn(
+        `[admin-reset-link] email dispatch failed for ${user.email}: ${(e as Error).message}`,
+      );
+    }
+
+    // Audit AFTER the dispatch attempt so emailDispatched reflects reality.
+    // Split out of the former 2-op tx (V-24-email) — the forensic audit is
+    // best-effort; the passwordReset row is the only critical write. Never
+    // persist the full hash or the raw token here — tokenHashPrefix (8 chars =
+    // 2^32 collision space) is forensic-correlation-only.
+    await this.prisma.platformAuditLog
+      .create({
         data: {
           userId: adminId,
-          action: 'admin_send_reset_link',
+          action: 'admin_password_reset_link_sent',
           entityType: 'user',
           entityId: id,
-          newValues: { sentTo: user.email },
+          newValues: {
+            sentTo: user.email,
+            expiresAt: expiresAt.toISOString(),
+            tokenHashPrefix: tokenHash.slice(0, 8),
+            emailDispatched,
+          },
         },
-      }),
-    ]);
+      })
+      .catch((err) =>
+        this.logger.warn(`[admin-reset-link audit] ${(err as Error).message}`),
+      );
 
-    // TODO: Send email with reset link when MailService is available in AdminModule
-    // For now, log it
-    // eslint-disable-next-line no-console
-    console.log(`[AdminResetLink] User ${user.email} → token: ${token}`);
-
-    return { message: `تم إنشاء رابط التعيين وإرساله إلى ${user.email}` };
+    return {
+      message: emailDispatched
+        ? `تم إرسال رابط إعادة تعيين كلمة المرور إلى ${user.email}.`
+        : `تعذّر إرسال البريد. سلّم الرابط للمستخدم ${user.email} يدوياً.`,
+      token: rawToken,
+      expiresAt,
+      emailDispatched,
+    };
   }
 
   async changeUserRole(userId: string, roleId: string, tenantId: string | undefined, adminId: string) {
@@ -510,7 +846,28 @@ export class AdminService {
     }
     if (!tu) throw new BadRequestException('المستخدم غير مرتبط بأي صالون');
 
+    const oldRoleId = tu.roleId;
     const oldRoleName = tu.role?.name || 'unknown';
+
+    // V-14c: cascade is always-on, even when newRoleId === oldRoleId.
+    // The no-op case still invalidates sessions — defensive over
+    // efficient, costs one Redis SETEX. Privilege downgrade is the
+    // dangerous direction (manager → staff with a live JWT keeps
+    // manager permissions until expiry), so we revoke unconditionally
+    // rather than branch on direction.
+    //
+    // Ordering mirrors V-14b: DB tx first (truth-of-record), then
+    // side effects. A Redis or WS failure after the tx leaves the
+    // role change persisted with audit row — strictly safer than
+    // the inverse.
+    //
+    // Note: auth.service.refreshTokens (line 357) re-signs new tokens
+    // with the OLD payload.roleId from the refresh token. Without
+    // V-14c, refreshing would keep handing out stale-role JWTs forever.
+    // V-14c writes pwChangedAt, which fails the refresh path's iat
+    // check (auth.service.ts:348) and forces a full re-login. Re-login
+    // reads firstTenantUser.roleId fresh from DB, picking up the new
+    // role. So V-14c closes the refresh-staleness gap as a side effect.
 
     await this.prisma.$transaction([
       this.prisma.tenantUser.update({
@@ -523,11 +880,14 @@ export class AdminService {
           action: 'admin_change_role',
           entityType: 'user',
           entityId: userId,
-          oldValues: { role: oldRoleName, tenantId: tu.tenantId },
-          newValues: { role: role.name, roleId },
+          oldValues: { role: oldRoleName, roleId: oldRoleId, tenantId: tu.tenantId },
+          newValues: { role: role.name, roleId, sessionsRevoked: true },
         },
       }),
     ]);
+
+    await this.cacheService.setPasswordChangedAt(userId);
+    this.eventsGateway.disconnectUserClients(userId);
 
     return { message: `تم تغيير الدور إلى ${role.nameAr}`, role };
   }
@@ -721,7 +1081,11 @@ export class AdminService {
 
     // Restore: remove anonymization suffix and reactivate
     const cleanEmail = user.email.replace(/_deleted_\d+$/, '');
-    const cleanPhone = user.phone.replace(/_deleted_\d+$/, '');
+    // V-13a-phone-placeholder: phone is nullable (Google-only users) — only
+    // strip the anonymization suffix when a phone exists.
+    const cleanPhone = user.phone
+      ? user.phone.replace(/_deleted_\d+$/, '')
+      : null;
     const cleanName = user.fullName.replace(/^\[محذوف\] /, '').replace(/^\[قيد الحذف\] /, '');
 
     await this.prisma.$transaction([
@@ -753,23 +1117,22 @@ export class AdminService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('المستخدم غير موجود');
 
-    // Force-change the password hash timestamp so all existing tokens become invalid
-    // This works because JWT tokens are verified against the latest password hash change
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { updatedAt: new Date() },
-      }),
-      this.prisma.platformAuditLog.create({
-        data: {
-          userId: adminId,
-          action: 'admin_force_logout',
-          entityType: 'user',
-          entityId: userId,
-          newValues: { loggedOutAt: new Date().toISOString() },
-        },
-      }),
-    ]);
+    // V-14a: writes pwChangedAt for this user into Redis. Both the
+    // HTTP JwtStrategy (validate) and the WS guard read it and reject
+    // any token whose iat < pwChangedAt. Pre-V-14a this endpoint only
+    // touched user.updatedAt — which nothing checks — so it was a
+    // no-op despite the audit log. Now it really kills active sessions.
+    await this.cacheService.setPasswordChangedAt(userId);
+
+    await this.prisma.platformAuditLog.create({
+      data: {
+        userId: adminId,
+        action: 'admin_force_logout',
+        entityType: 'user',
+        entityId: userId,
+        newValues: { loggedOutAt: new Date().toISOString() },
+      },
+    });
 
     return { message: 'تم تسجيل خروج المستخدم من جميع الأجهزة' };
   }
@@ -910,6 +1273,36 @@ export class AdminService {
 
     const oldStatus = tenant.status;
 
+    // V-14b: when suspending, fan out the side effects after the
+    // status flip is committed so a tx failure cannot leave us in a
+    // half-revoked state. Order:
+    //   1. DB tx — status + audit row
+    //   2. setPasswordChangedAt per member  (invalidates HTTP+WS tokens)
+    //   3. disconnect active WS clients     (close existing sessions)
+    //   4. invalidateTenant cache           (force other api instances
+    //                                        to re-fetch the new status)
+    // setPasswordChangedAt swallows Redis errors internally so the
+    // Promise.all never rejects; partial Redis failure means some
+    // tokens stay alive but the HTTP middleware/guard chain still
+    // blocks them via tenant.status, so the worst case is a stale
+    // WS that gets rejected on its next handshake attempt.
+    //
+    // Unsuspend (status='active') intentionally does NOT clear
+    // pwChangedAt: once a session was revoked, the user re-logs in
+    // and gets a fresh JWT with iat > pwChangedAt that the gate
+    // passes through. Standard secure-default.
+
+    let affectedUserCount = 0;
+    let members: Array<{ userId: string }> = [];
+
+    if (status === 'suspended') {
+      members = await this.prisma.tenantUser.findMany({
+        where: { tenantId },
+        select: { userId: true },
+      });
+      affectedUserCount = members.length;
+    }
+
     const [updatedTenant] = await this.prisma.$transaction([
       this.prisma.tenant.update({
         where: { id: tenantId },
@@ -923,10 +1316,25 @@ export class AdminService {
           entityType: 'tenant',
           entityId: tenantId,
           oldValues: { status: oldStatus },
-          newValues: { status },
+          newValues:
+            status === 'suspended'
+              ? { status, affectedUserCount }
+              : { status },
         },
       }),
     ]);
+
+    if (status === 'suspended') {
+      await Promise.all(
+        members.map((m) => this.cacheService.setPasswordChangedAt(m.userId)),
+      );
+      this.eventsGateway.disconnectTenantClients(tenantId);
+      await this.cacheService.invalidateTenant(tenantId);
+    } else {
+      // Active again — only refresh the platform-level tenant cache
+      // so other api instances see the new status immediately.
+      await this.cacheService.invalidateTenant(tenantId);
+    }
 
     return updatedTenant;
   }
@@ -1217,6 +1625,7 @@ export class AdminService {
 
     // Simulate backup completion (in production this would be a BullMQ job)
     // For now mark as success after creating record
+    // non-security: simulated backup size placeholder, not a credential or token.
     const sizeBytes = BigInt(Math.floor(Math.random() * 100_000_000) + 10_000_000);
     const updatedBackup = await this.prisma.platformBackup.update({
       where: { id: backup.id },
@@ -1287,8 +1696,8 @@ export class AdminService {
       data: {
         title: dto.title,
         body: dto.body,
-        channel: dto.channel,
-        target: dto.target,
+        channel: dto.channel as NotifChannel,
+        target: dto.target as NotifTarget,
         status,
         recipients,
         delivered: dto.saveAsDraft ? 0 : recipients,
@@ -1964,7 +2373,6 @@ export class AdminService {
   // ═══════════════════ Force Actions ═══════════════════
 
   async forceLogoutTenant(tenantId: string, adminId: string) {
-    // Verify tenant exists
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
     });
@@ -1972,7 +2380,26 @@ export class AdminService {
       throw new NotFoundException('المنشأة غير موجودة');
     }
 
-    // Log to audit
+    // V-14a: actually invalidate every tenant member's session.
+    // Pre-V-14a this method only wrote an audit row — no token was
+    // ever invalidated. Now we enumerate every TenantUser row for
+    // this tenant and write pwChangedAt for each. Promise.all keeps
+    // the cache writes pipelined; with O(<10) users per tenant on
+    // prod today the latency is dominated by the round trip, not
+    // the number of writes. Tracked as V-14a-perf for >100-user
+    // tenants (use Redis MSET / pipeline) — see engineer-2-* doc.
+    const members = await this.prisma.tenantUser.findMany({
+      where: { tenantId },
+      select: { userId: true },
+    });
+    // V-14a-perf-counter: count writes that actually landed in Redis, so a
+    // partial outage produces an honest affectedUserCount instead of
+    // overstating it as members.length. setPasswordChangedAt never throws.
+    const results = await Promise.all(
+      members.map((m) => this.cacheService.setPasswordChangedAt(m.userId)),
+    );
+    const affectedUserCount = results.filter(Boolean).length;
+
     await this.prisma.platformAuditLog.create({
       data: {
         userId: adminId,
@@ -1980,13 +2407,19 @@ export class AdminService {
         action: 'force_logout',
         entityType: 'tenant',
         entityId: tenantId,
-        newValues: { action: 'force_logout_all_users' },
+        newValues: {
+          action: 'force_logout_all_users',
+          affectedUserCount,
+          attemptedUserCount: members.length,
+        },
       },
     });
 
     return {
       success: true,
       tenantId,
+      affectedUserCount,
+      attemptedUserCount: members.length,
       message: 'تم تسجيل خروج جميع مستخدمي المنشأة',
     };
   }

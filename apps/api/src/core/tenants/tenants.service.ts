@@ -2,9 +2,12 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PlatformPrismaClient } from '../../shared/database/platform.client';
+import { CacheService } from '../../shared/cache/cache.service';
+import { EventsGateway } from '../../shared/events/events.gateway';
 import type {
   Tenant,
   Subscription,
@@ -33,7 +36,11 @@ export type TenantFeatureWithFeature = TenantFeature & {
 
 @Injectable()
 export class TenantsService {
-  constructor(private readonly prisma: PlatformPrismaClient) {}
+  constructor(
+    private readonly prisma: PlatformPrismaClient,
+    private readonly cacheService: CacheService,
+    private readonly eventsGateway: EventsGateway,
+  ) {}
 
   async create(dto: CreateTenantDto, ownerId: string): Promise<Tenant> {
     const existingSlug = await this.prisma.tenant.findUnique({
@@ -141,7 +148,12 @@ export class TenantsService {
     });
   }
 
-  async suspend(id: string): Promise<Tenant> {
+  // V-tenants-authz (part b): pre-fix this flipped status='suspended' with NO
+  // session-invalidation cascade and NO audit row — so a suspended tenant's
+  // members kept valid JWTs/WS sessions until natural expiry, defeating the
+  // suspend. Brought to parity with admin.service.updateTenantStatus's V-14b
+  // cascade. (Route is now super_admin-only via the controller guard.)
+  async suspend(id: string, actorUserId: string): Promise<Tenant> {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id },
     });
@@ -150,10 +162,46 @@ export class TenantsService {
       throw new NotFoundException('المنشأة غير موجودة');
     }
 
-    return this.prisma.tenant.update({
-      where: { id },
-      data: { status: 'suspended' },
+    if (tenant.status === 'suspended') {
+      throw new BadRequestException('المنشأة معلّقة بالفعل');
+    }
+
+    // Snapshot members BEFORE the flip so we know whose sessions to revoke.
+    const members = await this.prisma.tenantUser.findMany({
+      where: { tenantId: id },
+      select: { userId: true },
     });
+
+    // 1. DB tx: status flip + audit row (atomic).
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.tenant.update({
+        where: { id },
+        data: { status: 'suspended' },
+      }),
+      this.prisma.platformAuditLog.create({
+        data: {
+          userId: actorUserId,
+          tenantId: id,
+          action: 'tenant.suspend',
+          entityType: 'tenant',
+          entityId: id,
+          oldValues: { status: tenant.status },
+          newValues: { status: 'suspended', affectedUserCount: members.length },
+        },
+      }),
+    ]);
+
+    // 2-4. V-14b cascade AFTER commit (setPasswordChangedAt swallows Redis
+    // errors internally, so this never rejects; worst case a stale WS is
+    // rejected on its next handshake while the HTTP guard chain already
+    // blocks via tenant.status).
+    await Promise.all(
+      members.map((m) => this.cacheService.setPasswordChangedAt(m.userId)),
+    );
+    this.eventsGateway.disconnectTenantClients(id);
+    await this.cacheService.invalidateTenant(id);
+
+    return updated;
   }
 
   async getSubscription(tenantId: string): Promise<SubscriptionWithPlan> {

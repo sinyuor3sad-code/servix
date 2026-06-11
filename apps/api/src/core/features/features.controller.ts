@@ -21,12 +21,20 @@ import type { Feature } from '../../shared/database';
 import { CreateFeatureDto } from './dto/create-feature.dto';
 import { UpdateFeatureDto } from './dto/update-feature.dto';
 import { CheckFeatureDto } from './dto/check-feature.dto';
-import { JwtAuthGuard } from '../../shared/guards';
+import { JwtAuthGuard, RolesGuard } from '../../shared/guards';
 import { Roles } from '../../shared/decorators';
 
+// V-idor-rbac (HIGH): the feature catalog + per-tenant feature toggles are a
+// platform operation. Pre-fix the per-route @Roles('admin') was INERT (RolesGuard
+// not global, not applied at class) so any authenticated user could POST/PUT
+// /features, and 'admin' isn't even a seeded role. Runtime feature-gating is
+// IN-PROCESS (FeaturesService.isFeatureEnabled + FeatureGuard), NOT via these
+// HTTP routes — the only HTTP caller is the super_admin admin UI — so locking the
+// whole controller to super_admin breaks nothing. Class-scoped + fail-closed.
 @ApiTags('المميزات - Features')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('super_admin')
 @Controller({ path: 'features', version: '1' })
 export class FeaturesController {
   constructor(private readonly featuresService: FeaturesService) {}
@@ -39,8 +47,7 @@ export class FeaturesController {
   }
 
   @Post()
-  @Roles('admin')
-  @ApiOperation({ summary: 'إنشاء ميزة جديدة (مدير فقط)' })
+  @ApiOperation({ summary: 'إنشاء ميزة جديدة (مدير المنصة فقط)' })
   @ApiResponse({ status: 201, description: 'تم إنشاء الميزة بنجاح' })
   @ApiResponse({ status: 409, description: 'رمز الميزة مستخدم بالفعل' })
   async create(@Body() dto: CreateFeatureDto): Promise<Feature> {
@@ -75,8 +82,7 @@ export class FeaturesController {
   }
 
   @Put(':id')
-  @Roles('admin')
-  @ApiOperation({ summary: 'تحديث ميزة (مدير فقط)' })
+  @ApiOperation({ summary: 'تحديث ميزة (مدير المنصة فقط)' })
   @ApiParam({ name: 'id', description: 'معرف الميزة (UUID)' })
   @ApiResponse({ status: 200, description: 'تم تحديث الميزة بنجاح' })
   @ApiResponse({ status: 404, description: 'الميزة غير موجودة' })

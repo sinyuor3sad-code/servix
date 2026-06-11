@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
   BadRequestException,
+  BadGatewayException,
   ForbiddenException,
   NotFoundException,
   HttpCode,
@@ -41,7 +42,7 @@ export class WhatsAppEvolutionController {
     if (!tenantSlug) throw new BadRequestException('Tenant slug missing');
 
     const instance = await this.evolution.getOrCreateInstance(tenantId, tenantSlug);
-    const qrCode = instance.status === 'qr_pending' || instance.status === 'disconnected'
+    const qrCode = this.shouldFetchQrCode(instance.status)
       ? await this.evolution.fetchQrCode(instance.instanceName)
       : null;
 
@@ -63,10 +64,9 @@ export class WhatsAppEvolutionController {
     }
     const synced = await this.evolution.syncInstanceStatus(instance.instanceName);
     const effective = synced ?? instance;
-    const qrCode =
-      effective.status === 'qr_pending' || effective.status === 'disconnected'
-        ? await this.evolution.fetchQrCode(effective.instanceName)
-        : null;
+    const qrCode = this.shouldFetchQrCode(effective.status)
+      ? await this.evolution.fetchQrCode(effective.instanceName)
+      : null;
     return { success: true, data: this.publicInstance(effective, qrCode) };
   }
 
@@ -81,7 +81,10 @@ export class WhatsAppEvolutionController {
 
     // Logout first to force a fresh QR generation
     if (instance.status === 'connected' || instance.status === 'connecting') {
-      await this.evolution.logoutInstance(instance.instanceName);
+      const logoutOk = await this.evolution.logoutInstance(instance.instanceName);
+      if (!logoutOk) {
+        throw new BadGatewayException('تعذر فصل جلسة واتساب من مزود الربط. حاول مرة أخرى بعد قليل.');
+      }
     }
 
     // Request fresh QR from Evolution (this also triggers connection flow)
@@ -107,7 +110,10 @@ export class WhatsAppEvolutionController {
     if (!instance) return { success: true };
 
     await this.evolution.logoutInstance(instance.instanceName);
-    await this.evolution.deleteInstance(instance.instanceName);
+    const deletedFromEvolution = await this.evolution.deleteInstance(instance.instanceName);
+    if (!deletedFromEvolution) {
+      throw new BadGatewayException('تعذر حذف مثيل واتساب من مزود الربط. لم يتم حذف سجل المنصة حتى لا تتعطل إعادة الربط.');
+    }
     await this.platformDb.whatsAppInstance.delete({ where: { tenantId } });
     return { success: true };
   }
@@ -203,6 +209,10 @@ export class WhatsAppEvolutionController {
     return id;
   }
 
+  private shouldFetchQrCode(status: string): boolean {
+    return status === 'qr_pending' || status === 'disconnected' || status === 'connecting';
+  }
+
   private async getActiveInstance(tenantId: string) {
     const instance = await this.platformDb.whatsAppInstance.findUnique({
       where: { tenantId },
@@ -218,9 +228,13 @@ export class WhatsAppEvolutionController {
     instance: { instanceName: string; status: string; phoneNumber: string | null; profileName: string | null; profilePicUrl: string | null; lastConnectedAt: Date | null },
     qrCode: string | null,
   ) {
+    const status = qrCode && (instance.status === 'connecting' || instance.status === 'disconnected')
+      ? 'qr_pending'
+      : instance.status;
+
     return {
       instanceName: instance.instanceName,
-      status: instance.status,
+      status,
       phoneNumber: instance.phoneNumber,
       profileName: instance.profileName,
       profilePicUrl: instance.profilePicUrl,

@@ -8,8 +8,11 @@ import {
   Post,
   Put,
   Req,
+  Res,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -23,13 +26,29 @@ import { AuthService } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import { GoogleAuthService } from './google-auth.service';
 import {
+  clearAuthCookies,
+  refreshTokenFromRequest,
+  setAuthCookies,
+} from './auth-cookie.helper';
+import { CsrfGuard } from './csrf.guard';
+import {
   RegisterDto,
   LoginDto,
   RefreshTokenDto,
   ForgotPasswordDto,
   ResetPasswordDto,
+  RequestAccountUnlockDto,
+  UnlockAccountDto,
   ChangePasswordDto,
   UpdateProfileDto,
+  LinkGoogleDto,
+  Verify2FALoginDto,
+  VerifyResetTokenDto,
+  VerifyOtpDto,
+  ResendOtpDto,
+  Verify2FADto,
+  Disable2FADto,
+  GoogleLoginDto,
 } from './dto';
 
 @ApiTags('Auth')
@@ -50,7 +69,7 @@ export class AuthController {
   async register(
     @Body() dto: RegisterDto,
   ): Promise<{
-    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tenant: { id: string; nameAr: string; nameEn: string; slug: string };
     requiresVerification: boolean;
     message: string;
@@ -69,8 +88,9 @@ export class AuthController {
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{
-    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tenants: Array<{
       id: string;
       tenantId: string;
@@ -81,9 +101,18 @@ export class AuthController {
     }>;
     tokens: JwtTokens | null;
     requires2FA: boolean;
+    csrfToken?: string;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-    return this.authService.login(dto, ip);
+    const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
+    const result = await this.authService.login(dto, ip, userAgent);
+    // V-39: refresh token rides an httpOnly cookie; body keeps it for
+    // non-browser clients. No tokens on the requires2FA half-login.
+    if (result.tokens) {
+      const csrfToken = setAuthCookies(res, result.tokens.refreshToken);
+      return { ...result, csrfToken };
+    }
+    return result;
   }
 
   @Post('2fa/verify-login')
@@ -92,34 +121,75 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'التحقق الثنائي بعد تسجيل الدخول' })
   async verify2FALogin(
-    @Body() body: { emailOrPhone: string; password: string; code: string },
+    @Body() dto: Verify2FALoginDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{
-    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tokens: JwtTokens;
+    csrfToken: string;
   }> {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
-    return this.authService.verify2FALogin(body.emailOrPhone, body.password, body.code, ip);
+    const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
+    const result = await this.authService.verify2FALogin(dto.emailOrPhone, dto.password, dto.code, ip, userAgent);
+    const csrfToken = setAuthCookies(res, result.tokens.refreshToken); // V-39
+    return { ...result, csrfToken };
   }
 
   @Post('refresh')
   @Public()
+  @UseGuards(CsrfGuard) // V-68: required when authenticating via cookie
   @RateLimit(20, 60)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'تحديث رمز الوصول باستخدام رمز التحديث' })
+  @ApiOperation({ summary: 'تحديث رمز الوصول باستخدام رمز التحديث (كوكي أو body)' })
   @ApiResponse({ status: 200, description: 'تم تحديث الرمز بنجاح' })
   @ApiResponse({ status: 401, description: 'رمز التحديث غير صالح أو منتهي الصلاحية' })
-  async refresh(@Body() dto: RefreshTokenDto): Promise<JwtTokens> {
-    return this.authService.refreshTokens(dto.refreshToken);
+  @ApiResponse({ status: 403, description: 'رمز CSRF غير صالح' })
+  @ApiResponse({ status: 503, description: 'تعذّر التحقق من رمز التحديث — حاول مرة أخرى' })
+  async refresh(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<JwtTokens & { csrfToken: string }> {
+    // V-39: cookie-first, body fallback (non-browser clients).
+    const rawToken = refreshTokenFromRequest(req, dto?.refreshToken);
+    if (!rawToken) {
+      throw new UnauthorizedException('رمز التحديث مطلوب');
+    }
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      undefined;
+    const ua = req.headers['user-agent']?.slice(0, 500);
+    try {
+      const tokens = await this.authService.refreshTokens(rawToken, {
+        ipAddress: ip,
+        userAgent: ua,
+      });
+      const csrfToken = setAuthCookies(res, tokens.refreshToken); // rotation
+      return { ...tokens, csrfToken };
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        clearAuthCookies(res); // dead family — drop the cookie session
+      }
+      throw err;
+    }
   }
 
   @Post('logout')
   @Public()
+  @UseGuards(CsrfGuard) // V-68: required when authenticating via cookie
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'تسجيل الخروج' })
   @ApiResponse({ status: 200, description: 'تم تسجيل الخروج بنجاح' })
-  async logout(@Body() dto: RefreshTokenDto): Promise<{ message: string }> {
-    return this.authService.logout(dto.refreshToken);
+  async logout(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ message: string }> {
+    const rawToken = refreshTokenFromRequest(req, dto?.refreshToken);
+    clearAuthCookies(res); // V-39: always drop the cookie session
+    return this.authService.logout(rawToken ?? '');
   }
 
   @Post('forgot-password')
@@ -147,15 +217,41 @@ export class AuthController {
     return this.authService.resetPassword(dto);
   }
 
+  // V-40a — account self-unlock (post-V-25-lockout recovery via email).
+  @Post('request-unlock')
+  @Public()
+  @RateLimit(5, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'V-40a — طلب فك قفل الحساب (رابط بالبريد)' })
+  @ApiResponse({ status: 200, description: 'تم الإرسال إذا كان الحساب مسجلاً ومقفلاً' })
+  async requestAccountUnlock(
+    @Body() dto: RequestAccountUnlockDto,
+  ): Promise<{ message: string }> {
+    return this.authService.requestAccountUnlock(dto.email);
+  }
+
+  @Post('unlock')
+  @Public()
+  @RateLimit(10, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'V-40a — فك قفل الحساب باستخدام الرمز' })
+  @ApiResponse({ status: 200, description: 'تم فك قفل الحساب' })
+  @ApiResponse({ status: 400, description: 'رمز فك القفل غير صالح أو مستخدم أو منتهٍ' })
+  async unlockAccount(
+    @Body() dto: UnlockAccountDto,
+  ): Promise<{ message: string }> {
+    return this.authService.unlockAccount(dto.token);
+  }
+
   @Post('verify-reset-token')
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'التحقق من صلاحية رمز إعادة التعيين' })
   @ApiResponse({ status: 200, description: 'صالح أو غير صالح' })
   async verifyResetToken(
-    @Body() body: { token: string },
+    @Body() dto: VerifyResetTokenDto,
   ): Promise<{ valid: boolean; email?: string }> {
-    return this.authService.verifyResetToken(body.token);
+    return this.authService.verifyResetToken(dto.token);
   }
 
   @Post('verify-otp')
@@ -166,9 +262,11 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'تم التحقق بنجاح — يُعيد tokens' })
   @ApiResponse({ status: 400, description: 'رمز التحقق غير صحيح أو منتهي' })
   async verifyOtp(
-    @Body() body: { email: string; code: string },
+    @Body() dto: VerifyOtpDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<{
-    user: { id: string; fullName: string; email: string; phone: string; avatarUrl: string | null };
+    user: { id: string; fullName: string; email: string; phone: string | null; avatarUrl: string | null };
     tenants: Array<{
       id: string;
       tenantId: string;
@@ -178,8 +276,13 @@ export class AuthController {
       role: { id: string; name: string; nameAr: string };
     }>;
     tokens: JwtTokens;
+    csrfToken: string;
   }> {
-    return this.authService.verifyEmailOtp(body.email, body.code);
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
+    const result = await this.authService.verifyEmailOtp(dto.email, dto.code, ip, userAgent);
+    const csrfToken = setAuthCookies(res, result.tokens.refreshToken); // V-39
+    return { ...result, csrfToken };
   }
 
   @Post('resend-otp')
@@ -190,9 +293,9 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'تم إرسال رمز جديد' })
   @ApiResponse({ status: 400, description: 'يرجى الانتظار قبل إعادة الإرسال' })
   async resendOtp(
-    @Body() body: { email: string },
+    @Body() dto: ResendOtpDto,
   ): Promise<{ message: string }> {
-    return this.authService.resendEmailOtp(body.email);
+    return this.authService.resendEmailOtp(dto.email);
   }
 
   @Get('me')
@@ -206,7 +309,7 @@ export class AuthController {
     id: string;
     fullName: string;
     email: string;
-    phone: string;
+    phone: string | null;
     avatarUrl: string | null;
     tenantUsers: Array<{
       id: string;
@@ -232,7 +335,7 @@ export class AuthController {
     id: string;
     fullName: string;
     email: string;
-    phone: string;
+    phone: string | null;
     avatarUrl: string | null;
   }> {
     return this.authService.updateMe(userId, dto);
@@ -268,9 +371,9 @@ export class AuthController {
   @ApiOperation({ summary: 'تأكيد تفعيل التحقق الثنائي بالرمز' })
   async verify2FA(
     @CurrentUser('sub') userId: string,
-    @Body() body: { code: string },
+    @Body() dto: Verify2FADto,
   ): Promise<{ message: string }> {
-    return this.authService.verify2FA(userId, body.code);
+    return this.authService.verify2FA(userId, dto.code);
   }
 
   @Delete('2fa')
@@ -279,9 +382,9 @@ export class AuthController {
   @ApiOperation({ summary: 'إلغاء التحقق الثنائي' })
   async disable2FA(
     @CurrentUser('sub') userId: string,
-    @Body() body: { password: string },
+    @Body() dto: Disable2FADto,
   ): Promise<{ message: string }> {
-    return this.authService.disable2FA(userId, body.password);
+    return this.authService.disable2FA(userId, dto.password);
   }
 
   @Get('2fa/status')
@@ -293,6 +396,21 @@ export class AuthController {
     return this.authService.get2FAStatus(userId);
   }
 
+  // V-42: rotate single-use backup codes. Reuses Verify2FADto — regeneration
+  // requires a valid CURRENT TOTP (defense-in-depth). Rate-limited like the
+  // login-time 2FA challenge.
+  @Post('2fa/backup-codes/regenerate')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @RateLimit(5, 300)
+  @ApiOperation({ summary: 'إعادة توليد رموز الاسترداد (يتطلب رمز TOTP حالي)' })
+  async regenerateBackupCodes(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: Verify2FADto,
+  ): Promise<{ backupCodes: string[] }> {
+    return this.authService.regenerateBackupCodes(userId, dto.code);
+  }
+
   // ════════════ Google OAuth ════════════
 
   @Post('google')
@@ -301,9 +419,48 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'تسجيل الدخول بحساب Google' })
   async googleLogin(
-    @Body() body: { idToken: string },
+    @Body() dto: GoogleLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.authService.googleLogin(body.idToken);
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent']?.slice(0, 500); // V-13c-forensics
+    const result = await this.authService.googleLogin(dto.idToken, ip, userAgent);
+    if (result?.tokens) {
+      const csrfToken = setAuthCookies(res, result.tokens.refreshToken); // V-39
+      return { ...result, csrfToken };
+    }
+    return result;
+  }
+
+  @Post('google/link')
+  @ApiBearerAuth()
+  @RateLimit(10, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'ربط حساب Google بالحساب الحالي (V-13a)' })
+  @ApiResponse({ status: 200, description: 'تم ربط حساب Google بنجاح' })
+  @ApiResponse({ status: 400, description: 'البريد في حساب Google لا يطابق بريد حسابك' })
+  @ApiResponse({ status: 401, description: 'غير مصرح بالوصول' })
+  @ApiResponse({ status: 409, description: 'حساب Google مربوط بمستخدم آخر بالفعل' })
+  async linkGoogle(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: LinkGoogleDto,
+  ): Promise<{ message: string }> {
+    return this.authService.linkGoogle(userId, dto.idToken);
+  }
+
+  @Post('google/unlink')
+  @ApiBearerAuth()
+  @RateLimit(10, 60)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'إلغاء ربط حساب Google عن الحساب الحالي (V-13a-unlink)' })
+  @ApiResponse({ status: 200, description: 'تم إلغاء الربط (أو لا يوجد ربط)' })
+  @ApiResponse({ status: 400, description: 'حساب Google فقط — عيّن كلمة مرور أولاً' })
+  @ApiResponse({ status: 401, description: 'غير مصرح بالوصول' })
+  async unlinkGoogle(
+    @CurrentUser('sub') userId: string,
+  ): Promise<{ message: string }> {
+    return this.authService.unlinkGoogle(userId);
   }
 
   @Get('google/status')

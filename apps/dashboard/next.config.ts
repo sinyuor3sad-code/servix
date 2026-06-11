@@ -3,6 +3,8 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   output: 'standalone',
   reactStrictMode: true,
+  // A8-014: stop emitting `X-Powered-By: Next.js` — nothing reads it, attackers fingerprint with it.
+  poweredByHeader: false,
   transpilePackages: ['@servix/ui', '@servix/utils', '@servix/types'],
 
   async redirects() {
@@ -34,15 +36,10 @@ const nextConfig: NextConfig = {
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
       },
-      {
-        source: '/:path*',
-        headers: [
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-XSS-Protection', value: '1; mode=block' },
-          { key: 'Referrer-Policy', value: 'origin-when-cross-origin' },
-        ],
-      },
+      // A8-014: X-Content-Type-Options / X-Frame-Options / X-XSS-Protection / Referrer-Policy
+      // removed here — already set globally at nginx (single source of truth).
+      // The duplicate caused browsers to see X-Frame-Options twice with conflicting values
+      // (DENY from Next.js vs SAMEORIGIN from nginx).
     ];
   },
 };

@@ -15,7 +15,7 @@ import {
   ApiBearerAuth,
   ApiParam,
 } from '@nestjs/swagger';
-import { ZatcaService } from './zatca.service';
+import { SalonZatcaService } from './zatca.service';
 import { ZatcaOnboardDto } from './dto/onboard.dto';
 import { TenantGuard } from '@shared/guards';
 import { AuthenticatedRequest } from '@shared/types';
@@ -25,7 +25,7 @@ import { AuthenticatedRequest } from '@shared/types';
 @UseGuards(TenantGuard)
 @Controller({ path: 'zatca', version: '1' })
 export class ZatcaController {
-  constructor(private readonly zatcaService: ZatcaService) {}
+  constructor(private readonly zatcaService: SalonZatcaService) {}
 
   @Post('onboard')
   @ApiOperation({ summary: 'Onboard salon (CSR / CSID)' })

@@ -7,6 +7,7 @@ const TENANT_CACHE_PREFIX = 'servix:tenant:';
 const SETTINGS_CACHE_PREFIX = 'servix:settings:';
 const PLATFORM_SETTINGS_CACHE_KEY = 'servix:platform_settings';
 const FORGOT_PASSWORD_PREFIX = 'servix:forgot_pwd:';
+const ACCOUNT_UNLOCK_PREFIX = 'servix:account_unlock_req:';
 const LOGIN_FAIL_IP_PREFIX = 'servix:login_fail_ip:';
 const LOGIN_FAIL_ACCOUNT_PREFIX = 'servix:login_fail_account:';
 const REFRESH_BLACKLIST_PREFIX = 'servix:blacklist:';
@@ -20,6 +21,10 @@ export const TENANT_CACHE_TTL_SECONDS = 300;
 /** Forgot password rate limit: max 3 requests per hour */
 export const FORGOT_PASSWORD_RATE_LIMIT = 3;
 export const FORGOT_PASSWORD_RATE_TTL_SECONDS = 3600;
+
+/** V-40a account-unlock request rate limit: max 3 emails per hour per address */
+export const ACCOUNT_UNLOCK_RATE_LIMIT = 3;
+export const ACCOUNT_UNLOCK_RATE_TTL_SECONDS = 3600;
 
 /** Refresh token blacklist TTL: 7 days (matches token expiry) */
 export const REFRESH_BLACKLIST_TTL_SECONDS = 7 * 24 * 3600;
@@ -228,6 +233,33 @@ export class CacheService implements OnModuleDestroy {
     }
   }
 
+  // V-40a — account-unlock request rate limit. Mirrors forgot-password but in
+  // a separate key namespace so the two flows don't share a budget.
+  async checkAccountUnlockRateLimit(email: string): Promise<boolean> {
+    if (!this.enabled || !this.redis) return true;
+    try {
+      const key = `${ACCOUNT_UNLOCK_PREFIX}${email.toLowerCase()}`;
+      const count = await this.redis.get(key);
+      return parseInt(count || '0', 10) < ACCOUNT_UNLOCK_RATE_LIMIT;
+    } catch {
+      return true;
+    }
+  }
+
+  async incrementAccountUnlockAttempt(email: string): Promise<number> {
+    if (!this.enabled || !this.redis) return 0;
+    try {
+      const key = `${ACCOUNT_UNLOCK_PREFIX}${email.toLowerCase()}`;
+      const count = await this.redis.incr(key);
+      if (count === 1) {
+        await this.redis.expire(key, ACCOUNT_UNLOCK_RATE_TTL_SECONDS);
+      }
+      return count;
+    } catch {
+      return 0;
+    }
+  }
+
   /** SEC-1: Login rate limiting by IP. Returns block TTL in seconds if blocked, else 0 */
   async checkLoginIpBlock(ip: string): Promise<number> {
     if (!this.enabled || !this.redis) return 0;
@@ -376,14 +408,23 @@ export class CacheService implements OnModuleDestroy {
   /** SEC-2: On password change — invalidate all refresh tokens for user (token issued before this time is invalid) */
   private readonly PWD_CHANGED_PREFIX = 'servix:pwd_changed:';
 
-  async setPasswordChangedAt(userId: string): Promise<void> {
-    if (!this.enabled || !this.redis) return;
+  // V-14a-perf-counter: returns whether the write actually landed in Redis.
+  // Still swallows errors (never throws — callers rely on that for fire-and-
+  // forget cascades), but the boolean lets bulk callers (force-logout / tenant
+  // suspend) record an ACCURATE affectedUserCount instead of overstating it as
+  // members.length when Redis is partially down. Existing `await …` callers that
+  // ignore the return value are unaffected.
+  async setPasswordChangedAt(userId: string): Promise<boolean> {
+    if (!this.enabled || !this.redis) return false;
     try {
       const key = `${this.PWD_CHANGED_PREFIX}${userId}`;
       const ts = Date.now().toString();
       await this.redis.setex(key, REFRESH_BLACKLIST_TTL_SECONDS, ts);
+      return true;
     } catch {
-      // ignore
+      // ignore — degrade gracefully; the HTTP guard chain still blocks via
+      // tenant.status / pwChangedAt on the next request once Redis recovers.
+      return false;
     }
   }
 
@@ -547,6 +588,60 @@ export class CacheService implements OnModuleDestroy {
         this.EMAIL_OTP_RATE_TTL,
       );
     } catch { /* noop */ }
+  }
+
+  // ─── Generic JSON cache (for AI memory, semantic cache, analytics) ───
+
+  /**
+   * Read a JSON value from Redis. Returns null on miss / parse error / Redis down.
+   * Caller owns the key namespace — use `servix:<feature>:<id>` style.
+   */
+  async getJson<T = unknown>(key: string): Promise<T | null> {
+    if (!this.enabled || !this.redis) return null;
+    try {
+      const raw = await this.redis.get(key);
+      if (!raw) return null;
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Write a JSON value with TTL. Silent on Redis down. */
+  async setJson<T = unknown>(key: string, value: T, ttlSeconds: number): Promise<void> {
+    if (!this.enabled || !this.redis) return;
+    try {
+      await this.redis.setex(key, ttlSeconds, JSON.stringify(value));
+    } catch (err) {
+      this.logger.warn(`setJson failed for ${key}: ${(err as Error).message}`);
+    }
+  }
+
+  /** Delete an arbitrary key. Silent on Redis down. */
+  async deleteKey(key: string): Promise<void> {
+    if (!this.enabled || !this.redis) return;
+    try {
+      await this.redis.del(key);
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Atomic increment of an integer key (creates if missing). On first
+   * increment, sets the TTL. Useful for counters with a sliding window.
+   */
+  async incrementInt(key: string, ttlSeconds: number, by = 1): Promise<number> {
+    if (!this.enabled || !this.redis) return 0;
+    try {
+      const value = await this.redis.incrby(key, by);
+      if (value === by) {
+        await this.redis.expire(key, ttlSeconds);
+      }
+      return value;
+    } catch {
+      return 0;
+    }
   }
 
   // ─── Global Rate Limiting ───
